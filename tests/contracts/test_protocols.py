@@ -76,8 +76,9 @@ def test_ports_are_exactly_the_twenty_five_required() -> None:
     (ADR 0037 §8), ``AssignmentStore`` from M12.2 (ADR 0038), ``Bell`` from M12.5 (ADR 0043) and
     ``CommandLauncher`` from M13.2 (ADR 0047), ``LocalBeat`` from M13.3 (ADR 0048 §2) and
     ``Browser`` from M13.4 (ADR 0052 §11), ``TaskStop`` from M6.3c (ADR 0054 §3), and
-    ``ModelGateway``, ``Gestures`` and ``AgentSession`` from M14.3 (ADR 0060): a port is added
-    with an ADR and a row here, never by accident."""
+    ``ModelGateway``, ``Gestures`` and ``AgentSession`` from M14.3 (ADR 0060), and ``Vault`` and
+    ``AccountBrowser`` from M13.9 (ADR 0063): a port is added with an ADR and a row here, never
+    by accident."""
     assert {port.__name__ for port in PORTS} == REQUIRED_PORTS
     assert set(IMPLEMENTATIONS) == set(PORTS)
 

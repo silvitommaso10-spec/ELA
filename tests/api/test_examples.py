@@ -157,10 +157,14 @@ def test_every_example_explains_itself() -> None:
     twenty-six since M13.1e, which brought the button example.com does not have, for a failure after
     a yes with no call to the model; twenty-nine since M14.3, which brought the three sessions of
     the guided browser of section 26; thirty-three since M13.12, which brought the four sessions of
-    the policies of section 27.
+    the policies of section 27; thirty-eight since M13.9, which brought the plans of the browser
+    with the user's accounts of section 28 — a reading, a session and a gesture as you, the capture
+    that does not start, and the shape of a login from the vault; forty since the review of
+    2026-10-11 (decision 95), which chose the site of that login: the plan of the login of the
+    proof, and the reading that finds the user inside after it.
     """
     found = sorted(EXAMPLES.glob("*.json"))
-    assert len(found) == 33, [path.name for path in found]
+    assert len(found) == 40, [path.name for path in found]
     for path in found:
         plan = json.loads(path.read_text(encoding="utf-8"))
         assert NOTE in plan, path.name
@@ -664,6 +668,7 @@ def guide_section_23_names(worst: str) -> bool:
 
 def test_the_guided_examples_are_found() -> None:
     assert [path.name for path in GUIDED] == [
+        "guided-as-you-youtube.json",
         "guided-form.json",
         "guided-outside.json",
         "guided-youtube.json",

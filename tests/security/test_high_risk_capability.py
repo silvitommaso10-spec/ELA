@@ -82,7 +82,7 @@ def test_the_cap_the_rows_and_the_version_are_stated_together_and_none_moves_alo
         RiskLevel.HIGH: Rule.APPROVAL_EVERY_USE,
         RiskLevel.CRITICAL: Rule.DENY,
     }, f"the policy moved. {MOVE_THEM_TOGETHER}"
-    assert POLICY_VERSION == "v0.2", (
+    assert POLICY_VERSION == "v0.3", (
         f"the policy version moved, and this is the only place that says which one it is. "
         f"{MOVE_THEM_TOGETHER}"
     )

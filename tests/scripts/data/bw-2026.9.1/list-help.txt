@@ -1,0 +1,41 @@
+Usage: bw list [options] <object>
+
+List an array of objects from the vault.
+
+Arguments:
+  object                             Valid objects are: items, folders,
+                                     collections, org-collections, org-members,
+                                     organizations
+
+Options:
+  --search <search>                  Perform a search on the listed objects.
+  --url <url>                        Filter items of type login with a url-match
+                                     search.
+  --folderid <folderid>              Filter items by folder id.
+  --collectionid <collectionid>      Filter items by collection id.
+  --organizationid <organizationid>  Filter items or collections by organization
+                                     id.
+  --trash                            Filter items that are deleted and in the
+                                     trash.
+  --archived                         Filter items that are archived.
+  -h, --help                         display help for command
+
+  Notes:
+
+    Combining search with a filter performs a logical AND operation.
+
+    Combining multiple filters performs a logical OR operation.
+
+  Examples:
+
+    bw list items
+    bw list items --folderid 60556c31-e649-4b5d-8daf-fc1c391a1bf2
+    bw list items --search google --folderid 60556c31-e649-4b5d-8daf-fc1c391a1bf2
+    bw list items --url https://google.com
+    bw list items --folderid null
+    bw list items --organizationid notnull
+    bw list items --folderid 60556c31-e649-4b5d-8daf-fc1c391a1bf2 --organizationid notnull
+    bw list items --trash
+    bw list items --archived
+    bw list folders --search email
+    bw list org-members --organizationid 60556c31-e649-4b5d-8daf-fc1c391a1bf2

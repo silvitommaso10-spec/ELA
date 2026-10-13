@@ -49,6 +49,7 @@ FINISHED_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0049-finished-on-the-homes.md"
 SPENDING_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0057-spending-cap.md"
 PLANNER_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0058-planner.md"
 POLICIES_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0062-policies.md"
+ACCOUNTS_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0063-browser-with-your-accounts.md"
 ENV_EXAMPLE = REPO_ROOT / ".env.example"
 
 COMMAND_ROW = re.compile(
@@ -85,6 +86,7 @@ def adr_text() -> str:
             SPENDING_ADR_PATH,
             PLANNER_ADR_PATH,
             POLICIES_ADR_PATH,
+            ACCOUNTS_ADR_PATH,
         )
     )
 
@@ -110,6 +112,14 @@ def commands_after_0061() -> set[str]:
     ADR 0060 take away to keep counting the twenty-eight they saw — ADR 0062's (M13.12)."""
     found = set(documented_commands_of(POLICIES_ADR_PATH.read_text(encoding="utf-8")))
     assert found, "ADR 0062 documents a command"
+    return found | commands_after_0062()
+
+
+def commands_after_0062() -> set[str]:
+    """The commands the ADRs after ADR 0062 added, read from them: what the test of ADR 0062 takes
+    away to keep counting the thirty-one it saw — ADR 0063's (M13.9)."""
+    found = set(documented_commands_of(ACCOUNTS_ADR_PATH.read_text(encoding="utf-8")))
+    assert found, "ADR 0063 documents a command"
     return found
 
 
@@ -238,11 +248,12 @@ def test_the_commands_of_the_adr_are_the_commands_of_the_code() -> None:
     assert set(documented_commands()) == coded_commands()
 
 
-def test_there_are_thirty_one_of_them() -> None:
+def test_there_are_thirty_nine_of_them() -> None:
     """Twenty-six until ADR 0049 added ``ela task finished``, the client of its one route,
-    twenty-seven until ADR 0057 added ``ela spend``, the client of its, and twenty-eight until ADR
-    0062 added the three of ``ela policy``."""
-    assert len(coded_commands()) == 31
+    twenty-seven until ADR 0057 added ``ela spend``, the client of its, twenty-eight until ADR
+    0062 added the three of ``ela policy``, and thirty-one until ADR 0063 added the three of
+    ``ela vault`` and the five of ``ela browser``."""
+    assert len(coded_commands()) == 39
 
 
 def test_the_commands_after_adr_0024_are_the_ones_the_later_adrs_add() -> None:
@@ -268,6 +279,14 @@ def test_the_commands_after_adr_0024_are_the_ones_the_later_adrs_add() -> None:
         "policy create",
         "policy list",
         "policy revoke",
+        "vault status",
+        "vault open",
+        "vault close",
+        "browser status",
+        "browser window show",
+        "browser window hide",
+        "browser open",
+        "browser close",
     }
 
 

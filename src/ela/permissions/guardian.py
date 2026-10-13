@@ -53,14 +53,25 @@ from ela.domain import (
     JsonValue,
     PermissionDecision,
     PermissionOutcome,
+    PlanAuthor,
+    PlanAuthorKind,
     RiskLevel,
+    SessionCover,
+    StepId,
     Task,
     TaskStep,
 )
 from ela.permissions.capabilities import validate_arguments
 from ela.permissions.errors import InvalidArgumentsError
 from ela.permissions.policies import UNCOVERED, UNUSABLE, shortfall
-from ela.permissions.rows import ASKING_RULES, RISK_POLICY, Rule, asks_at_every_use
+from ela.permissions.rows import (
+    ASKING_RULES,
+    RISK_POLICY,
+    Rule,
+    asks_at_every_use,
+    no_session_covers,
+    no_session_of,
+)
 from ela.permissions.scope import scope_covers, targets_of
 from ela.ports import AuditLog, CapabilityRegistryPort, Clock, IdGenerator, NotFoundError
 
@@ -76,8 +87,12 @@ __all__ = [
     "Rule",
 ]
 
-POLICY_VERSION: Final = "v0.2"
+POLICY_VERSION: Final = "v0.3"
 """Which policy produced a decision; recorded in every decision and every audit event.
+
+**``v0.3`` since M13.9** (ADR 0063; decision 29): the Guardian learnt a third way to allow a row
+that asks unless authorized — the cover of an open guided session, under a rule of its own —, and
+a Guardian that can allow what it could not is not the one of the version before.
 
 **It was ``v0.1`` until M13.1**, and it moves with the table it names. The ``HIGH`` row stopped
 being ``DENY`` and the scope stopped signing its denials with the row that allows: a decision
@@ -85,7 +100,7 @@ stamped ``v0.1`` that permits a HIGH would say the reader could look the table u
 find it, and they could not. A version that does not move when its table moves is the same kind of
 lie as a code named after the wrong boundary (M13.1 dec. B).
 
-Old rows in the audit keep saying ``v0.1``, and that is the point of stamping it.
+Old rows in the audit keep saying ``v0.1`` and ``v0.2``, and that is the point of stamping it.
 """
 
 DEFAULT_DECISION_TTL: Final = timedelta(minutes=5)
@@ -120,6 +135,7 @@ class _Verdict:
     targets: tuple[object, ...] = ()
     applied_authorization: Authorization | None = None
     error: str | None = None
+    session: StepId | None = None
 
 
 class PermissionGuardian:
@@ -155,18 +171,32 @@ class PermissionGuardian:
         step: TaskStep | None = None,
         authorization: Authorization | None = None,
         authorization_uses: int = 0,
+        author: PlanAuthor | None = None,
+        session: SessionCover | None = None,
     ) -> PermissionDecision:
         """Decide about one call; never raises for anything that happens inside the evaluation.
 
         The clock and the id generator are read *before* the evaluation: if they fail there is
         no decision at all, which is still "do not act". Everything after that — a registry that
         raises, malformed input, a bug — becomes ``DENIED`` with the exception's type as reason.
+
+        ``author`` is who wrote the plan of ``step``, and ``session`` the room's word about an
+        open guided session (M13.9, ADR 0063; decision 29): together they are what covers a
+        ``MEDIUM`` read that session's model wrote, with no grant. Nothing else reads them.
         """
         now = self._clock.now()
         decision_id = DecisionId(self._ids.new_uuid())
         try:
             verdict = self._evaluate(
-                capability, arguments, task, step, authorization, authorization_uses, now
+                capability,
+                arguments,
+                task,
+                step,
+                authorization,
+                authorization_uses,
+                now,
+                author,
+                session,
             )
         except Exception as error:  # the fail-safe of §33: doubt is DENIED, never an exception
             verdict = _Verdict(
@@ -183,6 +213,8 @@ class PermissionGuardian:
         }
         if verdict.error is not None:
             metadata["error"] = verdict.error
+        if verdict.session is not None:
+            metadata["session"] = str(verdict.session)
         return PermissionDecision(
             id=decision_id,
             created_at=now,
@@ -216,6 +248,8 @@ class PermissionGuardian:
         authorization: Authorization | None,
         authorization_uses: int,
         now: datetime,
+        author: PlanAuthor | None,
+        session: SessionCover | None,
     ) -> _Verdict:
         # 1. Catalogue: the specification must be the registered one (ADR 0011 §2).
         try:
@@ -312,6 +346,30 @@ class PermissionGuardian:
                     targets,
                 )
 
+        # 5a-bis. The cover of a session (M13.9, ADR 0063; decision 29). The same care as for a
+        #         grant: a cover that does not cover this call is denied, needed or not — and
+        #         every part of the fact is checked again here, whatever the catalogue let in.
+        #         One that covers allows under a rule of its own: no grant is born, none is used.
+        if session is not None:
+            uncovered = self._uncovered(session, registered, task, author, targets, authorization)
+            if uncovered is not None:
+                return _Verdict(
+                    PermissionOutcome.DENIED,
+                    Rule.SESSION_MISMATCH,
+                    f"the session of step {session.session} does not cover this call of "
+                    f"{capability.id}: {uncovered}",
+                    risk,
+                    targets,
+                )
+            return _Verdict(
+                PermissionOutcome.ALLOWED,
+                Rule.SESSION,
+                f"{capability.id} is covered by the session of step {session.session}",
+                risk,
+                targets,
+                session=session.session,
+            )
+
         # 5b. Is a grant needed? MEDIUM always; SAFE/LOW when the spec or the step requires it
         #     (decision E). If not, a covering grant that is not usable is simply not used.
         required = registered.requires_authorization or (
@@ -355,6 +413,56 @@ class PermissionGuardian:
             applied_authorization=authorization,
         )
 
+    def _uncovered(
+        self,
+        session: SessionCover,
+        spec: CapabilitySpec,
+        task: Task | None,
+        author: PlanAuthor | None,
+        targets: tuple[object, ...],
+        authorization: Authorization | None,
+    ) -> str | None:
+        """Why the cover of ``session`` does not cover this call of ``spec``, or ``None``.
+
+        The room says a session is open; whether **this** call is one of its reads is the
+        Guardian's to say, from its own catalogue: the plan was written by that session, and the
+        task is its child; the session's capability is asked for, and declares ``spec`` — with
+        today's schema — as what it covers; the row asks unless authorized, **which is the second
+        defence against a cover of a ``HIGH``**; and the targets are sites of the session.
+        """
+        if authorization is not None:
+            return "an authorization and a session were handed over for one call"
+        if (
+            author is None
+            or author.by is not PlanAuthorKind.SESSION
+            or author.session != session.session
+        ):
+            return f"its plan was not written by the session of step {session.session}"
+        if task is None or task.parent_id != session.task_id:
+            return f"its task is not a child of the session's task {session.task_id}"
+        try:
+            of_the_session = self._registry.get(session.capability_id)
+        except NotFoundError:
+            return f"{session.capability_id} is not in the catalogue"
+        if no_session_of(of_the_session):
+            return (
+                f"{of_the_session.id} is {of_the_session.risk.value}: only a session that was "
+                "asked for covers"
+            )
+        declared = of_the_session.covers
+        if declared is None:
+            return f"{of_the_session.id} declares no capability its sessions cover"
+        if declared.capability_id != spec.id:
+            return f"{of_the_session.id} covers {declared.capability_id}, not {spec.id}"
+        if declared.input_schema != spec.input_schema:
+            return f"{of_the_session.id} covers {spec.id}, and declares it for another schema"
+        row = no_session_covers(spec)
+        if row is not None:
+            return row
+        if not scope_covers(session.sites, targets):
+            return f"{_describe(targets)} is not among the sites of the session"
+        return None
+
     # ----------------------------------------------------------------------------------
     # The audited entry point: authorize
     # ----------------------------------------------------------------------------------
@@ -368,6 +476,8 @@ class PermissionGuardian:
         step: TaskStep | None = None,
         authorization: Authorization | None = None,
         authorization_uses: int = 0,
+        author: PlanAuthor | None = None,
+        session: SessionCover | None = None,
         device_id: DeviceId | None = None,
     ) -> PermissionDecision:
         """Decide and record the decision as ``PERMISSION_DECIDED`` (§32; ADR 0011 §8).
@@ -389,6 +499,8 @@ class PermissionGuardian:
             step=step,
             authorization=authorization,
             authorization_uses=authorization_uses,
+            author=author,
+            session=session,
         )
         targets = decision.metadata["targets"]
         payload: dict[str, JsonValue] = {
@@ -402,6 +514,9 @@ class PermissionGuardian:
         }
         if "error" in decision.metadata:
             payload["error"] = decision.metadata["error"]
+        if "session" in decision.metadata:
+            # Which session covered (M13.9, decision 29): the step of the session, an id.
+            payload["session"] = decision.metadata["session"]
         await self._audit.append(
             AuditEvent(
                 id=AuditEventId(self._ids.new_uuid()),

@@ -42,7 +42,7 @@ from ela.testing.fakes import (
     FakeTaskRepository,
     SessionScript,
 )
-from ela.tools.guided import BrowserGuidedTool
+from ela.tools.guided import EMPTY_SESSION, BrowserGuidedTool, SessionKind
 from tests.domain.examples import NOW, STEP_ID, TASK_ID
 from tests.routing.support import routing_for
 from tests.tools.support import allowed
@@ -120,6 +120,7 @@ def guided_world(
     reserved: Decimal | None = Decimal("0.05"),
     sleep: Callable[[float], Awaitable[None]] = no_wait,
     worst: WorstCase | None = None,
+    kind: SessionKind = EMPTY_SESSION,
 ) -> GuidedWorld:
     """The tool with a room whose results hold the ``STARTED`` record the cap would have written
     for the step — ``reserved`` dollars, one call of ``fake-model`` at a time —, unless
@@ -151,25 +152,29 @@ def guided_world(
         FakeIdGenerator(),
         gateway=GATEWAY,
         sleep=sleep,
+        kind=kind,
     )
     if reserved is not None:
-        record = started(reserved)
+        record = started(reserved, kind)
         # Written as the cap writes it, before the tool runs: the fake's store, synchronously.
         results._results[record.id] = record  # noqa: SLF001
-    return GuidedWorld(tool, room, agents, gateway, results, provider)
+    world = GuidedWorld(tool, room, agents, gateway, results, provider)
+    if kind is not EMPTY_SESSION:
+        world.decision = allowed(kind.capability)
+    return world
 
 
-def started(amount: Decimal) -> ExecutionResult:
+def started(amount: Decimal, kind: SessionKind = EMPTY_SESSION) -> ExecutionResult:
     """The ``STARTED`` record the cap writes for the step of the example decision: the
     reservation of the session."""
     return ExecutionResult(
         id=ExecutionId(STEP_ID),
         created_at=NOW,
-        capability_id=BROWSER_GUIDED,
+        capability_id=kind.capability,
         status=ExecutionStatus.STARTED,
         task_id=TASK_ID,
         step_id=STEP_ID,
-        tool_name="browser-guided",
+        tool_name=kind.tool_name,
         worst_case=WorstCase(
             amount=amount,
             currency="USD",

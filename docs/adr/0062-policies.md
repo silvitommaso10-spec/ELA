@@ -5,6 +5,7 @@
   giro; §15, decisione 26). Aperta il 2026-10-09 con l'implementazione di M13.12, dopo la SPEC decisa (le decisioni 1–15
   della sessione e 16–23 della review, in `docs/milestones/M13.12.md`), e riletta lo stesso giorno dalla review del
   riepilogo (decisioni 24–27).
+  **Riletta da ADR 0063 (M13.9)** il 2026-10-11: §1: il mondo chiuso dei termini si estende a `covers` — una policy nata prima smette di coprire il giorno in cui cambia lo schema della capability coperta (ADR 0063 §1).
 - **Data:** 2026-10-09
 - **Riferimenti spec:** §19, §27, §29, §30, §32, §33, §57, §59, §62
 - **Milestone:** M13.12

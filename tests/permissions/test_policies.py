@@ -398,7 +398,7 @@ def test_never_covered_names_the_rows_that_ask_at_every_use_and_the_terms() -> N
 
     assert said[0] == (
         "every call of a capability that asks at every use asks every time: browser.act, "
-        "fs.write, terminal.run"
+        "browser.act_as_you, browser.login, fs.write, terminal.run"
     )
     assert said[1] == "a call above a limit, or outside the scope, asks"
     assert said[2] == "a call with task_type asks"

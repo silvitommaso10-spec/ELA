@@ -6,6 +6,7 @@ the fakes offer on top — a clock that advances, predictable ids, a Guardian ta
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta, timezone
 from uuid import UUID
 
@@ -25,17 +26,20 @@ from ela.ports import (
     ROUTING_UNKNOWN_TASK_TYPE,
     VERIFICATION_NOT_SUCCEEDED,
     AlreadyExistsError,
+    BrowserStopped,
     NotAllowedError,
     RoutingError,
 )
 from ela.testing.fakes import (
     DEFAULT_START,
     FAKE_CONDITION,
+    FakeBrowser,
     FakeCapabilityRegistry,
     FakeClock,
     FakeIdGenerator,
     FakeModelProvider,
     FakeModelRouter,
+    FakePage,
     FakePermissionGuardian,
     FakeStop,
     FakeTool,
@@ -335,3 +339,73 @@ def test_a_router_that_cannot_route_raises_what_it_was_given() -> None:
 
     assert raised.value is refused
     assert router.calls == (("dancing", None),)
+
+
+# ----------------------------------------------------------------------------------------
+# FakeBrowser
+# ----------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("member", ["count", "text"])
+async def test_the_browser_holds_a_member_until_the_test_lets_it_go(member: str) -> None:
+    """M13.4b: the precondition of a cancellation that arrives after the opening, built and not
+    waited for. Not armed, the member answers at once, as it always did."""
+    browser = FakeBrowser(FakePage(texts={None: "il testo"}))
+    opened = await browser.open("https://example.com/", lambda url: True, FakeStop())
+    asked = {
+        "count": lambda: browser.count(opened.page, "h1"),
+        "text": lambda: browser.text(opened.page, None),
+    }[member]
+    plain = await asked()
+
+    reached, released = browser.hold(member)
+    asking = asyncio.create_task(asked())
+    await reached.wait()
+    assert not asking.done()
+
+    released.set()
+    assert await asking == plain
+
+
+def test_the_browser_holds_only_the_members_it_says() -> None:
+    with pytest.raises(ValueError, match="click is not a member this fake holds"):
+        FakeBrowser().hold("click")
+
+
+async def test_after_its_stop_the_browser_says_stopped_for_every_use_of_a_page() -> None:
+    """What the port promises of ELA's stop (M13.4c) and the real browser does: every use of a
+    page raises ``BrowserStopped`` — not «the page is gone», which is what a closed page says
+    while ELA is running."""
+    browser = FakeBrowser()
+    opened = await browser.open("https://example.com/", lambda url: True, FakeStop())
+
+    browser.stop()
+
+    for use in (
+        lambda: browser.count(opened.page, "h1"),
+        lambda: browser.field(opened.page, "h1"),
+        lambda: browser.fill(opened.page, "h1", "x"),
+        lambda: browser.click(opened.page, "h1"),
+        lambda: browser.text(opened.page, None),
+        lambda: browser.title(opened.page),
+        lambda: browser.left(opened.page),
+    ):
+        with pytest.raises(BrowserStopped):
+            await use()
+    with pytest.raises(BrowserStopped):
+        await browser.open("https://example.com/", lambda url: True, FakeStop())
+    await browser.close(opened.page)
+
+
+async def test_the_browser_is_settled_with_what_the_test_says_it_had_to_kill() -> None:
+    """M13.4e: what ELA's close asks of any browser. The fake starts nothing, so it has nothing to
+    wait for; it keeps the grace it was given and answers what the test decided."""
+    browser = FakeBrowser()
+
+    async def grace() -> None:
+        raise AssertionError("a browser with nothing running waits for no grace")
+
+    assert await browser.settle(grace) == ()
+    browser.killed = ("node",)
+    assert await browser.settle(grace) == ("node",)
+    assert browser.settled == [grace, grace]

@@ -159,6 +159,8 @@ QUESTION_FIELDS: Final[frozenset[str]] = frozenset(
         "address",
         "gestures",
         "expect",
+        "entry",
+        "username",
         "worst_case",
         "left",
         "phrase",
@@ -263,6 +265,8 @@ def _rows(one: Mapping[str, Any]) -> list[tuple[str, Any]]:
         ("address", _seen(one.get("address"))),
         ("gestures", None if gestures is None else listed(gestures)),
         ("expects", _seen(one.get("expect"))),
+        ("entry", _seen(one.get("entry"))),
+        ("username", _seen(one.get("username"))),
         ("does", one.get("does") or None),
         ("disk", one.get("unseen") or None),
         ("asks", _seen(one["prompt"])),
@@ -272,7 +276,13 @@ def _rows(one: Mapping[str, Any]) -> list[tuple[str, Any]]:
         for name, value in rows
         if value is not None
         or name
-        not in COMMAND_ROWS | NODE_ROWS | PAGE_ROWS | SPENDING_ROWS | SESSION_ROWS | POLICY_ROWS
+        not in COMMAND_ROWS
+        | NODE_ROWS
+        | PAGE_ROWS
+        | LOGIN_ROWS
+        | SPENDING_ROWS
+        | SESSION_ROWS
+        | POLICY_ROWS
     ]
 
 
@@ -290,6 +300,11 @@ not dashed, for every other — the question about this machine is the one it al
 PAGE_ROWS: Final[frozenset[str]] = frozenset({"address", "gestures", "expects"})
 """The rows only a question about a page has (M13.4, ADR 0052): absent, not dashed, for every other
 — the form of :data:`COMMAND_ROWS`."""
+
+LOGIN_ROWS: Final[frozenset[str]] = frozenset({"entry", "username"})
+"""The rows only a question about a login has (M13.9, ADR 0063 §9): the entry of the vault the yes
+covers, by its name, and its username masked — absent, not dashed, for every other, and the
+second absent for an entry that has no username."""
 
 SPENDING_ROWS: Final[frozenset[str]] = frozenset({"worst case", "left this month"})
 """The rows only a question about a call that spends has (M14.1, ADR 0057): its worst case and what

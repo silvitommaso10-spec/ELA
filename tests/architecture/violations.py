@@ -2036,6 +2036,171 @@ VIOLATIONS: tuple[Case, ...] = (
         "from ela.ports import AuthorizationStore\n",
         "AuthorizationStore",
     ),
+    # --- the-gate-looks-and-does-not-redo (rule 70, M13.4f) ---
+    Case(
+        # The gate of before: a route of Playwright's on the context, called for every request.
+        "the-gate-is-a-route",
+        "the-gate-looks-and-does-not-redo",
+        "infrastructure/machine/browser.py",
+        "async def gated(context, gate):\n    await context.route('**/*', gate)\n",
+        ".route(",
+    ),
+    Case(
+        # The document of the main frame asked by the driver, in the browser's place.
+        "the-gate-fetches-the-document-itself",
+        "the-gate-looks-and-does-not-redo",
+        "infrastructure/machine/browser.py",
+        "async def gate(handed):\n    return await handed.fetch(max_redirects=0)\n",
+        ".fetch(",
+    ),
+    Case(
+        # And handed to the page as if the site had answered it.
+        "the-gate-hands-the-page-what-it-fetched",
+        "the-gate-looks-and-does-not-redo",
+        "infrastructure/machine/browser.py",
+        "async def gate(handed, response):\n    await handed.fulfill(response=response)\n",
+        ".fulfill(",
+    ),
+    Case(
+        # The alert turned off: what it had paused leaves (measured).
+        "the-alert-of-the-gate-is-turned-off",
+        "the-gate-looks-and-does-not-redo",
+        "infrastructure/machine/browser.py",
+        "async def quiet(session):\n    await session.send('Fetch.disable')\n",
+        "Fetch.disable",
+    ),
+    Case(
+        # The session detached: with a request paused the call does not return (measured).
+        "the-session-of-the-gate-is-detached",
+        "the-gate-looks-and-does-not-redo",
+        "infrastructure/machine/account.py",
+        "async def let_go(session):\n    await session.detach()\n",
+        ".detach(",
+    ),
+    Case(
+        # The same route, said in the browser's own protocol: an answer given in the site's place.
+        "the-gate-answers-in-the-site-s-place",
+        "the-gate-looks-and-does-not-redo",
+        "infrastructure/machine/browser.py",
+        "async def gate(session, event):\n"
+        "    answer = {'requestId': event['requestId'], 'responseCode': 200}\n"
+        "    await session.send('Fetch.fulfillRequest', answer)\n",
+        "Fetch.fulfillRequest",
+    ),
+    Case(
+        # An answer changed on its way to the page: what the page gets is not what the site sent.
+        "the-gate-changes-the-answer-of-the-site",
+        "the-gate-looks-and-does-not-redo",
+        "infrastructure/machine/browser.py",
+        "async def gate(session, event):\n"
+        "    answer = {'requestId': event['requestId'], 'responseCode': 200}\n"
+        "    await session.send('Fetch.continueResponse', answer)\n",
+        "Fetch.continueResponse",
+    ),
+    Case(
+        # The session detached by its target: the same detaching, by another name.
+        "the-session-of-the-gate-is-detached-by-its-target",
+        "the-gate-looks-and-does-not-redo",
+        "infrastructure/machine/account.py",
+        "async def let_go(session, held):\n"
+        "    await session.send('Target.detachFromTarget', {'sessionId': held})\n",
+        "Target.detachFromTarget",
+    ),
+    # --- the-profile-s-folder-is-its-adapter-s (rule 69, M13.9) ---
+    Case(
+        # A route reading where the profile is, to answer with it — or to open it.
+        "a-route-reads-the-profile-s-folder",
+        "the-profile-s-folder-is-its-adapter-s",
+        "api/browser.py",
+        "def where(ela):\n    return str(ela.settings.accounts.browser_profile_dir)\n",
+        "browser_profile_dir",
+    ),
+    Case(
+        # A tool that is handed the folder: one statement from listing what is in it.
+        "a-tool-receives-the-profile-s-folder",
+        "the-profile-s-folder-is-its-adapter-s",
+        "tools/account.py",
+        "class Reads:\n    def __init__(self, browser_profile_dir):\n        self._at = 1\n",
+        "browser_profile_dir",
+    ),
+    Case(
+        # Read by a string, which no attribute shows.
+        "the-profile-s-folder-read-by-its-name",
+        "the-profile-s-folder-is-its-adapter-s",
+        "executive/executor.py",
+        "def where(settings):\n    return getattr(settings.accounts, 'browser_profile_dir')\n",
+        "browser_profile_dir",
+    ),
+    Case(
+        # A bare name — a module's own, or one it imported: no attribute, no parameter and no
+        # string says it.
+        "the-profile-s-folder-kept-under-its-name",
+        "the-profile-s-folder-is-its-adapter-s",
+        "tools/account.py",
+        "def where():\n    return browser_profile_dir\n",
+        "browser_profile_dir",
+    ),
+    Case(
+        # Handed on by keyword, to something that would open it.
+        "the-profile-s-folder-handed-on-by-keyword",
+        "the-profile-s-folder-is-its-adapter-s",
+        "api/browser.py",
+        "def handed(opener, folder):\n    return opener(browser_profile_dir=folder)\n",
+        "browser_profile_dir",
+    ),
+    # --- a-secret-is-opened-only-by-an-adapter (rule 68, M13.9) ---
+    Case(
+        # An adapter that is not of the machine: the one that writes the audit, opening what it
+        # was handed to write it down. The exemption is the machine's adapters', not every
+        # adapter's.
+        "an-adapter-that-is-not-of-the-machine-opens-a-secret",
+        "a-secret-is-opened-only-by-an-adapter",
+        "infrastructure/persistence/audit.py",
+        "def written(event, key):\n    return {'key': key.reveal()}\n",
+        ".reveal(",
+    ),
+    Case(
+        # A tool opening the password it was handed: one statement from an outcome or a log.
+        "a-tool-opens-a-secret",
+        "a-secret-is-opened-only-by-an-adapter",
+        "tools/account.py",
+        "def typed(taken):\n    return {'password': taken.password.reveal()}\n",
+        ".reveal(",
+    ),
+    Case(
+        # A route opening the key it was sent, to answer with it.
+        "a-route-opens-a-secret",
+        "a-secret-is-opened-only-by-an-adapter",
+        "api/vault.py",
+        "def answered(key):\n    return key.reveal()\n",
+        ".reveal(",
+    ),
+    # --- the-room-s-word-is-the-room-s (rule 67, M13.9) ---
+    Case(
+        # A tool attesting its own session: the cover of a read on the tool's own say-so.
+        "a-tool-attests-its-own-session",
+        "the-room-s-word-is-the-room-s",
+        "tools/guided.py",
+        "from ela.domain import SessionCover\n"
+        "def attest(step, task, capability, sites):\n"
+        "    return SessionCover(\n"
+        "        session=step, task_id=task, capability_id=capability, sites=sites\n"
+        "    )\n",
+        "SessionCover(...)",
+    ),
+    Case(
+        # The executor asks the room; it does not write the answer — by attribute here.
+        "the-executor-writes-the-room-s-answer",
+        "the-room-s-word-is-the-room-s",
+        "executive/executor.py",
+        "from ela import domain\n"
+        "def covered(plan, task):\n"
+        "    return domain.SessionCover(\n"
+        "        session=plan.author.session, task_id=task.parent_id,\n"
+        "        capability_id='browser.guided_as_you', sites=(),\n"
+        "    )\n",
+        "SessionCover(...)",
+    ),
 )
 ALLOWED: tuple[Case, ...] = (
     Case(
@@ -2955,6 +3120,71 @@ ALLOWED: tuple[Case, ...] = (
         "api/nodes.py",
         "async def revoke(ela, device_id, actor):\n"
         "    return await ela.devices.revoke(device_id, by=actor)\n",
+        "",
+    ),
+    Case(
+        # Rule 67: the room is where the word about an open session is built.
+        "the-room-attests-an-open-session",
+        "the-room-s-word-is-the-room-s",
+        "executive/sessions.py",
+        "from ela.domain import SessionCover\n"
+        "def attest(session, live):\n"
+        "    return SessionCover(\n"
+        "        session=session, task_id=live.task_id,\n"
+        "        capability_id=live.capability, sites=live.sites,\n"
+        "    )\n",
+        "",
+    ),
+    Case(
+        # Rule 69: the composition root hands the folder to the adapter, under another name.
+        "the-root-hands-the-folder-to-the-adapter",
+        "the-profile-s-folder-is-its-adapter-s",
+        "composition/root.py",
+        "def handed(settings, adapter):\n"
+        "    return adapter(profile=settings.accounts.browser_profile_dir)\n",
+        "",
+    ),
+    Case(
+        # Rule 69: the adapter holds a folder it was given, and names no setting.
+        "the-adapter-holds-the-folder-it-was-given",
+        "the-profile-s-folder-is-its-adapter-s",
+        "infrastructure/machine/account.py",
+        "class Chrome:\n    def __init__(self, profile):\n        self._profile = profile\n",
+        "",
+    ),
+    Case(
+        # Rule 68: the adapter that types a password into a page opens the secret that carries it.
+        "the-browser-s-adapter-opens-a-secret",
+        "a-secret-is-opened-only-by-an-adapter",
+        "infrastructure/machine/account.py",
+        "async def fill_secret(page, selector, value):\n"
+        "    await page.fill(selector, value.reveal())\n",
+        "",
+    ),
+    Case(
+        # Rule 70: the gate asks to be told of the requests, and answers each: it sends none.
+        "the-gate-is-told-and-answers",
+        "the-gate-looks-and-does-not-redo",
+        "infrastructure/machine/browser.py",
+        "async def judged(session, event):\n"
+        "    await session.send('Fetch.enable', {'patterns': []})\n"
+        "    await session.send('Fetch.failRequest', {'requestId': event['requestId']})\n",
+        "",
+    ),
+    Case(
+        # Rule 70: ``route`` is a model's router too — outside the adapter it is not the gate's.
+        "a-tool-asks-the-router-of-the-models",
+        "the-gate-looks-and-does-not-redo",
+        "tools/model.py",
+        "async def routed(router, request):\n    return await router.route(request)\n",
+        "",
+    ),
+    Case(
+        # Rule 68: a fake stands in for an adapter, and does what it does.
+        "a-fake-opens-a-secret",
+        "a-secret-is-opened-only-by-an-adapter",
+        "testing/fakes.py",
+        "def filled(value):\n    return value.reveal()\n",
         "",
     ),
 )

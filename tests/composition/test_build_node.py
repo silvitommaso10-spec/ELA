@@ -34,6 +34,8 @@ from ela.composition.settings import _ela_source_tree
 from ela.domain import OperatingSystem
 from ela.infrastructure.machine import (
     AFPLAY,
+    AccountChrome,
+    BitwardenVault,
     PlaywrightBrowser,
     SapiSpeechCommand,
     SaySpeechCommand,
@@ -99,6 +101,20 @@ def test_it_builds_neither_the_browser_s_tools_nor_its_browser(tmp_path: Path) -
         isinstance(getattr(built, name), PlaywrightBrowser)
         for name in NodeWorld.__dataclass_fields__
     )
+
+
+def test_it_builds_neither_the_browser_with_the_profile_nor_the_vault(tmp_path: Path) -> None:
+    """M13.9, criterion 18: the profile and the vault's key are the Core's, and a node is not
+    asked for them — it has no field for either, and its settings read neither line."""
+    built = build_node(config(tmp_path), speech=FakeSpeech())
+
+    assert issubclass(AccountChrome, PlaywrightBrowser), "the test above covers it by its class"
+    assert not any(
+        isinstance(getattr(built, name), (AccountChrome, BitwardenVault))
+        for name in NodeWorld.__dataclass_fields__
+    )
+    names = {tool.name for tool in built.tools.tools()}
+    assert not any("account" in name or "vault" in name or "login" in name for name in names)
 
 
 def test_it_builds_nothing_that_decides(tmp_path: Path) -> None:

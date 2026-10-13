@@ -182,13 +182,22 @@ CONSOLE_ROUTES: Final = frozenset(
         ("POST", "/console/policies/preview"),
         ("POST", "/console/policies"),
         ("POST", "/console/policies/revoke"),
+        ("GET", "/console/browser"),
+        ("POST", "/console/browser/window"),
+        ("POST", "/console/browser/open"),
+        ("POST", "/console/browser/close"),
+        ("POST", "/console/browser/lock"),
     }
 )
 """What the console's cookie may call: literal pairs, for the reason of :data:`COMPANION_ROUTES`.
 
-The last four are the view of the policies of §59 (M13.12, ADR 0062): the list with the form, the
-preview, the creation and the revocation — the fifth view, by the rule that every milestone adding
-a capacity adds its view (STATO 5.10)."""
+The four of ``/console/policies`` are the view of the policies of §59 (M13.12, ADR 0062): the
+list with the form, the preview, the creation and the revocation — the fifth view, by the rule
+that every milestone adding a capacity adds its view (STATO 5.10). Those of
+``/console/browser`` are the sixth (M13.9, ADR 0063 §10): ELA's browser with the user's accounts
+and the vault — what they are, the window turned on and off, the window where the user signs in
+by hand, that browser ended, and the vault closed. Never opened: a key is not pasted into a
+page."""
 CONSOLE_CODE_ROUTES: Final = frozenset({("POST", "/console/enroll")})
 """The one route a console's code opens, and the one route where a **form** carries it."""
 CONSOLE_COOKIE: Final = "ela_console"

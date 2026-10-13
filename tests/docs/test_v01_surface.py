@@ -29,6 +29,7 @@ V01_ROUTERS = ("approvals", "audit", "devices", "results", "system", "tasks")
 ADR 0025 §4) — named, and found in the package rather than imported by hand."""
 
 LATER_ROUTERS = (
+    "browser",
     "companion",
     "console",
     "context",
@@ -37,6 +38,7 @@ LATER_ROUTERS = (
     "policies",
     "sessions",
     "spend",
+    "vault",
     "voice",
 )
 """The router modules the phases after v0.1 added, kept beside the six rather than folded into
@@ -118,6 +120,11 @@ def test_the_registry_holds_one_tool_and_one_verifier_per_capability(tmp_path: P
 
 
 LATER_COMMANDS = (
+    "browser close",
+    "browser open",
+    "browser status",
+    "browser window hide",
+    "browser window show",
     "node enroll",
     "node revoke",
     "node run",
@@ -126,6 +133,9 @@ LATER_COMMANDS = (
     "policy revoke",
     "spend",
     "task finished",
+    "vault close",
+    "vault open",
+    "vault status",
     "voice",
     "voice audition",
     "voice preview",

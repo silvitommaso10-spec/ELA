@@ -29,6 +29,8 @@ from ela.executive import StopOfTask
 from ela.executive.sessions import SessionRoom
 from ela.executive.spending import SpendingGate
 from ela.infrastructure.machine import (
+    AccountChrome,
+    BitwardenVault,
     ClaudeAgentSession,
     DarwinListening,
     DarwinProbe,
@@ -58,6 +60,7 @@ from ela.infrastructure.persistence.orm import Base
 from ela.node.runner import NEVER_STOPPED
 from ela.permissions import CapabilityRegistry, PermissionGuardian
 from ela.ports import (
+    AccountBrowser,
     AgentSession,
     ApprovalStore,
     AssignmentStore,
@@ -89,6 +92,7 @@ from ela.ports import (
     TextRecognitionPort,
     ToolPort,
     ToolRegistryPort,
+    Vault,
     VerifierPort,
     VerifierRegistryPort,
 )
@@ -103,6 +107,7 @@ from ela.providers.ntfy import BELL_TIMEOUT_SECONDS, DEFAULT_NTFY_URL, NtfyBell
 from ela.routing import ModelRouter
 from ela.tasks.engine import TaskEngine
 from ela.testing.fakes import (
+    FakeAccountBrowser,
     FakeAgentSession,
     FakeApprovalStore,
     FakeAssignmentStore,
@@ -133,6 +138,7 @@ from ela.testing.fakes import (
     FakeTextRecognition,
     FakeTool,
     FakeToolRegistry,
+    FakeVault,
     FakeVerifier,
     FakeVerifierRegistry,
 )
@@ -516,6 +522,25 @@ def _screen_capture() -> ScreenCaptureCommand:
     return ScreenCaptureCommand(timeout=timedelta(seconds=1), runner=_no_helper)
 
 
+def _vault() -> BitwardenVault:
+    """The vault of the Core, built as the composition builds it: nothing is launched until
+    something is asked of it (M13.9)."""
+    return BitwardenVault("/nowhere/bw", environment={})
+
+
+def _account_browser() -> AccountChrome:
+    """The browser with the profile, built as the composition builds it — on no folder: nothing
+    starts until a page is asked for, and without a folder nothing ever does (M13.9)."""
+    return AccountChrome(
+        asyncio.Event(),
+        environment={},
+        kept=_never,
+        system=platform.system(),
+        profile=None,
+        shown=lambda: False,
+    )
+
+
 def _browser() -> PlaywrightBrowser:
     """The browser of the Core, built as the composition builds it: nothing starts until a page
     is asked for (M13.4)."""
@@ -687,6 +712,14 @@ IMPLEMENTATIONS: dict[type, tuple[Implementation, ...]] = {
     Browser: (
         Implementation("FakeBrowser", FakeBrowser),
         Implementation("PlaywrightBrowser", _browser),
+    ),
+    AccountBrowser: (
+        Implementation("FakeAccountBrowser", FakeAccountBrowser),
+        Implementation("AccountChrome", _account_browser),
+    ),
+    Vault: (
+        Implementation("FakeVault", FakeVault),
+        Implementation("BitwardenVault", _vault),
     ),
     CommandLauncher: (
         Implementation("FakeLauncher", FakeLauncher),

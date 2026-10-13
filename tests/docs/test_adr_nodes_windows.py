@@ -183,9 +183,12 @@ def test_rule_40_reads_the_windows_module_and_the_three_methods() -> None:
 
 WIRE_ROW = re.compile(r"^\| `([a-z_.]+)` \| `([A-Z_]+)` \| [^|]+ \|$")
 """A row of a table of codes a later ADR adds to the vocabulary: the code, the member, when."""
-LATER_WIRE_ADRS = (ROOT / "docs" / "adr" / "0062-policies.md",)
-"""The ADRs after this one that add codes to ``WireCode`` (M13.12): an ADR is immutable, so the
-seventeen stay counted here, and a code added later lives in the ADR that added it."""
+LATER_WIRE_ADRS = (
+    ROOT / "docs" / "adr" / "0062-policies.md",
+    ROOT / "docs" / "adr" / "0063-browser-with-your-accounts.md",
+)
+"""The ADRs after this one that add codes to ``WireCode`` (M13.12, M13.9): an ADR is immutable, so
+the seventeen stay counted here, and a code added later lives in the ADR that added it."""
 
 
 def wire_codes_of(text: str) -> dict[str, str]:
@@ -304,6 +307,7 @@ def test_the_conseguenze_count_what_the_tree_has_today() -> None:
                 ADR_PATH.with_name("0052-browser.md"),
                 ADR_PATH.with_name("0054-stopped-midway.md"),
                 ADR_PATH.with_name("0060-guided-browser.md"),
+                ADR_PATH.with_name("0063-browser-with-your-accounts.md"),
             )
         )
         == 25

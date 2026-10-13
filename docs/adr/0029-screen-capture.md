@@ -7,6 +7,7 @@
   §14, «un timeout suo, e il numero si misura»: per un terminale rivista da ADR 0047 §7 — il lavoro
   di un comando non ha una mediana, e il numero misurato è il tempo che ELA impiega a svuotarne il
   gruppo.
+  **Riletta da ADR 0063 (M13.9)** il 2026-10-11: ciò che deve essere vero prima di una cattura ha una cosa in più, chiesta anche prima della domanda: che nessuno stia entrando a mano in un sito nella finestra di ELA (ADR 0063 §7).
 - **Contesto:** M10.2, la prima milestone in cui ELA produce contenuto dell'utente.
 - **Riferimenti spec:** §10, §11, §20, §23, §28, §29, §30, §33, §57, §58, §63
 - **Estende:** ADR 0002 (una regola nuova, la 35), ADR 0005 (un port nuovo), ADR 0010 (una

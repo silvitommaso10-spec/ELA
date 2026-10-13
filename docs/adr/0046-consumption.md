@@ -1,6 +1,7 @@
 # 0046. Il grant di un sì si consuma: la regola del consumo derivata dalla domanda, un sì che non copre due effetti, e le righe che il merge di M13.1 ha reso false
 
 - **Stato:** Accettata
+  **Riletta da ADR 0063 (M13.9)** il 2026-10-11: §3, «un sì copre al massimo un effetto»: il sì a una sessione con il profilo copre le letture che il suo modello scrive, fino ai `looks` della sessione; e le tabelle «Regola | Consuma» ricevono la riga della copertura di sessione, che non spende niente (ADR 0063 §1).
 - **Data:** 2026-09-21
 - **Riferimenti spec:** §27, §29, §32, §33, §57, §59, §62
 - **Milestone:** M13.1b

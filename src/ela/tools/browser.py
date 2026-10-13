@@ -21,7 +21,10 @@ the truth of this module's sentence — «the site sees a visitor, not your acco
 §30 until M14.1. Both recognitions are partial: a password in an ordinary text field passes.
 
 **A page read is kept for the verifier**, under an opaque identifier in the result: the tool's word
-about *which* page, never about what it shows (form I). Every other ending closes the browser.
+about *which* page, never about what it shows (form I). Every other ending closes the browser —
+**every one** (M13.4b): a result that did not succeed, the task stopped before its point, a
+cancellation, an error this module does not name. Once ``open`` has returned, the page leaves
+:meth:`_BrowserTool._run` handed over or closed.
 """
 
 from __future__ import annotations
@@ -29,8 +32,8 @@ from __future__ import annotations
 import asyncio
 import re
 from abc import abstractmethod
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, replace
 from typing import ClassVar, Final
 from urllib.parse import urlsplit
 
@@ -55,19 +58,21 @@ from ela.ports import (
     BrowserUnsupported,
     Clock,
     IdGenerator,
+    LeftSite,
     Opened,
     PageGone,
     Prospect,
     SiteUnreachable,
     StopPoint,
     TaskStop,
-    ToolStopped,
     Visit,
 )
 from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool
 
 __all__ = [
     "ACTS",
+    "ANOTHER_PAGE",
+    "ASKED_FOR_NOTHING",
     "BROWSER_ACT_TOOL_NAME",
     "BROWSER_CODES",
     "BROWSER_READ_TOOL_NAME",
@@ -96,6 +101,7 @@ __all__ = [
     "cut",
     "https_origin",
     "origin_of",
+    "place_of",
 ]
 
 BROWSER_READ_TOOL_NAME: Final = "browser-read"
@@ -129,7 +135,10 @@ HTTP_STATUS: Final = "browser.http_status"
 """The page answered with a status of 400 or more: an error page is not the information asked, and
 not the form to fill."""
 LEFT_SITE: Final = "browser.left_site"
-"""A navigation of the main frame went outside the boundary, and was not sent (form F)."""
+"""A navigation of the main frame went outside the boundary, and was not sent (form F) — or
+**the page is outside it**, and ELA read nothing of it and did nothing on it (M13.4f, ADR 0064
+§4). Two sentences, never one for both: in the first nothing left; in the second the page is
+somewhere ELA does not work."""
 ELEMENT_MISSING: Final = "browser.element_missing"
 """A selector finds no element on the page."""
 ELEMENT_AMBIGUOUS: Final = "browser.element_ambiguous"
@@ -158,6 +167,14 @@ BROWSER_CODES: Final[frozenset[str]] = frozenset(
         FAILED,
     }
 )
+
+ANOTHER_PAGE: Final = "another_page"
+"""The key of a result that says its page opened another page, which was stopped (M13.4f,
+ADR 0064 §5): the origin of what that page first asked for — never the rest of the address —,
+or :data:`ASKED_FOR_NOTHING`. Absent when the page opened none. A step does not fail for it: a
+site that opens a window by itself would fail a read that worked."""
+ASKED_FOR_NOTHING: Final = "a page that had asked for nothing"
+"""What :data:`ANOTHER_PAGE` says of a page that was opened and had made no request by then."""
 
 SITE: Final = "site"
 """What the target of the two capabilities is called, in the tools' own word (M13.2 dec. 12)."""
@@ -212,6 +229,43 @@ def origin_of(url: str) -> str:
         port = None
     host = parts.hostname or ""
     return f"{parts.scheme.lower()}://{host}" + ("" if port is None else f":{port}")
+
+
+UNREADABLE: Final = "an address that cannot be read"
+"""What :func:`place_of` says of a text no address can be read from."""
+
+
+def place_of(address: str) -> str:
+    """``host[:port]/path`` of ``address``: where a page is, as a result may say it (M13.9,
+    decision 106).
+
+    **Never the query or the fragment**, where a site writes what it was asked with; never a
+    user or a password written before the host; never what a site writes after a semicolon in
+    a step of the path, which is where some keep the id of a session. A page that is not a
+    site's is told by its scheme — and by its host when it has one, as the browser's own pages
+    do —, and **never by what follows**: for a page that is its own address, that is the page.
+
+    For a result, which is the user's own content coming back to the user: a path is in no
+    sentence of an error, because that goes to the audit (ADR 0052 §12)."""
+    try:
+        parts = urlsplit(address)
+    except ValueError:
+        return UNREADABLE
+    scheme, host = parts.scheme.lower(), parts.hostname or ""
+    path = "/".join(step.partition(";")[0] for step in parts.path.split("/")) or "/"
+    if scheme not in {"http", "https"}:
+        if host:
+            return f"{scheme}://{host}{path}"
+        return f"{scheme}:{parts.path}" if scheme == "about" else f"{scheme}:"
+    if not host:
+        return UNREADABLE
+    try:
+        port = parts.port
+    except ValueError:  # a port that is not a number: the place is what can be said of it
+        port = None
+    if ":" in host:
+        host = f"[{host}]"
+    return host + ("" if port is None else f":{port}") + path
 
 
 def https_origin(site: str) -> str:
@@ -375,46 +429,52 @@ class _BrowserTool(Tool):
         site = looked.visit.site
         done = [0]
         opened: Opened | None = None
+        handed_over = False
         try:
-            async with asyncio.timeout(self._browsing.timeout_seconds):
-                opened = await self._browser.open(looked.visit.address, looked.allowed, stop)
-                outcome = await self._on_the_page(looked, opened, done, stop)
-        except ToolStopped:
-            # Stopped before the point (M6.3c): what was opened is closed, and the call leaves
-            # without acting — the executor records it.
+            try:
+                async with asyncio.timeout(self._browsing.timeout_seconds):
+                    opened = await self._opened(looked, stop)
+                    outcome = await self._on_the_page(looked, opened, done, stop)
+            except TimeoutError:
+                outcome = Outcome(self._partial(done), TIMEOUT, self._still_at_work(site, done))
+            except BrowserNotInstalled:
+                outcome = Outcome({}, NOT_INSTALLED, NOT_INSTALLED_MESSAGE)
+            except SiteUnreachable as away:
+                outcome = Outcome({}, UNREACHABLE, f"the page of {site} did not answer: {away}")
+            except BrowserStopped:
+                outcome = Outcome(
+                    self._partial(done),
+                    STOPPED,
+                    f"ELA stopped while the page of {site} was open{self._after(done)}",
+                )
+            except LeftSite as elsewhere:
+                # The one predicate, asked by whoever holds the page at every use of it
+                # (ADR 0064 §4): nothing of that page is in this result, whatever had been read.
+                outcome = self._elsewhere(site, elsewhere.address, done, opened)
+            except (BrowserFailed, PageGone) as failed:
+                outcome = Outcome(
+                    self._partial(done),
+                    FAILED,
+                    f"the browser failed on the page of {site}: {type(failed).__name__}"
+                    f"{': ' + str(failed) if str(failed) else ''}{self._after(done)}",
+                )
             if opened is not None:
-                await self._browser.close(opened.page)
-            raise
-        except TimeoutError:
-            outcome = Outcome(
-                self._partial(done),
-                TIMEOUT,
-                f"the page of {site} was still at work after {self._browsing.timeout_seconds} s: "
-                f"ELA closed the browser{self._after(done)}",
-            )
-        except BrowserNotInstalled:
-            outcome = Outcome({}, NOT_INSTALLED, NOT_INSTALLED_MESSAGE)
-        except SiteUnreachable as away:
-            outcome = Outcome({}, UNREACHABLE, f"the page of {site} did not answer: {away}")
-        except BrowserStopped:
-            outcome = Outcome(
-                self._partial(done),
-                STOPPED,
-                f"ELA stopped while the page of {site} was open{self._after(done)}",
-            )
-        except (BrowserFailed, PageGone) as failed:
-            outcome = Outcome(
-                self._partial(done),
-                FAILED,
-                f"the browser failed on the page of {site}: {type(failed).__name__}"
-                f"{': ' + str(failed) if str(failed) else ''}{self._after(done)}",
-            )
-        if opened is not None:
-            if outcome.succeeded:
+                outcome = await self._with_another_page(opened, outcome)
+            if opened is not None and outcome.succeeded:
                 await self._browser.keep(opened.page)
-            else:
+                handed_over = True
+            return outcome
+        finally:
+            # Every way out (M13.4b): the page is handed over, or it is closed — once. A result
+            # that did not succeed; the task stopped before its point (M6.3c), which leaves with
+            # ``ToolStopped``; a cancellation, which leaves as the cancellation it is — turned into
+            # a result it would not cancel —; an error this method does not name.
+            if opened is not None and not handed_over:
                 await self._browser.close(opened.page)
-        return outcome
+
+    async def _opened(self, call: _Call, stop: TaskStop) -> Opened:
+        """The page of the call, opened: as the browser opens any page."""
+        return await self._browser.open(call.visit.address, call.allowed, stop)
 
     async def _on_the_page(
         self, call: _Call, opened: Opened, done: list[int], stop: TaskStop
@@ -448,11 +508,57 @@ class _BrowserTool(Tool):
             {}, ELEMENT_AMBIGUOUS, f"{which} names {found} elements on the page of {site}"
         )
 
+    def _inside(self) -> str:
+        """What the boundary of this tool is, in the words of its refusals."""
+        return "a declared site" if not self.acts else "the site the question named"
+
     def _left(self, site: str, left: str) -> str:
-        where = "a declared site" if not self.acts else "the site the question named"
         return (
-            f"the page of {site} went to {left}, which is not {where}: the browser did not follow, "
-            "and nothing was sent there"
+            f"the page of {site} went to {left}, which is not {self._inside()}: the browser did "
+            "not follow, and nothing was sent there"
+        )
+
+    def _elsewhere(
+        self, site: str, address: str, done: list[int], opened: Opened | None
+    ) -> Outcome:
+        """The page is outside the boundary: said by its origin alone, with what had been done
+        by then — and nothing of the page, which is not handed to the verifier either."""
+        made: dict[str, JsonValue] = self._partial(done)
+        if done[0] and opened is not None:
+            made = {"status": opened.status, **made}
+        return Outcome(
+            made,
+            LEFT_SITE,
+            f"the page of {site} is at {origin_of(address)}, which is not {self._inside()}: ELA "
+            f"read nothing of that page and does nothing more on it{self._after(done)}",
+        )
+
+    async def _with_another_page(self, opened: Opened, outcome: Outcome) -> Outcome:
+        """The outcome, saying that the page opened another page when it did (decision 123):
+        always — whatever the step did —, and with the origin alone."""
+        another = await self._browser.another(opened.page)
+        if another is None:
+            return outcome
+        said = ASKED_FOR_NOTHING if another.address is None else origin_of(another.address)
+        return replace(outcome, output={**outcome.output, ANOTHER_PAGE: said})
+
+    async def _gesture(self, done: list[int], gesture: Awaitable[None]) -> None:
+        """A gesture, counted when it was made — **also when the page was found elsewhere once
+        it was**: a gesture that happened is not reported as one that did not, or an action
+        would be asked again on that word."""
+        try:
+            await gesture
+        except LeftSite as elsewhere:
+            if elsewhere.made:
+                done[0] += 1
+            raise
+        done[0] += 1
+
+    def _still_at_work(self, site: str, done: list[int]) -> str:
+        """What the step says when its time ran out, with what had been done by then."""
+        return (
+            f"the page of {site} was still at work after {self._browsing.timeout_seconds} s: "
+            f"ELA closed the browser{self._after(done)}"
         )
 
     def _partial(self, done: list[int]) -> dict[str, JsonValue]:
@@ -473,7 +579,7 @@ class BrowserReadTool(_BrowserTool):
         SECRET_FIELD
     }
     output_keys: ClassVar[frozenset[str]] = frozenset(
-        {"address", "status", "title", "text", "shown", "total", "page"}
+        {"address", "status", "title", "text", "shown", "total", "page", ANOTHER_PAGE}
     )
     audit_numbers: ClassVar[frozenset[str]] = frozenset({"status", "shown", "total"})
     """Numbers, and only numbers (ADR 0047 §10): never the address, the title or the text."""
@@ -536,7 +642,7 @@ class BrowserActTool(_BrowserTool):
     """Fills fields on one page of a declared site and clicks (§19, **HIGH**)."""
 
     error_codes: ClassVar[frozenset[str]] = frozenset({ARGUMENTS_INVALID, *BROWSER_CODES})
-    output_keys: ClassVar[frozenset[str]] = frozenset({"status", "gestures", "page"})
+    output_keys: ClassVar[frozenset[str]] = frozenset({"status", "gestures", "page", ANOTHER_PAGE})
     audit_numbers: ClassVar[frozenset[str]] = frozenset({"status", "gestures"})
     """The status of the page of the form, and how many gestures were made: never a selector, a
     value or the page (ADR 0047 §10)."""
@@ -644,12 +750,10 @@ class BrowserActTool(_BrowserTool):
         for selector, value in call.fills:
             if done[0] and stop.is_set():
                 return self._stopped(opened, done, site)
-            await self._browser.fill(page, selector, value)
-            done[0] += 1
+            await self._gesture(done, self._browser.fill(page, selector, value))
         if done[0] and stop.is_set():
             return self._stopped(opened, done, site)
-        await self._browser.click(page, call.click)
-        done[0] += 1
+        await self._gesture(done, self._browser.click(page, call.click))
         left = await self._browser.left(page)
         if left is not None:
             return Outcome(

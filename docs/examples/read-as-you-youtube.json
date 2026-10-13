@@ -1,0 +1,32 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M13.9 per una LETTURA COME TE (GETTING_STARTED, sezione 28, passi 5,",
+    "7 e 10): ELA apre la pagina delle tue iscrizioni di YouTube nel suo browser con il profilo, che tiene",
+    "i siti in cui sei entrato. `browser.read_as_you` è MEDIUM: ciò che torna è contenuto tuo, e chiede a",
+    "ogni uso — nessuna policy copre una lettura singola. La domanda dice «as you».",
+    "Il confine è il sito che il piano nomina: un rimando verso un altro host, anche dichiarato, ferma la",
+    "lettura con `browser.left_site`.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "leggere le mie iscrizioni",
+  "steps": [
+    {
+      "id": "c0de1a28-0000-4b00-8a00-000000000005",
+      "goal": "leggere la pagina delle iscrizioni",
+      "required_capabilities": [
+        "browser.read_as_you"
+      ],
+      "arguments": {
+        "site": "www.youtube.com",
+        "path": "/feed/channels",
+        "purpose": "la prova a mano del browser con i tuoi account"
+      },
+      "risk": "MEDIUM",
+      "expected_result": "il testo della pagina, con i canali a cui sei iscritto",
+      "success_conditions": [
+        "browser.text_matches"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}

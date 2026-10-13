@@ -29,6 +29,7 @@ from fastapi.responses import JSONResponse
 from ela.api import (
     approvals,
     audit,
+    browser,
     companion,
     console,
     context,
@@ -42,6 +43,7 @@ from ela.api import (
     spend,
     system,
     tasks,
+    vault,
     voice,
 )
 from ela.api.errors import (
@@ -140,6 +142,10 @@ FAILURES: tuple[Failure, ...] = (
     Failure(PolicyNotLiveError, 409, WireCode.POLICY_NOT_LIVE),
     Failure(AuthorizationAlreadyRevokedError, 409, WireCode.POLICY_NOT_LIVE),
     Failure(console.PolicyOutOfReachError, 409, WireCode.NOT_ANSWERABLE),
+    Failure(console.BrowserOutOfReachError, 409, WireCode.NOT_ANSWERABLE),
+    Failure(vault.VaultRefusedError, 409, WireCode.VAULT_REFUSED),
+    Failure(vault.VaultKeyNotLocalError, 403, WireCode.VAULT_REFUSED),
+    Failure(browser.BrowserRefusedError, 409, WireCode.BROWSER_REFUSED),
     Failure(RequestValidationError, 422, WireCode.INVALID),
     Failure(ValueError, 422, WireCode.INVALID),
 )
@@ -318,6 +324,7 @@ def create_app(ela: Ela) -> FastAPI:
         tasks.router,
         approvals.router,
         audit.router,
+        browser.router,
         companion.router,
         console.router,
         devices.router,
@@ -328,6 +335,7 @@ def create_app(ela: Ela) -> FastAPI:
         results.router,
         sessions.router,
         spend.router,
+        vault.router,
         voice.router,
     ):
         app.include_router(router)

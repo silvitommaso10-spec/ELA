@@ -126,8 +126,9 @@ class Cli:
         self._runner = CliRunner()
         self._app = application
 
-    async def __call__(self, *arguments: str) -> Result:
-        return await asyncio.to_thread(self._runner.invoke, self._app, list(arguments))
+    async def __call__(self, *arguments: str, input: str | None = None) -> Result:
+        """``input`` is what the command finds on its stdin — a pipe, never a terminal."""
+        return await asyncio.to_thread(self._runner.invoke, self._app, list(arguments), input=input)
 
 
 def unreachable(request: httpx.Request) -> httpx.Response:

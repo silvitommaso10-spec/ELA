@@ -152,7 +152,10 @@ async def test_a_call_the_worst_case_would_not_hold_is_refused_and_stops_the_ses
     assert found.error is not None and found.error.code == code
     assert all(status == 400 for status, _ in script.answered), "the refusal, if it was read"
     assert g.anthropic.received == [], "refused before the network"
-    assert script.read == [], "the session was stopped before its next gesture"
+    # The session was halted by the refusal: the gesture it sends next is answered at once that
+    # the session is over — it used to hang until the interrupt — and nothing is made for it.
+    assert all("is over" in answer for answer in script.read), script.read
+    assert g.browser.opened == [], "no page is opened for a gesture that arrives after the halt"
     assert held.reserved == 0 and held.open == 0, "the reservation closed, at zero"
 
 

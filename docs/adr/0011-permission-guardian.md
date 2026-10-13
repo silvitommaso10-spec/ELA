@@ -4,6 +4,7 @@
   **ADR 0048 §8** (M13.3): §3, «a un utente non si chiede di approvare ciò che sarebbe negato comunque», per uno step su un nodo che verifica sulla propria macchina si legge con quella sezione accanto — la domanda nomina ciò che il piano afferma, può nascere già condannata, e il costo è un sì speso, mai un effetto diverso da quello approvato.
   **ADR 0058 §4 e §10** (M14.2): il vincolo per la milestone del Planner (Conseguenze) è chiuso — uno step del Planner dichiara esattamente la capability che userà, e le precondizioni dell'executor, una funzione sola, lo rifiutano prima della porta altrimenti.
   **Riletta da ADR 0062 (M13.12)** il 2026-10-09: `RISK_POLICY` sta in `ela/permissions/rows.py`, con gli stessi valori (§3, §14); la validità di un grant conosce la revoca, prima della scadenza (§5); per una policy, *copre* e *usabile* sono le due fette del predicato `shortfall` (§6).
+  **Riletta da ADR 0063 (M13.9)** il 2026-10-11: §6, una riga che chiede a meno di un'autorizzazione: la copre anche una sessione aperta, per lo step che il suo modello ha scritto e per la sola capability che la sessione dichiara di coprire; e `decide` riceve chi ha scritto lo step e la parola della stanza (ADR 0063 §1).
 - **Data:** 2026-09-05
 - **Riferimenti spec:** §13, §27, §28, §29, §32, §33, §47, §49, §51, §52, §56, §57, §59, §62, §65
 - **Milestone:** M4.2

@@ -43,7 +43,15 @@ from ela.domain import (
     JsonMapping,
 )
 from ela.permissions import BROWSER_ACT, BROWSER_READ
-from ela.ports import Browser, BrowserStopped, Glanced, ModelRouterPort, PageGone, RoutingError
+from ela.ports import (
+    Browser,
+    BrowserStopped,
+    Glanced,
+    LeftSite,
+    ModelRouterPort,
+    PageGone,
+    RoutingError,
+)
 from ela.tools.browser import cut, origin_of
 from ela.tools.captures import (
     CAPTURE_CODES,
@@ -76,8 +84,10 @@ from ela.tools.voice import VOICE_SPEAK, digest_of
 
 __all__ = [
     "BROWSER_ACT_VERIFIER_NAME",
+    "BROWSER_ANOTHER_PAGE",
     "BROWSER_EXPECT_MISSING",
     "BROWSER_EXPECT_VISIBLE",
+    "BROWSER_LEFT_SITE",
     "BROWSER_PAGE_GONE",
     "BROWSER_READ_VERIFIER_NAME",
     "BROWSER_TEXT_MATCHES",
@@ -1085,6 +1095,16 @@ BROWSER_EXPECT_MISSING: Final = "browser.expect_missing"
 BROWSER_PAGE_GONE: Final = "browser.page_gone"
 """The page the tool left for the verifier is not there any more: ELA stopped or restarted between
 the tool and the look, which ``_resume`` does again on the next run (census C4)."""
+BROWSER_LEFT_SITE: Final = "browser.left_site"
+"""The page is not inside the boundary of its step when the verifier looks, or when its wait
+ends (M13.4f, ADR 0064 §4): between the end of the tool and the look a page can move by itself.
+Nothing of it was read, and nothing is said of what it shows. The tools' own code, by the same
+name: it is the same refusal, met later."""
+BROWSER_ANOTHER_PAGE: Final = "browser.another_page"
+"""The text the plan expects did not appear, **and the page had opened another page** (M13.4f,
+ADR 0064 §5): ELA works on one page, and of the other no document left. Said in the place of
+:data:`BROWSER_EXPECT_MISSING`, whose sentence — «what the click sent may have arrived all the
+same» — is false when what the click sent was addressed to another page."""
 LOOK_GRACE_SECONDS: Final = 5.0
 """What the look may take beyond the wait for the text: counting the element, reading it, closing
 the browser. A decision, like the tool's thirty seconds, not a measure."""
@@ -1146,6 +1166,42 @@ class _PageVerifier(Verifier):
                 "the page is not there any more — ELA stopped or started again between the tool "
                 "and this look",
             )
+        except LeftSite as elsewhere:
+            return self._failure(
+                condition,
+                BROWSER_LEFT_SITE,
+                f"the page is at {origin_of(elsewhere.address)}, which is not inside the site "
+                "of this step: ELA looked at nothing of that page, and cannot confirm what the "
+                "step did",
+                retryable=False,
+            )
+
+    def _opened_another(
+        self, condition: str, glanced: Glanced, gesture: str
+    ) -> ErrorMetadata | None:
+        """The failure of a text that did not appear on a page that had opened another — or
+        ``None`` when the page opened none, and the text is simply missing."""
+        another = glanced.another
+        if another is None:
+            return None
+        where = "" if another.address is None else f" at {origin_of(another.address)}"
+        if another.method == "POST":
+            what = (
+                f"the {gesture} sent a form to another page{where}, and ELA works on one page "
+                "only: no document of another page leaves, so the form was not sent"
+            )
+        else:
+            what = (
+                f"the page opened another page{where}, and ELA works on one page only: no "
+                "document of that page left, and nothing of it was read"
+            )
+        return self._failure(
+            condition,
+            BROWSER_ANOTHER_PAGE,
+            f"{what}; the text the plan expects did not appear on the page ELA works on within "
+            f"{self._seconds:g} s after the {gesture}",
+            retryable=False,
+        )
 
     def _gone(self, condition: str, why: str) -> ErrorMetadata:
         """The honest answer of :data:`~ela.tools.programs.PROGRAM_GONE`, for a page (form I)."""
@@ -1170,6 +1226,7 @@ class BrowserReadVerifier(_PageVerifier):
     failure_codes: ClassVar[frozenset[str]] = COMMON_FAILURE_CODES | {
         BROWSER_TEXT_MISMATCH,
         BROWSER_PAGE_GONE,
+        BROWSER_LEFT_SITE,
     }
 
     def __init__(
@@ -1232,6 +1289,8 @@ class BrowserActVerifier(_PageVerifier):
     failure_codes: ClassVar[frozenset[str]] = COMMON_FAILURE_CODES | {
         BROWSER_EXPECT_MISSING,
         BROWSER_PAGE_GONE,
+        BROWSER_LEFT_SITE,
+        BROWSER_ANOTHER_PAGE,
     }
 
     def __init__(
@@ -1260,6 +1319,9 @@ class BrowserActVerifier(_PageVerifier):
             return glanced
         if glanced.shown:
             return None
+        another = self._opened_another(condition, glanced, "click")
+        if another is not None:
+            return another
         went = (
             ""
             if glanced.left is None

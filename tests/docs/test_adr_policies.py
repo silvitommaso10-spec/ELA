@@ -33,8 +33,9 @@ from ela.permissions import (
 )
 from tests.architecture.rules import RULES
 from tests.contracts.protocols import port_protocols
-from tests.docs.test_adr_cli import coded_commands
-from tests.docs.test_adr_composition import coded_routes
+from tests.docs.guided_ports import ACCOUNT_PORTS, before_the_accounts
+from tests.docs.test_adr_cli import coded_commands, commands_after_0062
+from tests.docs.test_adr_composition import coded_routes, routes_after_0062
 from tests.docs.test_adr_guardian import Parameter
 from tests.docs.test_adr_placement import _rules_up_to
 
@@ -159,8 +160,13 @@ def test_the_checks_of_the_birth_are_the_function_s_in_its_order() -> None:
 
 
 def test_the_declarations_are_the_catalogue_s() -> None:
-    assert documented_terms(adr_text()) == coded_terms()
-    assert set(coded_terms()) == {BROWSER_GUIDED}
+    """ADR 0062's table, and since M13.9 the row ADR 0063 adds in the same form: together they
+    are every capability that declares terms."""
+    accounts = ADR_PATH.with_name("0063-browser-with-your-accounts.md").read_text(encoding="utf-8")
+    here, later = documented_terms(adr_text()), documented_terms(accounts)
+
+    assert set(here) == {BROWSER_GUIDED} and not set(here) & set(later)
+    assert here | later == coded_terms()
 
 
 def test_the_signature_and_the_constants_are_the_code_s() -> None:
@@ -199,22 +205,24 @@ def test_a_missing_table_signature_or_constant_is_detected() -> None:
         documented_constants("MIN_DAYS = 1")
 
 
-def test_the_conseguenze_count_the_totals_of_today() -> None:
-    """The pin on today's totals, taken over from ADR 0060: it moves to the ADR that changes
-    them."""
+def test_the_conseguenze_count_the_totals_as_this_adr_saw_them() -> None:
+    """The totals of the day ADR 0062 was written. The pin on **today's** totals moved to the ADR
+    that changed them — ADR 0063, ``test_adr_accounts.py`` —, as it had moved here from ADR 0060:
+    what is counted here is what came up to this ADR, and no later."""
     text = conseguenze()
     contracts = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"][
         "importlinter"
     ]["contracts"]
 
     assert "**sessantasei**" in text
-    assert len(RULES) == 66
-    assert set(RULES) - set(_rules_up_to(65)) == {"a-policy-is-born-at-its-route"}
+    assert len(_rules_up_to(66)) == 66 <= len(RULES)
+    assert set(_rules_up_to(66)) - set(_rules_up_to(65)) == {"a-policy-is-born-at-its-route"}
     assert "**quindici**" in text and len(contracts) == 15
-    assert "**trentatré**" in text and len(tuple(port_protocols())) == 33
-    assert "**sessanta**" in text and len(coded_routes()) == 60
-    assert "**trentuno**" in text and len(coded_commands()) == 31
-    assert "**quattordici**" in text and len(production_catalogue().specs()) == 14
+    assert "**trentatré**" in text
+    assert len(tuple(p for p in port_protocols() if p.__name__ not in ACCOUNT_PORTS)) == 33
+    assert "**sessanta**" in text and len(coded_routes() - routes_after_0062()) == 60
+    assert "**trentuno**" in text and len(coded_commands() - commands_after_0062()) == 31
+    assert "**quattordici**" in text and len(before_the_accounts()) == 14
     assert "**sei**" in text and len(Kind) == 6
 
 

@@ -57,7 +57,7 @@ from ela.domain import (
     RawTextLine,
 )
 from ela.ports import Clock, IdGenerator, PerceptionProbe, ScreenCapturePort, StopPoint, TaskStop
-from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool
+from ela.tools.base import ARGUMENTS_INVALID, NotNow, Outcome, Perceiving, any_moment
 from ela.tools.captures import (
     ALREADY_EXPIRED,
     CAPTURE_CODES,
@@ -83,6 +83,7 @@ from ela.tools.settings import CaptureSettings
 __all__ = [
     "DEFAULT_DISPLAY",
     "SCREEN_CAPTURE_FAILED",
+    "SCREEN_LOGIN_WINDOW_OPEN",
     "SCREEN_NOT_OBSERVABLE",
     "SCREEN_PERMISSION_DENIED",
     "SCREEN_STORE_FULL",
@@ -97,6 +98,10 @@ __all__ = [
 PERCEPTION_CAPTURE_SCREEN: Final = CapabilityId("perception.capture_screen")
 SCREEN_TOOL_NAME: Final = "perception-screen"
 
+SCREEN_LOGIN_WINDOW_OPEN: Final = "screen.login_window_open"
+"""The window where the user signs in by hand is open, and ELA does not look at the screen
+meanwhile (M13.9, ADR 0063 §7; decision 41). Retryable: the window closes. The capture's code and
+the reading's — :mod:`ela.tools.screen_text` refuses with the same."""
 SCREEN_UNSUPPORTED: Final = "screen.unsupported"
 """This operating system has no capture helper ELA knows about. Not retryable: nothing about a
 later attempt is different."""
@@ -323,7 +328,7 @@ CAPTURE_POINT: Final = "the capture"
 """Where this tool listens for the stop of its task: its point of no return (M6.3c, ADR 0054 §3)."""
 
 
-class CaptureScreenTool(Tool):
+class CaptureScreenTool(Perceiving):
     """Photographs one display into the capture store (§29 MEDIUM; ADR 0029).
 
     ``probe`` is the same :class:`~ela.ports.PerceptionProbe` the perception core uses, and it is
@@ -343,6 +348,7 @@ class CaptureScreenTool(Tool):
                 SCREEN_TIMEOUT,
                 SCREEN_CAPTURE_FAILED,
                 SCREEN_STORE_FULL,
+                SCREEN_LOGIN_WINDOW_OPEN,
             }
         )
         | CAPTURE_CODES
@@ -357,6 +363,9 @@ class CaptureScreenTool(Tool):
     """What the artefact *is*, and never a byte of what it shows. ``path`` is the name inside the
     capture store, not an absolute one: the store lives under the user's home, and a home
     directory does not belong in a persisted result either (§57)."""
+
+    not_now_code: ClassVar[str] = SCREEN_LOGIN_WINDOW_OPEN
+    meanwhile: ClassVar[str] = "ELA does not photograph the screen meanwhile"
 
     idempotent: ClassVar[bool] = False
     relocatable: ClassVar[bool] = False
@@ -376,8 +385,9 @@ class CaptureScreenTool(Tool):
         ids: IdGenerator,
         *,
         name: str = SCREEN_TOOL_NAME,
+        not_now: NotNow = any_moment,
     ) -> None:
-        super().__init__(PERCEPTION_CAPTURE_SCREEN, clock, ids, name=name)
+        super().__init__(PERCEPTION_CAPTURE_SCREEN, clock, ids, name=name, not_now=not_now)
         self._store = store
         self._capture = capture
         self._probe = probe
@@ -389,7 +399,7 @@ class CaptureScreenTool(Tool):
             return Outcome({}, ARGUMENTS_INVALID, "purpose must be a non-empty string")
         if not isinstance(display, int) or isinstance(display, bool) or display < 1:
             return Outcome({}, ARGUMENTS_INVALID, "display must be an integer of at least 1")
-        refused = await self._refusal()
+        refused = await self._withheld() or await self._refusal()
         if refused is not None:
             return refused
         return await self._photograph(display, stop)

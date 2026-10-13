@@ -76,10 +76,13 @@ __all__ = [
 router = APIRouter(prefix="/policies", tags=["policies"])
 
 RUNNING: Final = (
-    "a session already running under it goes on until it ends: to stop it, ela task cancel <id>"
+    "a session already running under it goes on until it ends: to stop it, ela task cancel <id>. "
+    "The reads it covers go on with it, up to its own looks, seconds and cost"
 )
 """What a revocation says of a session it already covered (decision 5): the grant was spent
-before it, and the stop of a task is the «ferma»."""
+before it, and the stop of a task is the «ferma». Since M13.9 (ADR 0063 §1; decision 29) a
+session with the profile covers the reads its model writes: a revocation does not stop those
+either, and whoever revokes reads that they go on to the session's own caps."""
 
 
 class PolicyWouldNotStartError(ApiError):

@@ -1,0 +1,24 @@
+Usage: bw status [options]
+
+Show server, last sync, user information, and vault status.
+
+Options:
+  -h, --help  display help for command
+
+
+  Example return value:
+
+    {
+      "serverUrl": "https://bitwarden.example.com",
+      "lastSync": "2020-06-16T06:33:51.419Z",
+      "userEmail": "user@example.com,
+      "userId": "00000000-0000-0000-0000-000000000000",
+      "status": "locked"
+    }
+
+  Notes:
+
+  `status` is one of:
+    - `unauthenticated` when you are not logged in
+    - `locked` when you are logged in and the vault is locked
+    - `unlocked` when you are logged in and the vault is unlocked

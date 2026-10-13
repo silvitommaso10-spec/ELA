@@ -30,6 +30,9 @@ from ela.domain import (
     CapabilitySpec,
     JsonMapping,
     PermissionOutcome,
+    PlanAuthor,
+    PlanAuthorKind,
+    SessionCover,
     Task,
     TaskStep,
 )
@@ -38,6 +41,7 @@ from ela.permissions import ASKING_RULES, Rule
 from ela.ports import CapabilityRegistryPort
 from ela.testing.fakes import FakeCapabilityRegistry
 from tests.domain.examples import TASK
+from tests.permissions import session_support as sessions
 from tests.permissions.support import (
     CATALOGUE,
     CRITICAL,
@@ -76,11 +80,19 @@ class Scenario:
     step: TaskStep | None = None
     task: Task | None = None
     registry: CapabilityRegistryPort | None = None
+    author: PlanAuthor | None = None
+    session: SessionCover | None = None
 
 
 REGISTRY: Final = FakeCapabilityRegistry(CATALOGUE)
 """The shared catalogue, whose ``MEDIUM`` row since M13.12 is ``test.termed``: it declares the terms
 of a policy, so a standing grant can cover it (decision 17 of the review)."""
+
+SESSIONS: Final = FakeCapabilityRegistry(
+    (sessions.session_capability(sessions.READ), sessions.READ)
+)
+"""The catalogue of the two scenarios of a session's cover: the capability of a session, and the
+``MEDIUM`` read it declares."""
 
 SCENARIOS: Final[dict[Rule, Scenario]] = {
     # Since M13.12 a standing grant covers only a capability that declares the terms of a policy
@@ -117,6 +129,31 @@ SCENARIOS: Final[dict[Rule, Scenario]] = {
     Rule.INTERNAL_ERROR: Scenario(
         ECHO, ECHO_ARGS, grant(ECHO), step_for(ECHO.id), registry=_BrokenRegistry()
     ),
+    # The cover of a session (M13.9, decision 29): what allows is the room's word, and a grant
+    # handed over beside it is a fact too many — so the ``ALLOWED`` is the one **without** the
+    # grant, and it rests on no grant: the rule consumes nothing.
+    Rule.SESSION: Scenario(
+        sessions.READ,
+        sessions.ARGS,
+        born_of_a_yes(sessions.READ, scope=sessions.SITES),
+        sessions.step(),
+        task=sessions.CHILD,
+        registry=SESSIONS,
+        author=sessions.AUTHOR,
+        session=sessions.cover(),
+    ),
+    # And the cover that does not cover — here a plan a hand wrote —: denied with the grant and
+    # without it.
+    Rule.SESSION_MISMATCH: Scenario(
+        sessions.READ,
+        sessions.ARGS,
+        born_of_a_yes(sessions.READ, scope=sessions.SITES),
+        sessions.step(),
+        task=sessions.CHILD,
+        registry=SESSIONS,
+        author=PlanAuthor(by=PlanAuthorKind.HAND),
+        session=sessions.cover(),
+    ),
 }
 
 
@@ -135,6 +172,8 @@ def drift(rule: Rule, scenario: Scenario, consuming: frozenset[Rule]) -> str | N
             task=scenario.task,
             step=scenario.step,
             authorization=authorization,
+            author=scenario.author,
+            session=scenario.session,
         )
         return decision.outcome, str(decision.metadata["rule"])
 

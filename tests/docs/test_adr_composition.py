@@ -215,6 +215,12 @@ def policies_adr_text() -> str:
     return ADR_PATH.with_name("0062-policies.md").read_text(encoding="utf-8")
 
 
+def accounts_adr_text() -> str:
+    """ADR 0063, which adds the routes of the vault and of the browser with the user's accounts,
+    and their failures (M13.9)."""
+    return ADR_PATH.with_name("0063-browser-with-your-accounts.md").read_text(encoding="utf-8")
+
+
 def routes_after_0048() -> set[tuple[str, str]]:
     """The routes the ADRs after ADR 0048 added, **read from them**: what the tests of an earlier
     ADR take away to keep counting what that ADR saw. Derived, so a route a later ADR documents is
@@ -254,9 +260,18 @@ def routes_after_0059() -> set[tuple[str, str]]:
 
 def routes_after_0061() -> set[tuple[str, str]]:
     """The routes the ADRs after ADR 0061 added, read from them: what the test of ADR 0060 takes
-    away to keep counting the fifty-two it saw (M13.12) — ADR 0062's, of the API and the console."""
+    away to keep counting the fifty-two it saw (M13.12) — ADR 0062's, of the API and the console,
+    and ADR 0063's since M13.9."""
     found = documented_routes(policies_adr_text())
     assert found, "ADR 0062 documents a route"
+    return found | routes_after_0062()
+
+
+def routes_after_0062() -> set[tuple[str, str]]:
+    """The routes the ADRs after ADR 0062 added, read from them: what the test of ADR 0062 takes
+    away to keep counting the sixty it saw (M13.9) — ADR 0063's."""
+    found = documented_routes(accounts_adr_text())
+    assert found, "ADR 0063 documents a route"
     return found
 
 
@@ -294,6 +309,7 @@ def test_the_routes_of_the_adrs_are_the_routes_of_the_code() -> None:
             | documented_routes(planner_adr_text())
             | documented_routes(guided_adr_text())
             | documented_routes(policies_adr_text())
+            | documented_routes(accounts_adr_text())
         )
     )
     assert documented == coded_routes()
@@ -332,17 +348,18 @@ def test_the_two_routes_of_m8_2_are_the_ones_adr_0024_adds() -> None:
     assert not added & documented_routes(adr_text())
 
 
-def test_there_are_sixty_of_them() -> None:
+def test_there_are_seventy_two_of_them() -> None:
     """Twenty until ADR 0037 §4 added five, twenty-five until ADR 0038 §11 added the three of the
     work, twenty-eight until ADR 0039 §2 added the one a node that restarted reads itself with,
     twenty-nine until ADR 0043 §5 added the eight pages of the companion, thirty-seven until
     ADR 0044 added the eleven of the Command Center, forty-eight until ADR 0049 added the one
     of the last outcomes, forty-nine until ADR 0057 added the one of the month's spending, fifty
     until ADR 0058 added the one of the Planner, fifty-one until ADR 0060 added the gateway of a
-    guided session, and fifty-two until ADR 0062 added the four of the policies and the four pages
-    of their view; ``tests/api/test_security.py`` proves that every one of them is behind the
-    middleware, and which identity reaches which."""
-    assert len(coded_routes()) == 60
+    guided session, fifty-two until ADR 0062 added the four of the policies and the four pages of
+    their view, and sixty until ADR 0063 added the three of the vault, the four of the browser
+    and the five pages of their view; ``tests/api/test_security.py`` proves that every one of
+    them is behind the middleware, and which identity reaches which."""
+    assert len(coded_routes()) == 72
 
 
 def test_the_route_of_m14_1_is_the_one_adr_0057_adds() -> None:
@@ -361,7 +378,7 @@ def test_the_route_of_m14_3_is_the_one_adr_0060_adds() -> None:
 def test_the_routes_of_m13_12_are_the_ones_adr_0062_adds() -> None:
     """Four of the API and four of the console: the console's are read again, against the
     middleware, by ``tests/docs/test_adr_command_center.py`` (decision 23)."""
-    assert routes_after_0061() == {
+    assert routes_after_0061() - routes_after_0062() == {
         ("GET", "/policies"),
         ("POST", "/policies/preview"),
         ("POST", "/policies"),
@@ -371,6 +388,24 @@ def test_the_routes_of_m13_12_are_the_ones_adr_0062_adds() -> None:
         ("POST", "/console/policies"),
         ("POST", "/console/policies/revoke"),
     }
+
+
+def test_the_routes_of_m13_9_are_the_ones_adr_0063_adds() -> None:
+    assert routes_after_0062() == {
+        ("GET", "/vault"),
+        ("POST", "/vault/session"),
+        ("POST", "/vault/lock"),
+        ("GET", "/browser"),
+        ("POST", "/browser/window"),
+        ("POST", "/browser/open"),
+        ("POST", "/browser/close"),
+        ("GET", "/console/browser"),
+        ("POST", "/console/browser/window"),
+        ("POST", "/console/browser/open"),
+        ("POST", "/console/browser/close"),
+        ("POST", "/console/browser/lock"),
+    }
+    assert not routes_after_0062() & documented_routes(policies_adr_text())
 
 
 def test_the_one_route_of_the_restart_is_the_one_adr_0039_adds() -> None:
@@ -418,7 +453,17 @@ def test_the_error_table_is_the_one_the_application_installs() -> None:
         | documented_errors(work_adr_text())
         | documented_errors(companion_adr_text())
         | documented_errors(policies_adr_text())
+        | documented_errors(accounts_adr_text())
     ) == {failure.exception.__name__: failure.status for failure in FAILURES}
+
+
+def test_the_failures_m13_9_adds_are_the_ones_adr_0063_documents() -> None:
+    assert documented_errors(accounts_adr_text()) == {
+        "VaultRefusedError": 409,
+        "VaultKeyNotLocalError": 403,
+        "BrowserRefusedError": 409,
+        "BrowserOutOfReachError": 409,
+    }
 
 
 def test_the_failures_m13_12_adds_are_the_ones_adr_0062_documents() -> None:

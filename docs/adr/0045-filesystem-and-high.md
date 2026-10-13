@@ -4,6 +4,7 @@
   **ADR 0048 §8** (M13.3): §6 e §6-bis, per uno step su un nodo che verifica sulla propria macchina, si leggono con quella sezione accanto — la domanda nomina ciò che il piano afferma e che ELA non ha guardato quel disco, e il nodo rifiuta prima di agire.
   **ADR 0059 §9** (M13.1e): §12-bis, «le altre superfici sono di M13.1e» (come ADR 0055 §6 l'aveva riletto) — fatto: ogni lettore di `docs/outcomes.txt` che mostra un task finito ne mostra il perché, o dice perché no.
   **Riletta da ADR 0062 (M13.12)** il 2026-10-09: il predicato in un posto solo di §3 è `asks_at_every_use` per la riga e `shortfall` per una policy.
+  **Riletta da ADR 0063 (M13.9)** il 2026-10-11: §3: una riga che chiede a meno di un'autorizzazione ha un terzo modo di essere coperta, che non è un grant — la copertura di sessione (ADR 0063 §1).
 - **Data:** 2026-09-21
 - **Riferimenti spec:** §18, §23, §27, §28, §29, §33, §37, §57, §59, §63
 - **Milestone:** M13.1

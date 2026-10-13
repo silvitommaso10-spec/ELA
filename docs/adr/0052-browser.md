@@ -8,6 +8,18 @@
   **ADR 0058 §9 e §10** (M14.2): i tre fatti di §4 su cui `browser.read` è `LOW` si riscrivono — il secondo è che un piano scritto dal modello lo avvia l'utente dopo averlo visto —; M14.3 è il giorno in cui il modello legge una pagina.
   **Riletta da ADR 0060 (M14.3)** il 2026-10-09: i tre fatti di §4 si riscrivono per il modello che legge la pagina
   dentro una sessione guidata, e il vincolo del GET si allarga al testo delle pagine lette (ADR 0060 §9).
+  **Riletta da ADR 0063 (M13.9)** il 2026-10-11: §1, lo shell «sempre senza finestra» e il suo sandbox sono del browser vuoto; §3 e §4, il profilo vuoto e i due livelli sono delle capability del browser vuoto; §6, per una lettura con il profilo il confine è il sito che nomina, e un service worker del profilo si toglie prima del lancio; §7, la domanda di `browser.login` si compone dopo aver chiesto al vault; §8, un campo segreto lo riempie `browser.login`, e nessun altro tool; §10, da quando la fermata di ELA è alzata niente parte più, e ciò che era già partito è aspettato entro una grazia e poi ucciso (M13.4b, M13.4c, M13.4e); §14, dall'ambiente escono anche `DEBUG…` e `PWDEBUG` (ADR 0063 §4 e §5, e «Conseguenze»).
+  **Corretta da ADR 0063 §11 (M13.9)** il 2026-10-12, da una misura: in §6 la pagina **non** ripassa dalla route
+  per seguire un rimando ammesso — la richiesta dopo un rimando la manda il browser —, e quindi **un secondo
+  rimando fuori dal confine parte, e una lettura o un gesto avvengono sulla pagina di un sito non dichiarato**;
+  e ciò che un sito vede del documento che il driver scarica è scritto lì. Non riparato: la riparazione avrà la
+  sua lettera e il suo ADR.
+  **Rivista da ADR 0064 (M13.4f)** il 2026-10-12, apertamente: §6, il cancello non è più una route che scarica il
+  documento — una sessione del browser guarda ogni richiesta e non ne fa nessuna —, il confine regge a ogni salto
+  di un rimando, e ogni uso di una pagina chiede al confine dove la pagina è; §9, i verifier dicono anche
+  `browser.left_site` e `browser.another_page`; §10, da quando la fermata è alzata non parte nessuna richiesta di
+  cui il cancello è avvisato; §11, il port ha `another`; §14, ogni richiesta la fa il browser e ogni certificato lo giudica il
+  browser.
 - **Data:** 2026-09-29
 - **Riferimenti spec:** §10, §18, §19, §20, §27, §28, §29, §30, §32, §33, §39, §57, §59, §62, §63
 - **Milestone:** M13.4
@@ -129,6 +141,30 @@ browser — rimisurato così, il 2026-09-30, solo le connessioni che la pagina c
 rifiuta la connessione, e la navigazione — senza timeout di Playwright, per scelta — aspettava per
 sempre; lo ha trovato lo stesso file di test.
 
+***Corretto il 2026-10-12, da una misura (ADR 0063 §11).*** *«Uno che ammette si consegna alla pagina, che lo
+segue ripassando dalla route» è falso nella seconda metà: Playwright non chiama una route per una richiesta nata
+da un rimando, nemmeno quando il rimando l'ha consegnato la route. I test del browser vero provavano che un
+rimando ammesso è seguito e letto — ed è vero —, non che ripassa. La richiesta dopo un rimando la manda il
+browser, e il cancello non la vede: **in una catena, un secondo rimando verso un sito fuori dal confine è
+seguito, e la richiesta arriva** — misurato con server locali, nel browser vuoto e in quello del profilo.
+«Ogni navigazione della cornice principale fuori dal confine non parte» vale per il primo indirizzo e per il
+primo rimando, non per i successivi. **E i tool non lo fermano**: «lo step fallisce `browser.left_site`» vale
+quando il cancello ha rifiutato una navigazione — nessun tool confronta dove la pagina è con il sito della
+domanda. Misurato: su quella catena `browser.read` porta nel risultato il testo della pagina dell'altro sito, e
+`browser.act` scrive su di lei ciò che il piano dice di scrivere. «La route è il driver», poi, ha conseguenze
+che qui non erano scritte: un sito vede, per il primo documento di ogni navigazione, un client che porta il
+nome del browser senza esserlo; e su un modulo inviato da un altro sito i cookie arrivano anche dove `SameSite`
+dice di no. **Non riparato in M13.9**: i test rossi sono scritti, e la proposta è la domanda 109 di
+`M13.9.md`; la 110 dice di questa catena.*
+
+***Rivista da ADR 0064 (M13.4f), il 2026-10-12.*** *Riparato. «Il documento della cornice principale lo prende
+la route» e «la route è il driver» non sono più veri: nell'adapter non c'è nessuna route. Una sessione del
+protocollo del browser è avvisata di ogni richiesta di ogni pagina prima che parta, e la lascia andare com'è o
+la fa fallire: il confine regge a ogni salto di una catena, i cookie e le intestazioni sono del browser, e di
+una pagina che non è quella su cui ELA lavora non parte nessun documento. E ogni uso di una pagina chiede al
+confine dove la pagina è, prima e dopo. **Resta ciò che questa sezione decide: che cosa è il confine, e chi lo
+decide.** Il resto è in ADR 0064 §2, §4 e §5.*
+
 ### 7. La domanda, e «partirebbe»: ADR 0045 §6-bis rivista per un browser
 
 La domanda di `browser.act` nomina il sito, l'indirizzo per intero, i gesti ~~uno per riga~~ — ogni campo
@@ -198,6 +234,12 @@ Verifier aggiunti:
 | `browser.read` | `BrowserReadVerifier` | `browser-read-verifier` | `browser.text_matches` | `browser.text_mismatch`, `browser.page_gone` |
 | `browser.act` | `BrowserActVerifier` | `browser-act-verifier` | `browser.expect_visible` | `browser.expect_missing`, `browser.page_gone` |
 
+***Rivista da ADR 0064 (M13.4f), il 2026-10-12.*** *Le righe qui sopra sono quelle di questo ADR, e restano. I
+due verifier dicono in più `browser.left_site` — lo sguardo su una pagina che non è dentro il confine —, e
+quello di un'azione `browser.another_page` — un testo che non compare su una pagina che ne ha aperta un'altra —:
+sono nella tabella di ADR 0064 §9, che il test di queste righe legge accanto a loro. I risultati dei due tool
+portano, da allora, anche `another_page`.*
+
 **Il verifier guarda la pagina, una volta** (ADR 0014 §2): il port la rilascia con l'occhiata, quindi
 il verifier non chiama niente che chiuda, e sta in `ela/tools/verifiers.py` con gli altri, dentro la
 regola 18. Per un'azione aspetta **l'evento** — il testo atteso che compare — entro il tempo del tool:
@@ -228,6 +270,8 @@ dalla consegna.
   Playwright sulle singole chiamate. Allo scadere, `browser.timeout`, con i gesti fatti fin lì e senza
   testo.
 - **La fermata di ELA** (ADR 0038 §11): l'adapter chiude ogni browser, e lo step è `browser.stopped`.
+  *Da ADR 0064 (M13.4f): da quando è alzata il cancello fa fallire ogni richiesta di cui è avvisata, di
+  qualunque genere e allo stesso modo — non più le navigazioni in un modo e il resto in un altro (M13.4c).*
 - **La morte di colpo** non lascia orfani: l'albero intero se ne va entro mezzo secondo (M5). ADR 0047
   §7 lo dichiarava come limite per il terminale, e qui non c'è.
 - **Chiudere è un evento**: quando la chiusura torna, il kernel non conosce più nessun processo della
@@ -240,6 +284,9 @@ Port introdotti:
 | Port | Spec | Modalità | Membri |
 |---|---|---|---|
 | `Browser` | §19 | async | `installed`, `open`, `count`, `field`, `fill`, `click`, `text`, `title`, `left`, `keep`, `glance`, `close` |
+
+***Rivista da ADR 0064 (M13.4f), il 2026-10-12.*** *Il port ha un membro in più, `another` — la pagina che questa
+ha aperto, e che è stata fermata —: è nella tabella «Port estesi» di ADR 0064 §9.*
 
 Un **meccanismo**: ogni decisione — l'indirizzo, il confine, l'elemento, il valore — gli arriva come
 dato da `ela.tools.browser`, che sta nel gate al 100% dei rami. L'adapter è
@@ -312,6 +359,13 @@ nell'ambiente, il driver del Core non la riceve, letto dal suo processo come nel
 decisione 14, con `PW_LANG_NAME` — che Playwright gli dà sempre — come controllo che la lettura legga
 davvero il driver. **Restano dichiarati**: i proxy dell'ambiente, che oggi non cambiano la strada
 (misurato), e ciò che non comincia con `NODE_`.
+
+***Rivista da ADR 0064 (M13.4f), il 2026-10-12.*** *«Il documento della cornice principale lo scarica il
+driver» cade, e con lui «la validazione del certificato e la strada di quella richiesta dipendono dall'ambiente
+del driver»: **ogni richiesta la fa il browser, e ogni certificato lo giudica il browser**. Un test lo tiene: con
+`NODE_TLS_REJECT_UNAUTHORIZED=0` e `NODE_EXTRA_CA_CERTS` nell'ambiente del processo che avvia il driver, una
+pagina dietro un certificato che nessuno ha firmato non si apre — e sul codice di prima si apriva. Che il Core
+tolga quelle variabili dal suo ambiente resta: il driver gira ancora.*
 
 ### 15. Un debito datato: il «ferma» a metà di uno step del browser
 

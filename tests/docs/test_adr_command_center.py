@@ -18,7 +18,7 @@ from ela.api.security import CONSOLE_CODE_ROUTES, CONSOLE_ROUTES, Kind
 from ela.domain import DeviceRole
 from tests.architecture.rules import RULES
 from tests.contracts.protocols import port_protocols
-from tests.docs.guided_ports import GUIDED_PORTS
+from tests.docs.guided_ports import ACCOUNT_PORTS, GUIDED_PORTS
 from tests.docs.test_adr_composition import coded_routes, routes_after_0048
 from tests.docs.test_adr_placement import _rules_up_to
 
@@ -59,7 +59,14 @@ def test_the_conseguenze_count_what_the_tree_had_when_it_was_written() -> None:
                 p
                 for p in port_protocols()
                 if p.__name__
-                not in {"CommandLauncher", "LocalBeat", "Browser", "TaskStop", *GUIDED_PORTS}
+                not in {
+                    "CommandLauncher",
+                    "LocalBeat",
+                    "Browser",
+                    "TaskStop",
+                    *GUIDED_PORTS,
+                    *ACCOUNT_PORTS,
+                }
             )
         )
         == 26
@@ -87,8 +94,12 @@ def test_the_third_role_and_the_fifth_kind_are_in_the_tree() -> None:
 
 CONSOLE_ROW = re.compile(r"^\| `(GET|POST)` \| `(/console[\w.{}/-]*)` \| ([^|]+) \|$")
 """A row of a table of the console's routes: a method, a path under ``/console``, what it does."""
-LATER_CONSOLE_ADRS = (ROOT / "docs" / "adr" / "0062-policies.md",)
-"""The ADRs after this one that add routes to the console (M13.12, decision 23 of the review)."""
+LATER_CONSOLE_ADRS = (
+    ROOT / "docs" / "adr" / "0062-policies.md",
+    ROOT / "docs" / "adr" / "0063-browser-with-your-accounts.md",
+)
+"""The ADRs after this one that add routes to the console: the view of the policies (M13.12,
+decision 23 of the review), and «Il browser di ELA» (M13.9, decision 38)."""
 
 
 def console_rows(text: str) -> set[tuple[str, str]]:
@@ -109,9 +120,10 @@ def console_texts() -> tuple[str, ...]:
 
 
 def test_the_routes_the_adrs_document_are_the_ones_the_console_serves() -> None:
-    """Eleven from ADR 0044 — the two sheets among them —, and four more from ADR 0062, the view
-    of the policies (M13.12, decision 23): what ``ela.api`` serves under ``/console`` is the union
-    of the tables, and no single ADR is held to the whole count any more."""
+    """Eleven from ADR 0044 — the two sheets among them —, four more from ADR 0062, the view of
+    the policies (M13.12, decision 23), and the four of ADR 0063, the view of the browser (M13.9):
+    what ``ela.api`` serves under ``/console`` is the union of the tables, and no single ADR is
+    held to the whole count any more."""
     assert len(console_rows(adr_text())) == 11
     assert documented_console_routes(console_texts()) == CONSOLE_ROUTES | CONSOLE_CODE_ROUTES
 

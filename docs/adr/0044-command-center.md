@@ -8,6 +8,7 @@
   **ADR 0049 §6 e §9** (M17.2b): §5, «un task finito e senza domanda resta raggiungibile solo dal suo id», si legge con quella accanto — la tessera dei task elenca i vivi e gli ultimi finiti. La decisione funzionava come scritta.
   **ADR 0050 §6** (M17.2c): §4 si legge con quella accanto — la politica non è più una costante sola (le pagine con i fogli dentro hanno la loro, derivata), e `sheets` non ha più un default.
   **Riletta da ADR 0062 (M13.12)** il 2026-10-09: le rotte della console sono quindici, le undici di §4 e le quattro di `/console/policies`; le viste sono cinque (§5).
+  **Riletta da ADR 0063 (M13.9)** il 2026-10-11: §4 e §5: alle rotte della console si aggiungono quelle di `/console/browser`, e alle viste «Il browser di ELA» (ADR 0063 §10).
 - **Data:** 2026-09-20
 - **Riferimenti spec:** §6, §16, §46, §48, §57, §58, §65
 - **Riferimenti design:** `docs/spec/ELA_design.md` — §2, §3, §6, §7, §8, §10, §11, §12, §14, §26,

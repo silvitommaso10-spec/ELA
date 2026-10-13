@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import re
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import ClassVar, Final
@@ -43,8 +43,11 @@ from ela.domain import (
 )
 from ela.permissions.capabilities import (
     BROWSER_ACT,
+    BROWSER_ACT_AS_YOU,
     BROWSER_GUIDED,
+    BROWSER_GUIDED_AS_YOU,
     BROWSER_READ,
+    BROWSER_READ_AS_YOU,
     COST_PATTERN,
     GUIDED_ROUTE,
     LOOKS_MAX,
@@ -78,6 +81,7 @@ from ela.ports import (
     ProviderRegistryPort,
     RoutingError,
     SessionEnd,
+    SessionGestures,
     SessionHandle,
     SessionHost,
     SessionPlan,
@@ -91,14 +95,22 @@ from ela.tools.browser import SELECTOR_GRAMMAR
 from ela.tools.verify import COMMON_FAILURE_CODES, VERIFICATION_ARGUMENTS_INVALID, Verifier
 
 __all__ = [
+    "BROWSER_GUIDED_AS_YOU_TOOL_NAME",
+    "BROWSER_GUIDED_AS_YOU_VERIFIER_NAME",
     "BROWSER_GUIDED_TOOL_NAME",
     "BROWSER_GUIDED_VERIFIER_NAME",
+    "EMPTY_SESSION",
     "GUIDED_CLOSED",
     "GUIDED_GESTURES_AUDITED",
     "GUIDED_MAX_TOKENS",
     "GUIDED_RESERVATIONS_CLOSED",
     "GUIDED_ROUTE",
     "INSTRUCTIONS",
+    "INSTRUCTIONS_AS_YOU",
+    "SENDS",
+    "SENDS_AS_YOU",
+    "SESSION_AS_YOU",
+    "SessionKind",
     "ACT_DESCRIPTION",
     "LAUNCH",
     "NOTHING_SENT",
@@ -164,8 +176,65 @@ SENDS: Final = (
 """The sentence of the question that says what leaves the machine (§57): the provider is the
 route's, and nothing of ELA's context goes with it (decision 8)."""
 
-_GESTURES: Final[Mapping[str, CapabilityId]] = {"read": BROWSER_READ, "act": BROWSER_ACT}
-"""The names of the two tools of the session, and the capabilities they ask for."""
+BROWSER_GUIDED_AS_YOU_TOOL_NAME: Final = "browser-guided-as-you"
+BROWSER_GUIDED_AS_YOU_VERIFIER_NAME: Final = "browser-guided-as-you-verifier"
+
+SENDS_AS_YOU: Final = (
+    "the sentence, ELA's instructions and the text of every page read in the session go to {}, "
+    "the model's provider: these are pages you are signed in to, so what goes is your own "
+    "content — your mail, your messages"
+)
+"""What leaves the machine in a session with the profile (§57; ADR 0063, which rewrites the answer
+of ADR 0060 §8 for it): the same things, and among them the user's own content."""
+
+INSTRUCTIONS_AS_YOU: Final = (
+    INSTRUCTIONS
+    + """
+The user is signed in to this site: opening an address may act as the user. Do not open an \
+address that confirms, cancels, unsubscribes or signs out unless the goal asks for exactly that."""
+)
+"""The instructions of a session with the profile: the same, and one line more — inside its site a
+model may open any address as the user, and a site that acts when an address is opened acts."""
+
+
+@dataclass(frozen=True, slots=True)
+class SessionKind:
+    """Which guided session a tool runs (M13.9, ADR 0063): its capability, what its two tools ask
+    for, what it tells the user leaves the machine, what it tells its model — and whether it names
+    one site only. A datum, where until M13.9 the capability and the gestures were constants."""
+
+    capability: CapabilityId
+    gestures: SessionGestures
+    sends: str
+    instructions: str
+    one_site: bool
+    tool_name: str
+    verifier_name: str
+
+
+EMPTY_SESSION: Final = SessionKind(
+    capability=BROWSER_GUIDED,
+    gestures=SessionGestures(read=BROWSER_READ, act=BROWSER_ACT),
+    sends=SENDS,
+    instructions=INSTRUCTIONS,
+    one_site=False,
+    tool_name=BROWSER_GUIDED_TOOL_NAME,
+    verifier_name=BROWSER_GUIDED_VERIFIER_NAME,
+)
+"""``browser.guided``: the session of ADR 0060, on the empty browser."""
+
+SESSION_AS_YOU: Final = SessionKind(
+    capability=BROWSER_GUIDED_AS_YOU,
+    gestures=SessionGestures(read=BROWSER_READ_AS_YOU, act=BROWSER_ACT_AS_YOU),
+    sends=SENDS_AS_YOU,
+    instructions=INSTRUCTIONS_AS_YOU,
+    one_site=True,
+    tool_name=BROWSER_GUIDED_AS_YOU_TOOL_NAME,
+    verifier_name=BROWSER_GUIDED_AS_YOU_VERIFIER_NAME,
+)
+"""``browser.guided_as_you``: the same session with the profile that lasts — its reads and its
+acts are the profile's, it names **one site** (decision 30), and it has **no gesture of login**: a
+model does not see the attributes of a field."""
 
 _QUOTED: Final = UUID(int=0)
 """The id of a request built only to be weighed: it is never sent."""
@@ -250,9 +319,11 @@ class BrowserGuidedTool(Tool):
         *,
         gateway: str,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
-        name: str = BROWSER_GUIDED_TOOL_NAME,
+        kind: SessionKind = EMPTY_SESSION,
+        name: str | None = None,
     ) -> None:
-        super().__init__(BROWSER_GUIDED, clock, ids, name=name)
+        super().__init__(kind.capability, clock, ids, name=name or kind.tool_name)
+        self._kind = kind
         self._gestures = gestures
         self._sessions = sessions
         self._router = router
@@ -279,7 +350,7 @@ class BrowserGuidedTool(Tool):
                 max_cost=_said(prepared.max_cost),
                 looks=prepared.looks,
                 timeout_seconds=prepared.seconds,
-                sends=SENDS.format(prepared.route.provider),
+                sends=self._kind.sends.format(prepared.route.provider),
                 one_call="no price"
                 if prepared.worst.amount is None
                 else f"{_said(prepared.worst.amount)} USD",
@@ -326,7 +397,16 @@ class BrowserGuidedTool(Tool):
             or not SECONDS_MIN <= seconds <= SECONDS_MAX
             or not isinstance(task_type, str)
         ):
-            return Outcome({}, ARGUMENTS_INVALID, "the arguments of browser.guided are not valid")
+            return Outcome(
+                {}, ARGUMENTS_INVALID, f"the arguments of {self.capability_id} are not valid"
+            )
+        if self._kind.one_site and len(sites) != 1:
+            return Outcome(
+                {},
+                ARGUMENTS_INVALID,
+                f"a session of {self.capability_id} names one site, and this one names "
+                f"{len(sites)}: what its model reads on a site of yours is not carried to another",
+            )
         max_cost = Decimal(cost)
         try:
             route = self._router.route(task_type, None)
@@ -340,7 +420,7 @@ class BrowserGuidedTool(Tool):
             ProviderRequest(
                 id=ProviderRequestId(_QUOTED),
                 created_at=self._clock.now(),
-                purpose="browser.guided",
+                purpose=str(self.capability_id),
                 input=goal,
                 model_hint=route.profile,
                 parameters={"max_output_tokens": GUIDED_MAX_TOKENS},
@@ -380,7 +460,12 @@ class BrowserGuidedTool(Tool):
         assert decision.task_id is not None and decision.step_id is not None
         step = decision.step_id
         opened = await self._gestures.open(
-            decision.task_id, step, sites=prepared.sites, tools=self._sessions.tools
+            decision.task_id,
+            step,
+            capability=self.capability_id,
+            sites=prepared.sites,
+            tools=self._sessions.tools,
+            gestures=self._kind.gestures,
         )
         if isinstance(opened, ErrorMetadata):
             # Nothing went out: the reservation closes at zero, not at the month's worst case.
@@ -397,7 +482,9 @@ class BrowserGuidedTool(Tool):
         plan = SessionPlan(
             session=step,
             goal=prepared.goal,
-            instructions=INSTRUCTIONS.format(sites=", ".join(prepared.sites), looks=prepared.looks),
+            instructions=self._kind.instructions.format(
+                sites=", ".join(prepared.sites), looks=prepared.looks
+            ),
             read_description=READ_DESCRIPTION,
             act_description=ACT_DESCRIPTION,
             model=prepared.worst.model,
@@ -436,7 +523,7 @@ class BrowserGuidedTool(Tool):
                     ),
                 )
                 return f"ELA stops the session: the {looks} gestures of this session are used"
-            capability = _GESTURES.get(name, CapabilityId(name))
+            capability = self._kind.gestures.named(name) or CapabilityId(name)
             done = await self._gestures.gesture(session, capability, arguments)
             return done.text
 
@@ -468,6 +555,10 @@ class BrowserGuidedTool(Tool):
             # ELA's word first: a session that finished its turn in the same instant ELA stopped it
             # — the gesture past its looks answered, a call refused — ended on ELA's limit.
             why = _why(stopped, halted, seconds, ended=ended.done())
+            if why is not None:
+                # The room hears it before the session does: from here no gesture is made and
+                # no read is covered, whatever the model sends while it is being interrupted.
+                await self._gestures.halt(step, why)
             if not ended.done():
                 await launched.interrupt()
             end = await ended
@@ -580,9 +671,10 @@ class BrowserGuidedVerifier(Verifier):
         sessions: AgentSession,
         audit: AuditLog,
         *,
-        name: str = BROWSER_GUIDED_VERIFIER_NAME,
+        kind: SessionKind = EMPTY_SESSION,
+        name: str | None = None,
     ) -> None:
-        super().__init__(BROWSER_GUIDED, name=name)
+        super().__init__(kind.capability, name=name or kind.verifier_name)
         self._gestures = gestures
         self._sessions = sessions
         self._audit = audit

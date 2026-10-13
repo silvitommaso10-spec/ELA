@@ -47,13 +47,17 @@ from ela.ports import (
     StopPoint,
     TaskStop,
 )
-from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool
+from ela.tools.base import ARGUMENTS_INVALID, NotNow, Outcome, Perceiving, any_moment
 from ela.tools.captures import CAPTURE_CODES, CaptureProblem
 from ela.tools.screen import SCREEN_STORE_FULL, CaptureStore
 
-__all__ = ["LISTEN_TOOL_NAME", "PERCEPTION_LISTEN", "ListenTool"]
+__all__ = ["LISTEN_LOGIN_WINDOW_OPEN", "LISTEN_TOOL_NAME", "PERCEPTION_LISTEN", "ListenTool"]
 
 LISTEN_TOOL_NAME: Final = "listen"
+
+LISTEN_LOGIN_WINDOW_OPEN: Final = "listen.login_window_open"
+"""The window where the user signs in by hand is open, and ELA does not listen meanwhile (M13.9,
+ADR 0063 §7): what is said beside a password being typed is the user's, like the password."""
 
 DENIED_MESSAGE: Final = (
     "the microphone is not granted to the process ELA runs under; grant it in System Settings > "
@@ -65,7 +69,7 @@ MICROPHONE_POINT: Final = "opening the microphone"
 """Where this tool listens for the stop of its task: its point of no return (M6.3c, ADR 0054 §3)."""
 
 
-class ListenTool(Tool):
+class ListenTool(Perceiving):
     """Opens the microphone for a stated number of seconds and stores what was said.
 
     ``probe`` is the same :class:`~ela.ports.PerceptionProbe` the perception core uses, asked
@@ -79,6 +83,7 @@ class ListenTool(Tool):
                 LISTEN_DISABLED,
                 LISTEN_DENIED_BY_SYSTEM,
                 LISTEN_PERMISSION_UNREADABLE,
+                LISTEN_LOGIN_WINDOW_OPEN,
                 SCREEN_STORE_FULL,
             }
         )
@@ -113,6 +118,9 @@ class ListenTool(Tool):
     existed, and a reader who wants to know whether ELA heard a room or a dead input can see it.
     """
 
+    not_now_code: ClassVar[str] = LISTEN_LOGIN_WINDOW_OPEN
+    meanwhile: ClassVar[str] = "ELA does not listen meanwhile"
+
     idempotent: ClassVar[bool] = False
     relocatable: ClassVar[bool] = False
     stop_point: ClassVar[StopPoint] = StopPoint(here=MICROPHONE_POINT, on_a_node=None)
@@ -130,8 +138,9 @@ class ListenTool(Tool):
         *,
         enabled: bool = True,
         name: str = LISTEN_TOOL_NAME,
+        not_now: NotNow = any_moment,
     ) -> None:
-        super().__init__(PERCEPTION_LISTEN, clock, ids, name=name)
+        super().__init__(PERCEPTION_LISTEN, clock, ids, name=name, not_now=not_now)
         self._store = store
         self._listening = listening
         self._probe = probe
@@ -152,7 +161,7 @@ class ListenTool(Tool):
                 ARGUMENTS_INVALID,
                 f"seconds must be an integer between 1 and {MAX_LISTEN_SECONDS}",
             )
-        refused = await self._refusal()
+        refused = await self._withheld() or await self._refusal()
         if refused is not None:
             return refused
         return await self._hear(seconds, stop)

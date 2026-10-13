@@ -55,6 +55,14 @@ def test_every_command_of_the_milestone_is_there() -> None:
         "policy create",
         "policy list",
         "policy revoke",
+        "vault status",
+        "vault open",
+        "vault close",
+        "browser status",
+        "browser window show",
+        "browser window hide",
+        "browser open",
+        "browser close",
         "voice",
         "voice preview",
         "voice audition",
@@ -66,7 +74,7 @@ async def test_the_help_lists_the_groups_without_reaching_ela(cli: Cli) -> None:
     result = await cli("--help")
 
     assert result.exit_code == 0
-    for group in ("task", "audit", "device", "provider", "policy"):
+    for group in ("task", "audit", "device", "provider", "policy", "vault", "browser"):
         assert group in result.stdout
 
 

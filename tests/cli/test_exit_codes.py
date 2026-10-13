@@ -70,10 +70,23 @@ INVOCATIONS: dict[str, tuple[str, ...]] = {
     ),
     "policy list": ("policy", "list"),
     "policy revoke": ("policy", "revoke", MISSING),
+    "vault status": ("vault", "status"),
+    "vault open": ("vault", "open"),
+    "vault close": ("vault", "close"),
+    "browser status": ("browser", "status"),
+    "browser window show": ("browser", "window", "show"),
+    "browser window hide": ("browser", "window", "hide"),
+    "browser open": ("browser", "open"),
+    "browser close": ("browser", "close"),
 }
 """One valid invocation per command that talks to ELA — valid, so that what is being tested is
 how it *ends* and not that its arguments were wrong. ``init`` and ``serve`` are not here: they
 open no client, and the two codes under test are a client's."""
+
+PIPED: dict[str, str] = {"vault open": "a key that reaches nobody in these tests\n"}
+"""What a command finds on its stdin, for the one that reads it: without a key ``ela vault open``
+sends nothing — which is its own test, in ``test_vault.py`` — and the codes under test here are
+the ones of a request."""
 
 
 def calling_commands() -> list[str]:
@@ -122,7 +135,7 @@ async def test_ela_is_not_there(
         lambda: client.open_client(ela.settings.api, transport=httpx.MockTransport(unreachable)),
     )
 
-    result = await cli(*INVOCATIONS[command])
+    result = await cli(*INVOCATIONS[command], input=PIPED.get(command))
 
     assert result.exit_code == UNREACHABLE, result.output
     assert UNREACHABLE in documented_command_exits()[command]
@@ -138,7 +151,7 @@ async def test_a_token_ela_does_not_know_is_a_refusal_for_every_command(
         client, "connect", lambda: client.open_client(wrong, transport=cli.transport)
     )
 
-    result = await cli(*INVOCATIONS[command])
+    result = await cli(*INVOCATIONS[command], input=PIPED.get(command))
 
     assert result.exit_code == REFUSED, result.output
     assert "unauthorized" in plain(result.stderr)
@@ -154,7 +167,7 @@ async def test_no_token_at_all_never_reaches_ela(
     monkeypatch.delenv("ELA_API_TOKEN", raising=False)
     monkeypatch.setattr(client, "connect", _real_connect)
 
-    result = await cli(*INVOCATIONS[command])
+    result = await cli(*INVOCATIONS[command], input=PIPED.get(command))
 
     assert result.exit_code == CONFIGURATION, result.output
     assert "ELA_API_TOKEN" in plain(result.stderr)

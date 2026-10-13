@@ -19,7 +19,7 @@ from ela.devices import (
     LOCAL_USER,
 )
 from ela.devices.local import LOCAL_DEVICE_ID
-from ela.domain import TaskId, TaskState
+from ela.domain import PlanAuthor, PlanAuthorKind, TaskId, TaskState
 from tests.api.support import ECHO_MESSAGE, Clocked, echo_plan, note_plan, queued
 
 UNKNOWN = str(uuid.uuid4())
@@ -242,6 +242,26 @@ async def test_a_plan_queues_the_task(client: AsyncClient) -> None:
 
     assert planned["state"] == TaskState.QUEUED.value
     assert planned["plan_id"] is not None
+
+
+async def test_a_plan_sent_by_hand_cannot_say_a_session_wrote_it(
+    client: AsyncClient, ela: Ela
+) -> None:
+    """M13.9, decision 29: what covers a ``MEDIUM`` read is that a guided session's model wrote
+    it, and **the author of a plan is written by whoever attaches it, never by the body of the
+    request**. A plan sent to this route is a hand's whatever it says of itself — and it cannot
+    give its steps the narrowing a session gives its gestures either."""
+    created = (await client.post("/tasks", json={"text": "fai"})).json()
+    body = echo_plan()
+    body["author"] = {"by": "SESSION", "session": str(uuid.uuid4()), "model": "a-model"}
+    body["steps"][0]["within"] = ["www.youtube.com"]
+
+    planned = await client.post(f"/tasks/{created['id']}/plan", json=body)
+
+    assert planned.status_code == 200, planned.text
+    plan = await ela.repository.plan(TaskId(uuid.UUID(created["id"])))
+    assert plan.author == PlanAuthor(by=PlanAuthorKind.HAND)
+    assert plan.steps[0].within is None
 
 
 async def test_a_second_plan_is_refused(client: AsyncClient) -> None:

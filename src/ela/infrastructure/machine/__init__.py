@@ -33,6 +33,11 @@ itself: Playwright launches its Node driver and a Chromium, and rule 32 names ``
 the ways out so that the library stays here too. Its decisions — the address, which navigations may
 be sent, which element and which value — reach it as data from ``ela.tools.browser``.
 
+M13.9 adds the browser **with the profile that lasts**, in ``account.py`` — Chrome for Testing on
+the folder the user declared, and the window with nothing attached —, and the vault's own program
+as a child, in ``vault.py``. The folder of the profile is read by ``account.py`` and by no other
+module of ELA (architecture rule 69).
+
 M11.1 adds a fourth, and it is Apple's again (``say(1)``) — and the first that **acts outside
 the screen** rather than reading the machine. It lives here because rule 32's content is *ELA
 touches the operating system in one place*: the door, not the word "perception". That makes
@@ -41,6 +46,7 @@ here first); the third time it gets renamed. Rule 40 keeps that helper from ever
 to write a file instead of speaking.
 """
 
+from ela.infrastructure.machine.account import AccountChrome
 from ela.infrastructure.machine.agent import ClaudeAgentSession
 from ela.infrastructure.machine.audition import (
     AUDITION_PHRASES,
@@ -93,6 +99,7 @@ from ela.infrastructure.machine.textrecognition import (
     VisionTextRecognition,
 )
 from ela.infrastructure.machine.unsupported import UnsupportedProbe
+from ela.infrastructure.machine.vault import BitwardenVault
 from ela.infrastructure.machine.windows import (
     POWERSHELL,
     SapiSpeechCommand,
@@ -101,47 +108,49 @@ from ela.infrastructure.machine.windows import (
 )
 
 __all__ = [
-    "ClaudeAgentSession",
     "AFPLAY",
     "AUDITION_PHRASES",
+    "AccountChrome",
+    "Audition",
+    "BitwardenVault",
+    "Candidate",
+    "ClaudeAgentSession",
+    "DarwinListening",
+    "DarwinProbe",
+    "Heard",
+    "LOOKUP_TIMEOUT_SECONDS",
+    "MISSING_EXECUTABLE",
+    "OnlineSpeechCommand",
     "PMSET",
     "POWERSHELL",
     "POWER_TIMEOUT_SECONDS",
     "PROBE_MODULE",
-    "SAY",
-    "SPEECH_FILE_PREFIX",
-    "Audition",
-    "Candidate",
-    "Heard",
     "Play",
-    "Speak",
-    "OnlineSpeechCommand",
+    "PlaywrightBrowser",
     "ProcessGroupLauncher",
-    "spawn_with_audio",
-    "sweep_speech_files",
+    "SAY",
     "SCREENCAPTURE",
-    "TIMED_OUT",
-    "VISION_MODULE",
-    "DarwinListening",
-    "DarwinProbe",
+    "SPEECH_FILE_PREFIX",
     "SapiSpeechCommand",
     "SaySpeechCommand",
     "ScreenCaptureCommand",
     "Spawn",
+    "Speak",
+    "TIMED_OUT",
     "UnsupportedListening",
     "UnsupportedProbe",
     "UnsupportedScreenCapture",
     "UnsupportedSpeech",
     "UnsupportedTextRecognition",
+    "VISION_MODULE",
     "VisionTextRecognition",
     "digest_of",
     "pmset_source",
+    "port_holder",
     "power_status",
     "spawn",
     "spawn_powershell",
+    "spawn_with_audio",
     "spawn_with_input",
-    "LOOKUP_TIMEOUT_SECONDS",
-    "MISSING_EXECUTABLE",
-    "PlaywrightBrowser",
-    "port_holder",
+    "sweep_speech_files",
 ]

@@ -19,17 +19,22 @@ import tempfile
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Final, Protocol
+from urllib.parse import urlsplit
 
 from ela.audit.verifier import AuditVerifier
 from ela.composition.errors import ConfigurationError
-from ela.composition.settings import Settings
+from ela.composition.settings import Settings, env_file
 from ela.composition.system import (
     PowerReading,
     SystemClock,
     UuidGenerator,
+    WindowSwitch,
+    a_session_of_the_screen,
     argument_limits,
+    own_command,
     power_reading,
+    while_the_user_signs_in,
     without_node_variables,
 )
 from ela.context import ContextCore
@@ -41,13 +46,23 @@ from ela.devices import (
     period_of,
 )
 from ela.devices.local import LOCAL_DEVICE_ID
-from ela.domain import Actor, ActorKind, RawSpeech, TaskId
+from ela.domain import (
+    Actor,
+    ActorKind,
+    AuditEvent,
+    AuditEventId,
+    AuditEventType,
+    RawSpeech,
+    TaskId,
+)
 from ela.executive import Assignments, Executor, TaskRunner
 from ela.executive.planner import Planner
 from ela.executive.sessions import SessionRoom
 from ela.executive.spending import SpendingGate
 from ela.infrastructure.machine import (
+    AccountChrome,
     Audition,
+    BitwardenVault,
     ClaudeAgentSession,
     DarwinListening,
     DarwinProbe,
@@ -89,6 +104,7 @@ from ela.permissions import (
 from ela.ports import (
     SPEECH_NO_KEY,
     SPEECH_NO_PLAYER,
+    AccountBrowser,
     AgentSession,
     ApprovalStore,
     AuditLog,
@@ -106,6 +122,7 @@ from ela.ports import (
     SpeechPort,
     TaskRepository,
     TextRecognitionPort,
+    Vault,
 )
 from ela.providers.anthropic import anthropic_gateway, anthropic_provider
 from ela.providers.anthropic.models import model_for_hint
@@ -130,13 +147,28 @@ from ela.tools import (
 )
 from ela.tools.settings import sessions_dir_beside, speech_dir_beside
 from ela.tools.terminal import CLOSED_PATH, LANGUAGE
+from ela.tools.vault import VAULT_TIMEOUT_SECONDS, VaultClosing, VaultDoor
 
-__all__ = ["ELA_ACTOR", "WORKSPACE_MODE", "Database", "Ela", "build"]
+__all__ = [
+    "BROWSER_CLOSE_GRACE_SECONDS",
+    "ELA_ACTOR",
+    "WORKSPACE_MODE",
+    "Database",
+    "Ela",
+    "Resting",
+    "build",
+]
 
 ELA_ACTOR = Actor(kind=ActorKind.ELA, id="ela")
 """Who ELA says it is in the audit trail when it acts on its own (§32)."""
 WORKSPACE_MODE = 0o700
 """The workspace holds the user's notes (§57): nobody else on the machine reads them."""
+BROWSER_CLOSE_GRACE_SECONDS: Final = 5
+"""How long ELA's close waits for its browser to be at rest before the browser's adapter kills what
+it had started (M13.4e). The form of ADR 0060 §7, and its five seconds: a declared grace, then
+``SIGKILL`` — against 26 ms measured for closing a page. **Not the shutdown timeout ADR 0038 §11
+refused**: that one interrupts a handler that can be told; this closes a child that was told — the
+stop is the telling — and did not leave."""
 
 
 class Database(Protocol):
@@ -148,6 +180,39 @@ class Database(Protocol):
     """
 
     async def dispose(self) -> None: ...
+
+
+class Resting(Browser, Protocol):
+    """A browser that can also be brought to rest when ELA closes (M13.4e, decision 51).
+
+    Two things and not one port, as :class:`Ringing` is: what a browser **does** — open, read,
+    act, hand a page over — is the port, and every tool and verifier needs only that; **settling
+    is done once, by whoever built it**, when ELA closes. So it is a contract of the composition,
+    not a member of :class:`~ela.ports.Browser` — whose members the tables of the ADRs hold one by
+    one. **It stays so** (decision 57 of the review of M13.4e, written in ADR 0063).
+    """
+
+    async def settle(self, grace: Callable[[], Awaitable[None]]) -> tuple[str, ...]:
+        """After ELA's stop, bring this browser to rest: **nothing of it runs when this returns**
+        — no page, no closing, no opening in flight, no process of a driver or of a browser.
+
+        Called by ELA's own close, once the stop is raised: the stop is what closes the pages, and
+        this waits for that to be over. ``grace`` is how long the close waits — a function of the
+        composition's, awaited once. Past it the implementation **kills what it had started** and
+        returns the names of what it killed — the names of processes, never a command line — for
+        ELA to say; ``()`` when nothing had to be killed.
+        """
+        ...
+
+
+class RestingAccounts(AccountBrowser, Protocol):
+    """The browser with the user's accounts, which is brought to rest like the empty one (M13.9,
+    criterion 29): the same contract of the composition, on the other port — and what it settles
+    includes the window it opened for the user."""
+
+    async def settle(self, grace: Callable[[], Awaitable[None]]) -> tuple[str, ...]:
+        """As :meth:`Resting.settle`; when this returns nothing holds the folder of the profile."""
+        ...
 
 
 class Ringing(Bell, Protocol):
@@ -321,6 +386,21 @@ class Ela:
     without this the request would wait for it until its timeout («La ripresa» of M13.2). Built
     here, because the launcher is built before the application exists; ``create_app`` reads it.
     """
+    browser: Resting
+    """The browser every tool and verifier of the browser holds (M13.4), kept here for the one thing
+    ELA does to it as a whole: bring it to rest when ELA closes (M13.4e). A contract and not the
+    adapter — whatever browser ELA was built with is settled the same way."""
+    accounts: RestingAccounts
+    """The browser with the profile that lasts (M13.9, ADR 0063): Chrome for Testing on the folder
+    the user declared. Here beside :attr:`browser` for the same one thing — ELA's close brings
+    **every** browser it was built with to rest, a closed world a test holds."""
+    window: WindowSwitch
+    """Whether that browser has a window: the user's switch, off at every start (decision 34)."""
+    vault: VaultDoor
+    """The vault of the passwords, behind the door of the tools (M13.9, ADR 0063): the identity of
+    its program fixed at the start, the key kept for an hour, every closing a row of the audit.
+    On ``Ela`` for the routes that hand it the key and ask its state, and for the one thing ELA
+    does to it as a whole: forget the key when it closes."""
     speech_dir: Path
     """Where the audio of a sentence exists while it plays, and where nothing should ever be.
 
@@ -343,9 +423,71 @@ class Ela:
         M14.3; ADR 0060 §6). Normally zero, like the voice's sweep."""
         return await self.agents.sweep()
 
-    async def aclose(self) -> None:
-        """Release the database connections. Idempotent, as ``dispose`` is."""
-        await self.database.dispose()
+    async def aclose(
+        self,
+        *,
+        killed: Callable[[tuple[str, ...], bool], None] | None = None,
+        hurry: asyncio.Event | None = None,
+    ) -> None:
+        """Close ELA: raise the stop, forget the key of the vault, bring the browsers to rest,
+        release the database (M13.4e; the key and the second browser since M13.9).
+
+        **When this returns nothing of a browser runs any more**, so the loop is never torn down
+        with one of its calls in flight — measured, that is a process that does not exit. In this
+        order: the stop, for whoever closes ELA without a signal having raised it, because closing
+        is stopping and the stop is what closes the browsers' pages; the key of the vault, which is
+        forgotten and launches nothing — it waits for nobody, and its row is written while there is
+        a database to write it in —; **every browser ELA was built with, together and within one
+        grace** — the empty one and the one with the profile, whose window is among what it
+        settles —, each killing past the grace what it had started and naming it; and the
+        database, as before. **Each is reached whatever the one before it raised.**
+
+        **The grace is over at its time —** :data:`BROWSER_CLOSE_GRACE_SECONDS` **— or at the
+        hurry**, whichever comes first (decision 55): ``hurry`` is the event a second signal
+        raises, and whoever closes ELA with no signal has none. ``killed`` is handed the names of
+        what was killed **and whether it was the hurry that ended the grace**, for whoever closes
+        ELA to say which of the two happened.
+
+        **It runs to its end whoever is cancelled** (decision 51). The work runs in a task of its
+        own; this waits for it through any number of cancellations, and gives the cancellation
+        back at the end. Since the second part of M13.4e a signal cancels nobody — the handlers
+        are ELA's, ``ela.api.server`` —, and the care is for whoever closes ELA from a task that
+        is cancelled. What the database gains: every connection of the pool is closed, and the
+        write-ahead log written back; cancelled at its first wait, the release closed one
+        connection and left the others (measured). Idempotent.
+        """
+        closing = asyncio.ensure_future(self._closed(killed, hurry))
+        interrupted = False
+        while not closing.done():
+            try:
+                await asyncio.shield(closing)
+            except asyncio.CancelledError:
+                interrupted = True
+        closing.result()
+        if interrupted:
+            raise asyncio.CancelledError
+
+    async def _closed(
+        self,
+        killed: Callable[[tuple[str, ...], bool], None] | None,
+        hurry: asyncio.Event | None,
+    ) -> None:
+        self.stopping.set()
+        hurried = False
+
+        async def grace() -> None:
+            nonlocal hurried
+            hurried = await _over(BROWSER_CLOSE_GRACE_SECONDS, hurry)
+
+        try:
+            try:
+                await self.vault.stopped()
+            finally:
+                names = await _settled((self.browser, self.accounts), grace)
+                if names and killed is not None:
+                    killed(names, hurried)
+        finally:
+            await self.database.dispose()
 
 
 def _audition_speaker(online: ElevenLabsVoice, player: OnlineSpeechCommand) -> Speak:
@@ -400,13 +542,125 @@ def _sample(online: ElevenLabsVoice, player: OnlineSpeechCommand) -> Play:
     return play
 
 
-def _kept_for(seconds: int) -> Callable[[], Awaitable[None]]:
-    """How long a page handed to the verifier waits for its look: the tool's own time (form I)."""
+async def _settled(
+    browsers: Sequence[Resting | RestingAccounts], grace: Callable[[], Awaitable[None]]
+) -> tuple[str, ...]:
+    """Bring every browser to rest **together, within one grace** (M13.9, decision 59): the grace
+    is counted once, from the first browser that has to wait, and whoever else waits, waits for
+    the same. Every one of them is settled whatever another raised — the first failure is given
+    back once all have ended —, and what they killed is named in their order."""
+    counted: list[asyncio.Future[None]] = []
 
-    async def kept() -> None:
+    def the_one_grace() -> Awaitable[None]:
+        # Counted from the first that has to wait, and never while nobody does: a browser that
+        # closed by itself asks for no grace, and none runs behind a close that is over.
+        if not counted:
+            counted.append(asyncio.ensure_future(grace()))
+        return asyncio.shield(counted[0])
+
+    try:
+        ended = await asyncio.gather(
+            *(browser.settle(the_one_grace) for browser in browsers), return_exceptions=True
+        )
+    finally:
+        for waiting in counted:
+            waiting.cancel()
+    names: list[str] = []
+    failed: list[BaseException] = []
+    for one in ended:
+        if isinstance(one, BaseException):
+            failed.append(one)
+        else:
+            names.extend(one)
+    if failed:
+        raise failed[0]
+    return tuple(names)
+
+
+async def _over(seconds: int, hurry: asyncio.Event | None) -> bool:
+    """Wait until the grace of ELA's close is over: its ``seconds``, or the ``hurry`` if there is
+    one and it comes first (M13.4e, decision 55). ``True`` if the hurry — raised before the wait
+    or during it — ended it **before the time ran out**: what whoever closes ELA says is which of
+    the two. A hurry learnt of in the very turn in which the time is up did not end anything: the
+    grace was waited whole, and saying otherwise would be saying a second signal was obeyed at
+    once when it was not (the review of the repair)."""
+    told = asyncio.ensure_future((hurry or asyncio.Event()).wait())
+    timed = asyncio.ensure_future(asyncio.sleep(seconds))
+    try:
+        await asyncio.wait({told, timed}, return_when=asyncio.FIRST_COMPLETED)
+        return not timed.done()
+    finally:
+        told.cancel()
+        timed.cancel()
+
+
+def _lasting(seconds: int) -> Callable[[], Awaitable[None]]:
+    """A wait of ``seconds``, as a function the browser's adapter awaits: how long a page handed to
+    the verifier waits for its look — the tool's own time (form I). The adapter is given the wait,
+    never the number."""
+
+    async def waited() -> None:
         await asyncio.sleep(seconds)
 
-    return kept
+    return waited
+
+
+def _vault_trail(
+    audit: AuditLog, clock: Clock, ids: IdGenerator
+) -> Callable[[VaultClosing], Awaitable[None]]:
+    """Who is told of every closing of the vault: the audit (M13.9, ADR 0063).
+
+    Signed by who asked, and by ELA when nobody did — the hour, the stop, a key ended elsewhere.
+    The row says why, whether the vault's program was asked to lock and did, and its code when it
+    was not: nothing of the vault is in a :class:`~ela.tools.vault.VaultClosing` to begin with.
+    """
+
+    async def closed(closing: VaultClosing) -> None:
+        await audit.append(
+            AuditEvent(
+                id=AuditEventId(ids.new_uuid()),
+                created_at=clock.now(),
+                event_type=AuditEventType.VAULT_CLOSED,
+                actor=closing.by or ELA_ACTOR,
+                summary=f"vault: closed ({closing.reason})",
+                payload={
+                    "reason": closing.reason,
+                    "locked": closing.locked,
+                    "code": closing.code,
+                },
+            )
+        )
+
+    return closed
+
+
+def _window_trail(
+    audit: AuditLog, clock: Clock, ids: IdGenerator
+) -> Callable[[str | None, float], Awaitable[None]]:
+    """Who is told that a sign-in window ended: the audit (M13.9, ADR 0063 §8).
+
+    Signed by ELA — no route asks for an end: the user closes the window, or ELA stops —, with
+    the site the window was opened on, if any, and how long it stayed open. **The site, never
+    the address**, and nothing of what was done there: ELA holds nothing of the window but the
+    wait for its end.
+    """
+
+    async def ended(address: str | None, seconds: float) -> None:
+        await audit.append(
+            AuditEvent(
+                id=AuditEventId(ids.new_uuid()),
+                created_at=clock.now(),
+                event_type=AuditEventType.BROWSER_WINDOW_CLOSED,
+                actor=ELA_ACTOR,
+                summary="browser: the sign-in window closed",
+                payload={
+                    "site": None if address is None else urlsplit(address).hostname,
+                    "seconds": int(seconds),
+                },
+            )
+        )
+
+    return ended
 
 
 def default_route_model(policy: RoutePolicy, task_type: str) -> str:
@@ -431,7 +685,9 @@ async def build(
     clock: Clock | None = None,
     power: PowerReading | None = None,
     bell: Ringing | None = None,
-    browser: Browser | None = None,
+    browser: Resting | None = None,
+    vault: Vault | None = None,
+    accounts: RestingAccounts | None = None,
 ) -> Ela:
     """Build ELA from ``settings``, in one function and in the order of ADR 0023 §5.
 
@@ -456,6 +712,14 @@ async def build(
     nothing until a page is asked for, and a test that stops a task **while a gesture is in flight**
     names one that holds the click until the test lets it go — the precondition of form M, built
     instead of waited for, through the API as M6.3c's criterion asks.
+
+    ``vault`` is the fifth (M13.9): it defaults to :class:`BitwardenVault` at the program of
+    ``ELA_VAULT_PROGRAM`` — and to nothing at all when nobody declared one —, and a test that hands
+    ELA a key names a vault of its own: the vault's real program asks for an account.
+
+    ``accounts`` is the sixth (M13.9): it defaults to :class:`AccountChrome` on the folder of
+    ``ELA_BROWSER_PROFILE_DIR`` — on none at all when nobody declared one —, which starts nothing
+    until a page or the window is asked for, and a test of the tools and the routes names a fake.
 
     :raises ConfigurationError: for anything that makes this configuration unusable — a schema
         nobody migrated, a routing table naming a provider that is not registered, an empty one.
@@ -628,18 +892,58 @@ async def build(
         # ``tests/composition/test_browser_wiring.py`` —; a browser of ELA's own for every page,
         # with the four variables a program of the terminal gets (M6), started on the stop signal;
         # and a page handed to the verifier waits for its look no longer than the tool's time.
+        closed_environment = {
+            "PATH": CLOSED_PATH,
+            "HOME": str(Path.home()),
+            "TMPDIR": tempfile.gettempdir(),
+            "LANG": LANGUAGE,
+        }
         if browser is None:
             browser = PlaywrightBrowser(
                 stopping,
-                environment={
-                    "PATH": CLOSED_PATH,
-                    "HOME": str(Path.home()),
-                    "TMPDIR": tempfile.gettempdir(),
-                    "LANG": LANGUAGE,
-                },
-                kept=_kept_for(BROWSER_TIMEOUT_SECONDS),
+                environment=closed_environment,
+                kept=_lasting(BROWSER_TIMEOUT_SECONDS),
                 system=platform.system(),
             )
+        # The browser with the profile that lasts (M13.9, ADR 0063 §4): Chrome for Testing on the
+        # folder of ``ELA_BROWSER_PROFILE_DIR`` — the one place that reads that line, and the one
+        # module it is handed to (architecture rule 69) —, with the environment and the deadline of
+        # the empty browser, and the user's switch for the window, off at every start. And the
+        # one question a page asked with a window needs answered — is this process inside a
+        # session of the screen —, built on the probe the perception reads this machine with.
+        window = WindowSwitch()
+        if accounts is None:
+            accounts = AccountChrome(
+                stopping,
+                environment=closed_environment,
+                kept=_lasting(BROWSER_TIMEOUT_SECONDS),
+                system=platform.system(),
+                profile=settings.accounts.browser_profile_dir,
+                shown=lambda: window.shown,
+                ended=_window_trail(audit, clock, ids),
+                on_a_screen=a_session_of_the_screen(probe),
+            )
+        # The vault (M13.9, ADR 0063 §2): the program of ``ELA_VAULT_PROGRAM``, with the same four
+        # variables — the adapter adds the two of ``bw`` at each launch, and takes nothing from
+        # ``os.environ`` —, behind the door of the tools: the identity of the program fixed **now**,
+        # in a thread, and every closing told to the audit. Without a declared program there is a
+        # door and nothing behind it: every use says which line to write.
+        declared = settings.accounts.vault_program
+        if vault is None and declared is not None:
+            vault = BitwardenVault(
+                declared, environment=closed_environment, timeout_seconds=VAULT_TIMEOUT_SECONDS
+            )
+        # The line a locked vault is answered with names ELA's own command by its path, and the
+        # folder of the ``.env`` this ELA read: its command reads the token there (decision 98).
+        command, read = own_command(), env_file()
+        door = await VaultDoor.fixed(
+            vault,
+            declared,
+            clock=clock,
+            closed=_vault_trail(audit, clock, ids),
+            command=None if command is None else str(command),
+            folder=None if read is None else str(read.parent),
+        )
         browsing = Browsing(sites=settings.browser.sites, origin=https_origin)
         # The engine and the month's cap before the tools since M14.3 (ADR 0060): the room of the
         # guided sessions needs both, and the tool of ``browser.guided`` holds the room.
@@ -698,6 +1002,9 @@ async def build(
             gestures=sessions,
             sessions=agents,
             gateway=settings.api.base_url,
+            accounts=accounts,
+            vault=door,
+            not_now=while_the_user_signs_in(accounts),
         )
         verifiers = production_verifiers(
             root=root,
@@ -710,6 +1017,7 @@ async def build(
             gestures=sessions,
             sessions=agents,
             audit=audit,
+            accounts=accounts,
         )
 
         # Which tools this machine has is not something the registry can know (ADR 0016 §4), and
@@ -768,6 +1076,9 @@ async def build(
             authorization_ttl=settings.core.authorization_ttl,
             approval_ttl=settings.core.approval_ttl,
             spending=spending,
+            # The room of the guided sessions: asked for its word when a step a session's model
+            # wrote is decided, and by nobody else (M13.9, ADR 0063 §1).
+            sessions=sessions,
         )
         # And it is alive: the local node *is* this process, so ELA can say so about itself
         # without claiming anything it does not know (§16). A node registered and never heard
@@ -877,6 +1188,10 @@ async def build(
         context=context,
         speech=speech,
         stopping=stopping,
+        browser=browser,
+        accounts=accounts,
+        window=window,
+        vault=door,
         speech_dir=scratch,
         speech_online=playing,
         listening=listening,

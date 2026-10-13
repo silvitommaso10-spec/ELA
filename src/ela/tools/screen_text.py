@@ -35,7 +35,7 @@ from typing import ClassVar, Final
 
 from ela.domain import CapabilityId, JsonMapping
 from ela.ports import Clock, IdGenerator, StopPoint, TaskStop, TextRecognitionPort
-from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool
+from ela.tools.base import ARGUMENTS_INVALID, NotNow, Outcome, Perceiving, any_moment
 from ela.tools.captures import (
     CAPTURE_CODES,
     CaptureProblem,
@@ -44,7 +44,7 @@ from ela.tools.captures import (
     name_for,
     text_name_for,
 )
-from ela.tools.screen import CaptureStore
+from ela.tools.screen import SCREEN_LOGIN_WINDOW_OPEN, CaptureStore
 
 __all__ = [
     "PERCEPTION_READ_SCREEN_TEXT",
@@ -75,7 +75,7 @@ TEXT_POINT: Final = "writing the text"
 """Where this tool listens for the stop of its task: its point of no return (M6.3c, ADR 0054 §3)."""
 
 
-class ReadScreenTextTool(Tool):
+class ReadScreenTextTool(Perceiving):
     """Recognises the text in one capture, into an artefact beside it (§29 MEDIUM; ADR 0030).
 
     The recognition lands in the capture store under the **same stem** as the image, which is the
@@ -92,6 +92,7 @@ class ReadScreenTextTool(Tool):
                 TEXT_LANGUAGE_UNSUPPORTED,
                 TEXT_TIMEOUT,
                 TEXT_RECOGNITION_FAILED,
+                SCREEN_LOGIN_WINDOW_OPEN,
             }
         )
         | CAPTURE_CODES
@@ -120,6 +121,11 @@ class ReadScreenTextTool(Tool):
     of the screen became text, which is a fact about the reading; the text itself lives in a file
     with a five-minute life and never in a persisted ``ExecutionResult`` (§57, ADR 0029 §2)."""
 
+    not_now_code: ClassVar[str] = SCREEN_LOGIN_WINDOW_OPEN
+    """The capture's code: the two read the same screen, and a reader of the code does not have
+    to know which of them was asked."""
+    meanwhile: ClassVar[str] = "ELA does not read the screen meanwhile"
+
     idempotent: ClassVar[bool] = False
     relocatable: ClassVar[bool] = False
     stop_point: ClassVar[StopPoint] = StopPoint(here=TEXT_POINT, on_a_node=None)
@@ -139,8 +145,9 @@ class ReadScreenTextTool(Tool):
         *,
         languages: tuple[str, ...],
         name: str = TEXT_TOOL_NAME,
+        not_now: NotNow = any_moment,
     ) -> None:
-        super().__init__(PERCEPTION_READ_SCREEN_TEXT, clock, ids, name=name)
+        super().__init__(PERCEPTION_READ_SCREEN_TEXT, clock, ids, name=name, not_now=not_now)
         self._store = store
         self._recognition = recognition
         self._languages = languages
@@ -155,6 +162,9 @@ class ReadScreenTextTool(Tool):
         region = _region(arguments.get("region"))
         if isinstance(region, str):
             return Outcome({}, ARGUMENTS_INVALID, region)
+        withheld = await self._withheld()
+        if withheld is not None:
+            return withheld
         if not await self._recognition.available():
             return Outcome(
                 {}, TEXT_UNSUPPORTED, "this operating system has no text recognition ELA can use"

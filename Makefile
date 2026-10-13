@@ -1,4 +1,4 @@
-.PHONY: install lint typecheck test cov-critical check-linux milestones secrets check
+.PHONY: install lint typecheck test cov-critical check-linux milestones secrets misura-m13.9 check
 
 UV ?= uv
 
@@ -98,5 +98,15 @@ milestones:
 
 secrets:
 	$(UV) run detect-secrets-hook --baseline .secrets.baseline $$(git ls-files)
+
+# I test dello script della misura di M13.9, fuori dal giro (decisione 76 della review dell'11
+# ottobre 2026). `scripts/misura_m13_9.py` è uno script dell'officina fermo a d110bc3, la cui misura
+# è fatta: i suoi test — mezzo minuto di ogni giro — provavano un file che non cambia. Stanno in un
+# file che la raccolta non prende da sé, e girano da qui. Nel giro resta
+# tests/scripts/test_misura_m13_9_frozen.py, che confronta lo sha256 dello script con quello scritto
+# accanto ai suoi test: se lo script cambia, `make check` fallisce e dice di lanciare questo
+# bersaglio. `--no-cov` perché la misura del giro non è di questi test, e non va riscritta da loro.
+misura-m13.9:
+	$(UV) run pytest tests/scripts/misura_m13_9_checks.py --no-cov
 
 check: lint typecheck test cov-critical milestones secrets

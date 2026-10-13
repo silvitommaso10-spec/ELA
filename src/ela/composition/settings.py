@@ -725,6 +725,81 @@ class SpendingSettings(BaseSettings):
     """``ELA_SPENDING_CAP_USD``: the most the month may spend on the model's key, in dollars."""
 
 
+PROFILE_VARIABLE: Final = "ELA_BROWSER_PROFILE_DIR"
+VAULT_PROGRAM_VARIABLE: Final = "ELA_VAULT_PROGRAM"
+
+COPIED_ELSEWHERE: Final = ("Library/Mobile Documents", "Library/CloudStorage")
+"""The two folders of a macOS home whose contents leave the machine — iCloud Drive, and what the
+providers of File Provider keep in step —, relative to the home. A home that has neither refuses
+nothing: the comparison is between places, and is the same on every system."""
+
+
+class AccountSettings(BaseSettings):
+    """The browser with the user's accounts: the folder of its profile, and the program of the
+    vault (M13.9, ADR 0063; decisions 16d and 35).
+
+    **Both optional, and neither has a default**: ELA does not invent a place for credentials, nor
+    a program to hand the vault's key to. Without them ELA starts the same — a missing line is a
+    configuration, and every call that needs it says so before the question, with the line to
+    write (``browser.profile_undeclared``, ``vault.undeclared``): the form of
+    ``ELA_SPENDING_CAP_USD``. Empty is a line nobody wrote (``env_ignore_empty``).
+
+    **What is refused here** is what can be read off the line alone: a folder or a program that is
+    not written as an absolute path — ``~`` is not expanded, and a bare name is never looked up in
+    the ``PATH`` —, and a folder that is a link. **Where the folder is** is asked by
+    :meth:`Settings._a_profile_that_stays_where_it_is`, which knows the other sections.
+
+    **Nothing is looked at beyond that, and nothing is made.** The folder is created, ``0700``,
+    the first time its adapter looks at it — a use of the browser, or a look at who holds it:
+    ``GET /browser``, a capture, a listening —, and one found wider or somebody else's is refused
+    then (``browser.profile_unsafe``); a program that is not there is ``vault.no_program``, and its
+    identity is fixed by the tools when ELA starts.
+
+    **A section of its own, and only the Core's**: the profile and the vault's key never travel to
+    a node, so :class:`NodeConfig` does not read this, and a line the Core would refuse does not
+    stop ``ela node run``.
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="ELA_", env_file=".env", extra="ignore", env_ignore_empty=True
+    )
+
+    browser_profile_dir: Path | None = None
+    """``ELA_BROWSER_PROFILE_DIR``: where the browser keeps the sessions of the user's accounts."""
+    vault_program: str | None = None
+    """``ELA_VAULT_PROGRAM``: the vault's own program (``bw``), as an absolute path."""
+
+    @field_validator("browser_profile_dir")
+    @classmethod
+    def _an_absolute_folder_that_is_not_a_link(cls, value: Path | None) -> Path | None:
+        if value is None:
+            return None
+        if not value.is_absolute():
+            raise ValueError(
+                f"{str(value)!r} is not an absolute path. Write the whole path of the folder, "
+                "from the first slash: ELA does not expand ~ and does not choose where your "
+                "sessions are kept"
+            )
+        # A junction is a link (ADR 0048 §4): ``is_symlink`` does not see one on Windows.
+        if value.is_symlink() or value.is_junction():
+            raise ValueError(
+                f"{value} is a symbolic link (-> {value.readlink()}). The folder that holds the "
+                "sessions of your accounts is named by the path it really has: write that one"
+            )
+        return value
+
+    @field_validator("vault_program")
+    @classmethod
+    def _an_absolute_path(cls, value: str | None) -> str | None:
+        if value is not None and not Path(value).is_absolute():
+            raise ValueError(
+                f"{value!r} is not an absolute path. Write the whole path of the vault's "
+                "program, from the first slash: ELA never looks a program up in the PATH, and "
+                "this one receives the key of your vault"
+            )
+        return value
+
+
 class NodeSettings(BaseSettings):
     """What a node reads from the environment, from ``ELA_NODE_*`` (M12.3).
 
@@ -794,6 +869,62 @@ def refuse_the_root(root: Path, own: Mapping[str, Path]) -> None:
             )
 
 
+def _same_folder(one: Path, other: Path) -> bool:
+    """What the volume says: whether two paths name one folder. A path that names nothing is the
+    same as no place."""
+    try:
+        return one.samefile(other)
+    except OSError:
+        return False
+
+
+def _within(folder: Path, place: Path) -> bool:
+    """Whether ``folder`` is ``place`` or lies below it — **by its spelling, and by what the
+    volume says of what is there** (:func:`_same_folder`). The volume of a Mac ignores the case
+    of a name, and resolving a path leaves a spelling as it was written: one folder has more than
+    one spelling there, and a comparison of spellings alone would call a folder typed in lower
+    case a different place."""
+    chain = (folder, *folder.parents)
+    return place in chain or any(_same_folder(part, place) for part in chain)
+
+
+def refuse_the_profile(
+    profile: Path, *, tree: Path, home: Path, theirs: Mapping[str, Path]
+) -> None:
+    """Refuse a folder for the browser's profile that sits inside ``tree`` — ELA's own code — or
+    inside one of the folders of ``home`` whose contents leave the machine, or that holds or sits
+    inside one of ``theirs`` (M13.9, decision 35). Every place is compared **resolved**: a folder
+    reached through a link is where the link leads. **And where a folder is, is asked of the
+    volume** (:func:`_within`): a spelling is not a place.
+
+    A ``ValueError`` whose sentence names the variable: it is a check of the whole configuration,
+    and has no field to point at.
+    """
+    resolved = profile.resolve()
+    if _within(resolved, tree):
+        raise ValueError(
+            f"{PROFILE_VARIABLE} ({resolved}) is inside ELA's own source tree ({tree}). The "
+            "sessions of your accounts do not live in a folder that a version control system "
+            "reads and an editor indexes: choose one outside it, such as a folder beside the "
+            "node's secret."
+        )
+    for copied in COPIED_ELSEWHERE:
+        place = (home / copied).resolve()
+        if _within(resolved, place):
+            raise ValueError(
+                f"{PROFILE_VARIABLE} ({resolved}) is inside ~/{copied}: what is kept there "
+                "leaves this machine, and the sessions of your accounts would leave with it. "
+                "Choose a folder that stays here."
+            )
+    for what, place in theirs.items():
+        if _within(resolved, place) or _within(place, resolved):
+            raise ValueError(
+                f"{PROFILE_VARIABLE} ({resolved}) and {what} ({place}) contain one another. The "
+                "folder that holds the sessions of your accounts is neither inside a folder ELA "
+                "fills and sweeps, nor around one: choose a folder of its own."
+            )
+
+
 def _sqlite_file(db_url: str) -> Path | None:
     """The file a sqlite URL names, or ``None`` when the database is not a file at all."""
     prefix = "sqlite:///"
@@ -803,7 +934,7 @@ def _sqlite_file(db_url: str) -> Path | None:
     return None if rest in {"", ":memory:"} else Path(rest)
 
 
-def _env_file() -> Path | None:
+def env_file() -> Path | None:
     """The ``.env`` this process would read, when there is one: ``None`` when nobody wrote it."""
     env = Path(".env").absolute()
     return env if env.exists() else None
@@ -866,6 +997,9 @@ class Settings(BaseModel):
     """What ``terminal.run`` may launch and for how long (M13.2): required, and ``[]`` admitted."""
     browser: BrowserSettings
     """Which sites the browser may open (M13.4): required, and ``[]`` admitted."""
+    accounts: AccountSettings
+    """The profile of the browser with the user's accounts and the vault's program (M13.9): both
+    optional, without a default, and only the Core's — a node reads neither."""
     node: NodeSettings
     """What a node on this machine reads (M12.3). Held here so that ``.env.example`` and
     ``VARIABLES`` document it with everything else — the Core itself reads none of it."""
@@ -889,6 +1023,29 @@ class Settings(BaseModel):
         refuse_the_root(self.filesystem.root, self._ela_s_own())
         return self
 
+    @model_validator(mode="after")
+    def _a_profile_that_stays_where_it_is(self) -> Settings:
+        """A declared profile is on this machine, outside ELA's code, and in a folder of its own
+        (M13.9, decision 35).
+
+        **What it may not touch is read off the other sections**, as for the root: ELA's source
+        tree, the two folders of the home that macOS copies elsewhere, the workspace of §23 and the
+        capture store. The root ``fs.read`` may read is not in this list because the profile is in
+        the root's — :meth:`_ela_s_own` —: the validator above has already refused the two that
+        contain one another, and named both. **Beside the node's secret is allowed**: it is the
+        place the guide proposes.
+        """
+        profile = self.accounts.browser_profile_dir
+        if profile is not None:
+            own = self._ela_s_own()
+            refuse_the_profile(
+                profile,
+                tree=_ela_source_tree(),
+                home=Path.home(),
+                theirs={what: own[what] for what in ("the workspace", "the capture store")},
+            )
+        return self
+
     def _ela_s_own(self) -> dict[str, Path]:
         """What ELA uses to exist, read off the settings that already name it."""
         state = self.node.node_state_dir.expanduser().absolute().resolve()
@@ -898,13 +1055,15 @@ class Settings(BaseModel):
             "the audio ELA sweeps at start-up": speech_dir_beside(self.captures.capture_dir),
             "the folder a node keeps its secret in": state,
         }
-        # The three that may not be there: a database that is not a file, a ``.env`` nobody
-        # wrote. One loop rather than three conditions, so that "it is not there" is one answer
-        # and not three shapes of the same answer.
+        # Those that may not be there: a database that is not a file, a ``.env`` nobody wrote, a
+        # profile nobody declared. One loop rather than a condition each, so that "it is not
+        # there" is one answer and not as many shapes of the same answer.
+        profile = f"the profile of ELA's browser ({PROFILE_VARIABLE})"
         for what, place in (
             ("the database", _sqlite_file(self.persistence.db_url)),
-            ("the .env ELA read", _env_file()),
+            ("the .env ELA read", env_file()),
             ("ELA's own source tree", _ela_source_tree()),
+            (profile, self.accounts.browser_profile_dir),
         ):
             if place is not None:
                 places[what] = place
@@ -937,6 +1096,7 @@ class Settings(BaseModel):
             "filesystem": FilesystemSettings,
             "terminal": TerminalSettings,
             "browser": BrowserSettings,
+            "accounts": AccountSettings,
             "perception": PerceptionSettings,
             "captures": CaptureSettings,
             "voice": VoiceSettings,
@@ -1016,7 +1176,7 @@ class NodeConfig(BaseModel):
             "the folder a node keeps its secret in": self.node.node_state_dir,
             "ELA's own source tree": _ela_source_tree(),
         }
-        env = _env_file()
+        env = env_file()
         if env is not None:
             own["the .env ELA read"] = env
         refuse_the_root(

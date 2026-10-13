@@ -113,8 +113,11 @@ async def test_the_creation_saves_the_policy_and_writes_who_created_it(
     assert policy["model"] == HAIKU_5_5
     assert policy["created_by"]["name"] == "the command line on the Core"
     assert [one["id"] for one in listed["policies"]] == [policy["id"]]
-    (admitting,) = listed["admitting"]
-    assert admitting["capability"] == "browser.guided"
+    by_capability = {one["capability"]: one for one in listed["admitting"]}
+    assert set(by_capability) == {"browser.guided", "browser.guided_as_you"}, (
+        "the two sessions, each a capability of its own: a policy of one is not the other's"
+    )
+    admitting = by_capability["browser.guided"]
     assert [limit["name"] for limit in admitting["limits"]] == ["max_cost_usd", "looks", "seconds"]
     assert admitting["uncovered"] == ["task_type"]
     (event,) = events
@@ -310,6 +313,12 @@ async def test_the_revocation_is_written_once_and_the_session_asks_again(
     assert revoked.status_code == 200, revoked.text
     assert revoked.json()["policy"]["state"] == "REVOKED"
     assert "goes on until it ends" in revoked.json()["running"]
+    # M13.9, decision 29: a revocation does not stop a session already started — nor the reads
+    # that session covers —, and the output says where they end.
+    assert (
+        "The reads it covers go on with it, up to its own looks, seconds and cost"
+        in revoked.json()["running"]
+    )
     assert again.status_code == 409
     assert again.json()["error"]["code"] == "policy.not_live"
     assert "revoked" in asked["why"][0]

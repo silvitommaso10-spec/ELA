@@ -75,6 +75,7 @@ __all__ = [
     "ContextSource",
     "ContextTask",
     "ContextWork",
+    "Covered",
     "DEVICE_CAPABILITY_NAME_PATTERN",
     "DecisionId",
     "Device",
@@ -138,6 +139,7 @@ __all__ = [
     "SensorName",
     "SensorState",
     "SensorStatus",
+    "SessionCover",
     "StepId",
     "StepState",
     "SystemPermission",
@@ -590,6 +592,36 @@ class AuditEventType(StrEnum):
     the registry by whoever lists, as for a no (ADR 0059 §3). Written by the one route that revokes
     (architecture rule 66). A revocation stops no session already running: the grant was spent
     before it, and the stop of a task is the «ferma»."""
+    VAULT_OPENED = "VAULT_OPENED"
+    """ELA was handed the session key of the vault, and it opens (M13.9, ADR 0063).
+
+    Written by the one route that receives a key, signed ``USER``: who, when, and until when ELA
+    keeps it. **Nothing of the vault** — not the key, not the account, not an entry."""
+    VAULT_CLOSED = "VAULT_CLOSED"
+    """ELA stopped holding the key of the vault, or locked it on a command (M13.9, ADR 0063).
+
+    Written by the keeper of the key, which is who sees every closing — a command, the hour, the
+    stop of ELA, a key ended elsewhere: a closing no route asked for would otherwise have no row.
+    Signed by who asked, and by ELA when nobody did; the payload says why, whether the vault's
+    program was asked to lock and did, and the code when it was not."""
+    BROWSER_WINDOW_OPENED = "BROWSER_WINDOW_OPENED"
+    """ELA opened the window where the user signs in to a site by hand (M13.9, ADR 0063 §8).
+
+    Written by the one route that opens it, signed ``USER``: who, when, and the site if one was
+    named. **Nothing of what happens in the window** — ELA does not read it."""
+    BROWSER_WINDOW_CLOSED = "BROWSER_WINDOW_CLOSED"
+    """The window where the user signs in by hand ended (M13.9, ADR 0063 §8).
+
+    Written by who waits for its process, which is who sees every end — the user closed it, ELA
+    stopped — and signed ``ELA``: no route asks for it. The site if one was named, and how long
+    the window stayed open, in whole seconds."""
+    BROWSER_CLOSE_ASKED = "BROWSER_CLOSE_ASKED"
+    """The user had ELA end the browser a hand may be on (M13.9, ADR 0063 §8; decision 80).
+
+    Written by the one route that asks, signed ``USER``, **only when a process was told**: who,
+    when, and whether it quit when told or was killed at the grace. For the window ELA started
+    the end itself is one more row, written by who waits for it; for a browser ELA did not start
+    this is the only row there is."""
     APPROVAL_REQUESTED = "APPROVAL_REQUESTED"
     APPROVAL_RESOLVED = "APPROVAL_RESOLVED"
     TOOL_EXECUTED = "TOOL_EXECUTED"
@@ -1227,6 +1259,27 @@ class PolicyTerms(_DomainModel):
     model: str | None = None
 
 
+class Covered(_DomainModel):
+    """What the capability of a session declares its reads are (M13.9, ADR 0063; decision 29).
+
+    A guided session with the profile reads with a ``MEDIUM`` capability, and what covers those
+    reads is the session itself — the yes or the policy it was started with. The capability of the
+    session says **which** capability that is, here, **outside** :class:`PolicyTerms`: the terms of
+    ``browser.guided`` stay what a policy born with M13.12 copied.
+
+    ``input_schema`` is **a copy of the covered capability's schema**, which the catalogue holds
+    equal to the original. It is what extends the closed world of ADR 0062 §1 to the cover: a
+    policy carries the declaration of the day it was born (:attr:`PolicyBounds.covers`), and the
+    day the covered capability's arguments change the declaration is another one — the policy
+    stops covering by itself.
+    """
+
+    capability_id: _CapabilityIdField
+    input_schema: JsonMapping = _json_payload(
+        "A copy of the JSON Schema of the capability a session covers."
+    )
+
+
 class PolicyBounds(_DomainModel):
     """The limits of a policy and the terms they were born under (M13.12, ADR 0062; decision 3).
 
@@ -1240,6 +1293,10 @@ class PolicyBounds(_DomainModel):
 
     terms: PolicyTerms
     limits: JsonMapping = _json_payload("Every declared limit, its value in words.")
+    covers: Covered | None = None
+    """A copy of what the capability's sessions covered the day the policy was born, or ``None``
+    — as for every policy born before M13.9, whose stored rows carry no such field. Compared with
+    today's declaration beside the terms (M13.9, decision 29)."""
 
 
 class CapabilitySpec(_DomainModel):
@@ -1298,8 +1355,30 @@ class CapabilitySpec(_DomainModel):
     """What a standing policy of §59 must bound to cover this capability, or ``None``: no policy
     covers it (M13.12, ADR 0062; decision 1). Declared here, as ``prompt_arguments`` is, and only on
     a row that asks unless authorized — the catalogue refuses it anywhere else (decision 2)."""
+    covers: Covered | None = None
+    """The capability the reads of this capability's sessions are, or ``None``: its sessions cover
+    nothing (M13.9, ADR 0063; decision 29). Declared by the capability of a guided session, and
+    only towards a row that asks unless authorized — the catalogue refuses any other, and the
+    Guardian denies one all the same."""
     requires_authorization: bool
     metadata: JsonMapping = _json_payload(_METADATA_DESCRIPTION)
+
+
+class SessionCover(_DomainModel):
+    """The room's word about one open guided session, for the step being decided (M13.9, ADR 0063).
+
+    What covers a ``MEDIUM`` read a session's model wrote is not a grant: it is **this fact, read
+    from the room at the moment of the decision** — the session of ``session`` is open, in the
+    task ``task_id``, it is a session of ``capability_id``, on ``sites``. A session is open in
+    the room only while its own step runs, and that step ran because it was permitted. Built by
+    the room and handed to the Guardian by the executor; no tool builds one (architecture rule
+    67), and a copy kept from an earlier decision is not one.
+    """
+
+    session: StepId
+    task_id: TaskId
+    capability_id: _CapabilityIdField
+    sites: tuple[str, ...]
 
 
 class PermissionDecision(_DomainModel):

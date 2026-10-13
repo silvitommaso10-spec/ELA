@@ -674,6 +674,18 @@ def _pairs(found: ApprovalOut, seen: bool) -> pages.Markup:
                 HERE, "pair", key="Testo atteso", value=visible(found.expect, lines=False)
             )
         )
+    if seen and found.entry:
+        # A login (M13.9, ADR 0063 §9): which entry of the vault the yes covers, and whose — the
+        # username masked. The user's content: behind the ceiling, like the address.
+        pairs.append(
+            pages.fragment(HERE, "pair", key="La voce", value=visible(found.entry, lines=False))
+        )
+    if seen and found.username:
+        pairs.append(
+            pages.fragment(
+                HERE, "pair", key="Nome utente", value=visible(found.username, lines=False)
+            )
+        )
     if seen and found.does:
         # The sentence comes from the capability and is rendered as it stands (M13.1 dec. G):
         # a page that composed one would be lending a write's words to a read.

@@ -17,18 +17,24 @@ POSIX system — the total, and on Linux one more for a single argument —, the
 
 M13.4 adds what ELA takes **away** from its own environment before the browser's Node driver can
 inherit it (decision 4 of the review of 2026-09-30; ADR 0052 §14).
+
+M13.9 adds the one thing ELA says of **itself**: where its own command is, for the line that
+opens the vault (decision 98) — named with certainty, or not at all.
 """
 
 from __future__ import annotations
 
 import os
+import platform
+import sys
 from collections.abc import Awaitable, Callable, MutableMapping
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Final
 from uuid import UUID, uuid4
 
 from ela.devices import power_drawn_from, power_on_the_line
-from ela.domain import PowerSource
+from ela.domain import PowerSource, ProbeFamily
 from ela.infrastructure.machine import (
     PMSET,
     POWERSHELL,
@@ -38,20 +44,37 @@ from ela.infrastructure.machine import (
     spawn,
     spawn_powershell,
 )
+from ela.ports import (
+    PROFILE_PROCESS,
+    PROFILE_STEP,
+    PROFILE_WINDOW,
+    AccountBrowser,
+    BrowserError,
+    BrowserUnsupported,
+    PerceptionProbe,
+    ProfileUndeclared,
+)
+from ela.tools.base import NotNow
 from ela.tools.terminal import ArgumentLimits
 
 __all__ = [
     "LINUX_PAGES_IN_ONE_ARGUMENT",
+    "DRIVER_WRITES",
     "NODE_PREFIX",
+    "SIGNING_IN",
     "WINDOWS_COMMAND_LINE",
     "PowerReading",
     "SystemClock",
     "UuidGenerator",
+    "WindowSwitch",
+    "a_session_of_the_screen",
     "argument_limits",
+    "own_command",
     "power_nobody_reads",
     "power_of_a_mac",
     "power_of_a_pc",
     "power_reading",
+    "while_the_user_signs_in",
     "without_node_variables",
 ]
 
@@ -159,10 +182,157 @@ ELA made a page with an invalid certificate open (M4-ter). **A prefix and not a 
 variable Node reads tomorrow is one nobody here has heard of."""
 
 
+DRIVER_WRITES: Final = ("DEBUG", "PWDEBUG")
+"""What makes the driver **write what it is told** (M13.9, decision 22; ADR 0063, which revises
+ADR 0052 §14). Measured: with ``DEBUG=pw:api`` or ``pw:protocol`` in ELA's environment the driver
+writes the value of every ``fill`` on its stderr, and with ``DEBUG_FILE`` into a file — and since
+M13.9 a ``fill`` may carry a password of the vault. Prefixes, like ``NODE_``: ``DEBUG_FILE``,
+``DEBUG_COLORS`` and whatever the ``debug`` library reads tomorrow go with them."""
+
+
 def without_node_variables(environment: MutableMapping[str, str]) -> tuple[str, ...]:
-    """Remove from ``environment`` every variable whose name begins with ``NODE_``, and return the
-    names in order — **never the values**, which may be a path or a secret."""
-    removed = tuple(sorted(name for name in environment if name.startswith(NODE_PREFIX)))
+    """Remove from ``environment`` every variable whose name begins with ``NODE_`` — and, since
+    M13.9, with ``DEBUG`` or ``PWDEBUG`` (:data:`DRIVER_WRITES`) —, and return the names in order:
+    **never the values**, which may be a path or a secret."""
+    prefixes = (NODE_PREFIX, *DRIVER_WRITES)
+    removed = tuple(sorted(name for name in environment if name.startswith(prefixes)))
     for name in removed:
         del environment[name]
     return removed
+
+
+OWN_COMMAND: Final = "ela"
+"""The name ELA's command line is installed under (``[project.scripts]``)."""
+
+
+def own_command(executable: str | None = None, system: str | None = None) -> Path | None:
+    """The command this ELA runs with, **named with certainty or not at all** (M13.9, decision
+    98): the one installed **beside the interpreter that runs this process**. ``None`` when
+    there is none there — ELA started some other way —: nothing is guessed, and nothing is
+    looked for in a ``PATH``.
+
+    Measured on 2026-10-11, with ``ps`` on a running ELA started by ``uv run ela serve``: the
+    Core is ``<environment>/bin/python3 <environment>/bin/ela serve``. **The interpreter is
+    taken as it is named, never resolved**: the interpreter of a virtual environment is a link
+    to the one it was made from, and the command is beside the link, not where it leads. On
+    Windows the command carries its extension, in the environment's folder of scripts — beside
+    its interpreter all the same.
+
+    It is the right half of the line ELA prints for a locked vault, so it is the program that
+    receives the key of the vault: a bare name there would be whichever program a ``PATH`` finds
+    first, which is what ADR 0063 refuses for the vault's own program.
+    """
+    interpreter = Path(sys.executable if executable is None else executable)
+    if not interpreter.is_absolute():
+        return None
+    name = OWN_COMMAND
+    if (platform.system() if system is None else system) == "Windows":
+        name = f"{OWN_COMMAND}.exe"
+    found = interpreter.parent / name
+    if found.is_file() and os.access(found, os.X_OK):
+        return found
+    return None
+
+
+class WindowSwitch:
+    """Whether the browser with the user's accounts has a window (M13.9, ADR 0063; decisions 18a
+    and 34).
+
+    **The user's, and nobody else's**: it is no argument of any capability and no tool decides
+    it. A state of a running ELA — flipped by a route of the user's, read by the browser's adapter
+    at each launch, holding from then on — and **off at every start**: a browser that appears
+    while somebody is typing takes the keyboard, so a window is something the user asked for
+    today.
+    """
+
+    def __init__(self) -> None:
+        self._shown = False
+
+    @property
+    def shown(self) -> bool:
+        return self._shown
+
+    def show(self) -> None:
+        self._shown = True
+
+    def hide(self) -> None:
+        self._shown = False
+
+
+SIGNING_IN: Final = {
+    PROFILE_WINDOW: "the window of ELA's browser where you sign in by hand is open",
+    PROFILE_PROCESS: (
+        "a browser ELA did not start now is open on the profile of its browser, and you may be "
+        "signing in there"
+    ),
+}
+"""Who holds the profile while a hand may be on it, and the reason ELA gives for not looking: its
+own window, and a browser the folder's lock names that this ELA did not start — a window left by
+an ELA that was killed is the same window, and the lock is all that is left to name it. A step of
+ELA's own is not here: nobody is typing a password into a page ELA drives."""
+NO_HAND: Final = frozenset({PROFILE_STEP})
+"""The holders that let ELA look and listen — said by name, so that a holder the port comes to
+answer with and nobody wrote a sentence for is a doubt, and not «nobody» (fail-safe)."""
+
+
+def a_session_of_the_screen(probe: PerceptionProbe) -> Callable[[], Awaitable[bool]]:
+    """The one question the browser with the user's accounts is handed about this machine
+    (M13.9, decision 143 of the review of 2026-10-13): «is this process inside a session of the
+    screen?», answered by reading the session **at each call** with the probe the perception
+    already reads with — the family of the session, and nothing else.
+
+    A login of ELA's is started in a window, and a process outside a session of the screen can
+    be given none. **A session that was read is a session** — locked or not, in front or not: a
+    window can be made in it. What the probe reads of the session it reads from the session's own
+    dictionary, so where there is none — or the probe did not answer — it reads nothing: **a
+    doubt, and a doubt is «no»** (fail-safe). The port promises not to raise; a probe that breaks
+    the promise is the same doubt.
+
+    *Measured from inside the user's session, where it says yes. The case with no session is not
+    built on the machine this was written on: it is what the system's documentation says of the
+    reading, and what the tests hand in.*"""
+
+    async def there() -> bool:
+        try:
+            read = await probe.read(frozenset({ProbeFamily.SESSION}))
+        except Exception:  # noqa: BLE001 — a probe that broke its promise: a doubt, not a window
+            return False
+        return read.on_console is not None
+
+    return there
+
+
+def while_the_user_signs_in(accounts: AccountBrowser) -> NotNow:
+    """The one question the tools that look at the screen or listen are handed (M13.9, ADR 0063
+    §7; decision 41): «not now?», answered by looking at who holds the profile **at each call**.
+
+    ELA reads nothing of the window through the browser — no driver, no pipe, no port —, and the
+    screen and the microphone would be another road to what is typed there. The tools do not
+    learn what the window is: they get the reason, or ``None``.
+
+    Where no folder is declared, or the system is not one the browser runs on, no window of
+    ELA's can be open and the answer is ``None``. **Any other failure to look is a doubt, and a
+    doubt refuses** (fail-safe): a folder is declared, and ELA cannot say whether a hand is on it.
+    So is a holder this module has no sentence for: only the holders of :data:`NO_HAND` let ELA
+    look.
+    """
+
+    async def not_now() -> str | None:
+        try:
+            holder = await accounts.occupied()
+        except (ProfileUndeclared, BrowserUnsupported):
+            return None
+        except BrowserError as doubt:
+            return (
+                "whether the window of ELA's browser where you sign in by hand is open could "
+                f"not be read ({doubt})"
+            )
+        if holder is None or holder in NO_HAND:
+            return None
+        return SIGNING_IN.get(
+            holder,
+            f"the profile of ELA's browser is held by something ELA has no word for ({holder}), "
+            "and you may be signing in there",
+        )
+
+    return not_now

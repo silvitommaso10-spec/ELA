@@ -16,10 +16,10 @@ from pathlib import Path
 
 from ela.api.security import Kind
 from ela.executive.spending import BudgetCode
-from ela.permissions import BROWSER_GUIDED, production_catalogue
+from ela.permissions import BROWSER_GUIDED
 from ela.tools.guided import BrowserGuidedTool, BrowserGuidedVerifier
 from tests.contracts.protocols import port_protocols
-from tests.docs.guided_ports import GUIDED_PORTS
+from tests.docs.guided_ports import ACCOUNT_PORTS, GUIDED_PORTS, before_the_accounts
 from tests.docs.test_adr_cli import coded_commands, commands_after_0061
 from tests.docs.test_adr_composition import coded_routes, routes_after_0061
 from tests.docs.test_adr_placement import _rules_up_to
@@ -75,11 +75,12 @@ def test_the_conseguenze_count_the_totals_of_their_day() -> None:
     assert len(_rules_up_to(65)) == 65  # rule 66 is ADR 0062's
     assert set(_rules_up_to(65)) - set(_rules_up_to(64)) == {"who-spends-passes-the-gate"}
     assert "**quindici**" in text and len(contracts) == 15
-    assert "**trentatré**" in text and len(tuple(port_protocols())) == 33
+    assert "**trentatré**" in text
+    assert len(tuple(p for p in port_protocols() if p.__name__ not in ACCOUNT_PORTS)) == 33
     assert {port.__name__ for port in port_protocols()} >= GUIDED_PORTS
     assert "**cinquantadue**" in text and len(coded_routes() - routes_after_0061()) == 52
     assert "**ventotto**" in text and len(coded_commands() - commands_after_0061()) == 28
-    assert "**quattordici**" in text and len(production_catalogue().specs()) == 14
+    assert "**quattordici**" in text and len(before_the_accounts()) == 14
     assert "**quattro**" in text and len(TRAVELS) == 4 and BROWSER_GUIDED in STAYS
     assert "**sei**" in text and len(Kind) == 6
 

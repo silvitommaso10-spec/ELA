@@ -46,6 +46,8 @@ REQUIRED_PORTS = frozenset(
         "TaskStop",
         "ModelGateway",
         "Gestures",
+        "Vault",
+        "AccountBrowser",
         "AgentSession",
     }
 )
@@ -64,7 +66,9 @@ own), and ``LocalBeat`` from M13.3 (ADR 0048 §2: the heartbeat of ``local`` the
 before every placement), and ``Browser`` from M13.4 (ADR 0052 §11: a browser of ELA's own, empty for
 every page), and the three of M14.3 (ADR 0060: ``ModelGateway``, where a call of a guided session
 leaves with the key; ``Gestures``, the room where every gesture becomes a child task;
-``AgentSession``, a session of Claude Code launched as a program), by name."""
+``AgentSession``, a session of Claude Code launched as a program), and the two of M13.9 (ADR 0063:
+``Vault``, the passwords that stay in the vault; ``AccountBrowser``, the browser with the profile
+that lasts), by name."""
 
 
 def is_protocol(obj: object) -> bool:

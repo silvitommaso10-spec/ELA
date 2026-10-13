@@ -27,3 +27,7 @@ terminal.run
 browser.read
 browser.act
 browser.guided
+browser.read_as_you
+browser.act_as_you
+browser.login
+browser.guided_as_you

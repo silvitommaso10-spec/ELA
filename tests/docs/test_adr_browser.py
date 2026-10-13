@@ -18,13 +18,14 @@ from ela.tools.browser import BrowserActTool, BrowserReadTool
 from ela.tools.verifiers import BrowserActVerifier, BrowserReadVerifier
 from tests.architecture.rules import MACHINE_LIBRARIES
 from tests.contracts.protocols import members, port_protocols
-from tests.docs.guided_ports import GUIDED_PORTS
+from tests.docs.boundary_additions import added_codes, added_members
+from tests.docs.guided_ports import ACCOUNT_CAPABILITIES, ACCOUNT_PORTS, GUIDED_PORTS
 from tests.docs.test_adr_composition import coded_routes, routes_after_0056
 from tests.docs.test_adr_filesystem import verifiers_today
 from tests.docs.test_adr_placement import _rules_up_to
 
-AFTER_0052 = frozenset({"browser.guided"})
-"""What ADR 0060 added after this one, pinned by its own test."""
+AFTER_0052 = frozenset({"browser.guided"}) | ACCOUNT_CAPABILITIES
+"""What ADR 0060 added after this one, and ADR 0063 after that: each pinned by its own test."""
 
 ROOT = Path(__file__).resolve().parents[2]
 ADR_PATH = ROOT / "docs" / "adr" / "0052-browser.md"
@@ -76,7 +77,7 @@ def test_the_conseguenze_count_the_rules_the_ports_and_the_routes_of_today() -> 
         "no rule is new: rule 32 names playwright among its ways out"
     )
     assert "**ventinove**" in text
-    later = {"TaskStop", *GUIDED_PORTS}  # ADR 0054 and ADR 0060
+    later = {"TaskStop", *GUIDED_PORTS, *ACCOUNT_PORTS}  # ADR 0054, ADR 0060 and ADR 0063
     assert len(tuple(p for p in port_protocols() if p.__name__ not in later)) == 29
     assert "**quarantanove**" in text
     assert len(coded_routes() - routes_after_0056()) == 49  # ADR 0057's is later
@@ -120,15 +121,23 @@ def test_the_verifier_rows_are_the_running_verifiers() -> None:
         assert class_name == type(verifier).__name__
         assert name == verifier.name
         assert codes(conditions) == verifier.conditions
-        assert codes(failures) == {
+        # The codes of this ADR, and the ones ADR 0064 (M13.4f) added after it — read from its
+        # own table: an accepted ADR is not rewritten, and a code added later lives where it
+        # was added. Never the same code in both.
+        whose, later = added_codes()[verifier.capability_id]
+        assert whose == class_name and not codes(failures) & later
+        assert codes(failures) | later == {
             code for code in verifier.failure_codes if not code.startswith("verification.")
         }
 
 
 def test_the_port_row_is_the_running_port() -> None:
+    """The members of this ADR's row, and the one ADR 0064 (M13.4f) added after it."""
     line = next(line for line in adr_text().splitlines() if line.startswith("| `Browser` |"))
+    here, later = frozenset(CODE.findall(line.split("|")[4])), added_members()["Browser"]
 
-    assert frozenset(CODE.findall(line.split("|")[4])) == frozenset(members(Browser))
+    assert not here & later
+    assert here | later == frozenset(members(Browser))
 
 
 def test_playwright_is_one_of_the_ways_out_of_rule_32() -> None:

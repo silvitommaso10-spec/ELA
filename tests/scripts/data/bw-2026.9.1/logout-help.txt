@@ -1,0 +1,10 @@
+Usage: bw logout [options]
+
+Log out of the current user account.
+
+Options:
+  -h, --help  display help for command
+
+  Examples:
+
+    bw logout

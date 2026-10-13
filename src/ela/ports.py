@@ -61,6 +61,7 @@ from ela.domain import (
     JsonValue,
     ModelRoute,
     PermissionDecision,
+    PlanAuthor,
     PowerSource,
     ProbeFamily,
     ProviderRequest,
@@ -74,6 +75,7 @@ from ela.domain import (
     RawTranscript,
     Reservation,
     RiskLevel,
+    SessionCover,
     StepId,
     Task,
     TaskEvent,
@@ -87,8 +89,10 @@ from ela.domain import (
 __all__ = [
     "ANNOUNCED_FIELDS",
     "ANSWERS",
+    "AccountBrowser",
     "AgentSession",
     "AlreadyExistsError",
+    "AnotherPage",
     "ApprovalAlreadyAnsweredError",
     "ApprovalExpiredError",
     "ApprovalNotAnswerableError",
@@ -156,6 +160,8 @@ __all__ = [
     "Gestures",
     "Glanced",
     "Guided",
+    "HELD",
+    "HELD_IN_PART",
     "IdGenerator",
     "IdentityConflictError",
     "Invocation",
@@ -171,16 +177,23 @@ __all__ = [
     "LISTEN_TRANSCRIPTION_FAILED",
     "LISTEN_TRANSCRIPTION_UNAVAILABLE",
     "LISTEN_UNSUPPORTED",
+    "Landed",
+    "LeftSite",
     "ListeningPort",
     "LocalBeat",
     "ModelGateway",
     "ModelProvider",
     "ModelRouterPort",
     "NAVIGATION",
+    "NOT_HELD",
+    "NoWindow",
     "NotAllowedError",
     "NotFoundError",
     "Opened",
     "OpenedSession",
+    "PROFILE_PROCESS",
+    "PROFILE_STEP",
+    "PROFILE_WINDOW",
     "PROVIDER_AUTHENTICATION_ERROR",
     "PROVIDER_BAD_REQUEST",
     "PROVIDER_ERROR_CODES",
@@ -201,6 +214,9 @@ __all__ = [
     "PerceptionProbe",
     "PermissionGuardianPort",
     "PortError",
+    "ProfileBusy",
+    "ProfileUndeclared",
+    "ProfileUnsafe",
     "Prospect",
     "ProviderRegistryPort",
     "ROUTING_EMPTY_ROUTES",
@@ -229,7 +245,9 @@ __all__ = [
     "SPENDING_OVER_RESERVATION",
     "STARTED_ID",
     "ScreenCapturePort",
+    "Secret",
     "SessionEnd",
+    "SessionGestures",
     "SessionHandle",
     "SessionHost",
     "SessionPlan",
@@ -244,10 +262,20 @@ __all__ = [
     "ToolPort",
     "ToolRegistryPort",
     "ToolStopped",
+    "VAULT_LOCKED",
+    "VAULT_UNAUTHENTICATED",
+    "VAULT_UNLOCKED",
     "VERIFICATION_NOT_SUCCEEDED",
     "VERIFICATION_NO_CONDITIONS",
     "VERIFICATION_UNKNOWN_CONDITION",
     "VERIFICATION_WRONG_CAPABILITY",
+    "Vault",
+    "VaultEntry",
+    "VaultError",
+    "VaultFailed",
+    "VaultNotOpen",
+    "VaultTaken",
+    "VaultTimeout",
     "VerifierPort",
     "VerifierRegistryPort",
     "Visit",
@@ -309,6 +337,14 @@ class WireCode(StrEnum):
     """The confirmation named another model than the prospect does now: preview again."""
     POLICY_NOT_LIVE = "policy.not_live"
     """A revocation of a policy already revoked, or already ended."""
+    VAULT_REFUSED = "vault.refused"
+    """The vault did not take the key, or did not lock (M13.9, ADR 0063): the vault's own code is
+    the first word of the message, as for ``policy.would_not_start`` — one code on the wire, not
+    one per reason."""
+    BROWSER_REFUSED = "browser.refused"
+    """The window where the user signs in by hand was not opened (M13.9, ADR 0063 §8): the tools'
+    own code is the first word of the message — what a step with the profile would be refused
+    with before its question."""
     UNAUTHORIZED = "unauthorized"
     """Every refusal of the middleware, whatever the reason was (ADR 0023 §7, ADR 0037 §13)."""
 
@@ -1355,8 +1391,14 @@ class PermissionGuardianPort(Protocol):
         step: TaskStep | None = None,
         authorization: Authorization | None = None,
         authorization_uses: int = 0,
+        author: PlanAuthor | None = None,
+        session: SessionCover | None = None,
     ) -> PermissionDecision:
-        """Decide about one call of ``capability`` with ``arguments`` in this context."""
+        """Decide about one call of ``capability`` with ``arguments`` in this context.
+
+        ``author`` is who wrote the plan of ``step``, and ``session`` the room's word about an
+        open guided session (M13.9, ADR 0063): what covers a ``MEDIUM`` read that session's model
+        wrote, with no grant."""
 
 
 @runtime_checkable
@@ -1380,6 +1422,8 @@ class AuthorizingGuardianPort(Protocol):
         step: TaskStep | None = None,
         authorization: Authorization | None = None,
         authorization_uses: int = 0,
+        author: PlanAuthor | None = None,
+        session: SessionCover | None = None,
         device_id: DeviceId | None = None,
     ) -> PermissionDecision:
         """Decide about one call and append ``PERMISSION_DECIDED`` before returning.
@@ -2530,6 +2574,154 @@ NAVIGATION: Final = "the navigation"
 it (M6.3c, ADR 0054 §3). ``browser.read``'s point, and only a listening for ``browser.act``."""
 
 
+class Secret:
+    """A value that is not printed, not serialised and not compared (M13.9, ADR 0063; decision 15a).
+
+    A password taken from the vault goes from the vault's adapter to the browser's, through the
+    tool that asked for it. The tool must not be able to leave it anywhere by accident — an
+    outcome, a message, an event, a log line, an exception —, so what carries it shows nothing of
+    itself to anything that writes: its text is ``<secret>``, it refuses to be serialised, copied,
+    compared or hashed, and it has no length, no items and no dictionary of attributes.
+
+    **It opens with one method**, :meth:`reveal`, and architecture rule 68 lets only the adapters
+    of ``ela.infrastructure.machine`` — the one that builds it and the one that types it into a
+    page — and the fakes of ``ela.testing`` call it. A secret is not a defence against whoever
+    reads the memory of ELA's process; it is a defence against ELA's own code writing it down.
+    """
+
+    __slots__ = ("__value",)
+
+    def __init__(self, value: str) -> None:
+        if not isinstance(value, str):
+            raise TypeError("a secret is text")
+        self.__value = value
+
+    def reveal(self) -> str:
+        """The value, for the adapter that has to use it and for nobody else (rule 68)."""
+        return self.__value
+
+    def __repr__(self) -> str:
+        return "<secret>"
+
+    def __format__(self, spec: str) -> str:
+        return format("<secret>", spec)
+
+    def __eq__(self, other: object) -> bool:
+        raise TypeError("a secret is not compared")
+
+    def __ne__(self, other: object) -> bool:
+        raise TypeError("a secret is not compared")
+
+    __hash__ = None  # type: ignore[assignment]  # not hashed: a set or a key would compare it
+
+    def __reduce_ex__(self, protocol: object) -> str:
+        raise TypeError("a secret is not serialised and not copied")
+
+    def __getstate__(self) -> object:
+        # Every object answers this since Python 3.11, and one with slots answers with their
+        # values: the state is refused like the reduction it would be a part of.
+        raise TypeError("a secret is not serialised and not copied")
+
+
+VAULT_UNAUTHENTICATED: Final = "unauthenticated"
+"""No account is signed in to the vault on this machine: its owner has to, with the vault's own
+program — ELA never does (M13.9, decision 16a)."""
+VAULT_LOCKED: Final = "locked"
+"""The vault is closed to whoever asks: no key was given, the key was ended by another unlock or
+by a lock, or the key is not the one that opens it."""
+VAULT_UNLOCKED: Final = "unlocked"
+"""The key ELA holds opens the vault now."""
+
+
+class VaultError(PortError):
+    """The vault did not give what it was asked for. Its text names the command and never anything
+    the vault printed: what a vault prints is its content."""
+
+
+class VaultNotOpen(VaultError):
+    """The vault is not open: ``state`` is :data:`VAULT_UNAUTHENTICATED` or :data:`VAULT_LOCKED`."""
+
+    def __init__(self, state: str) -> None:
+        self.state = state
+        super().__init__(f"the vault is {state}")
+
+
+class VaultTimeout(VaultError):
+    """The vault's program did not answer within its time, and was killed with its group."""
+
+
+class VaultFailed(VaultError):
+    """The vault's program could not be started, failed, or answered in a form ELA does not read."""
+
+
+@dataclass(frozen=True, slots=True)
+class VaultEntry:
+    """What ELA knows of an entry of the vault **before a yes**: enough to ask, and no value.
+
+    ``addresses`` are the addresses the entry is for — the ones its owner marked «never» left out
+    —, as the vault holds them: whether one of them is the site of a call is the tool's to say,
+    with ELA's own comparison of the host (decision 15c). ``username`` is **masked** by the
+    adapter — its first character, and for an address what follows the at sign (decision 31) —:
+    the whole username never leaves the adapter before a yes. ``has_password`` says whether there
+    is one, and nothing of it.
+    """
+
+    id: str
+    name: str
+    addresses: tuple[str, ...]
+    username: str
+    has_password: bool
+
+
+@dataclass(frozen=True, slots=True)
+class VaultTaken:
+    """What one reading of an entry gives **after a yes** (decision 64): the addresses, to compare
+    again with the page that is really open, and the username and the password to type —
+    each inside a :class:`Secret`. The comparison and the taking rest on the same reading. Nothing
+    else of the entry has a field here: the seed of a one-time code, the notes, whatever a later
+    version of the vault adds."""
+
+    addresses: tuple[str, ...]
+    username: Secret
+    password: Secret
+
+
+@runtime_checkable
+class Vault(Protocol):
+    """The vault the passwords stay in, and the one session key ELA may hold (§19, §57; M13.9,
+    ADR 0063).
+
+    The master password never reaches this port: the owner unlocks the vault with its own
+    program, and what arrives is the session key, inside a :class:`Secret`. **Before a yes** only
+    :meth:`status` and :meth:`find` are called, and no value leaves the adapter (decision 28);
+    **after a yes**, :meth:`take`, once.
+
+    Every member raises :class:`VaultTimeout` when the vault's program does not answer in time,
+    and :class:`VaultFailed` when it cannot be started, fails, or cannot be read; :meth:`find`
+    and :meth:`take` raise :class:`VaultNotOpen` when the vault is not open.
+    """
+
+    async def status(self) -> str:
+        """One of :data:`VAULT_UNAUTHENTICATED`, :data:`VAULT_LOCKED`, :data:`VAULT_UNLOCKED`:
+        asked of the vault's program now, never remembered. The account's address, which that
+        program prints with it, is thrown away."""
+
+    async def unlock(self, key: Secret) -> bool:
+        """Whether ``key`` opens the vault: kept if it does, forgotten if it does not."""
+
+    async def lock(self) -> None:
+        """Close the vault — for every session of it on this machine — and forget the key."""
+
+    async def forget(self) -> None:
+        """Forget the key **without running anything**: for a program that changed or is gone."""
+
+    async def find(self, address: str) -> tuple[VaultEntry, ...]:
+        """The entries the vault matches to ``address``, each without any value."""
+
+    async def take(self, entry: str) -> VaultTaken:
+        """Read the entry with this id once, and give what is typed and what it is compared by."""
+
+
 class BrowserError(PortError):
     """Something a browser of ELA's could not do (M13.4). The tool turns each kind into a code;
     the message is a type's name or a sentence of the adapter's, never a page, an address or an
@@ -2564,6 +2756,65 @@ class BrowserFailed(BrowserError):
     """Anything else the engine raised, named by its type (ADR 0052): a poor diagnosis, and said."""
 
 
+class LeftSite(BrowserError):
+    """The page is not inside the boundary it was opened with (M13.4f, ADR 0064 §4).
+
+    Every use of a page asks the boundary where the page is — **before** the use, which then
+    does not take place, and again **once it is made**, when what was read is thrown away: a
+    page that ended elsewhere meanwhile gives nothing to anybody. ``address`` is where the page
+    is, whole, and is in no sentence of this error: what an origin is, and that nothing else of
+    an address is told, the tool says (``ela.tools.browser.origin_of``). ``made`` is whether the
+    use had been made when the page was found elsewhere — a gesture that happened is counted as
+    one that happened.
+    """
+
+    def __init__(self, address: str, *, made: bool = False) -> None:
+        super().__init__("the page is not inside the boundary it was opened with")
+        self.address = address
+        self.made = made
+
+
+PROFILE_STEP: Final = "step"
+"""The profile is held by a page of ELA's own: a step that is running."""
+PROFILE_WINDOW: Final = "window"
+"""The profile is held by the window ELA opened for the user to sign in by hand."""
+PROFILE_PROCESS: Final = "process"
+"""The profile is held by a process ELA did not start now — the lock of the folder names it, the
+kernel knows it, **and its command line names the folder**: a window that relaunched itself, one
+left by an ELA that is gone, a browser somebody launched on it. A lock whose pid went to a
+process that has nothing to do with the folder holds nothing (M13.9, decision 82)."""
+SHUT_QUIT: Final = "quit"
+"""The browser a hand may be on was told to quit, and did."""
+SHUT_KILLED: Final = "killed"
+"""It was told, did not quit within the grace, and was killed."""
+SHUT_TOLD: Final = "told"
+"""It was told, **and ELA cannot say it quit**: when the grace ended the system could not say
+what that process was any more, or ELA itself was stopping. It was not killed — ELA kills
+nothing it cannot name, and at its own close signals only what it started —, and the profile may
+still be held."""
+
+
+class ProfileUndeclared(BrowserError):
+    """No folder was declared for the profile of the browser with the user's accounts: ELA does
+    not invent a place for credentials (M13.9, ADR 0063)."""
+
+
+class ProfileUnsafe(BrowserError):
+    """The declared folder cannot hold the user's sessions as it is — wider than its owner alone,
+    somebody else's, a link, not a folder. The message says which, and never what is in it. ELA
+    does not narrow it by itself."""
+
+
+class ProfileBusy(BrowserError):
+    """A process already holds the profile, and ELA does not launch a second one on a folder it
+    found held: ``by`` is one of :data:`PROFILE_STEP`, :data:`PROFILE_WINDOW` and
+    :data:`PROFILE_PROCESS`. Retryable: what holds it ends."""
+
+    def __init__(self, by: str) -> None:
+        super().__init__(f"the profile of ELA's browser is held ({by})")
+        self.by = by
+
+
 @dataclass(frozen=True, slots=True)
 class Opened:
     """A page the browser opened, and what the opening met (M13.4).
@@ -2582,12 +2833,32 @@ class Opened:
 
 
 @dataclass(frozen=True, slots=True)
+class AnotherPage:
+    """A page the page ELA works on opened, and that was stopped (M13.4f, ADR 0064 §5).
+
+    ELA works on one page. Of any other **no document leaves** — not its navigation, not a link,
+    not a form, not a frame written in it —, and nothing of it is read. ``method`` and
+    ``address`` are those of the first request it asked for, which was refused; both ``None``
+    for a page that had asked for nothing when this was said. An address and not an origin: the
+    tool says what part of it may be told.
+    """
+
+    method: str | None
+    address: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class Field:
     """What an element declares of itself, lower-cased: its ``type`` and its ``autocomplete``
-    attributes, empty when absent. The tool decides what they mean (M13.4, ADR 0052)."""
+    attributes, empty when absent. The tool decides what they mean (M13.4, ADR 0052).
+
+    ``method`` is how the form the element is in sends what it holds — ``get`` or ``post``, as the
+    browser resolves it; empty for an element in no form —, and ``None`` from a browser that does
+    not look: the empty one, whose tools never ask (M13.9, ADR 0063)."""
 
     type: str
     autocomplete: str
+    method: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -2598,11 +2869,34 @@ class Glanced:
     find exactly one element —; ``shown`` whether the text it waited for appeared, ``None`` when it
     waited for none; ``left`` the address of the last navigation the boundary refused since the
     opening.
+
+    ``second_factor`` is the one thing more the browser with the user's accounts says (M13.9,
+    ADR 0063): whether the page shows a field that asks for a one-time code. ``None`` from a
+    browser that does not look — the empty one.
+
+    ``another`` is the page this one opened, which was stopped, or ``None`` (M13.4f, ADR 0064
+    §5): what tells a text that did not appear because the page sent its form to another page
+    from one that did not appear for any other reason.
     """
 
     text: str | None
     shown: bool | None
     left: str | None
+    second_factor: bool | None = None
+    another: AnotherPage | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class Landed:
+    """Where a page is once the document its last gesture led to is there (M13.9, decision 106).
+
+    ``address`` is the main frame's, whole: what part of it may be told, and to whom, the tool
+    says. ``status`` is the HTTP status of the last document the main frame was given — the
+    page's own, never the redirect's that led to it —, ``None`` when none came back.
+    """
+
+    address: str
+    status: int | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -2624,6 +2918,13 @@ class Visit:
     gestures: tuple[str, ...]
     expect: str
     timeout_seconds: int
+    entry: str = ""
+    """The entry of the vault a login would read, **by its name** (M13.9, ADR 0063 §9): what the
+    yes covers. Empty for every call that is not a login. Never its id, which is the plan's, and
+    never a value."""
+    username: str = ""
+    """The username of that entry, **masked** as the vault's adapter gives it before a yes; empty
+    when the entry has none. The whole username does not leave the adapter."""
 
 
 @runtime_checkable
@@ -2636,12 +2937,30 @@ class Browser(Protocol):
 
     * each :meth:`open` starts a browser of its own, with an empty profile, and **closes it** when
       the page is closed, looked at, or refused — nothing passes from one page to the next;
-    * a navigation of the main frame that ``allowed`` refuses **is not sent**, and
-    :attr:`Opened.left`
-      names it;
+    * a request for a document of the main frame that ``allowed`` refuses **is not sent** — the
+      first address of a navigation or any hop of a chain of redirects, whatever its method —,
+      and :attr:`Opened.left` names it. **The requests that leave are the browser's own**: an
+      implementation looks at them and makes none in the browser's place (M13.4f, ADR 0064);
+    * **the boundary is not what a page may load**: an image, a script, a frame inside the page
+      come from wherever the page asks, as they always did (ADR 0052 §6). It is where ELA may
+      go, read and write;
+    * **every use of a page asks** ``allowed`` **where the page is**, before the use and once it
+      is made, and raises :class:`LeftSite` when the page is not inside: nothing is read,
+      written or looked at there, and what was read on a page that ended elsewhere meanwhile is
+      thrown away. All the members that are given a page, but :meth:`keep`, :meth:`close` and
+      :meth:`another`;
+    * ELA works on **one page**. Of a page that one opens **no document leaves** — not its
+      navigation, not a link, not a form, not a frame written in it —, nothing of it is read,
+      and :meth:`another` says it was opened. What the first page has loaded in an empty page it
+      opened is a request of the first page, and arrives as it would from its own document;
+    * **when in doubt nothing leaves**: an implementation that cannot tell whether it is told of
+      the browser's requests opens no page;
     * the browser is started so that a signal to ELA's process group does not close it: the stop is
       ELA's, through the stop signal of ADR 0038 §11, which raises :class:`BrowserStopped` in what
-      was running;
+      was running — and **from the moment it is raised no navigation and no gesture leaves**,
+      whenever that moment is: :meth:`open` and every use of a page — all but handing it over
+      and closing it — raise :class:`BrowserStopped`, and a page that was being opened is closed
+      by its opening (M13.4c);
     * a page kept with :meth:`keep` waits for :meth:`glance`, and an implementation closes it
       itself if nobody looks before its deadline;
     * when :meth:`close` returns, the kernel knows no process of that page's browser any more.
@@ -2653,11 +2972,15 @@ class Browser(Protocol):
     async def open(self, address: str, allowed: Callable[[str], bool], stop: TaskStop) -> Opened:
         """Open ``address`` in a new, empty browser; a navigation ``allowed`` refuses is not sent.
 
+        **What it returns is said of a page inside its boundary** (M13.4f): the page that was
+        opened is asked where it is, like every use of it after, and one that is found elsewhere
+        raises :class:`LeftSite` — the status of its document is not said.
+
         ``stop`` is listened to **right before the navigation**, as :data:`NAVIGATION` (M6.3c): a
         stopped task leaves the page unopened and the site unvisited.
 
-        :raises BrowserNotInstalled, SiteUnreachable, BrowserStopped, BrowserFailed, ToolStopped:
-            and nothing stays open behind the exception.
+        :raises BrowserNotInstalled, SiteUnreachable, LeftSite, BrowserStopped, BrowserFailed:
+            and :class:`ToolStopped`; nothing stays open behind the exception.
         """
 
     async def count(self, page: str, selector: str) -> int:
@@ -2682,6 +3005,11 @@ class Browser(Protocol):
         """The address of the last navigation the boundary refused since the opening, or
         ``None``."""
 
+    async def another(self, page: str) -> AnotherPage | None:
+        """The page this one opened, which was stopped — ``None`` when it opened none. Not a use
+        of the page: nothing of it is read, and this never raises — of a page that is not there
+        any more it says ``None``."""
+
     async def keep(self, page: str) -> None:
         """Hand the page over to the verifier: it stays open until :meth:`glance`, or its deadline.
 
@@ -2699,7 +3027,145 @@ class Browser(Protocol):
 
     async def close(self, page: str) -> None:
         """Close the page and its browser; nothing of it runs when this returns. Idempotent, and
-        never raises: what cannot be closed any more is closed already."""
+        never raises: what cannot be closed any more is closed already. **The closing runs to its
+        end whoever waits for it** (M13.4b): a caller cancelled while it waits gets its
+        cancellation, and the page's processes still go."""
+
+
+HELD: Final = "held"
+"""A field holds exactly what was typed in it."""
+HELD_IN_PART: Final = "beginning"
+"""A field holds **a beginning** of what was typed in it, and nothing else: a page that keeps
+less than it is given — a length of its own. How much it kept is said to nobody (M13.9, decision
+152 of the review of 2026-10-13)."""
+NOT_HELD: Final = "changed"
+"""A field holds something else — more, other, or nothing —, or is not there any more."""
+
+
+class NoWindow(BrowserError):
+    """A page was asked **with a window**, and this ELA cannot be given one — the system did not
+    say that its process is inside a session of the screen. Nothing was launched: a page asked
+    with a window is never opened without (M13.9, decision 143 of the review of 2026-10-13)."""
+
+
+@runtime_checkable
+class AccountBrowser(Browser, Protocol):
+    """ELA's own browser **with the profile that lasts**: the sites the user signed in to (§19,
+    §57; M13.9, ADR 0063).
+
+    Every member of :class:`Browser`, with the same contract of the gesture and of the handing
+    over — a browser per page, started for it and closed with it; the stop; the boundary —, and
+    what the profile adds:
+
+    * **what lasts is the folder**, declared by the user and never read by anything but the
+      implementation: a call on a folder nobody declared raises :class:`ProfileUndeclared`, on one
+      that cannot hold credentials as it is :class:`ProfileUnsafe`;
+    * **one process at a time on it**: :meth:`open` and :meth:`window` raise :class:`ProfileBusy`
+      on a folder found held, and launch nothing;
+    * **when** :meth:`close` **returns the folder is free**, whoever asked — a caller that arrives
+      while another is already closing the page waits for that closing;
+    * :meth:`field` says how the element's form sends (:attr:`Field.method`), and :meth:`glance`
+      whether the page asks for a one-time code (:attr:`Glanced.second_factor`);
+    * :meth:`landed` says where a page is after a gesture, and with which status — what a login
+      that did not work leaves to read (decision 106);
+    * :meth:`open_shown` opens a page **in a browser that has a window, whatever the user's
+      switch says** — for the one capability that signs in: a site may refuse a browser that
+      says it has none (measured on one site, 2026-10-13) —, and :meth:`can_show` says whether a
+      window can be had now. A page asked with a window is never opened without one
+      (:class:`NoWindow`); every other page is opened as the switch says (decision 143);
+    * :meth:`holds` says what a field holds of what a secret holds — all of it, a beginning of
+      it, or neither —: the comparison is the implementation's, which is handed the secret as
+      it is handed it to type (decisions 144 and 152);
+    * **when a close of the window returns, no process names the folder any more** —
+      :meth:`shut`, and the close of ELA —, or it is not said to have quit (decision 153).
+    """
+
+    async def can_show(self) -> bool:
+        """Whether a browser started now could be given a window: asked of the system at every
+        call, never remembered, and nothing is started. ``False`` also where the system did not
+        say — a doubt is not a window.
+
+        :raises BrowserUnsupported, BrowserStopped:
+        """
+
+    async def open_shown(
+        self, address: str, allowed: Callable[[str], bool], stop: TaskStop
+    ) -> Opened:
+        """:meth:`open`, in a browser that **has a window whatever the user's switch says**.
+        Everything else is :meth:`open`'s: the boundary, the stop, what it returns and raises.
+
+        :raises NoWindow: no window can be had now. Nothing was launched, and nothing of the
+            folder was looked at or made.
+        """
+
+    async def holds(self, page: str, selector: str, value: Secret) -> str:
+        """What the one element ``selector`` finds holds, now, of what ``value`` holds:
+        :data:`HELD`, :data:`HELD_IN_PART` or :data:`NOT_HELD` — the last also when no one
+        element is found. A use of the page like any other: the boundary is asked before it
+        and after it. Nothing of either value is in what this returns or raises."""
+
+    async def landed(self, page: str) -> Landed:
+        """Where the main frame is **once the document the last gesture led to is there**, and
+        the status of that document. An event of the page — its document parsed —, with no time
+        of its own: the tool's deadline is around it, as around every other call."""
+
+    async def occupied(self) -> str | None:
+        """Who holds the profile now — :data:`PROFILE_STEP`, :data:`PROFILE_WINDOW`,
+        :data:`PROFILE_PROCESS` —, or ``None`` when it is free. Derived at every call, never
+        remembered.
+
+        :raises ProfileUndeclared, ProfileUnsafe, BrowserUnsupported:
+        """
+
+    async def window(self, address: str | None) -> None:
+        """Open the browser's window on the profile **with nothing attached to it** — no driver,
+        no pipe, no port —, for the user to sign in by hand, on ``address`` if one is given. ELA
+        keeps one thing of it: the wait for its end. Returns once it is started.
+
+        :raises ProfileUndeclared, ProfileUnsafe, ProfileBusy, BrowserNotInstalled,
+            BrowserUnsupported, BrowserStopped, BrowserFailed:
+        """
+
+    async def shut(self, grace: Callable[[], Awaitable[None]]) -> str | None:
+        """End the browser that holds the profile **for the user's hand** (M13.9, decision 80):
+        it is told to quit, waited for, and killed only once ``grace`` is over. The window ELA
+        started — whose red button closes the window and leaves the browser running —, or a
+        browser ELA did not start **whose command line is ELA's own binary on this folder**: a
+        window that relaunched itself, one left by an ELA that was killed. Returns
+        :data:`SHUT_QUIT`, :data:`SHUT_KILLED` or :data:`SHUT_TOLD`, and ``None`` when nothing
+        held the folder. **It has quit, or was killed, only when no process names the folder
+        any more** (decision 153): what it had started is waited for within the same grace, and
+        what is left past it — and is not ELA's to kill — makes the answer :data:`SHUT_TOLD`.
+
+        **Told once, however many ask**: a browser has one chance to end by itself, and a second
+        signal kills it (measured). A browser ELA did not start is killed by its pid alone,
+        never with its group, and only if the system still says that process is that browser.
+
+        :raises ProfileBusy: ``by`` :data:`PROFILE_STEP` — a page ELA drives ends with its step,
+            or with the stop of its task —, or :data:`PROFILE_PROCESS`: what holds the folder is
+            not ELA's browser, or could not be told, and ELA signals nothing it cannot name.
+        :raises ProfileUndeclared, ProfileUnsafe, BrowserUnsupported, BrowserStopped,
+            BrowserFailed:
+        """
+
+    async def linked(self) -> bool:
+        """Whether the browser itself knows a Google account — one registered, a consent to sync.
+        Read from the profile at every call, never from a copy."""
+
+    async def saved(self) -> int:
+        """How many passwords the browser's own manager holds, **in every profile of the
+        browser's that the folder holds**. Counted, never read: ELA switches that manager off in
+        the profile it uses, and what the user saved by hand is theirs to remove."""
+
+    async def profiles(self) -> int:
+        """How many profiles of the browser's the folder holds. ELA prepares and uses one; a
+        second is one the user added from inside the window, which ELA neither prepares nor
+        uses — counted, so that the state can say so."""
+
+    async def fill_secret(self, page: str, selector: str, value: Secret) -> None:
+        """Write what ``value`` holds in the one element ``selector`` finds. The one place a
+        secret of the vault is opened beside the vault's own adapter; nothing of it is in what
+        this raises."""
 
 
 # --------------------------------------------------------------------------------------
@@ -2856,6 +3322,24 @@ class SessionTally:
     per_call: tuple[tuple[str, int, int, int], ...]
 
 
+@dataclass(frozen=True, slots=True)
+class SessionGestures:
+    """Which capability each of the two tools of a guided session asks for (M13.9, ADR 0063).
+
+    A fact of the capability of the session, handed to the room when the session opens: the
+    session on the empty browser reads with ``browser.read`` and acts with ``browser.act``; the
+    one with the profile, with their two of the profile. Until M13.9 the pair was a constant in
+    two modules, which was true while there was one kind of session."""
+
+    read: CapabilityId
+    act: CapabilityId
+
+    def named(self, tool: str) -> CapabilityId | None:
+        """The capability the session's tool ``tool`` asks for, or ``None``: the model's two
+        tools are called ``read`` and ``act``, whatever the session."""
+        return {"read": self.read, "act": self.act}.get(tool)
+
+
 @runtime_checkable
 class Gestures(Protocol):
     """The room of the guided sessions (§19, §27; M14.3, ADR 0060): what ``browser.guided`` asks.
@@ -2866,9 +3350,20 @@ class Gestures(Protocol):
     """
 
     async def open(
-        self, task_id: TaskId, step_id: StepId, *, sites: tuple[str, ...], tools: frozenset[str]
+        self,
+        task_id: TaskId,
+        step_id: StepId,
+        *,
+        capability: CapabilityId,
+        sites: tuple[str, ...],
+        tools: frozenset[str],
+        gestures: SessionGestures,
     ) -> OpenedSession | ErrorMetadata:
-        """Open the session of this step on the reservation the cap holds for it, or say why not."""
+        """Open the session of this step on the reservation the cap holds for it, or say why not.
+
+        ``capability`` is the capability of the session — which of the guided sessions this is
+        (M13.9, ADR 0063): what the room attests of it. ``gestures`` is what its two tools ask
+        for: a gesture of any other capability is refused, and the one that acts is counted."""
 
     async def start(self, session: StepId, tools: Sequence[str]) -> ErrorMetadata | None:
         """The tools the session's start lists: exactly its two, or the session is halted

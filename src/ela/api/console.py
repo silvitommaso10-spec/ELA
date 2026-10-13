@@ -8,8 +8,10 @@ rule 55, whose set of page modules is **derived** and no longer a single name.
 Four views when M17.2 built it (dec. G): the home with the presence, the Approval Center, the
 Device Center, and a task as an **execution summary** — never a model's reasoning. **Five since
 M13.12** (ADR 0062, decision 23 of the review): the policies of §59, by the rule that every
-milestone adding a capacity adds its view (STATO 5.10). What a view shows has to exist in a route
-first; nothing here reads the world a second way, and no route grew to serve these pages.
+milestone adding a capacity adds its view (STATO 5.10). **Six since M13.9** (ADR 0063 §10,
+decision 38): ELA's browser with the user's accounts, and the vault. What a view shows has to
+exist in a route first; nothing here reads the world a second way, and no route grew to serve
+these pages.
 
 Two things it shares with the phone instead of writing them twice. The **conduct of a "yes"** —
 answer, then run — lives in ``api/approvals.py``, on the routes' side of the boundary (dec. K.1).
@@ -36,6 +38,7 @@ from fastapi.responses import RedirectResponse
 
 from ela.api import pages
 from ela.api.approvals import answered_and_resumed, pending_approvals
+from ela.api.browser import FREE, browser_of, window_opened, window_shut, window_turned
 from ela.api.companion import (
     NO_FINISHED,
     NO_LIVE,
@@ -61,6 +64,7 @@ from ela.api.policies import created, policies_of, preview_of, revoked_policy
 from ela.api.results import read_results
 from ela.api.schemas import (
     ApprovalOut,
+    BrowserOut,
     CancelIn,
     DeclarationIn,
     DeviceOut,
@@ -75,9 +79,11 @@ from ela.api.schemas import (
     TaskDetail,
     TaskOut,
     TermsOut,
+    VaultOut,
 )
 from ela.api.security import CONSOLE_SURFACE, Anonymous, Identity, note, welcome
 from ela.api.tasks import cancel_task, finished_tasks, list_tasks, read_task
+from ela.api.vault import vault_locked, vault_of
 from ela.domain import (
     ApprovalId,
     DeviceRole,
@@ -90,6 +96,9 @@ from ela.domain import (
     visible,
 )
 from ela.ports import (
+    PROFILE_PROCESS,
+    PROFILE_WINDOW,
+    VAULT_UNLOCKED,
     ApprovalOutOfReachError,
     EnrollmentConsumedError,
     EnrollmentExpiredError,
@@ -162,7 +171,7 @@ YES: Final = "yes"
 
 
 def _nav() -> pages.Markup:
-    """The three views a page links to. One template, not a copy in every page."""
+    """The views a page links to. One template, not a copy in every page."""
     return pages.fragment(HERE, "nav")
 
 
@@ -500,6 +509,18 @@ def _pairs(found: ApprovalOut, seen: bool) -> pages.Markup:
         pairs.append(
             pages.fragment(
                 HERE, "pair", key="Testo atteso", value=visible(found.expect, lines=False)
+            )
+        )
+    if seen and found.entry:
+        # A login (M13.9, ADR 0063 §9): which entry of the vault the yes covers, and whose — the
+        # username masked. The user's content: behind the ceiling, like the address.
+        pairs.append(
+            pages.fragment(HERE, "pair", key="La voce", value=visible(found.entry, lines=False))
+        )
+    if seen and found.username:
+        pairs.append(
+            pages.fragment(
+                HERE, "pair", key="Nome utente", value=visible(found.username, lines=False)
             )
         )
     if seen and found.does:
@@ -969,6 +990,209 @@ async def policy_revoke(request: Request, ela: ElaDep, identity: IdentityDep) ->
     fields = form(await request.body())
     await revoked_policy(UUID(fields.get("id", "")), ela, identity)
     return RedirectResponse("/console/policies", status_code=303)
+
+
+# ----------------------------------------------------------------------------------------
+# ELA's browser with the user's accounts, and the vault (M13.9, ADR 0063 §10): the sixth view
+# ----------------------------------------------------------------------------------------
+
+FROM_THE_MAC: Final = (
+    "La finestra e il suo interruttore si usano dal Mac: è lì che si aprono. Chiudere il vault "
+    "si fa anche da qui."
+)
+"""What changes something on the Mac's screen is done at the Mac (decision 12): a console under
+a narrower ceiling reads the states and closes the vault — that takes away, it does not widen."""
+NOT_READ: Final = "non letto"
+"""A fact of the folder where the folder could not be read: not «no», and not «nessuna»."""
+A_HAND_MAY_BE_ON: Final = frozenset({PROFILE_WINDOW, PROFILE_PROCESS})
+"""The holders the view offers to end: the browser where the user signs in by hand. A step of
+ELA's ends with its task."""
+ONLY_ONE_IS_ELA_S: Final = (
+    "La cartella contiene più di un profilo del browser: ELA ne prepara e ne usa uno solo, e "
+    "conta le password salvate in tutti."
+)
+WITH_A_WINDOW: Final = "con finestra"
+WITHOUT_A_WINDOW: Final = "senza finestra"
+A_LOGIN: Final = {
+    True: "con finestra, qualunque cosa dica l'interruttore",
+    False: (
+        "con finestra — ed ELA non ha potuto dire di poterne aprire una adesso: un login non "
+        "partirebbe"
+    ),
+    None: f"con finestra — se una si possa aprire: {NOT_READ}",
+}
+"""What the view says of a login, beside the switch (decision 150 of the review of 2026-10-13):
+the view said «senza finestra» while a login would have one. The fact is ``GET /browser``'s
+``login_window``, and the row does not move with the switch."""
+
+
+class BrowserOutOfReachError(ApiError):
+    """The window, or its switch, asked from a console that is not at the Mac."""
+
+    def __init__(self) -> None:
+        super().__init__(FROM_THE_MAC)
+
+
+def _at_the_mac(identity: Identity) -> bool:
+    """Whether this console is where the browser's window opens: the ceiling of a console whose
+    two ends of the socket are loopback — the middleware's fact, not looked at again here."""
+    return may_see(identity, PrivacyLevel.LOCAL_ONLY)
+
+
+@router.get("/browser")
+async def browser_view(ela: ElaDep, identity: IdentityDep) -> Response:
+    """What the profile and the vault are, as their routes say them (rule 55), and the forms of
+    what this console may do. **It never opens the vault**: a key is not pasted into a page."""
+    profile, vault = await browser_of(ela), await vault_of(ela)
+    here = _at_the_mac(identity)
+    return pages.page(
+        HERE,
+        "browser",
+        sheets=WHERE,
+        nav=_nav(),
+        profile=_profile_pairs(profile),
+        said=_said(profile.message, here),
+        window=_window_form(profile) if here else pages.fragment(HERE, "notice", text=FROM_THE_MAC),
+        open=_open_form(profile) if here and profile.state == FREE else pages.joined(()),
+        close=(
+            pages.fragment(HERE, "browser-close")
+            if here and profile.state in A_HAND_MAY_BE_ON
+            else pages.joined(())
+        ),
+        several=(
+            pages.fragment(HERE, "notice", text=ONLY_ONE_IS_ELA_S)
+            if _several(profile)
+            else pages.joined(())
+        ),
+        vault=_vault_pairs(vault),
+        told=pages.joined(
+            _said(told, here) for told in (vault.message, vault.opens_with or "") if told
+        ),
+        lock=(
+            pages.fragment(HERE, "vault-lock")
+            if vault.state == VAULT_UNLOCKED
+            else pages.joined(())
+        ),
+        ceiling=_ceiling(identity),
+    )
+
+
+def _said(sentence: str, here: bool) -> pages.Markup:
+    """A sentence of the tools or of the vault — it may name a folder or a program of the Mac's,
+    so it is the Mac's: shown there, and nowhere else."""
+    if not (here and sentence):
+        return pages.joined(())
+    return pages.fragment(HERE, "notice", text=visible(sentence, lines=False))
+
+
+def _several(profile: BrowserOut) -> bool:
+    """Whether the folder holds more than the one profile ELA prepares and uses: one is the
+    browser's own first, and nothing to be told."""
+    return profile.profiles is not None and profile.profiles > 1
+
+
+def _profile_pairs(profile: BrowserOut) -> pages.Markup:
+    linked = NOT_READ if profile.linked is None else ("sì" if profile.linked else "no")
+    saved = NOT_READ if profile.saved is None else str(profile.saved)
+    pairs = [
+        pages.fragment(HERE, "pair", key="Stato", value=profile.state),
+        pages.fragment(
+            HERE,
+            "pair",
+            key="Finestra",
+            value=WITH_A_WINDOW if profile.window else WITHOUT_A_WINDOW,
+        ),
+        pages.fragment(HERE, "pair", key="Un login", value=A_LOGIN[profile.login_window]),
+        pages.fragment(HERE, "pair", key="Collegato a un account", value=linked),
+        pages.fragment(HERE, "pair", key="Password salvate", value=saved),
+    ]
+    if _several(profile):
+        pairs.append(
+            pages.fragment(HERE, "pair", key="Profili nella cartella", value=str(profile.profiles))
+        )
+    return pages.joined(pairs)
+
+
+def _window_form(profile: BrowserOut) -> pages.Markup:
+    """The switch, as one button that says what pressing it does."""
+    if profile.window:
+        return pages.fragment(HERE, "browser-window", shown="0", label="Nascondi la finestra")
+    return pages.fragment(HERE, "browser-window", shown="1", label="Mostra la finestra")
+
+
+def _open_form(profile: BrowserOut) -> pages.Markup:
+    """The window where the user signs in by hand: on no site, or on a declared one."""
+    return pages.fragment(
+        HERE,
+        "browser-open",
+        sites=pages.joined(
+            pages.fragment(HERE, "browser-site", site=site) for site in profile.sites
+        ),
+    )
+
+
+def _vault_pairs(vault: VaultOut) -> pages.Markup:
+    pairs = [pages.fragment(HERE, "pair", key="Stato", value=vault.state)]
+    if vault.forgets_at is not None:
+        pairs.append(
+            pages.fragment(
+                HERE, "pair", key="Dimentica la chiave", value=f"alle {when(vault.forgets_at)}"
+            )
+        )
+    return pages.joined(pairs)
+
+
+@router.post("/browser/window")
+async def browser_window(request: Request, ela: ElaDep, identity: IdentityDep) -> Response:
+    """Turn the switch, from the Mac — and the view again."""
+    if not _at_the_mac(identity):
+        raise BrowserOutOfReachError
+    asked = form(await request.body()).get("shown")
+    if asked not in SWITCH:
+        raise ValueError("the form of the window says shown=1 or shown=0")
+    window_turned(ela, SWITCH[asked])
+    return RedirectResponse("/console/browser", status_code=303)
+
+
+@router.post("/browser/open")
+async def browser_open(request: Request, ela: ElaDep, identity: IdentityDep) -> Response:
+    """Open the window where the user signs in by hand, from the Mac — and the view again. The
+    form names its site, the empty one for none: a ``POST`` that names nothing asks nothing."""
+    if not _at_the_mac(identity):
+        raise BrowserOutOfReachError
+    # The blank value is the answer «no site», so it is kept: :func:`form` drops it, as the
+    # standard parser does unless told.
+    body = (await request.body()).decode("utf-8", "replace")
+    site = dict(parse_qsl(body, keep_blank_values=True)).get("site")
+    if site is None:
+        raise ValueError("the form of the window names its site, or the empty one")
+    await window_opened(ela, identity, site or None)
+    return RedirectResponse("/console/browser", status_code=303)
+
+
+@router.post("/browser/close")
+async def browser_close(request: Request, ela: ElaDep, identity: IdentityDep) -> Response:
+    """End the browser where the user signs in by hand, from the Mac — and the view again. A
+    window a hand may be typing in is not ended from anywhere else (decision 12)."""
+    if not _at_the_mac(identity):
+        raise BrowserOutOfReachError
+    if form(await request.body()).get("browser") != "close":
+        raise ValueError("the form of the browser says browser=close")
+    await window_shut(ela, identity)
+    return RedirectResponse("/console/browser", status_code=303)
+
+
+@router.post("/browser/lock")
+async def browser_lock(request: Request, ela: ElaDep, identity: IdentityDep) -> Response:
+    """Close the vault, under any ceiling: it takes away, it does not widen."""
+    if form(await request.body()).get("vault") != "lock":
+        raise ValueError("the form of the vault says vault=lock")
+    await vault_locked(ela, identity)
+    return RedirectResponse("/console/browser", status_code=303)
+
+
+SWITCH: Final = {"1": True, "0": False}
+"""What the form of the switch may say."""
 
 
 # ----------------------------------------------------------------------------------------

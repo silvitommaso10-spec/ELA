@@ -23,6 +23,8 @@ __all__ = [
     "Rule",
     "asks_at_every_use",
     "no_policy_for",
+    "no_session_covers",
+    "no_session_of",
 ]
 
 
@@ -57,6 +59,16 @@ class Rule(StrEnum):
     STEP_MISMATCH = "STEP_MISMATCH"
     AUTHORIZATION_MISMATCH = "AUTHORIZATION_MISMATCH"
     AUTHORIZATION_REQUIRED = "AUTHORIZATION_REQUIRED"
+    SESSION = "SESSION"
+    """A ``MEDIUM`` step a guided session's model wrote, covered by that session while the room
+    says it is open (M13.9, ADR 0063; decision 29). **A name of its own, and not a grant's**: no
+    authorization is born and none is consumed — what covers is the yes or the policy the session
+    itself was started with, and the audit says which session."""
+    SESSION_MISMATCH = "SESSION_MISMATCH"
+    """A session's cover handed over for a call it does not cover: a plan that session did not
+    write, a task that is not its child, a capability its own capability does not declare, a row
+    that is not «approval unless authorized», a site that is not the session's. The caller's
+    incoherence, denied — as a grant that does not cover is (ADR 0011 §6)."""
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
 
@@ -117,3 +129,29 @@ def no_policy_for(capability: CapabilitySpec) -> str | None:
     if capability.risk >= RiskLevel.HIGH:
         return "no policy reaches a HIGH (ADR 0045 §3)"
     return f"{capability.id} does not ask: it needs no policy"
+
+
+def no_session_covers(capability: CapabilitySpec) -> str | None:
+    """Why no guided session covers ``capability``, or ``None`` if one may (M13.9; decision 29).
+
+    **Only a row that asks unless authorized**: a row that asks at every use is reached by a yes
+    and by nothing else (ADR 0045 §3), and a row that asks nobody has no use for a cover. One
+    definition, read by the catalogue when it judges a declaration and by the Guardian when it
+    judges a cover it was handed: the two defences refuse the same thing.
+    """
+    if RISK_POLICY.get(capability.risk) is Rule.APPROVAL_UNLESS_AUTHORIZED:
+        return None
+    return (
+        f"{capability.id} is {capability.risk.value}: a session covers only a row that asks "
+        "unless authorized"
+    )
+
+
+def no_session_of(capability: CapabilitySpec) -> bool:
+    """Whether a session of ``capability`` covers nothing because **nobody is asked for it**.
+
+    What makes a cover worth something is that the session itself was started with a yes or
+    under a policy: a session's capability on a row that does not ask would open the reads of its
+    sessions to nobody's yes (M13.9; decision 29).
+    """
+    return RISK_POLICY.get(capability.risk) not in ASKING_RULES

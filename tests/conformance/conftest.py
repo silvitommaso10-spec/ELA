@@ -32,7 +32,11 @@ from ela.api import create_app
 from ela.composition import Settings, build
 from ela.testing.fakes import FakeBell, FakeClock, FakePower
 from tests.api.support import AUTHORIZED, BASE
-from tests.composition.support import create_schema, declare
+from tests.composition.support import (  # noqa: F401 — the first is re-exported as a fixture
+    _only_the_declared_environment,
+    create_schema,
+    declare,
+)
 from tests.conformance.driver import Conformance
 
 ASSIGNMENT_TTL = "60"

@@ -20,7 +20,7 @@ import asyncio
 import contextlib
 import json
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -56,6 +56,7 @@ from ela.domain import (
     ModelRoute,
     PermissionDecision,
     PermissionOutcome,
+    PlanAuthor,
     PlanId,
     PowerSource,
     ProbeFamily,
@@ -72,6 +73,7 @@ from ela.domain import (
     RawTranscript,
     Reservation,
     RiskLevel,
+    SessionCover,
     StepId,
     Task,
     TaskEvent,
@@ -84,14 +86,25 @@ from ela.domain import (
 )
 from ela.ports import (
     ANNOUNCED_FIELDS,
+    HELD,
+    HELD_IN_PART,
     NAVIGATION,
+    NOT_HELD,
+    PROFILE_STEP,
+    PROFILE_WINDOW,
     PROVIDER_UNAVAILABLE,
+    SHUT_QUIT,
+    SHUT_TOLD,
     STARTED_ID,
+    VAULT_LOCKED,
+    VAULT_UNAUTHENTICATED,
+    VAULT_UNLOCKED,
     VERIFICATION_NO_CONDITIONS,
     VERIFICATION_NOT_SUCCEEDED,
     VERIFICATION_UNKNOWN_CONDITION,
     VERIFICATION_WRONG_CAPABILITY,
     AlreadyExistsError,
+    AnotherPage,
     ApprovalAlreadyAnsweredError,
     ApprovalExpiredError,
     AssignmentExpiredError,
@@ -103,7 +116,6 @@ from ela.ports import (
     AuthorizationExhaustedError,
     AuthorizationExpiredError,
     AuthorizationRevokedError,
-    BrowserError,
     BrowserStopped,
     CallRequest,
     Clock,
@@ -118,14 +130,19 @@ from ela.ports import (
     Glanced,
     IdentityConflictError,
     IdGenerator,
+    Landed,
+    LeftSite,
     ModelProvider,
     NotAllowedError,
     NotFoundError,
+    NoWindow,
     Opened,
     PageGone,
+    ProfileBusy,
     Prospect,
     Ran,
     RoutingError,
+    Secret,
     SessionEnd,
     SessionHandle,
     SessionHost,
@@ -134,6 +151,10 @@ from ela.ports import (
     TaskStop,
     ToolPort,
     ToolStopped,
+    VaultEntry,
+    VaultFailed,
+    VaultNotOpen,
+    VaultTaken,
     VerifierPort,
     check_answer,
     check_limit,
@@ -144,46 +165,49 @@ __all__ = [
     "DEFAULT_START",
     "FAKE_CALL_WORST",
     "FAKE_CONDITION",
-    "FAKE_SESSION_TOOLS",
     "FAKE_CURRENCY",
+    "FAKE_SESSION_TOOLS",
     "FAKE_WORST_CASE",
+    "FakeAgentSession",
     "FakeApprovalStore",
+    "FakeAssignmentStore",
     "FakeAuditLog",
     "FakeAuthorizationStore",
     "FakeBell",
+    "FakeAccountBrowser",
     "FakeBrowser",
-    "FakePage",
     "FakeCapabilityRegistry",
     "FakeClock",
-    "FakeLauncher",
     "FakeDeviceRegistry",
+    "FakeEnrollmentStore",
     "FakeExecutionResultStore",
     "FakeIdGenerator",
-    "FakeModelProvider",
-    "FakeModelRouter",
-    "FakePermissionGuardian",
-    "FakeProbe",
-    "FakeProviderRegistry",
+    "FakeLauncher",
     "FakeListening",
     "FakeLocalBeat",
+    "FakeModelGateway",
+    "FakeModelProvider",
+    "FakeModelRouter",
+    "FakePage",
+    "FakePermissionGuardian",
     "FakePower",
+    "FakeProbe",
+    "FakeProviderRegistry",
     "FakeScreenCapture",
     "FakeSpeech",
+    "FakeStop",
     "FakeTaskRepository",
     "FakeTextRecognition",
     "FakeTool",
     "FakeToolRegistry",
+    "FakeVault",
+    "FakeVaultEntry",
     "FakeVerifier",
     "FakeVerifierRegistry",
     "GuardianCall",
+    "SessionScript",
     "ToolCall",
     "VerifierCall",
-    "FakeEnrollmentStore",
-    "FakeAssignmentStore",
-    "FakeStop",
-    "FakeAgentSession",
-    "FakeModelGateway",
-    "SessionScript",
     "finished",
 ]
 
@@ -912,6 +936,8 @@ class GuardianCall(NamedTuple):
     step: TaskStep | None
     authorization: Authorization | None
     authorization_uses: int
+    author: PlanAuthor | None = None
+    session: SessionCover | None = None
 
 
 class FakePermissionGuardian:
@@ -943,10 +969,21 @@ class FakePermissionGuardian:
         step: TaskStep | None = None,
         authorization: Authorization | None = None,
         authorization_uses: int = 0,
+        author: PlanAuthor | None = None,
+        session: SessionCover | None = None,
     ) -> PermissionDecision:
         self.calls = (
             *self.calls,
-            GuardianCall(capability, arguments, task, step, authorization, authorization_uses),
+            GuardianCall(
+                capability,
+                arguments,
+                task,
+                step,
+                authorization,
+                authorization_uses,
+                author,
+                session,
+            ),
         )
         outcome = self._outcomes.get(capability.id)
         if outcome is None:
@@ -1035,6 +1072,15 @@ class FakePage:
     element declares; ``left`` a navigation the boundary refused at the opening,
     ``left_after_click`` one the click started; ``shown`` whether an awaited text appears, and
     ``changes_to`` the text the page shows once the tool is done with it, for the verifier's look.
+    ``second_factor`` is whether the page asks for a one-time code — what only the browser with
+    the profile says (M13.9). ``landed`` is where the page is after the click — ``None`` for
+    where it was opened —, ``landed_status`` the status of its document then, and
+    ``counts_after_click`` what a selector finds once the click was made: what a login leaves to
+    read (decision 106). ``another`` is the page this one opened, which was stopped — ``None``
+    when it opened none (M13.4f).
+
+    **Where the page is** is ``address`` from the opening, and ``landed`` once the click was
+    made: the boundary of the page is asked about it at every use (:class:`FakeBrowser`).
     """
 
     status: int | None = 200
@@ -1047,6 +1093,101 @@ class FakePage:
     left_after_click: str | None = None
     shown: bool = True
     changes_to: dict[str | None, str] | None = None
+    second_factor: bool = False
+    landed: str | None = None
+    landed_status: int | None = 200
+    counts_after_click: dict[str, int] = field(default_factory=dict)
+    another: AnotherPage | None = None
+
+
+@dataclass
+class FakeVaultEntry:
+    """One entry of a :class:`FakeVault`: what the vault holds, and how its username is shown."""
+
+    id: str
+    name: str
+    addresses: tuple[str, ...]
+    username: str
+    password: str | None
+    shown: str = ""
+    """The username masked, as the adapter would give it before a yes."""
+
+
+class FakeVault:
+    """A vault a test fills (port :class:`~ela.ports.Vault`).
+
+    ``state`` is what the vault says of itself; ``key`` the session key that opens it. Before a
+    yes, :meth:`find` gives every entry **without a value** — the username as ``shown`` —; after
+    one, :meth:`take` gives the addresses and the two secrets. ``calls`` records what was asked,
+    in order; ``raising[member]`` is raised by that member instead of answering.
+    """
+
+    def __init__(
+        self,
+        entries: Iterable[FakeVaultEntry] = (),
+        *,
+        state: str = VAULT_UNLOCKED,
+        key: str = "the-key-of-the-fake-vault",
+    ) -> None:
+        self.entries: list[FakeVaultEntry] = list(entries)
+        self.state = state
+        self.key = key
+        self.calls: list[str] = []
+        self.raising: dict[str, Exception] = {}
+
+    def _asked(self, member: str, said: str = "") -> None:
+        self.calls.append(f"{member}:{said}" if said else member)
+        if member in self.raising:
+            raise self.raising[member]
+
+    async def status(self) -> str:
+        self._asked("status")
+        return self.state
+
+    async def unlock(self, key: Secret) -> bool:
+        self._asked("unlock")
+        if self.state == VAULT_UNAUTHENTICATED or key.reveal() != self.key:
+            return False
+        self.state = VAULT_UNLOCKED
+        return True
+
+    async def lock(self) -> None:
+        self._asked("lock")
+        if self.state == VAULT_UNLOCKED:
+            self.state = VAULT_LOCKED
+
+    async def forget(self) -> None:
+        self._asked("forget")
+        if self.state == VAULT_UNLOCKED:
+            self.state = VAULT_LOCKED
+
+    async def find(self, address: str) -> tuple[VaultEntry, ...]:
+        self._asked("find", address)
+        if self.state != VAULT_UNLOCKED:
+            raise VaultNotOpen(self.state)
+        return tuple(
+            VaultEntry(
+                id=entry.id,
+                name=entry.name,
+                addresses=entry.addresses,
+                username=entry.shown,
+                has_password=bool(entry.password),
+            )
+            for entry in self.entries
+        )
+
+    async def take(self, entry: str) -> VaultTaken:
+        self._asked("take", entry)
+        if self.state != VAULT_UNLOCKED:
+            raise VaultNotOpen(self.state)
+        for held in self.entries:
+            if held.id == entry and held.password:
+                return VaultTaken(
+                    addresses=held.addresses,
+                    username=Secret(held.username),
+                    password=Secret(held.password),
+                )
+        raise VaultFailed("bw get item failed: no such entry, or it could not be read")
 
 
 class FakeBrowser:
@@ -1058,12 +1199,22 @@ class FakeBrowser:
     each gesture — and to answer **when the test decides**. ``raising`` makes one member raise the
     given error; ``click_reached`` and ``click_released``, when set, hold the click until the test
     lets it go — the precondition of a stop given halfway, built instead of waited for.
+    :meth:`hold` does the same for ``count`` and ``text`` (M13.4b): a cancellation that arrives
+    **after the opening** needs the tool held on the page, and a read has no click to be held at.
+
+    **Every use of a page asks the boundary where the page is, before and after, as the real
+    adapters do** (M13.4f, ADR 0064 §4) — the function the tool handed to :meth:`open`, about
+    the address the page of the script is at — and raises :class:`~ela.ports.LeftSite`: a fake
+    that did not would let a tool's test pass on a page the real browser refuses, and an
+    architecture test finds it. ``moves[member]`` is where the page is found **when that member
+    is reached**, ``moves_during[member]`` where it has gone **once the member has done its
+    work**: the page that ends elsewhere at a step of a tool, built instead of raced for.
     """
 
     def __init__(self, page: FakePage | None = None, *, installed: bool = True) -> None:
         self.page = FakePage() if page is None else page
         self.installed_answer = installed
-        self.raising: dict[str, BrowserError] = {}
+        self.raising: dict[str, Exception] = {}
         self.opened: list[str] = []
         self.allowed: list[Callable[[str], bool]] = []
         self.fills: list[tuple[str, str]] = []
@@ -1077,17 +1228,63 @@ class FakeBrowser:
         self.launch_released: asyncio.Event | None = None
         """Held, when set, while «the browser starts» — before the navigation and its listening
         (M6.3c): the window where a stop finds the site not yet visited."""
+        self.killed: tuple[str, ...] = ()
+        """What :meth:`settle` answers it had to kill: nothing, unless the test says otherwise."""
+        self.settled: list[Callable[[], Awaitable[None]]] = []
+        """The grace of every :meth:`settle`, in order: what ELA's close gave it (M13.4e)."""
+        self.moves: dict[str, str] = {}
+        self.moves_during: dict[str, str] = {}
         self._open: dict[str, bool] = {}
+        self._boundaries: dict[str, Callable[[str], bool]] = {}
+        self._where: str | None = None
         self._clicked = False
+        self._stopped = False
+        self._held: dict[str, tuple[asyncio.Event, asyncio.Event]] = {}
 
     def _raise(self, member: str) -> None:
         error = self.raising.get(member)
         if error is not None:
             raise error
 
-    def _on(self, page: str) -> None:
+    def hold(self, member: str) -> tuple[asyncio.Event, asyncio.Event]:
+        """Hold ``count`` or ``text`` from now on: the first event is set when the member is
+        reached, and the member answers when the test sets the second."""
+        if member not in ("count", "text"):
+            raise ValueError(f"{member} is not a member this fake holds")
+        self._held[member] = (asyncio.Event(), asyncio.Event())
+        return self._held[member]
+
+    async def _wait(self, member: str) -> None:
+        held = self._held.get(member)
+        if held is not None:
+            reached, released = held
+            reached.set()
+            await released.wait()
+
+    def _on(self, page: str, member: str | None = None) -> None:
+        """The page, to be used by ``member``: there, and **inside its boundary**."""
+        if self._stopped:
+            raise BrowserStopped("ELA is stopping")
         if page not in self._open:
             raise PageGone(page)
+        if member is not None:
+            self._within(page, self.moves.get(member), made=False)
+
+    def _done(self, page: str, member: str) -> None:
+        """``member`` has done its work: the boundary is asked again, and what was read on a
+        page that ended elsewhere meanwhile is thrown away."""
+        if page in self._boundaries:
+            self._within(page, self.moves_during.get(member), made=True)
+
+    def _within(self, page: str, moved: str | None, *, made: bool) -> None:
+        if moved is not None:
+            self._where = moved
+        address = self._where
+        if address is None:
+            landed = self.page.landed if self._clicked else None
+            address = landed or self.page.address or self.opened[-1]
+        if not self._boundaries[page](address):
+            raise LeftSite(address, made=made)
 
     async def installed(self) -> bool:
         self._raise("installed")
@@ -1103,6 +1300,18 @@ class FakeBrowser:
         self.allowed.append(allowed)
         page = f"page-{len(self.opened)}"
         self._open[page] = False
+        self._boundaries[page] = allowed
+        # A page that was just opened has been clicked by nobody, and is where it was opened.
+        self._clicked = False
+        self._where = None
+        # And it is asked where it is, as the adapters ask: what an opening returns is said of a
+        # page inside its boundary. A page found outside is closed, like every refused opening.
+        try:
+            self._within(page, None, made=False)
+        except LeftSite:
+            del self._open[page]
+            self.closed.append(page)  # an opening that raises leaves nothing open behind it
+            raise
         return Opened(
             page=page,
             status=self.page.status,
@@ -1111,40 +1320,53 @@ class FakeBrowser:
         )
 
     async def count(self, page: str, selector: str) -> int:
-        self._on(page)
+        self._on(page, "count")
+        await self._wait("count")
         self._raise("count")
+        self._done(page, "count")
+        if self._clicked and selector in self.page.counts_after_click:
+            return self.page.counts_after_click[selector]
         return self.page.counts.get(selector, 1)
 
     async def field(self, page: str, selector: str) -> Field:
-        self._on(page)
+        self._on(page, "field")
+        self._done(page, "field")
         return self.page.fields.get(selector, Field(type="text", autocomplete=""))
 
     async def fill(self, page: str, selector: str, value: str) -> None:
-        self._on(page)
+        self._on(page, "fill")
         self._raise("fill")
         self.fills.append((selector, value))
+        self._done(page, "fill")
 
     async def click(self, page: str, selector: str) -> None:
-        self._on(page)
+        self._on(page, "click")
         if self.click_reached is not None and self.click_released is not None:
             self.click_reached.set()
             await self.click_released.wait()
         self._raise("click")
         self.clicks.append(selector)
         self._clicked = True
+        self._done(page, "click")
 
     async def text(self, page: str, selector: str | None) -> str:
-        self._on(page)
+        self._on(page, "text")
+        await self._wait("text")
         self._raise("text")
+        self._done(page, "text")
         return self.page.texts.get(selector, "")
 
     async def title(self, page: str) -> str:
-        self._on(page)
+        self._on(page, "title")
+        self._done(page, "title")
         return self.page.title
 
     async def left(self, page: str) -> str | None:
-        self._on(page)
+        self._on(page, "left")
         return self.page.left_after_click if self._clicked else self.page.left
+
+    async def another(self, page: str) -> AnotherPage | None:
+        return self.page.another if page in self._open else None
 
     async def keep(self, page: str) -> None:
         if page in self._open:
@@ -1158,23 +1380,184 @@ class FakeBrowser:
         self._raise("glance")
         if not self._open.get(page, False):
             raise PageGone(page)
+        # The look releases the page whatever it finds — also a page that is elsewhere, before
+        # the wait or once it has ended, of which it then says nothing.
         del self._open[page]
+        self._within(page, self.moves.get("glance"), made=False)
+        self._within(page, self.moves_during.get("glance"), made=True)
         texts = self.page.texts if self.page.changes_to is None else self.page.changes_to
         return Glanced(
             text=texts.get(selector) if selector in texts else None,
             shown=None if expect is None else self.page.shown,
             left=self.page.left_after_click if self._clicked else self.page.left,
+            another=self.page.another,
         )
 
     async def close(self, page: str) -> None:
         self.closed.append(page)
         self._open.pop(page, None)
 
+    async def settle(self, grace: Callable[[], Awaitable[None]]) -> tuple[str, ...]:
+        """What ELA's close asks of the browser it was built with (the composition's contract,
+        M13.4e). Nothing was started, so nothing is waited for: the grace is kept, not awaited."""
+        self.settled.append(grace)
+        return self.killed
+
     def stop(self) -> None:
-        """What the stop signal does to a real one: every page closed, and what runs is stopped."""
+        """What the stop signal does to a real one: every page closed, what runs is stopped, and
+        from then on every use of a page says so (M13.4c) — not that the page is gone."""
+        self._stopped = True
         self._open.clear()
         for member in ("open", "count", "fill", "click", "text", "glance", "installed"):
             self.raising[member] = BrowserStopped("ELA is stopping")
+
+
+class FakeAccountBrowser(FakeBrowser):
+    """The browser with the profile that lasts, for the tools and the routes (port
+    ``AccountBrowser``, M13.9).
+
+    Everything :class:`FakeBrowser` is, and what the profile adds as the test says it:
+    ``holder`` is who holds the folder beside the pages of this fake itself — ``None``, or one of
+    the port's three names —; ``linked_answer`` and ``saved_answer`` what the profile says of
+    itself; ``windows`` every window that was opened, by its address; ``secrets`` what
+    :meth:`fill_secret` wrote, in order — **opened**, as the adapter opens it to type it, which is
+    the one thing a fake of this port may do with a secret (architecture rule 68).
+    ``raising`` is honoured by ``occupied``, ``window``, ``shut``, ``linked``, ``saved``,
+    ``profiles``, ``fill_secret``, ``can_show`` and ``holds`` too. ``shuts`` is the grace of
+    every browser that was told to quit, and ``shut_answer`` how it ended.
+
+    ``screen`` is whether a window can be had (decision 143): with ``False``, ``can_show`` says
+    so and ``open_shown`` raises :class:`~ela.ports.NoWindow` and opens nothing. ``shown_opens``
+    is every address that was opened **with a window**, beside ``opened``, which has them all.
+    ``held`` is what :meth:`holds` was asked, in order — opened, like ``secrets`` —; ``changed``
+    the fields a key landed in since they were written — they hold what was typed no more
+    (decision 144) —, and ``shortened`` the fields whose page keeps less than it is given: they
+    hold a beginning of it (decision 152).
+    """
+
+    def __init__(
+        self,
+        page: FakePage | None = None,
+        *,
+        installed: bool = True,
+        holder: str | None = None,
+        linked: bool = False,
+        saved: int = 0,
+        profiles: int = 1,
+        screen: bool = True,
+    ) -> None:
+        super().__init__(page, installed=installed)
+        self.holder = holder
+        self.screen = screen
+        self.shown_opens: list[str] = []
+        self.held: list[tuple[str, str]] = []
+        self.changed: set[str] = set()
+        self.shortened: set[str] = set()
+        self.linked_answer = linked
+        self.saved_answer = saved
+        self.profiles_answer = profiles
+        self.shut_answer: str = SHUT_QUIT
+        self.shuts: list[Callable[[], Awaitable[None]]] = []
+        self.windows: list[str | None] = []
+        self.secrets: list[tuple[str, str]] = []
+        self.landings: list[str] = []
+
+    def _held_by(self) -> str | None:
+        return PROFILE_STEP if self._open else self.holder
+
+    async def occupied(self) -> str | None:
+        self._raise("occupied")
+        return self._held_by()
+
+    async def open(self, address: str, allowed: Callable[[str], bool], stop: TaskStop) -> Opened:
+        self._raise("open")
+        holder = self._held_by()
+        if holder is not None:
+            raise ProfileBusy(holder)
+        return await super().open(address, allowed, stop)
+
+    async def can_show(self) -> bool:
+        self._raise("can_show")
+        return self.screen
+
+    async def open_shown(
+        self, address: str, allowed: Callable[[str], bool], stop: TaskStop
+    ) -> Opened:
+        """What the adapter does: with no window to be had nothing is opened; with one, the
+        page is opened as every other, and written down as one that has a window."""
+        self._raise("open_shown")
+        if not self.screen:
+            raise NoWindow("no window can be had")
+        opened = await self.open(address, allowed, stop)
+        self.shown_opens.append(address)
+        return opened
+
+    async def holds(self, page: str, selector: str, value: Secret) -> str:
+        self._on(page, "holds")
+        self._raise("holds")
+        self.held.append((selector, value.reveal()))
+        self._done(page, "holds")
+        if selector in self.changed:
+            return NOT_HELD
+        return HELD_IN_PART if selector in self.shortened else HELD
+
+    async def field(self, page: str, selector: str) -> Field:
+        found = await super().field(page, selector)
+        return found if found.method is not None else replace(found, method="post")
+
+    async def glance(
+        self, page: str, *, selector: str | None, expect: str | None, seconds: float
+    ) -> Glanced:
+        glanced = await super().glance(page, selector=selector, expect=expect, seconds=seconds)
+        return replace(glanced, second_factor=self.page.second_factor)
+
+    async def landed(self, page: str) -> Landed:
+        self._on(page, "landed")
+        self._raise("landed")
+        self.landings.append(page)
+        self._done(page, "landed")
+        return Landed(address=self.page.landed or self.opened[-1], status=self.page.landed_status)
+
+    async def window(self, address: str | None) -> None:
+        self._raise("window")
+        holder = self._held_by()
+        if holder is not None:
+            raise ProfileBusy(holder)
+        self.windows.append(address)
+        self.holder = PROFILE_WINDOW
+
+    async def shut(self, grace: Callable[[], Awaitable[None]]) -> str | None:
+        """What the adapter does, as the test says it: a step is not ended, nothing is ``None``,
+        and whatever else holds the folder is told — ``shut_answer`` says how it ended — and the
+        folder is free. The grace is kept, never waited for."""
+        self._raise("shut")
+        holder = self._held_by()
+        if holder == PROFILE_STEP:
+            raise ProfileBusy(PROFILE_STEP)
+        if holder is None:
+            return None
+        self.shuts.append(grace)
+        if self.shut_answer != SHUT_TOLD:
+            self.holder = None
+        return self.shut_answer
+
+    async def linked(self) -> bool:
+        self._raise("linked")
+        return self.linked_answer
+
+    async def saved(self) -> int:
+        self._raise("saved")
+        return self.saved_answer
+
+    async def profiles(self) -> int:
+        self._raise("profiles")
+        return self.profiles_answer
+
+    async def fill_secret(self, page: str, selector: str, value: Secret) -> None:
+        self._on(page, "fill_secret")
+        self._raise("fill_secret")
+        self.secrets.append((selector, value.reveal()))
+        self._done(page, "fill_secret")
 
 
 class FakeTool:

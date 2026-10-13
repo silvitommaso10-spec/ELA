@@ -1,0 +1,43 @@
+{
+  "_nota": [
+    "Il piano del LOGIN DAL VAULT della prova a mano di M13.9 (GETTING_STARTED, sezione 28, passi 6 e 7;",
+    "decisione 95 della review dell'11 ottobre 2026): il sito è news.ycombinator.com, scelto da Tommaso fra",
+    "i candidati guardati senza entrare (docs/milestones/M13.9.md, sezioni 18 e 19).",
+    "La pagina di accesso ha DUE moduli, entrare e creare un account, e `input[name=acct]` o",
+    "`input[name=pw]` da soli ne trovano due: i selettori qui sotto scelgono il solo modulo dell'accesso —",
+    "quello che non porta il campo nascosto `creating` — e il pulsante che dice `login`. Sono stati provati",
+    "con lo sguardo del tool, uno per uno: un elemento solo ciascuno, il secondo `type=password`.",
+    "`expect_text` è `logout`: lo mostra solo una pagina da dentro. Misurato senza entrare: non sta nella",
+    "pagina di accesso, né nella pagina che il sito dà a chi è fuori, dove al suo posto c'è `login`.",
+    "Nessun valore sta nel piano: il nome utente e la password li prende ELA dal vault, dopo il sì, dalla",
+    "voce il cui indirizzo è https://news.ycombinator.com/login — la aggiunge Tommaso, a mano, prima della",
+    "prova. `browser.login` è HIGH: chiede a ogni uso, e la domanda nomina la voce e il nome utente",
+    "mascherato.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "entrare in news.ycombinator.com con una password del mio vault",
+  "steps": [
+    {
+      "id": "c0de1a28-0000-4b00-8a00-00000000000a",
+      "goal": "entrare nel sito",
+      "required_capabilities": [
+        "browser.login"
+      ],
+      "arguments": {
+        "site": "news.ycombinator.com",
+        "path": "/login",
+        "username_field": "form:not(:has(input[name=creating])) input[name=acct]",
+        "password_field": "form:not(:has(input[name=creating])) input[name=pw]",
+        "click": "input[type=submit][value=login]",
+        "expect_text": "logout",
+        "purpose": "la prova a mano del browser con i tuoi account"
+      },
+      "risk": "HIGH",
+      "expected_result": "la pagina dopo il login mostra ciò che vede solo chi è entrato",
+      "success_conditions": [
+        "browser.expect_visible"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}

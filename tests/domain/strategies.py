@@ -351,12 +351,25 @@ policy_terms = st.builds(
 )
 """What a capability declares a policy of §59 must bound (M13.12, ADR 0062)."""
 
+covered = st.builds(domain.Covered, capability_id=capability_ids, input_schema=json_mappings)
+"""What the capability of a session declares its reads are (M13.9, ADR 0063)."""
+
 policy_bounds = st.builds(
     PolicyBounds,
     terms=policy_terms,
     limits=st.dictionaries(texts, texts, max_size=3),
+    covers=_optional(covered),
 )
 """The limits of a policy, in words, never validated (proposal 15), and their terms."""
+
+session_covers = st.builds(
+    domain.SessionCover,
+    session=st.uuids().map(domain.StepId),
+    task_id=st.uuids().map(domain.TaskId),
+    capability_id=capability_ids,
+    sites=st.lists(texts, max_size=3).map(tuple),
+)
+"""The room's word about an open guided session (M13.9, ADR 0063)."""
 
 capability_specs = st.builds(
     CapabilitySpec,
@@ -368,6 +381,7 @@ capability_specs = st.builds(
     scope=st.lists(texts, max_size=3).map(tuple),
     scoped_arguments=st.lists(texts, max_size=3).map(tuple),
     policy_terms=_optional(policy_terms),
+    covers=_optional(covered),
     requires_authorization=st.booleans(),
     metadata=json_mappings,
 )
@@ -826,6 +840,8 @@ MODEL_STRATEGIES: Final[dict[type[BaseModel], st.SearchStrategy[BaseModel]]] = {
     domain.Actor: actors,
     domain.PolicyTerms: policy_terms,
     domain.PolicyBounds: policy_bounds,
+    domain.Covered: covered,
+    domain.SessionCover: session_covers,
     domain.DeviceCapability: device_capabilities,
     domain.ProviderUsage: provider_usages,
     domain.WorstCase: worst_cases,

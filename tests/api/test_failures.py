@@ -45,7 +45,8 @@ from httpx import ASGITransport, AsyncClient, Response
 
 from ela.api import create_app
 from ela.api.app import FAILURES, NOT_YOUR_WORK
-from ela.api.console import PolicyOutOfReachError
+from ela.api.browser import BrowserRefusedError
+from ela.api.console import BrowserOutOfReachError, PolicyOutOfReachError
 from ela.api.errors import (
     DatabaseUnavailableError,
     RevisionRequiredError,
@@ -57,6 +58,7 @@ from ela.api.policies import (
     PolicyWouldNotStartError,
 )
 from ela.api.security import surface_of
+from ela.api.vault import VaultKeyNotLocalError, VaultRefusedError
 from ela.audit.chain import AuditChainError
 from ela.composition import Ela, build
 from ela.devices import (
@@ -483,6 +485,30 @@ async def a_creation_from_a_console_that_cannot_see_the_sites(live: Live) -> Res
         return await posted(console, "/console/policies/preview", FIELDS)
 
 
+async def a_window_asked_from_a_console_that_is_not_at_the_mac(live: Live) -> Response:
+    """M13.9: what opens on the Mac's screen is asked at the Mac — a console on the tailnet turns
+    no switch."""
+    async with a_guided_ela() as g, a_console(g, away=True) as console:
+        return await posted(console, "/console/browser/window", [("shown", "1")])
+
+
+async def a_lock_of_a_vault_whose_program_nobody_declared(live: Live) -> Response:
+    """The door's own refusal, through the route: nothing to launch, and the route says that the
+    key — had there been one — is not held."""
+    return await live.client.post("/vault/lock")
+
+
+async def a_key_of_the_vault_from_a_socket_that_is_not_this_machine_s(live: Live) -> Response:
+    """The client of this suite dials a name, not loopback: the key is refused and never tried."""
+    return await live.client.post("/vault/session", json={"key": "a key nobody tries"})
+
+
+async def a_window_on_a_site_nobody_declared(live: Live) -> Response:
+    """Refused before the profile is looked at, so on every machine: where ELA opens the window
+    is a declared site, or nowhere."""
+    return await live.client.post("/browser/open", json={"site": "altrove.example"})
+
+
 RAISED: tuple[Raised, ...] = (
     Raised(
         NotFoundError,
@@ -718,6 +744,42 @@ RAISED: tuple[Raised, ...] = (
         "restano sul Mac",
         a_creation_from_a_console_that_cannot_see_the_sites,
     ),
+    Raised(
+        BrowserOutOfReachError,
+        "POST",
+        "/console/browser/window",
+        409,
+        "not_answerable",
+        "si usano dal Mac",
+        a_window_asked_from_a_console_that_is_not_at_the_mac,
+    ),
+    Raised(
+        VaultRefusedError,
+        "POST",
+        "/vault/lock",
+        409,
+        "vault.refused",
+        "ELA forgot the key",
+        a_lock_of_a_vault_whose_program_nobody_declared,
+    ),
+    Raised(
+        VaultKeyNotLocalError,
+        "POST",
+        "/vault/session",
+        403,
+        "vault.refused",
+        "only from this machine",
+        a_key_of_the_vault_from_a_socket_that_is_not_this_machine_s,
+    ),
+    Raised(
+        BrowserRefusedError,
+        "POST",
+        "/browser/open",
+        409,
+        "browser.refused",
+        "browser.site_undeclared",
+        a_window_on_a_site_nobody_declared,
+    ),
 )
 
 
@@ -902,11 +964,12 @@ def test_every_route_the_two_tables_name_is_a_route_the_application_serves(app: 
     assert named <= served, named - served
 
 
-TOLD_APART = ("conflict", "invalid", "not_answerable", "policy.not_live")
+TOLD_APART = ("conflict", "invalid", "not_answerable", "policy.not_live", "vault.refused")
 """The shared codes whose rows must be distinguishable by their message. M13.12 adds two: a
 console that cannot see the sites of a policy does not answer its preview, as one that cannot see
 a task does not answer its question; and a policy no longer live is either ended or revoked
-already, the store's own refusal."""
+already, the store's own refusal. M13.9 adds one: the vault that refused, and the key that was
+never tried because it did not come from this machine."""
 SAID_THE_SAME_WAY = ("not_assigned",)
 """And the one whose rows must **not** be (M12.2, ADR 0038 §12).
 

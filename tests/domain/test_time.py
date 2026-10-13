@@ -135,6 +135,11 @@ VALUE_OBJECTS = frozenset(
         # carries are values inside a specification and a grant, whose instants are theirs.
         "PolicyTerms",
         "PolicyBounds",
+        # The cover of a session (M13.9): what a capability declares its sessions cover is a
+        # value inside a specification, and the room's word about an open session is read at
+        # the moment of one decision — its instant is that decision's.
+        "Covered",
+        "SessionCover",
     }
 )
 

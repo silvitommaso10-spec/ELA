@@ -37,6 +37,7 @@ from ela.domain import (
     PlanAuthor,
     PlanAuthorKind,
     PlanId,
+    SessionCover,
     StepId,
     Task,
     TaskId,
@@ -48,10 +49,10 @@ from ela.executive.planner import planning_id
 from ela.executive.runner import TaskRunner
 from ela.executive.spending import BudgetRefusal, SessionBudget, SpendingGate
 from ela.executive.stops import StopOfTask
-from ela.permissions.capabilities import BROWSER_ACT, BROWSER_READ
 from ela.ports import (
     GUIDED_FOLDER_CHANGED,
     GUIDED_SESSION_GONE,
+    GUIDED_STOPPED,
     GUIDED_UNRESERVED,
     CapabilityRegistryPort,
     ExecutionResultStore,
@@ -60,6 +61,7 @@ from ela.ports import (
     ModelGateway,
     NotFoundError,
     OpenedSession,
+    SessionGestures,
     SessionTally,
     TaskRepository,
     VerifierRegistryPort,
@@ -89,8 +91,6 @@ check. A start that never arrives is a session halted, not a call let out."""
 _NAMESPACE: Final = UUID("1d9a5d6c-8f3b-4e47-9a0f-6c2d4b8e7a15")
 """The namespace of the ids of a gesture's plan and step, derived from the child's id."""
 
-_GESTURES: Final = frozenset({BROWSER_READ, BROWSER_ACT})
-
 
 def gesture_key(number: int, session: StepId) -> str:
     """The key of the ``number``-th gesture of ``session``."""
@@ -99,9 +99,12 @@ def gesture_key(number: int, session: StepId) -> str:
 
 @dataclass(slots=True)
 class _Live:
-    """One open session: its task, its budget, its token, its sites and its gestures."""
+    """One open session: its task, its capability, its budget, its token, its sites and its
+    gestures."""
 
     task_id: TaskId
+    capability: CapabilityId
+    gestures: SessionGestures
     budget: SessionBudget
     token: str
     sites: tuple[str, ...]
@@ -156,7 +159,14 @@ class SessionRoom:
     # The tool's side ------------------------------------------------------------------------
 
     async def open(
-        self, task_id: TaskId, step_id: StepId, *, sites: tuple[str, ...], tools: frozenset[str]
+        self,
+        task_id: TaskId,
+        step_id: StepId,
+        *,
+        capability: CapabilityId,
+        sites: tuple[str, ...],
+        tools: frozenset[str],
+        gestures: SessionGestures,
     ) -> OpenedSession | ErrorMetadata:
         # A plan by hand carries the caller's step ids, so one file sent to two tasks gives two
         # sessions one step: the identity of the path, of the folder and of the place here. The
@@ -176,6 +186,8 @@ class SessionRoom:
             )
         live = _Live(
             task_id=task_id,
+            capability=capability,
+            gestures=gestures,
             budget=SessionBudget(reservation, tools),
             token=secrets.token_urlsafe(32),
             sites=sites,
@@ -205,13 +217,15 @@ class SessionRoom:
         self, session: StepId, capability: CapabilityId, arguments: JsonMapping
     ) -> Gesture:
         live = self._live.get(session)
-        if live is None or live.closed.is_set():
+        if live is None or live.halted.done():
+            # Over, or being ended by ELA — the «ferma» of its task, a halt, its seconds: the
+            # room is closed by the tool a moment later, and no gesture is made in between.
             return Gesture(f"the session {session} is over", TaskState.CANCELLED, acted=False)
         live.looks += 1
         number = live.looks
-        if capability == BROWSER_ACT:
+        if capability == live.gestures.act:
             live.acts += 1
-        if capability not in _GESTURES:
+        if capability not in (live.gestures.read, live.gestures.act):
             live.refused += 1
             return Gesture(f"gesture {number}: no such gesture", TaskState.DENIED, acted=False)
         # Shielded (M14.3): the interrupt of the session cancels the call of its in-process tool,
@@ -228,7 +242,7 @@ class SessionRoom:
             )
         if child.state is TaskState.DENIED:
             live.refused += 1
-        acted = capability == BROWSER_ACT and child.state is TaskState.COMPLETED
+        acted = capability == live.gestures.act and child.state is TaskState.COMPLETED
         return Gesture(await self._said(number, child), child.state, acted=acted)
 
     async def halt(self, session: StepId, error: ErrorMetadata) -> None:
@@ -265,6 +279,24 @@ class SessionRoom:
 
     async def is_open(self, session: StepId) -> bool:
         return session in self._live
+
+    async def attest(self, session: StepId) -> SessionCover | None:
+        """The room's word about ``session``, for the step the executor is deciding now (M13.9,
+        ADR 0063; decision 29): open, in which task, of which capability, on which sites — or
+        ``None`` for a session that is over or never was. **Built here and nowhere else**
+        (architecture rule 67), and read from what is true at this moment: nobody is handed a
+        word to keep. A session is here only while its own step runs — :meth:`open` wants the
+        reservation of its ``STARTED`` record, which exists because that step was permitted.
+
+        **And not from the moment ELA ends it**: a session that was halted, whose task was
+        stopped, or whose seconds are over is still in the room until its tool closes it, and
+        has no word any more (re-read of 2026-10-11)."""
+        live = self._live.get(session)
+        if live is None or live.halted.done():
+            return None
+        return SessionCover(
+            session=session, task_id=live.task_id, capability_id=live.capability, sites=live.sites
+        )
 
     async def gesture_ids(self, task_id: TaskId, session: StepId, count: int) -> tuple[TaskId, ...]:
         return tuple(child_id(task_id, gesture_key(n, session)) for n in range(1, count + 1))
@@ -328,6 +360,9 @@ class SessionRoom:
         stopped: list[Task] = []
         for session, live in list(self._live.items()):
             if live.task_id == task_id:
+                # Halted here, where the stop arrives: the tool hears the stop of its task on
+                # its own, and until it closes the room no gesture is made and none is covered.
+                await self.halt(session, ErrorMetadata(code=GUIDED_STOPPED, message=reason))
                 stopped.extend(await self._stop_children(live, session, reason))
         return tuple(stopped)
 
@@ -489,8 +524,10 @@ class SessionRoom:
         return "\n".join([f"gesture {number}: {child.state.value}", *_lines(done[-1])])
 
 
-_SHOWN: Final = ("address", "status", "title", "gestures", "text")
-"""What of a gesture's result the session reads, in this order: the text last, since it is long."""
+_SHOWN: Final = ("address", "status", "title", "gestures", "another_page", "text")
+"""What of a gesture's result the session reads, in this order: the text last, since it is long.
+``another_page`` is there since M13.4f (ADR 0064 §5): a page that opened another — which was
+stopped — is said to whoever guides the session, by the origin alone."""
 
 
 def _lines(output: JsonMapping) -> Iterable[str]:

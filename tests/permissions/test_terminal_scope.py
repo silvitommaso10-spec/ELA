@@ -90,10 +90,18 @@ def test_the_terminal_is_high_scoped_on_the_program_and_asks_for_the_purpose() -
 
 def test_it_is_in_the_catalogue_the_composition_builds_after_the_filesystem() -> None:
     """In the order the ADRs added them: ADR 0047 comes after ADR 0045, and before ADR 0052's
-    two and ADR 0060's one."""
+    two, ADR 0060's one and ADR 0063's."""
     ids = [spec.id for spec in production_catalogue().specs()]
     assert ids[ids.index(TERMINAL_RUN) - 1] == "fs.write"
-    assert ids[ids.index(TERMINAL_RUN) + 1 :] == ["browser.read", "browser.act", "browser.guided"]
+    assert ids[ids.index(TERMINAL_RUN) + 1 :] == [
+        "browser.read",
+        "browser.act",
+        "browser.guided",
+        "browser.read_as_you",
+        "browser.act_as_you",
+        "browser.login",
+        "browser.guided_as_you",
+    ]
 
 
 def test_the_default_of_the_factory_is_a_placeholder_and_not_an_empty_list() -> None:

@@ -1,0 +1,22 @@
+Usage: bw unlock [options] [password]
+
+Unlock the vault and return a new session key.
+
+Options:
+  --check                        Check lock status.
+  --passwordenv <passwordenv>    Environment variable storing your password
+  --passwordfile <passwordfile>  Path to a file containing your password as its
+                                 first line
+  -h, --help                     display help for command
+
+  Notes:
+
+    After unlocking, any previous session keys will no longer be valid.
+
+    Pass `--raw` option to only return the session key.
+
+  Examples:
+
+    bw unlock
+    bw unlock myPassword321
+    bw unlock myPassword321 --raw

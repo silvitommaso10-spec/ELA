@@ -21,7 +21,9 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    SecretStr,
     SerializerFunctionWrapHandler,
+    StrictBool,
     field_validator,
     model_serializer,
 )
@@ -580,6 +582,12 @@ class Asked(BaseModel):
     expect: str = ""
     """The text an action waits for on the page after the click (M13.4): what the verifier looks
     for. Empty for a read, and when the question is not about a page."""
+    entry: str = ""
+    """The entry of the vault a login would read, by its name (M13.9, ADR 0063 §9): what the yes
+    covers. The user's content, like the goal. Empty when the question is not a login."""
+    username: str = ""
+    """The username of that entry, **masked** — the whole one never leaves the vault's adapter.
+    Empty when the entry has none, and when the question is not a login."""
     worst_case: str = ""
     """The most the call can cost, in the executor's line — amount, model, tokens — when the call
     spends (M14.1, ADR 0057; decision H). Empty for a call that spends nothing."""
@@ -647,6 +655,8 @@ class ApprovalOut(BaseModel):
     address: str
     gestures: tuple[str, ...] | None
     expect: str
+    entry: str
+    username: str
     worst_case: str
     left: str
     phrase: str
@@ -1428,6 +1438,116 @@ class DiagnosticsOut(BaseModel):
 # --------------------------------------------------------------------------------------
 # The policies of §59 (M13.12, ADR 0062)
 # --------------------------------------------------------------------------------------
+
+
+class VaultOut(BaseModel):
+    """What the vault is now, asked of its program at every request (M13.9, ADR 0063; 16e).
+
+    ``state`` is one of ``undeclared``, ``no_program``, ``changed``, ``gone``, ``is_a_script``,
+    ``unauthenticated``, ``locked``, ``unlocked`` — or ``timeout`` and ``failed`` for a program
+    that did not say. ``forgets_at`` is when ELA forgets the key it holds, ``None`` when it holds
+    none. ``program`` is the declared path. ``opens_with`` is **the whole line to paste** in a
+    terminal, for a locked vault and for no other (decision 32) — the declared program piped into
+    ELA's own command, each by its absolute path; ``None`` for a locked vault too, when ELA
+    cannot name its own command (decision 98) —; ``message`` what there is to do,
+    empty for a vault that is open. **Nothing of the vault**: the account's address, which its
+    program prints with the state, never leaves the adapter.
+    """
+
+    state: str
+    forgets_at: datetime | None
+    program: str | None
+    opens_with: str | None
+    message: str
+
+
+class VaultKeyIn(BaseModel):
+    """The session key of the vault, as ``bw unlock --raw`` prints it — and nothing else: no
+    field here could carry the master password, which never enters ELA (16a)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    key: SecretStr = Field(min_length=1, max_length=4096)
+
+
+class VaultOpenedOut(BaseModel):
+    """The key opens and is kept: until when. The key itself is not said back."""
+
+    forgets_at: datetime
+
+
+class VaultLockedOut(BaseModel):
+    """The vault's program was asked to lock, and did; ELA holds no key."""
+
+    locked: bool
+
+
+class BrowserOut(BaseModel):
+    """What the profile of ELA's browser is now, looked at through its port at every request
+    (M13.9, ADR 0063 §8; decision 35).
+
+    ``state`` is ``free``; or who holds the folder — ``step``, ``window``, ``process`` —; or why
+    no browser can start on it, in the tools' own code without its prefix:
+    ``unsupported_system``, ``profile_undeclared``, ``profile_unsafe``, ``not_installed``,
+    ``failed``, ``stopped``. ``message`` is the sentence of that state, empty for a free profile.
+    ``window`` is the user's switch. ``linked`` is whether the browser knows an account of its
+    maker's, and ``saved`` how many passwords its own manager holds — **in every profile of the
+    browser's that the folder holds**, which ``profiles`` counts: ELA prepares and uses one, and
+    a second is one the user added from inside the window (decision 79). Read again each time,
+    and ``None`` where the folder could not be read. ``sites`` are the declared ones, where the
+    window may be opened. **Nothing of the folder**: not its path, not a file of it.
+
+    ``login_window`` is beside the switch and not in its place (decision 143 of the review of
+    2026-10-13): a login is started in a window whatever the switch says, and this is whether
+    one can be had **now** — asked of the port at every request, ``None`` where it could not be
+    asked.
+    """
+
+    state: str
+    message: str
+    window: bool
+    login_window: bool | None
+    linked: bool | None
+    saved: int | None
+    profiles: int | None
+    sites: tuple[str, ...]
+
+
+class BrowserWindowIn(BaseModel):
+    """The user's switch: with a window, or without."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    shown: StrictBool
+
+
+class BrowserWindowOut(BaseModel):
+    """What the switch says now."""
+
+    shown: bool
+
+
+class BrowserOpenIn(BaseModel):
+    """Where the window opens: a declared site, or nowhere — the browser's own first page."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    site: str | None = Field(default=None, min_length=1, max_length=253)
+
+
+class BrowserOpenedOut(BaseModel):
+    """The window is open, on that site or on none. Nothing of what happens in it is ELA's."""
+
+    site: str | None
+
+
+class BrowserClosedOut(BaseModel):
+    """What became of the browser a hand may be on (decision 80): ``quit`` — told, it ended —,
+    ``killed`` — it did not, and was killed once the grace was over —, ``told`` — it was told,
+    and ELA cannot say it ended: it was not killed, and the profile may still be held —, or
+    ``nothing``: no browser held the profile, and nobody was told."""
+
+    outcome: str
 
 
 class PolicyIn(BaseModel):

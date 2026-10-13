@@ -28,7 +28,15 @@ from typing import ClassVar
 import pytest
 
 from ela.domain import CapabilityId, ErrorMetadata, ExecutionResult, JsonMapping, ProviderRequest
-from ela.permissions import BROWSER_ACT, BROWSER_GUIDED, BROWSER_READ
+from ela.permissions import (
+    BROWSER_ACT,
+    BROWSER_ACT_AS_YOU,
+    BROWSER_GUIDED,
+    BROWSER_GUIDED_AS_YOU,
+    BROWSER_LOGIN,
+    BROWSER_READ,
+    BROWSER_READ_AS_YOU,
+)
 from ela.testing.fakes import FakeAuditLog, FakeClock, FakeIdGenerator, FakeModelProvider, FakeStop
 from ela.tools import (
     COMMON_FAILURE_CODES,
@@ -60,7 +68,7 @@ from ela.tools import (
 )
 from ela.tools.verifiers import SPEECH_TEXT_MATCHES, SPEECH_TOOK_REAL_TIME
 from tests.routing.support import routing_for
-from tests.tools.browsers import SECONDS, a_browser
+from tests.tools.browsers import SECONDS, a_browser, an_account_browser
 from tests.tools.guided import a_room, a_session
 from tests.tools.support import allowed
 from tests.tools.terminals import no_programs
@@ -82,6 +90,10 @@ STAYS = frozenset(
         BROWSER_READ,
         BROWSER_ACT,
         BROWSER_GUIDED,
+        BROWSER_READ_AS_YOU,
+        BROWSER_ACT_AS_YOU,
+        BROWSER_LOGIN,
+        BROWSER_GUIDED_AS_YOU,
     }
 )
 """ADR 0038 §14, as ADR 0045 extends it: the ones whose verifier reads the disk or the store of
@@ -123,6 +135,7 @@ def production(tmp_path: Path, provider: FakeModelProvider) -> VerifierRegistry:
         gestures=a_room(),
         sessions=a_session(),
         audit=FakeAuditLog(),
+        accounts=an_account_browser(),
     )
 
 

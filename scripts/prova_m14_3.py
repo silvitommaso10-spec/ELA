@@ -607,7 +607,15 @@ def answered_elsewhere(api: base.Api, task_id: str | None, approval_id: str | No
     )
 
 
-def an_answer(number: int, block: base.Block, turn: Turn, proof: Proof, *, yes: bool) -> None:
+def an_answer(
+    number: int,
+    block: base.Block,
+    turn: Turn,
+    proof: Proof,
+    *,
+    yes: bool,
+    shown: Callable[[Mapping[str, Any]], list[str]] = shown,
+) -> None:
     """``sì`` and ``no``: the question of the task the block's first line names, shown, and
     Tommaso's answer given with the lines of the block. **The question is still waiting** when he
     is asked and right before the command; an answer from another surface stops the proof with who

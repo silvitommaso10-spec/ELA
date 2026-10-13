@@ -719,6 +719,48 @@ STORE_RECEIVERS = frozenset({"authorizations", "_authorizations"})
 GRANT_METHOD = "grant"
 REVOKE_METHOD = "revoke"
 STORE_PORT = "AuthorizationStore"
+#: Rule 67 (M13.9, ADR 0063): what covers a ``MEDIUM`` read a guided session's model wrote is the
+#: room's word about that session — open, in which task, of which capability, on which sites —,
+#: read when the step is decided. Outside :data:`SESSION_ROOM` nobody builds a
+#: :data:`SESSION_COVER_MODEL`: not a tool, not the executor that hands it to the Guardian, not a
+#: route. A word anybody could write would be a cover anybody could give themselves.
+SESSION_COVER_MODEL = "SessionCover"
+SESSION_ROOM = Path("executive") / "sessions.py"
+#: Rule 68 (M13.9, ADR 0063): a password taken from the vault travels inside a ``Secret``, which
+#: shows nothing of itself and opens with one method, :data:`OPENING_METHOD`. Only the adapters of
+#: :data:`MACHINE_ADAPTER_DIR` — the one that reads it from the vault and the one that types it
+#: into a page — and the fakes of :data:`TESTING_DIR`, which stand in for those two, call it. A
+#: tool, a route or the executor opening one would hold a password where a result, a message or a
+#: log line is one statement away.
+OPENING_METHOD = "reveal"
+#: Rule 69 (M13.9, ADR 0063; the fifth criterion of the registration): the folder of the browser's
+#: profile holds the user's sessions, and is read by its adapter and by nothing else in ELA. The
+#: line that declares it is :data:`PROFILE_FIELD`; it is named by the settings, which declare and
+#: check it, and by the composition root, which hands the folder to the adapter under another
+#: name — :data:`PROFILE_READERS` — and by no other module: not a route, not a tool, not the
+#: audit. Whoever else needs to know something of the profile asks the port, which answers with
+#: facts.
+PROFILE_FIELD = "browser_profile_dir"
+PROFILE_READERS = frozenset(
+    {Path(COMPOSITION_DIR) / "settings.py", Path(COMPOSITION_DIR) / "root.py"}
+)
+#: Rule 70 (M13.4f, ADR 0064): the gate of the browser **looks at** the requests the browser makes,
+#: and makes none in its place. Until M13.4f it was a route of Playwright's that fetched the
+#: document of the main frame itself and handed it to the page: the driver chose the cookies of
+#: that request beside the browser, answered by itself a question the browser asks another site,
+#: and was called for one hop of a chain of redirects (measured on 2026-10-12). So the adapters of
+#: :data:`MACHINE_ADAPTER_DIR` call none of :data:`REDOING_CALLS` — a route, what a route does with
+#: a request, and the detaching of a session, which does not return with a request paused — and
+#: name none of :data:`COMMANDS_NEVER_SENT`, the same things said in the browser's own protocol:
+#: an alert that is turned off lets go what it had paused, an answer given in the site's place or
+#: changed on its way is a request redone, and a session detached by its target is a session
+#: detached. **What the rule cannot see** is a request let go with something changed — the same
+#: command the gate sends, with more in it: that is held by the test that compares what a site
+#: receives through the gate with what the browser alone sends.
+REDOING_CALLS = frozenset({"route", "unroute", "route_from_har", "fetch", "fulfill", "detach"})
+COMMANDS_NEVER_SENT = frozenset(
+    {"Fetch.disable", "Fetch.fulfillRequest", "Fetch.continueResponse", "Target.detachFromTarget"}
+)
 #: Rule 63 (M14.2, ADR 0058): the plan is independent of the device (§13), so the Planner's module
 #: names nothing of the machines. A contract of import-linter cannot say it: the Planner imports the
 #: runner, and the runner the orchestrator.
@@ -1741,6 +1783,120 @@ def check_a_policy_is_born_at_its_route(pkg_root: Path) -> list[Violation]:
                 relative == EXECUTOR_MODULE and _saves_a_yes(node, tree)
             ):
                 found.append(Violation(rule, name, f".{GRANT_METHOD}(", node.lineno))
+    return found
+
+
+def check_the_room_s_word_is_the_room_s(pkg_root: Path) -> list[Violation]:
+    """Rule 67: the word about an open guided session is built by the room (M13.9, ADR 0063).
+
+    Reported: any call :data:`SESSION_COVER_MODEL` ``(...)`` — by name or as an attribute —
+    outside :data:`SESSION_ROOM`. The executor asks the room and hands the answer to the Guardian;
+    a tool, a route or the executor itself building one would be a session covering its own reads
+    on its own say-so. A heuristic on names, like rules 12 and 15.
+    """
+    rule = "the-room-s-word-is-the-room-s"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        if path.relative_to(pkg_root) == SESSION_ROOM:
+            continue
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        found.extend(
+            Violation(rule, name, f"{SESSION_COVER_MODEL}(...)", node.lineno)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and _is_named(node.func, SESSION_COVER_MODEL)
+        )
+    return found
+
+
+def check_a_secret_is_opened_only_by_an_adapter(pkg_root: Path) -> list[Violation]:
+    """Rule 68: only an adapter of the machine, or a fake, opens a ``Secret`` (M13.9, ADR 0063).
+
+    Reported: any call whose callee is an attribute named :data:`OPENING_METHOD`, outside
+    :data:`MACHINE_ADAPTER_DIR` and :data:`TESTING_DIR`. The type itself — in ``ela.ports`` —
+    defines the method and never calls it. A heuristic on a name, like rule 14: no other method
+    of ELA is called that.
+    """
+    rule = "a-secret-is-opened-only-by-an-adapter"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        relative = path.relative_to(pkg_root)
+        if relative.parts[0] == TESTING_DIR or relative.parts[:2] == MACHINE_ADAPTER_DIR.parts:
+            continue
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        found.extend(
+            Violation(rule, name, f".{OPENING_METHOD}(", node.lineno)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == OPENING_METHOD
+        )
+    return found
+
+
+def check_the_profile_s_folder_is_its_adapter_s(pkg_root: Path) -> list[Violation]:
+    """Rule 69: outside the settings and the composition root, nobody names the folder of the
+    browser's profile (M13.9, ADR 0063).
+
+    Reported: :data:`PROFILE_FIELD` as an attribute, a name, a parameter, a keyword or a string —
+    ``getattr`` reads by a string —, outside :data:`PROFILE_READERS`. The adapter receives the
+    folder under another name and never asks the settings; that only the composition builds the
+    adapter is rule 27's. A heuristic on a name: no other thing in ELA is called that.
+    """
+    rule = "the-profile-s-folder-is-its-adapter-s"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        if path.relative_to(pkg_root) in PROFILE_READERS:
+            continue
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        found.extend(
+            Violation(rule, name, PROFILE_FIELD, getattr(node, "lineno", 0))
+            for node in ast.walk(tree)
+            if _names_the_profile(node)
+        )
+    return found
+
+
+def _names_the_profile(node: ast.AST) -> bool:
+    if isinstance(node, ast.Attribute):
+        return node.attr == PROFILE_FIELD
+    if isinstance(node, ast.Name):
+        return node.id == PROFILE_FIELD
+    if isinstance(node, (ast.arg, ast.keyword)):
+        return node.arg == PROFILE_FIELD
+    return isinstance(node, ast.Constant) and node.value == PROFILE_FIELD
+
+
+def check_the_gate_looks_and_does_not_redo(pkg_root: Path) -> list[Violation]:
+    """Rule 70: the browser's adapter looks at a request, and never makes one (M13.4f, ADR 0064).
+
+    Reported, under :data:`MACHINE_ADAPTER_DIR`: a call whose callee is an attribute named in
+    :data:`REDOING_CALLS`, and a text that names one of :data:`COMMANDS_NEVER_SENT` — a docstring
+    too, as for rule 36: what the adapter must never send is not written in it either. Scoped to
+    the adapter because that is where Playwright is allowed to be (rule 32): outside it nothing
+    can reach a route or a session — and ``route`` is the name of other things there, a model's
+    router among them. A heuristic on a name, like rule 68.
+    """
+    rule = "the-gate-looks-and-does-not-redo"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root / MACHINE_ADAPTER_DIR):
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr in REDOING_CALLS
+            ):
+                found.append(Violation(rule, name, f".{node.func.attr}(", node.lineno))
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                found.extend(
+                    Violation(rule, name, command, node.lineno)
+                    for command in sorted(COMMANDS_NEVER_SENT)
+                    if command in node.value
+                )
     return found
 
 
@@ -3884,6 +4040,10 @@ RULES: dict[str, Rule] = {
     "the-end-has-one-reader": check_the_end_has_one_reader,
     "who-spends-passes-the-gate": check_who_spends_passes_the_gate,
     "a-policy-is-born-at-its-route": check_a_policy_is_born_at_its_route,
+    "the-room-s-word-is-the-room-s": check_the_room_s_word_is_the_room_s,
+    "a-secret-is-opened-only-by-an-adapter": check_a_secret_is_opened_only_by_an_adapter,
+    "the-profile-s-folder-is-its-adapter-s": check_the_profile_s_folder_is_its_adapter_s,
+    "the-gate-looks-and-does-not-redo": check_the_gate_looks_and_does_not_redo,
 }
 
 
@@ -4393,6 +4553,66 @@ CONSTANTS: tuple[Constant, ...] = (
     Constant("a-policy-is-born-at-its-route", "TOOLS_DIR", DETECTOR),
     Constant(
         "a-policy-is-born-at-its-route",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # the-gate-looks-and-does-not-redo (rule 70, M13.4f)
+    Constant("the-gate-looks-and-does-not-redo", "MACHINE_ADAPTER_DIR", DETECTOR),
+    Constant("the-gate-looks-and-does-not-redo", "REDOING_CALLS", DETECTOR),
+    Constant("the-gate-looks-and-does-not-redo", "COMMANDS_NEVER_SENT", DETECTOR),
+    Constant(
+        "the-gate-looks-and-does-not-redo",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # the-profile-s-folder-is-its-adapter-s (rule 69, M13.9)
+    Constant("the-profile-s-folder-is-its-adapter-s", "PROFILE_FIELD", DETECTOR),
+    Constant(
+        "the-profile-s-folder-is-its-adapter-s",
+        "PROFILE_READERS",
+        EXEMPTION,
+        by=EACH,
+        adr="ADR 0063",
+    ),
+    Constant(
+        "the-profile-s-folder-is-its-adapter-s",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # a-secret-is-opened-only-by-an-adapter (rule 68, M13.9)
+    Constant("a-secret-is-opened-only-by-an-adapter", "OPENING_METHOD", DETECTOR),
+    Constant(
+        "a-secret-is-opened-only-by-an-adapter",
+        "MACHINE_ADAPTER_DIR",
+        EXEMPTION,
+        by=WHOLE,
+        adr="ADR 0063",
+    ),
+    Constant(
+        "a-secret-is-opened-only-by-an-adapter",
+        "TESTING_DIR",
+        EXEMPTION,
+        by=WHOLE,
+        adr="ADR 0063",
+    ),
+    Constant(
+        "a-secret-is-opened-only-by-an-adapter",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # the-room-s-word-is-the-room-s (rule 67, M13.9)
+    Constant("the-room-s-word-is-the-room-s", "SESSION_COVER_MODEL", DETECTOR),
+    Constant("the-room-s-word-is-the-room-s", "SESSION_ROOM", EXEMPTION, by=WHOLE, adr="ADR 0063"),
+    Constant(
+        "the-room-s-word-is-the-room-s",
         "ROOT_PACKAGE",
         SUBJECT,
         why=INEVITABLE,

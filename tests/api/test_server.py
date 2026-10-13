@@ -13,7 +13,11 @@ import os
 import runpy
 import signal
 import socket
+import sys
+import threading
 from collections.abc import (
+    Awaitable,
+    Callable,
     Iterator,
 )
 from typing import Any, cast
@@ -23,10 +27,11 @@ import uvicorn
 from httpx import AsyncClient
 
 from ela.api import server
-from ela.composition import Ela, Settings
+from ela.composition import Ela, Settings, build
 from ela.composition.settings import (
     ApiSettings,
 )
+from ela.testing.fakes import FakeBrowser, FakePower
 from tests.api.test_nodes import enrolled
 from tests.composition.support import create_schema
 
@@ -38,21 +43,26 @@ class Uvicorn:
         self.app: Any = None
         self.sockets: list[socket.socket] = []
         self.served = False
+        self.should_exit = False
+        self.force_exit = False
+        self.during: Callable[[], Awaitable[None]] | None = None
 
     def Config(self, app: Any, *, log_level: str) -> Uvicorn:  # noqa: N802
         self.app = app
         return self
 
-    def stopping(
-        self, config: Uvicorn, *, stopping: asyncio.Event, loop: asyncio.AbstractEventLoop
-    ) -> Uvicorn:
-        """What ``_serve`` builds since M12.2: the server that wakes the waiters (ADR 0038 §11)."""
-        self.woken = stopping
+    def stopping(self, config: Uvicorn, **wired: object) -> Uvicorn:
+        """What ``_serve`` builds: the server ELA serves with. Until M13.4e's second part it was
+        handed the stop and the loop, for uvicorn's own handler to raise it (ADR 0038 §11); since
+        then the signals are ELA's, and the server is handed nothing."""
+        self.wired = wired
         return config
 
     async def serve(self, sockets: list[socket.socket]) -> None:
         self.sockets = list(sockets)
         self.served = True
+        if self.during is not None:
+            await self.during()
 
 
 def fake_server(monkeypatch: pytest.MonkeyPatch) -> Uvicorn:
@@ -149,9 +159,10 @@ async def test_a_stop_wakes_the_node_that_waits(app: Any, client: AsyncClient, e
     while a request is genuinely in flight, and what is asserted is the *timing*: the answer comes
     back in a fraction of the window, which is the difference between being told and waiting it out.
 
-    What this cannot show in one process is the signal itself reaching uvicorn; that half is
-    ``test_the_signal_handler_raises_the_event_for_whoever_waits``, and the two together are the
-    criterion.
+    What this cannot show in one process is the signal itself; that half is
+    ``test_the_first_signal_raises_the_stop_and_stops_the_server_and_the_second_the_hurry`` —
+    since M13.4e's second part the handler is ELA's and not uvicorn's —, and the two together are
+    the criterion.
     """
     _, headers = await enrolled(client, "TRUSTED", available_tools=["core-echo"])
     window = ela.settings.core.node_poll.total_seconds()
@@ -166,23 +177,6 @@ async def test_a_stop_wakes_the_node_that_waits(app: Any, client: AsyncClient, e
 
     assert answered.status_code == 204
     assert loop.time() - started < window / 2
-
-
-async def test_the_signal_handler_raises_the_event_for_whoever_waits(app: Any) -> None:
-    """``handle_exit`` is the method uvicorn installs with ``signal.signal``, so the event is raised
-    there — through ``call_soon_threadsafe``, because a signal handler is not the loop — and the
-    server's own stop still happens. A shutdown timeout was refused instead: interrupting a handler
-    that can be told is the wrong tool."""
-    stopping = asyncio.Event()
-    stopper = server.Stopping(
-        uvicorn.Config(app), stopping=stopping, loop=asyncio.get_running_loop()
-    )
-
-    stopper.handle_exit(signal.SIGINT, None)
-    await asyncio.sleep(0)
-
-    assert stopping.is_set()
-    assert stopper.should_exit
 
 
 def test_a_socket_is_bound_where_it_is_asked_and_refused_where_the_address_is_not_here() -> None:
@@ -368,6 +362,857 @@ def test_an_ipv6_loopback_is_written_as_a_url_writes_it() -> None:
     message = server.unavailable(api, OSError(errno.EADDRINUSE, "Address already in use"), None)
 
     assert message.startswith("ELA cannot listen on [::1]:8351: Address already in use.")
+
+
+def with_a_browser(monkeypatch: pytest.MonkeyPatch, browser: FakeBrowser) -> None:
+    """``_serve`` builds ELA itself: here with a browser the test holds."""
+
+    async def built(settings: Settings) -> Ela:
+        return await build(settings, power=FakePower(), browser=browser)
+
+    monkeypatch.setattr(server, "build", built)
+
+
+def test_a_browser_ela_had_to_kill_is_said_at_the_close_by_name_and_count(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    asked: Asked,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """M13.4e, decision 51: past the grace ELA kills what the browser's adapter had started, and
+    writes it on stderr — the names of the processes and how many, never a command line."""
+    from ela.composition.root import BROWSER_CLOSE_GRACE_SECONDS
+
+    asyncio.run(create_schema(settings.persistence.db_url))
+    fake_server(monkeypatch)
+    browser = FakeBrowser()
+    browser.killed = ("chrome-headless-shell", "chrome-headless-shell", "node")
+    with_a_browser(monkeypatch, browser)
+
+    server.serve(settings)
+
+    error = capsys.readouterr().err
+    assert (
+        f"ela: the browser did not close within {BROWSER_CLOSE_GRACE_SECONDS} s of the stop: ELA "
+        "killed what it had started — 2 chrome-headless-shell, 1 node" in error
+    )
+
+
+def test_a_browser_that_closed_by_itself_is_not_mentioned_at_the_close(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    asked: Asked,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    asyncio.run(create_schema(settings.persistence.db_url))
+    fake_server(monkeypatch)
+    browser = FakeBrowser()
+    with_a_browser(monkeypatch, browser)
+
+    server.serve(settings)
+
+    assert len(browser.settled) == 1, "the close did ask the browser to settle"
+    assert "killed" not in capsys.readouterr().err
+
+
+# ----------------------------------------------------------------------------------------
+# The stop signals are ELA's (M13.4e, the second part: decisions 55 and 56)
+# ----------------------------------------------------------------------------------------
+
+POSIX = pytest.mark.skipif(sys.platform == "win32", reason="SIGHUP is POSIX's")
+
+
+def numbered(names: list[str]) -> list[int]:
+    """The signals ``names`` name. Read inside a test, never when the module is imported: a
+    system without ``SIGHUP`` skips these tests, and must be able to read the file to skip them."""
+    return [int(getattr(signal, name)) for name in names]
+
+
+def handled() -> list[int]:
+    return numbered(["SIGINT", "SIGTERM", "SIGHUP"])
+
+
+def dispositions() -> dict[int, Any]:
+    return {number: signal.getsignal(number) for number in handled()}
+
+
+@pytest.fixture
+def found() -> Iterator[dict[int, Any]]:
+    """The dispositions a process started from a terminal finds, whatever the suite's worker has
+    — a worker ignores ``SIGINT`` —, and the worker's own back at the end."""
+    worker = dispositions()
+    signal.signal(signal.SIGINT, signal.default_int_handler)
+    signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    signal.signal(signal.SIGHUP, signal.SIG_DFL)
+    try:
+        yield dispositions()
+    finally:
+        for number, handler in worker.items():
+            signal.signal(number, handler)
+
+
+@pytest.fixture
+def raised(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """Every signal ``serve`` raises again at its end, recorded instead of delivered: delivered,
+    a ``SIGTERM`` would be the end of the worker that runs this test."""
+    seen: list[int] = []
+    monkeypatch.setattr(signal, "raise_signal", seen.append)
+    return seen
+
+
+def ours(number: int) -> Callable[[int, Any], None]:
+    """ELA's handler of ``number``, or the failure that says it is not ELA's."""
+    handler = signal.getsignal(number)
+    assert isinstance(handler, server.Signalled), f"the handler of {number} is {handler!r}"
+    return handler
+
+
+class Waiting(FakeBrowser):
+    """A browser that had not closed: it waits for the whole grace, then names what it killed."""
+
+    async def settle(self, grace: Callable[[], Awaitable[None]]) -> tuple[str, ...]:
+        await super().settle(grace)
+        await grace()
+        return ("node",)
+
+
+@POSIX
+def test_while_ela_serves_the_stop_signals_are_ela_s_and_afterwards_the_ones_it_found(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    asked: Asked,
+    found: dict[int, Any],
+    raised: list[int],
+) -> None:
+    """Decision 56: the handlers are ELA's for as long as there is an ELA to close — not the ones
+    uvicorn installs while it serves, nor the ones it and ``asyncio.run`` put back."""
+    asyncio.run(create_schema(settings.persistence.db_url))
+    fake = fake_server(monkeypatch)
+    during: dict[int, Any] = {}
+
+    async def look() -> None:
+        during.update(dispositions())
+
+    fake.during = look
+
+    server.serve(settings)
+
+    assert fake.served
+    assert all(isinstance(handler, server.Signalled) for handler in during.values()), during
+    assert len({id(handler) for handler in during.values()}) == 1, "one handler, for the three"
+    assert dispositions() == found
+    assert raised == [], "the server stopped by itself: no signal, nothing to raise again"
+
+
+class Looking(FakeBrowser):
+    """A browser that looks at the handlers of the stop signals when ELA's close settles it."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.found: dict[int, Any] = {}
+
+    async def settle(self, grace: Callable[[], Awaitable[None]]) -> tuple[str, ...]:
+        self.found = dispositions()
+        return await super().settle(grace)
+
+
+@POSIX
+def test_while_the_close_runs_the_stop_signals_are_still_ela_s(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    asked: Asked,
+    found: dict[int, Any],
+    raised: list[int],
+) -> None:
+    """Decision 55: **during the close ELA holds the handler** — that is what lets a second
+    Ctrl-C end the grace instead of ending the process. Found by the review of the repair: with
+    the handlers put back before the close, every test of this file stayed green."""
+    asyncio.run(create_schema(settings.persistence.db_url))
+    fake_server(monkeypatch)
+    browser = Looking()
+    with_a_browser(monkeypatch, browser)
+
+    server.serve(settings)
+
+    assert browser.found, "the close did settle the browser"
+    assert all(isinstance(handler, server.Signalled) for handler in browser.found.values())
+    assert dispositions() == found, "and only after the close are they the ones ELA found"
+
+
+@POSIX
+def test_while_ela_is_being_built_the_stop_signals_are_not_ela_s_yet(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    asked: Asked,
+    found: dict[int, Any],
+    raised: list[int],
+) -> None:
+    """Before ``build`` returns there is no ELA to close, so there is no close to run: a Ctrl-C
+    there cancels the start, as it always did. A start nobody could interrupt would be a new
+    defect — and the handlers installed too early are exactly that."""
+    asyncio.run(create_schema(settings.persistence.db_url))
+    fake_server(monkeypatch)
+    during: dict[int, Any] = {}
+    building = server.build
+
+    async def built(settings: Settings) -> Ela:
+        during.update(dispositions())
+        return await building(settings, power=FakePower(), browser=FakeBrowser())
+
+    monkeypatch.setattr(server, "build", built)
+
+    server.serve(settings)
+
+    assert during, "the control: build was reached"
+    assert not any(isinstance(handler, server.Signalled) for handler in during.values())
+    assert during[signal.SIGTERM] is signal.SIG_DFL and during[signal.SIGHUP] is signal.SIG_DFL
+
+
+@POSIX
+def test_a_sigint_and_a_sigterm_found_ignored_are_taken_all_the_same(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    asked: Asked,
+    found: dict[int, Any],
+    raised: list[int],
+) -> None:
+    """Measured: uvicorn took ``SIGINT`` and ``SIGTERM`` whatever it found — a background job of
+    a script finds ``SIGINT`` ignored, and stopped all the same. «As it ended before» holds there
+    too: only a ``SIGHUP`` found ignored is left ignored."""
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    asyncio.run(create_schema(settings.persistence.db_url))
+    fake = fake_server(monkeypatch)
+    during: dict[int, Any] = {}
+
+    async def look() -> None:
+        during.update(dispositions())
+
+    fake.during = look
+
+    server.serve(settings)
+
+    assert isinstance(during[signal.SIGINT], server.Signalled)
+    assert isinstance(during[signal.SIGTERM], server.Signalled)
+    assert signal.getsignal(signal.SIGINT) is signal.SIG_IGN
+    assert signal.getsignal(signal.SIGTERM) is signal.SIG_IGN
+
+
+@POSIX
+async def test_a_signal_that_arrives_while_the_loop_sleeps_wakes_it() -> None:
+    """«At once» is this: a signal handler runs in the main thread while the loop sleeps in its
+    selector, and what it hands to the loop must **wake** it — ``call_soon_threadsafe``. Handed
+    over with ``call_soon`` the stop would be raised when something else woke the loop: for the
+    hurry, at the end of the grace it was meant to end (the review of the repair). Built with a
+    real signal, sent to this thread from another while nothing is scheduled; the guard is the
+    test's, and is the only other thing that can wake the loop."""
+    loop = asyncio.get_running_loop()
+    stopping = asyncio.Event()
+    guard = asyncio.Event()
+    told = server.Signalled(loop, stopping, [])
+    before = signal.signal(signal.SIGTERM, told)
+    main = threading.main_thread().ident
+    assert main is not None
+
+    def send() -> None:
+        signal.pthread_kill(main, signal.SIGTERM)
+
+    sender = threading.Timer(0.05, send)
+    watchdog = threading.Timer(5.0, loop.call_soon_threadsafe, [guard.set])
+    try:
+        sender.start()
+        watchdog.start()
+        waits = [asyncio.ensure_future(stopping.wait()), asyncio.ensure_future(guard.wait())]
+        await asyncio.wait(waits, return_when=asyncio.FIRST_COMPLETED)
+        for wait in waits:
+            wait.cancel()
+    finally:
+        watchdog.cancel()
+        sender.join()
+        signal.signal(signal.SIGTERM, before)
+
+    assert stopping.is_set(), "the signal reached the handler"
+    assert not guard.is_set(), "and it woke the loop itself: nothing else had to"
+
+
+@POSIX
+async def test_a_signal_the_system_hands_to_another_thread_wakes_the_loop_too(
+    found: dict[int, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Decision 141 (M13.4e, the third part). The system hands a signal sent to a process to
+    **any** of its threads that does not block it; a handler of Python's runs in the main thread
+    when the main thread next runs Python; and a loop asleep in its selector runs none. Measured
+    on 2026-10-13 with ELA's own handler: handed to another thread while the close waited, a
+    second signal was heard only when something else woke the loop. Built here with a real
+    signal sent **to a thread that is not the main one**, inside the block that holds ELA's
+    handlers, while nothing is scheduled; the guard is the test's, and is the only other thing
+    that can wake the loop.
+
+    **And the loop goes back to sleep**: what the signal wrote is taken away the first time the
+    loop reads it. Left there, the loop would be woken at every turn until the close ended."""
+    loop = asyncio.get_running_loop()
+    stopping = asyncio.Event()
+    guard = asyncio.Event()
+    told = server.Signalled(loop, stopping, [])
+    drained: list[None] = []
+    draining = server._drained  # noqa: SLF001 — counted, and still the one that drains
+
+    def counted(reading: socket.socket) -> None:
+        drained.append(None)
+        draining(reading)
+
+    monkeypatch.setattr(server, "_drained", counted)
+    released = threading.Event()
+    elsewhere = threading.Thread(target=released.wait)
+    elsewhere.start()
+    other = elsewhere.ident
+    assert other is not None and other != threading.main_thread().ident
+
+    def send() -> None:
+        signal.pthread_kill(other, signal.SIGTERM)
+
+    sender = threading.Timer(0.05, send)
+    watchdog = threading.Timer(5.0, loop.call_soon_threadsafe, [guard.set])
+    before = dispositions()
+    try:
+        with server._held(told):  # noqa: SLF001 — what holds the handlers, and wakes the loop
+            sender.start()
+            watchdog.start()
+            waits = [asyncio.ensure_future(stopping.wait()), asyncio.ensure_future(guard.wait())]
+            await asyncio.wait(waits, return_when=asyncio.FIRST_COMPLETED)
+            for wait in waits:
+                wait.cancel()
+            for _ in range(TURNS_OF_THE_LOOP):
+                await asyncio.sleep(0)
+    finally:
+        watchdog.cancel()
+        sender.join()
+        released.set()
+        elsewhere.join()
+
+    assert stopping.is_set(), "the signal reached the handler"
+    assert not guard.is_set(), "and it woke the loop itself: nothing else had to"
+    assert dispositions() == before, "and the handlers are the ones this test's loop had"
+    assert len(drained) == 1, "one signal, read once: the loop was not woken again by it"
+
+
+TURNS_OF_THE_LOOP = 5
+"""How many times the loop is let turn once a signal was heard: what it wrote is read once, or
+at every one of these."""
+
+
+def wakes() -> int:
+    """The descriptor a signal is written into now: read by putting it back at once."""
+    now = signal.set_wakeup_fd(-1)
+    signal.set_wakeup_fd(now)
+    return now
+
+
+class Woken(FakeBrowser):
+    """A browser that looks at what wakes the loop when ELA's close settles it."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.woken_by: int | None = None
+
+    async def settle(self, grace: Callable[[], Awaitable[None]]) -> tuple[str, ...]:
+        self.woken_by = wakes()
+        return await super().settle(grace)
+
+
+@POSIX
+def test_what_wakes_the_loop_is_ela_s_while_it_serves_and_closes_and_then_what_it_found(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    asked: Asked,
+    found: dict[int, Any],
+    raised: list[int],
+) -> None:
+    """Criterion 24: the descriptor a signal wakes the loop through is ELA's for as long as the
+    handlers are — while it serves **and while its close runs**, which is when nothing else wakes
+    the loop —, and afterwards it is the one ELA had found, whatever it was."""
+    asyncio.run(create_schema(settings.persistence.db_url))
+    fake = fake_server(monkeypatch)
+    browser = Woken()
+    with_a_browser(monkeypatch, browser)
+    theirs, other = socket.socketpair()
+    theirs.setblocking(False)
+    found_by_ela = theirs.fileno()
+    serving: list[int] = []
+
+    async def look() -> None:
+        serving.append(wakes())
+
+    fake.during = look
+    before = signal.set_wakeup_fd(found_by_ela)
+    try:
+        server.serve(settings)
+        after = wakes()
+    finally:
+        signal.set_wakeup_fd(before)
+        theirs.close()
+        other.close()
+
+    assert serving and serving[0] not in (-1, found_by_ela), "while it serves, ELA's own"
+    assert browser.woken_by == serving[0], "and the same one while the close runs"
+    assert after == found_by_ela, "afterwards, the one it had found"
+
+
+class Reading:
+    """A loop that writes down what it was asked to read, and to read no more."""
+
+    def __init__(self) -> None:
+        self.reads: list[object] = []
+
+    def add_reader(self, descriptor: object, *arguments: object) -> None:
+        self.reads.append(descriptor)
+
+    def remove_reader(self, descriptor: object) -> bool:
+        self.reads.remove(descriptor)
+        return True
+
+
+@POSIX
+def test_a_descriptor_the_system_refuses_leaves_the_loop_reading_nothing_of_ela_s(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The loop reads a descriptor and the system writes into it — and the system can refuse.
+    Then the loop is not left reading a socket ELA is about to close, and what the system said
+    leaves as it is."""
+    loop = Reading()
+
+    def refused(descriptor: int, **options: object) -> int:
+        raise ValueError("set_wakeup_fd only works in main thread of the main interpreter")
+
+    monkeypatch.setattr(signal, "set_wakeup_fd", refused)
+
+    with pytest.raises(ValueError, match="main thread"), server._woken(cast(Any, loop)):  # noqa: SLF001
+        pytest.fail("the block is not entered with half a wake-up")
+
+    assert loop.reads == []
+
+
+@POSIX
+def test_a_wake_up_that_cannot_be_made_does_not_keep_ela_from_being_closed(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    asked: Asked,
+    found: dict[int, Any],
+    raised: list[int],
+) -> None:
+    """Found by the re-read of 2026-10-13. The wake-up is made of a pair of sockets, and a
+    system with no descriptor left refuses them — at the one moment when there is an ELA built
+    and not yet closed. ELA serves without the wake-up, as it did before it had one, **and its
+    close runs**: the handlers are ELA's all the same, and afterwards the ones it found."""
+    asyncio.run(create_schema(settings.persistence.db_url))
+    fake = fake_server(monkeypatch)
+    browser = Looking()
+    with_a_browser(monkeypatch, browser)
+    before = wakes()
+
+    class NoPairLeft:
+        """The module ``socket`` as ELA's server sees it — and only ELA's server: the loop makes
+        a pair of its own to be born —, with no descriptor left for a pair."""
+
+        def __getattr__(self, name: str) -> Any:
+            return getattr(socket, name)
+
+        def socketpair(self, *arguments: object) -> None:
+            raise OSError(errno.EMFILE, "Too many open files")
+
+    monkeypatch.setattr(server, "socket", NoPairLeft())
+
+    server.serve(settings)
+
+    assert fake.served, "it served"
+    assert browser.found, "and its close settled the browser"
+    assert all(isinstance(handler, server.Signalled) for handler in browser.found.values())
+    assert dispositions() == found and wakes() == before
+
+
+class ReadsNothing:
+    """A loop that cannot be asked to read a descriptor — the one Python gives on Windows, which
+    wakes at a signal by a descriptor it sets itself when it is made."""
+
+    def add_reader(self, *arguments: object) -> None:
+        raise NotImplementedError
+
+
+@POSIX
+def test_a_loop_that_reads_no_descriptor_keeps_ela_s_handlers_and_gets_no_wake_up_of_ela_s(
+    found: dict[int, Any],
+) -> None:
+    """Criterion 24. Where the loop cannot read a descriptor ELA adds none — and the handlers
+    are installed all the same, and put back."""
+    told = server.Signalled(cast(Any, ReadsNothing()), asyncio.Event(), [])
+    before = wakes()
+
+    with server._held(told):  # noqa: SLF001 — what holds the handlers
+        during = wakes()
+        handlers = dispositions()
+
+    assert during == before == wakes()
+    assert all(handler is told for handler in handlers.values())
+    assert dispositions() == found
+
+
+@POSIX
+def test_a_handler_python_cannot_name_is_put_back_as_the_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``signal.signal`` answers ``None`` for a handler that was not installed from Python, and
+    refuses ``None`` when asked to install one: putting back «what was found» would raise after
+    the close, leave the other handlers ELA's, and raise nothing again."""
+    installed: list[tuple[int, Any]] = []
+
+    def install(number: int, handler: Any) -> Any:
+        installed.append((number, handler))
+        return None
+
+    monkeypatch.setattr(signal, "signal", install)
+    monkeypatch.setattr(signal, "getsignal", lambda number: None)
+    told = server.Signalled(asyncio.new_event_loop(), asyncio.Event(), [])
+
+    with server._held(told):  # noqa: SLF001 — the one place that installs and puts back
+        taken = list(installed)
+        installed.clear()
+
+    assert [handler for _, handler in taken] == [told] * len(server.STOP_SIGNALS)
+    assert installed == [(number, signal.SIG_DFL) for number, _ in taken]
+
+
+@POSIX
+def test_a_start_whose_stderr_is_gone_still_closes_ela(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    asked: Asked,
+) -> None:
+    """The line that names the variables removed from the environment is written when ELA has
+    just been built. A stderr that is not there must not leave an ELA built and never closed."""
+    monkeypatch.setenv("NODE_OPTIONS", "--inspect")
+    asyncio.run(create_schema(settings.persistence.db_url))
+    fake = fake_server(monkeypatch)
+    browser = FakeBrowser()
+    made: list[Ela] = []
+
+    async def built(settings: Settings) -> Ela:
+        made.append(await build(settings, power=FakePower(), browser=browser))
+        return made[0]
+
+    monkeypatch.setattr(server, "build", built)
+    gone = Gone(OSError(errno.EIO, "Input/output error"))
+    monkeypatch.setattr(sys, "stderr", gone)
+
+    server.serve(settings)
+
+    assert made[0].removed_from_environment == ("NODE_OPTIONS",), "the control: there was a line"
+    assert gone.asked >= 1 and fake.served, "it was lost, and ELA served all the same"
+    assert len(browser.settled) == 1, "and was closed"
+
+
+@POSIX
+def test_a_sighup_found_ignored_is_left_ignored(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    asked: Asked,
+    found: dict[int, Any],
+    raised: list[int],
+) -> None:
+    """Measured, 2026-10-10: under ``nohup`` a process finds ``SIGHUP`` ignored. ``nohup ela
+    serve`` survives its terminal today, and goes on doing so."""
+    signal.signal(signal.SIGHUP, signal.SIG_IGN)
+    asyncio.run(create_schema(settings.persistence.db_url))
+    fake = fake_server(monkeypatch)
+    during: dict[int, Any] = {}
+
+    async def look() -> None:
+        during.update(dispositions())
+
+    fake.during = look
+
+    server.serve(settings)
+
+    assert during[signal.SIGHUP] is signal.SIG_IGN
+    assert isinstance(during[signal.SIGINT], server.Signalled)
+    assert isinstance(during[signal.SIGTERM], server.Signalled)
+    assert signal.getsignal(signal.SIGHUP) is signal.SIG_IGN
+
+
+@POSIX
+async def test_the_first_signal_raises_the_stop_and_stops_the_server_and_the_second_the_hurry() -> (
+    None
+):
+    """The handler runs in the main thread between two instructions, so what it does to the loop
+    it hands to the loop. **The first** signal raises ELA's stop — at the instant of the signal, as
+    ADR 0038 §11 wants — and tells the server to exit; **the second, whichever it is**, raises the
+    hurry and tells the server not to wait for its connections; **from the third on** nothing
+    changes (decision 55)."""
+    stopping = asyncio.Event()
+    received: list[int] = []
+    told = server.Signalled(asyncio.get_running_loop(), stopping, received)
+    serving = Uvicorn()
+    told.serving = cast(Any, serving)
+
+    told(signal.SIGTERM, None)
+    assert not stopping.is_set(), "handed to the loop: a signal handler is not the loop"
+    await asyncio.sleep(0)
+
+    assert stopping.is_set() and serving.should_exit
+    assert not told.hurry.is_set() and not serving.force_exit
+
+    told(signal.SIGHUP, None)
+    await asyncio.sleep(0)
+
+    assert told.hurry.is_set() and serving.force_exit
+
+    told(signal.SIGINT, None)
+    told(signal.SIGINT, None)
+    await asyncio.sleep(0)
+
+    assert told.hurry.is_set() and stopping.is_set() and serving.should_exit and serving.force_exit
+    assert received == [signal.SIGTERM, signal.SIGHUP, signal.SIGINT, signal.SIGINT]
+
+
+@POSIX
+async def test_a_signal_before_there_is_a_server_is_kept_and_still_raises_the_stop() -> None:
+    stopping = asyncio.Event()
+    received: list[int] = []
+    told = server.Signalled(asyncio.get_running_loop(), stopping, received)
+
+    told(signal.SIGINT, None)
+    told(signal.SIGINT, None)
+    await asyncio.sleep(0)
+
+    assert stopping.is_set() and told.hurry.is_set() and received == [signal.SIGINT] * 2
+
+
+@POSIX
+def test_a_signal_between_the_build_and_the_serving_means_the_server_never_serves(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    asked: Asked,
+    found: dict[int, Any],
+    raised: list[int],
+) -> None:
+    """The handlers are ELA's from the moment ``build`` returns. A signal that arrives before the
+    server serves is not lost and is not served through: the server never starts, the close runs,
+    and the end is that signal's."""
+    asyncio.run(create_schema(settings.persistence.db_url))
+    fake = fake_server(monkeypatch)
+    browser = FakeBrowser()
+    with_a_browser(monkeypatch, browser)
+    making = server.create_app
+
+    def made(ela: Ela) -> Any:
+        ours(signal.SIGTERM)(signal.SIGTERM, None)
+        return making(ela)
+
+    monkeypatch.setattr(server, "create_app", made)
+
+    server.serve(settings)
+
+    assert not fake.served
+    assert len(browser.settled) == 1, "the close ran"
+    assert raised == [signal.SIGTERM]
+
+
+@POSIX
+@pytest.mark.parametrize(
+    ("sent", "again"),
+    [
+        (["SIGINT"], ["SIGINT"]),
+        (["SIGTERM"], ["SIGTERM"]),
+        (["SIGHUP"], ["SIGHUP"]),
+        (["SIGINT", "SIGINT"], ["SIGINT"]),
+        (["SIGINT", "SIGTERM"], ["SIGTERM", "SIGINT"]),
+        (["SIGTERM", "SIGINT"], ["SIGTERM", "SIGINT"]),
+        (["SIGINT", "SIGTERM", "SIGHUP", "SIGTERM"], ["SIGHUP", "SIGTERM", "SIGINT"]),
+    ],
+    ids="+".join,
+)
+def test_the_end_is_the_signal_s_own_raised_again_after_the_close(
+    sent: list[str],
+    again: list[str],
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    asked: Asked,
+    found: dict[int, Any],
+) -> None:
+    """Decision 56: the close runs whole, **and only then** the process ends as it ended before —
+    the way uvicorn gave that end: by raising the signal again once the handlers it had found are
+    back. Each signal received once, in the order of what used to kill: ``SIGHUP``, which killed at
+    once, then ``SIGTERM``, then ``SIGINT`` (measured)."""
+    asyncio.run(create_schema(settings.persistence.db_url))
+    fake = fake_server(monkeypatch)
+    browser = FakeBrowser()
+    with_a_browser(monkeypatch, browser)
+    seen: list[tuple[int, int, bool]] = []
+
+    def raise_again(number: int) -> None:
+        back = dispositions() == found
+        seen.append((number, len(browser.settled), back))
+
+    monkeypatch.setattr(signal, "raise_signal", raise_again)
+
+    async def signalled() -> None:
+        for number in numbered(sent):
+            ours(number)(number, None)
+
+    fake.during = signalled
+
+    server.serve(settings)
+
+    assert [number for number, _, _ in seen] == numbered(again)
+    assert all(settled == 1 for _, settled, _ in seen), "after the close, never before it"
+    assert all(back for _, _, back in seen), "and with the handlers ELA had found back in place"
+
+
+@POSIX
+def test_a_second_signal_ends_the_grace_at_once_and_the_line_says_which_ended_it(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    asked: Asked,
+    found: dict[int, Any],
+    raised: list[int],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Decision 55: a second Ctrl-C ends the grace at once — ELA kills what the adapter had
+    started, and writes it. The browser here waits for the whole grace: with one signal that is
+    five seconds; with two, the hurry is what ends it, and the line says so."""
+    asyncio.run(create_schema(settings.persistence.db_url))
+    fake = fake_server(monkeypatch)
+    with_a_browser(monkeypatch, Waiting())
+
+    async def twice() -> None:
+        ours(signal.SIGINT)(signal.SIGINT, None)
+        ours(signal.SIGINT)(signal.SIGINT, None)
+
+    fake.during = twice
+
+    server.serve(settings)
+
+    error = capsys.readouterr().err
+    assert (
+        "ela: the browser had not closed when a second signal arrived: ELA killed what it had "
+        "started — 1 node" in error
+    )
+    assert "within" not in error
+    assert fake.should_exit and fake.force_exit
+    assert raised == [signal.SIGINT]
+
+
+def test_the_line_says_whether_the_grace_ran_out_or_a_second_signal_ended_it() -> None:
+    from ela.composition.root import BROWSER_CLOSE_GRACE_SECONDS
+
+    names = ("node", "chrome-headless-shell", "chrome-headless-shell")
+
+    assert server.killed(names, hurried=False) == (
+        f"ela: the browser did not close within {BROWSER_CLOSE_GRACE_SECONDS} s of the stop: ELA "
+        "killed what it had started — 2 chrome-headless-shell, 1 node"
+    )
+    assert server.killed(names, hurried=True) == (
+        "ela: the browser had not closed when a second signal arrived: ELA killed what it had "
+        "started — 2 chrome-headless-shell, 1 node"
+    )
+
+
+class Gone:
+    """A stderr that is not there any more: what a ``SIGHUP`` from a closed terminal leaves."""
+
+    def __init__(self, refusal: Exception) -> None:
+        self._refusal = refusal
+        self.asked = 0
+
+    def write(self, text: str) -> int:
+        self.asked += 1
+        raise self._refusal
+
+    def flush(self) -> None:
+        raise self._refusal
+
+
+@pytest.mark.parametrize(
+    "refusal",
+    [OSError(errno.EIO, "Input/output error"), ValueError("I/O operation on closed file")],
+)
+def test_a_line_that_cannot_be_written_does_not_break_the_close(
+    refusal: Exception,
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    asked: Asked,
+) -> None:
+    """Decision 56: after a ``SIGHUP`` the stderr may be gone. The line is lost; the close is not
+    — the database is released as if it had been written."""
+    asyncio.run(create_schema(settings.persistence.db_url))
+    fake_server(monkeypatch)
+    browser = FakeBrowser()
+    browser.killed = ("node",)
+    made: list[Ela] = []
+
+    async def built(settings: Settings) -> Ela:
+        made.append(await build(settings, power=FakePower(), browser=browser))
+        return made[0]
+
+    monkeypatch.setattr(server, "build", built)
+    gone = Gone(refusal)
+    monkeypatch.setattr(sys, "stderr", gone)
+
+    server.serve(settings)
+
+    assert gone.asked >= 1, "ELA did try to say it"
+    assert int(made[0].database.pool.checkedin()) == 0, "and the database was released"  # type: ignore[attr-defined]
+
+
+@POSIX
+def test_off_the_main_thread_ela_serves_and_leaves_the_signals_alone(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    asked: Asked,
+    found: dict[int, Any],
+    raised: list[int],
+) -> None:
+    """A signal handler can only be installed from the main thread — uvicorn's own condition."""
+    asyncio.run(create_schema(settings.persistence.db_url))
+    fake = fake_server(monkeypatch)
+    during: dict[int, Any] = {}
+    failed: list[BaseException] = []
+
+    async def look() -> None:
+        during.update(dispositions())
+
+    fake.during = look
+
+    def elsewhere() -> None:
+        try:
+            server.serve(settings)
+        except BaseException as error:  # noqa: BLE001 — whatever it is, the test says it
+            failed.append(error)
+
+    thread = threading.Thread(target=elsewhere)
+    thread.start()
+    thread.join(30)
+
+    assert failed == [] and fake.served
+    assert during == found and raised == []
+
+
+@POSIX
+async def test_the_server_does_not_capture_the_signals_and_raises_none_again(
+    app: Any, raised: list[int]
+) -> None:
+    """Measured, 2026-10-10 (uvicorn 0.52.4): while it serves uvicorn replaces whatever handler it
+    finds for ``SIGINT`` and ``SIGTERM``, puts it back at the end **and raises every signal it
+    captured again, into that handler** — so whoever counts «a second signal» would count the
+    first one twice. The server ELA serves with leaves the signals where it found them."""
+    stopper = server.Stopping(uvicorn.Config(app))
+    stopper._captured_signals.append(signal.SIGTERM)  # noqa: SLF001 — what uvicorn would raise
+    before = dispositions()
+
+    with stopper.capture_signals():
+        assert dispositions() == before
+
+    assert dispositions() == before
+    assert raised == []
 
 
 def test_main_returns_zero_when_the_server_stops(
