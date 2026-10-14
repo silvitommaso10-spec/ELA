@@ -66,6 +66,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 import os
 import re
 import shutil
@@ -185,6 +186,7 @@ def registry_folder(name: str, environment: Mapping[str, str], system: str) -> P
 
 
 _T = TypeVar("_T")
+_LOG = logging.getLogger(__name__)
 
 
 @dataclass
@@ -850,11 +852,18 @@ class _Gate:
         # driver that died meanwhile — the browser closed at the end of a step, of a task, at
         # ELA's stop —, which Playwright says with a plain ``Exception``, not one of its own
         # (found by ``make check`` of M13.10): **an answer not written is a request that stays
-        # paused, and a paused request never leaves**. A cancellation is not an ``Exception``,
-        # and goes on as what it is.
-        with contextlib.suppress(Exception):
+        # paused, and a paused request never leaves**. Quietly, not silently (decision 53 of the
+        # review of M13.10's implementation): a line says the type and the answer, never the
+        # address. A cancellation is not an ``Exception``, and goes on as what it is.
+        try:
             await self._session.send(
                 "Fetch.continueRequest" if leaves else "Fetch.failRequest", answer
+            )
+        except Exception as error:  # noqa: BLE001 — not written is not let go: said, and safe
+            _LOG.warning(
+                "an answer of the gate could not be written (%s): the request was to be %s",
+                type(error).__name__,
+                "let go" if leaves else "refused",
             )
 
     async def _leaves(self, event: Mapping[str, Any]) -> bool:

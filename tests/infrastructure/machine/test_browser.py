@@ -38,7 +38,7 @@ import signal
 import subprocess
 import sys
 import threading
-from collections.abc import AsyncIterator, Coroutine, Iterator
+from collections.abc import AsyncIterator, Callable, Coroutine, Iterator, Sequence
 from datetime import timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -254,8 +254,68 @@ def drivers() -> list[int]:
     )
 
 
+def command_line(pid: int) -> str:
+    """The whole command line of a process, as the system reads it — ``/proc/<pid>/cmdline`` on
+    Linux, ``ps`` elsewhere —, or ``(gone)``: what names a process the fifteen characters of its
+    name do not (decision 56 (a) of the review of M13.10). **A process that has ended and nobody
+    has collected keeps no command line** on Linux: it is named by its state and by its parent,
+    whose command line is the one that says who should have collected it."""
+    try:
+        said = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ")
+        line = said.decode(errors="replace").strip()
+    except OSError:  # a system without /proc, or a process that is gone
+        line = _ps(pid, "args=")
+    if line:
+        return line
+    kept = _ps(pid, "stat=,ppid=").split()
+    if len(kept) < 2:
+        return "(gone)"
+    state, parent = kept[0], int(kept[1])
+    return (
+        f"(no command line: state {state}, child of {parent}: {_ps(parent, 'args=') or '(gone)'})"
+    )
+
+
+def _ps(pid: int, fields: str) -> str:
+    return subprocess.run(
+        ["/bin/ps", "-ww", "-o", fields, "-p", str(pid)], capture_output=True, text=True
+    ).stdout.strip()
+
+
+def left_before(
+    found: Sequence[tuple[int, str]], previous: str, read: Callable[[int], str] = command_line
+) -> str:
+    """What a test found running before it began, named whole, with the test that left it."""
+    who = previous or "no test ran before it on this worker"
+    named = "; ".join(f"{pid} ({name}): {read(pid)}" for pid, name in found)
+    return f"a process of a test was running before this test began — left by {who}: {named}"
+
+
+def found_before(folder: Path, previous: str) -> str:
+    """What this worker still runs before a test begins — named first, then swept —, or ``""``."""
+    before = started()
+    if not before:
+        return ""
+    found = left_before(before, previous)
+    sweep(folder, also=tuple(pid for pid, _ in before))
+    return found
+
+
+async def settled_after(closings: set[asyncio.Task[Any]]) -> None:
+    """Give what is left of a test the loop before it is torn down, within a bound — and nothing
+    to wait for when nothing is left: an empty set is not an attempt to wait."""
+    if closings:
+        await asyncio.wait(closings, timeout=2)
+
+
+PREVIOUS: list[str] = [""]
+"""The test that ran last on this worker: who a process found before a test began was left by."""
+
+
 @pytest.fixture(autouse=True)
-async def nothing_left_behind(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[None]:
+async def nothing_left_behind(
+    monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
+) -> AsyncIterator[None]:
     """A browser a test leaves that nobody holds is not left to the next test — nor to the loop,
     which at its end cancels every task and then waits for ever for a call of Playwright's that
     was in flight (measured, 2026-10-10: ``asyncio.run`` does not return). Killed here, by pid:
@@ -269,10 +329,19 @@ async def nothing_left_behind(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[
 
     **An ``async`` fixture on purpose**: it is torn down inside the loop, so before the loop
     itself — a plain one is torn down after it in every test that asks for no other fixture of the
-    loop's, which is where a red test hung instead of failing (the review of the repair)."""
+    loop's, which is where a red test hung instead of failing (the review of the repair).
+
+    **And a process found before the test begins is named** (decision 56 (a) of the review of
+    M13.10): whole, with the test that ran before on this worker — on ubuntu a dozen tests found
+    one named «Google Chrome f» and nobody could say whose."""
     folder = scratch()
+    found = found_before(folder, PREVIOUS[0])
+    if found:
+        shutil.rmtree(folder, ignore_errors=True)
+        pytest.fail(found)
     monkeypatch.setenv("TMPDIR", str(folder))
     yield
+    PREVIOUS[0] = request.node.nodeid
     mine = [pid for pid, _ in started()]
     sweep(folder, also=tuple(mine))
     others = asyncio.all_tasks() - {asyncio.current_task()}
@@ -286,10 +355,11 @@ async def nothing_left_behind(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[
         # while a closing of the adapter's was still in flight — its processes dead already. The
         # calls that were in flight fail on a closed pipe: they are given the loop before it is
         # torn down, and what waits for ever — the task the stop wakes — is what the bound is for.
-        await asyncio.wait(others, timeout=2)
+        await settled_after(others)
     still = left(folder)
     shutil.rmtree(folder, ignore_errors=True)
-    assert not still, f"a test of the real browser left something on this machine: {still}"
+    whole = "; ".join(f"{pid}: {command_line(pid)}" for pid in still.processes)
+    assert not still, f"a test of the real browser left something on this machine: {still} {whole}"
 
 
 CLOSINGS_OF_THE_ADAPTER = frozenset({"_shut", "_dropped", "_stopped_once_started"})

@@ -259,6 +259,36 @@ Righe dei verifier, riscritte:
 7. **Nessuno spazzino dei browser all'avvio** (§3): con la finestra non è misurato che cosa resta di un'ELA
    uccisa con una pagina che aspetta; lì vale ciò che ADR 0063 dice di un browser che sopravvive a ELA, e lo
    chiude `ela browser close`.
+8. **Una risposta del cancello che non si scrive** (decisione 53 della review dell'implementazione): quando il
+   driver la rifiuta con un'eccezione — è morto, o sta morendo, alla fine di uno step, di un task, alla fermata di
+   ELA —, la richiesta resta sospesa, e una richiesta sospesa non parte (ADR 0064 §2). Non in silenzio: una riga
+   al livello WARNING dice il tipo dell'eccezione e se la risposta lasciava andare la richiesta o la rifiutava,
+   mai l'indirizzo. **Con un driver vivo, una risposta non scritta lascia la pagina ad aspettare, e lo step
+   finisce in `browser.timeout`**: nessuna lista dei messaggi di Playwright distingue i due casi, e la riga
+   dice quale è stato.
+
+### 6. Un debito datato: un processo del browser lasciato su ubuntu da un test non identificato
+
+**Debito a carico di M13.13, la milestone dei file dal browser**, dichiarato il **2026-10-14**, dalla review
+dell'implementazione di M13.10 (decisione 56).
+
+**Il fatto**: nella CI di ubuntu, a `fc8983f` e a `73473d2`, una dozzina di test di
+`tests/infrastructure/machine/test_browser.py` hanno trovato fra i discendenti del loro worker un processo del
+browser lasciato da un test prima di loro, nominato con i suoi primi quindici caratteri soltanto — «Google
+Chrome f» — e da nessun test; e il fixture `nothing_left_behind` è caduto al teardown di sei di loro con «Set of
+Tasks/Futures is empty», un'attesa chiesta su un insieme vuoto. Nei giri di `0e09ca1`, `b6b9658` e `35a922f` non
+c'è; su questo Mac non si riproduce; dalla CI com'era nessuno poteva nominare il test.
+
+**Non si ripara qui**: il merge non lo aspetta — gli ultimi due giri sono puliti (decisione 56). **La difesa più
+piccola è il fixture stesso**, riparato in M13.10: un insieme vuoto non è più un'attesa, e ciò che il fixture
+trova prima che un test cominci lo nomina con la riga di comando intera letta dal sistema — `/proc/<pid>/cmdline`
+su Linux, e, per un processo finito che nessuno ha raccolto, che lì non ne ha, il suo stato e il genitore che
+avrebbe dovuto raccoglierlo — e con il test che girava prima su quel worker
+(`tests/infrastructure/machine/test_nothing_left_behind.py`). **La prossima volta che il caso si mostra, la CI
+nomina il test**: M13.13 lo ripara da quella riga, o scrive che nei suoi giri il caso non si è mostrato.
+`tests/docs/test_adr_steps.py::test_the_debt_of_the_process_left_on_ubuntu_is_dated_charged_and_named_by_who_pays_it`
+tiene questa sezione nella forma che `docs/STATO.md` legge, e che il documento di M13.13 la nomini fra ciò che
+eredita. Il giorno in cui è pagato, il pagamento si scrive in un ADR, e il test si gira.
 
 ## Conseguenze
 
@@ -268,7 +298,7 @@ dice, con la sezione di questo ADR a cui guardare.
 - **ADR 0045** §4 e §6-bis — §6-bis: per ciò che la domanda nomina e il piano non porta serve un secondo canale, `named` (§2). §4: `prospect` riceve il task, facoltativo (§3).
 - **ADR 0052** §3, §4, §5, §7, §8 e §9 — §3: dentro un task la pagina di uno step può essere quella del successivo (§3). §4, §5 e §7: uno step che continua non ha `path`, e la domanda nomina dov'è la pagina. §8: ogni elemento è aspettato quando serve (§1). §9: lo sguardo non chiude una pagina tenuta (§3).
 - **ADR 0060** §1, §2, §4, §5 e §8 — §1: non c'è una capability `browser.session` (§3). §2, §4 e §5: gli strumenti sono un dato, e un login sono due figli (§4). §8: ciò che il modello legge di un login (§4).
-- **ADR 0063** §1, §4, §5, §6 e §8 — §1: le policy di `browser.guided_as_you` nate prima smettono di coprire (§3). §4: la pagina con il profilo dura fra due step (§3). §5: la voce viaggia con il sì (§2), `expect_text` è facoltativo (§4). §6: il gesto di login (§4). §8: `task` (§3).
+- **ADR 0063** §1, §4, §5, §6 e §8 — §1: le policy di `browser.guided_as_you` nate prima smettono di coprire (§3). §4: la pagina con il profilo dura fra due step (§3). §5: la voce viaggia con il sì (§2), `expect_text` è facoltativo (§4). §6: il gesto di login (§4). §8: `task` (§3); e la frase che dice come fermare il task che tiene il profilo nomina `ela task cancel` — scriveva `ela task stop`, che non c'è —: riparato in M13.10 senza lettera, con un test che guarda la CLI (§3; decisione 52 della review dell'implementazione).
 - **ADR 0064** §1 — il confine di una pagina che continua è quello dello step che continua (§3).
 - **La registrazione di M13.10**, per i file: i due criteri che la nominano passano parola per parola a [M13.13](../milestones/M13.13.md), con le misure (c) e (d) e le domande 23, 24, 30 e 36 (decisioni 21 e 48 della review).
 

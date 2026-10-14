@@ -136,6 +136,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.7` | Proposta | Il terminale su un nodo: il Job Object, e `argv` che su Windows diventa una stringa |
 | 13 — Il permesso prima dell'azione | `M13.8` | Proposta | Un file che vive su una macchina: quale disco, e chi lo dice |
 | 13 — Il permesso prima dell'azione | `M13.9` | Implementata | Il browser con i tuoi account: un Chrome di ELA che dura, e le password che restano in Bitwarden |
+| 13 — Il permesso prima dell'azione | `M13.9b` | Proposta | La pagina d'errore del browser non è un altro sito |
 | 13 — Il permesso prima dell'azione | `M13.10` | Proposta | Più passi e i file: una sessione del browser fra gli step, una sequenza di gesti, e i file che entrano ed escono |
 | 13 — Il permesso prima dell'azione | `M13.11` | Proposta | Il browser sul PC: le capacità di M13.9 e M13.10 sul nodo Windows, e il verdetto che torna in busta |
 | 13 — Il permesso prima dell'azione | `M13.12` | Implementata | Le policy di §59: una policy che Tommaso si crea rende autonoma un'azione `MEDIUM`, a partire da `browser.guided` |
@@ -167,7 +168,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **65** | `docs/adr/NNNN-*.md` |
-| Milestone | **91, di cui 74 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **92, di cui 74 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **71** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **15** | `pyproject.toml` |
 | Port | **36** | i `Protocol` di `src/ela/ports.py` |
@@ -237,7 +238,8 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
   [ADR 0063](adr/0063-browser-with-your-accounts.md) e [ADR 0064](adr/0064-browser-boundary.md) sono Accettate.
   ***Annotato il 2026-10-14***: dalla review della SPEC di M13.10 (decisione 21) è registrata **M13.13** — i file
   dal browser: uno scaricamento come un `fs.write`, un caricamento come un `fs.read` —, il pezzo dei file che esce
-  da M13.10.
+  da M13.10; e, dalla review della sua implementazione (decisione 57), una riparazione di M13.9, **M13.9b** (la
+  pagina d'errore del browser non è un altro sito), che si fa sul branch di M13.13 prima del suo codice.
   L'ordine e le condizioni stanno nella voce 5.11, e la fila che attraversa le fasi nella 5.10.
 - **Fase 12 — i nodi. È chiusa** (2026-09-20, con M12.5). ELA ha smesso di essere un processo su
   una macchina e di essere usabile solo davanti a quella macchina: un'identità provabile per un
@@ -653,7 +655,9 @@ della sua registrazione. Dopo M13.4, in quest'ordine:
    12,65 % contro una soglia del 10 %, è un debito datato a carico di M9.5 (ADR 0063 §12; la sezione 6, qui sotto);
    ***annotato il 2026-10-14***, dalla review della SPEC di M13.10 (decisione 21): **i file escono da M13.10 e
    diventano M13.13**, registrata lo stesso giorno, che sta **subito dopo M13.10 e prima di M13.11** — l'ordine è
-   M13.10, M13.13, M13.11;
+   M13.10, M13.13, M13.11; ***annotato il 2026-10-14***, più tardi, dalla review dell'implementazione di M13.10
+   (decisione 57): **M13.9b** — la pagina d'errore del browser non è un altro sito — sta **sul branch di M13.13,
+   prima del suo codice**, come M13.4b sul branch di M13.9, e non entra nella testa del merge di M13.10;
 7. **M13.5**, con la condizione d'ingresso invariata: se il grant TCC non tiene, apre la milestone
    dell'eseguibile firmato (5.11);
 8. **M14.4**, il computer guidato dal modello, subito dopo M13.5;
@@ -979,6 +983,11 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   (decisione 21): uno scaricamento è giudicato come un `fs.write`, un caricamento come un `fs.read`, con la
   domanda che nomina il file. **Subito dopo M13.10, prima di M13.11.** **Condizione d'ingresso**: il sito per il
   caricamento, che Tommaso sceglie fra candidati guardati senza entrare.
+- **M13.9b — la pagina d'errore del browser non è un altro sito** (§19, §33; ADR 0064 §4). **Registrata il
+  2026-10-14** dalla review dell'implementazione di M13.10 (decisione 57): con il confine dell'origine del sito,
+  un sito che non risponde al login — il browser mostra la sua pagina d'errore, `chrome-error://chromewebdata/` —
+  è raccontato `browser.left_site`, una diagnosi falsa; verificato con il finto. **Sul branch di M13.13, prima del
+  suo codice**; non entra nella testa del merge di M13.10 ([`milestones/M13.9b.md`](milestones/M13.9b.md)).
 - **M13.11 — il browser sul PC** (§19, §56). **Registrata il 2026-09-30**: le capacità di M13.9 e M13.10
   sul nodo Windows, con il verifier sul nodo e il verdetto in busta (ADR 0048 §7); rivede la decisione 1
   di M13.4. **Condizione d'ingresso: una misura sul PC** di che cosa lo Smart App Control lascia partire
@@ -1140,6 +1149,7 @@ pagato da chi doveva.
 | ADR 0048 §9 — il terminale su un nodo, ridichiarato | 2026-09-25 | di M13.7 | **aperto** |
 | ADR 0048 §10 — il residuo di Linux del terminale, ridichiarato | 2026-09-25 | di M13.7 | **aperto** |
 | ADR 0063 §12 — il costo dei test di M13.9, sopra la soglia di ADR 0052 §16 | 2026-10-13 | di M9.5, la milestone sulla disciplina della suite | **aperto** |
+| ADR 0065 §6 — un processo del browser lasciato su ubuntu da un test non identificato | 2026-10-14 | di M13.13, la milestone dei file dal browser | **aperto** |
 | ADR 0035 §7 — i numeri in coda a `CONSTANTS` non contano più niente | 2026-09-09 | della milestone sulla disciplina della suite | saldato da ADR 0036 §10 |
 | ADR 0036 §12 — `PROVIDER_CALLED` non lo scrive nessuno | 2026-09-10 | di chi aggiungerà il prossimo `AuditEventType` | saldato da ADR 0037 §14 |
 | ADR 0044 §8 — il battito di `local`, e la prima vista che l'ha reso visibile | 2026-09-20 | della Fase 13 | saldato da ADR 0048 §2 |
