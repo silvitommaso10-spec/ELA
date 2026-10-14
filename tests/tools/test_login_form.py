@@ -11,6 +11,7 @@ counted on the page before it is written.
 from __future__ import annotations
 
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -22,9 +23,11 @@ from ela.ports import (
     LOGIN_FORM,
     LOGIN_FORM_AMBIGUOUS,
     LOGIN_FORM_NOT_FOUND,
+    NAVIGATION,
     NO_LOGIN_FORM,
     FormField,
     PageForm,
+    ToolStopped,
 )
 from ela.testing.fakes import (
     FakeAccountBrowser,
@@ -33,6 +36,7 @@ from ela.testing.fakes import (
     FakePage,
     FakeStop,
     FakeTaskPages,
+    FakeVault,
 )
 from ela.tools.account import (
     LOGIN_FORM_STILL_THERE,
@@ -278,3 +282,95 @@ async def test_a_page_outside_the_site_is_not_a_login_either() -> None:
     )
 
     assert failure.code == BROWSER_LEFT_SITE
+
+
+async def test_a_read_that_fails_on_its_page_reports_no_form_either() -> None:
+    """The selector of the read names two elements: the read fails in its own work, before any
+    form is looked for."""
+    browser = FakeAccountBrowser(FakePage(forms=(LOGIN,), counts={"#two": 2}))
+    reading = AccountReadTool(SITES, browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages())
+
+    result = await reading.execute(
+        decision(BROWSER_READ_AS_YOU), {**READ, "selector": "#two"}, FakeStop()
+    )
+
+    assert result.error is not None and result.error.code == "browser.element_ambiguous"
+    assert LOGIN_FORM not in result.output and NO_LOGIN_FORM not in result.output
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"site": "posta.example", "username_field": "#user"},
+        {"site": "posta.example", WORD_FIELD: ""},
+    ],
+    ids=["no-password-field", "an-empty-one"],
+)
+async def test_a_form_gone_with_no_password_field_to_look_for_is_the_plan_s_error(
+    arguments: dict[str, str],
+) -> None:
+    verifier = LoginVerifier(FakeAccountBrowser(), 1.0)
+    result = succeeded(BROWSER_LOGIN, output={"page": "page-1", "status": 200, "gestures": 3})
+
+    (failure,) = await verifier.verify((BROWSER_LOGIN_FORM_GONE,), arguments, result)
+
+    assert failure.code == "verification.arguments_invalid"
+
+
+async def test_a_form_gone_on_a_page_that_is_not_there_any_more_says_so() -> None:
+    verifier = LoginVerifier(FakeAccountBrowser(), 1.0)
+    result = succeeded(BROWSER_LOGIN, output={"status": 200, "gestures": 3})
+
+    (failure,) = await verifier.verify((BROWSER_LOGIN_FORM_GONE,), GONE_ARGUMENTS, result)
+
+    assert failure.code == "browser.page_gone"
+
+
+async def test_a_page_that_asks_for_a_second_factor_is_not_a_form_gone() -> None:
+    page = FakePage(counts_after_click={"#word": 0}, landed_status=200, second_factor=True)
+
+    (failure,) = await looked(page)
+
+    assert failure.code == "browser.second_factor"
+
+
+# ----------------------------------------------------------------------------------------
+# The login itself, at its two edges this milestone touched
+# ----------------------------------------------------------------------------------------
+
+
+async def test_a_login_whose_arguments_are_not_a_login_types_nothing(tmp_path: Path) -> None:
+    from tests.tools.test_account_tools import LOGIN as A_LOGIN
+    from tests.tools.test_account_tools import MARIO, login, page
+    from tests.tools.test_account_tools import decision as login_decision
+
+    browser = FakeAccountBrowser(page())
+    tool = await login(browser, FakeVault([MARIO]), tmp_path)
+
+    result = await tool.execute(login_decision(BROWSER_LOGIN), {**A_LOGIN, "click": ""}, FakeStop())
+
+    assert result.error is not None and result.error.code == "arguments.invalid"
+    assert browser.opened == [] and browser.secrets == []
+
+
+async def test_a_login_stopped_while_it_awaits_its_fields_types_nothing_and_asks_no_vault(
+    tmp_path: Path,
+) -> None:
+    from tests.tools.test_account_tools import LOGIN as A_LOGIN
+    from tests.tools.test_account_tools import MARIO, asked, login, page
+    from tests.tools.test_account_tools import decision as login_decision
+
+    browser = FakeAccountBrowser(page())
+    vault = FakeVault([MARIO])
+    tool = await login(browser, vault, tmp_path)
+    await asked(tool)
+    browser.appear_later("#user")
+    vault.calls.clear()
+
+    # Stopped right after the navigation, which hears it and goes through: the stop is found
+    # while the field of the name is awaited.
+    with pytest.raises(ToolStopped):
+        await tool.execute(login_decision(BROWSER_LOGIN), A_LOGIN, FakeStop(after=NAVIGATION))
+    assert browser.waited == ["#user"]
+
+    assert browser.secrets == [] and not any(call.startswith("take") for call in vault.calls)

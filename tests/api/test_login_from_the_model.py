@@ -247,3 +247,106 @@ async def test_the_login_form_of_the_read_is_in_nothing_the_model_reads_nor_in_t
     for selector in WRITTEN.values():
         assert selector not in script.read[0]
         assert selector not in audit
+
+
+async def test_a_login_with_a_text_to_wait_for_is_verified_by_that_text(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Decision 31: the room picks the condition by the fact — a text given, the text appears."""
+    script = Script([gesture("login", site=SITE, path="/login", expect_text="Benvenuto")])
+    accounts = FakeAccountBrowser(a_login_page())
+    vault = FakeVault([ENTRY])
+    async with guided(
+        monkeypatch,
+        tmp_path,
+        script,
+        accounts=accounts,
+        vault=vault,
+        ELA_VAULT_PROGRAM=program(tmp_path),
+    ) as g:
+        await opened(g, vault)
+        task = await planned(g)
+        assert (await run(g, task))["outcome"] == "waiting_approval"
+        await approve(g, task)
+        async with going(run(g, task)) as running:
+            login = await waiting(g, task)
+            made = await yes(g, login)
+            await asyncio.wait_for(running, WAIT_SECONDS)
+        plan = await g.ela.repository.plan(tid(str(login.id)))
+
+    assert made["outcome"] == "completed", made
+    (step,) = plan.steps
+    assert step.success_conditions == ("browser.expect_visible",)
+    assert step.arguments["expect_text"] == "Benvenuto"
+
+
+async def test_a_login_whose_page_cannot_be_read_says_what_the_read_said(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    script = Script([gesture("login", site=SITE, path="/login")])
+    accounts = FakeAccountBrowser(a_login_page(status=503))
+    async with guided(monkeypatch, tmp_path, script, accounts=accounts) as g:
+        task = await planned(g)
+        assert (await run(g, task))["outcome"] == "waiting_approval"
+        await approve(g, task)
+        await asyncio.wait_for(run(g, task), WAIT_SECONDS)
+        approvals = (await g.client.get("/approvals")).json()
+
+    (told,) = script.read
+    assert told.startswith("gesture 1: FAILED") and "503" in told
+    assert approvals == [], "no login was born"
+
+
+async def test_a_login_stopped_while_it_waits_for_the_yes_is_cancelled_and_types_nothing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    script = Script([gesture("login", site=SITE, path="/login")])
+    accounts = FakeAccountBrowser(a_login_page())
+    vault = FakeVault([ENTRY])
+    async with guided(
+        monkeypatch,
+        tmp_path,
+        script,
+        accounts=accounts,
+        vault=vault,
+        ELA_VAULT_PROGRAM=program(tmp_path),
+    ) as g:
+        await opened(g, vault)
+        task = await planned(g)
+        assert (await run(g, task))["outcome"] == "waiting_approval"
+        await approve(g, task)
+        async with going(run(g, task)) as running:
+            login = await waiting(g, task)
+            stopped = await g.client.post(f"/tasks/{login.id}/cancel", json={"reason": "basta"})
+            assert stopped.status_code == 200, stopped.text
+            ran = await asyncio.wait_for(running, WAIT_SECONDS)
+
+    assert ran["outcome"] == "completed", "the session goes on: its gesture was stopped"
+    (told,) = script.read
+    assert told.splitlines()[0] == "gesture 2: CANCELLED"
+    assert "basta" not in told, "a code, never the sentence of the end"
+    assert accounts.secrets == []
+
+
+@pytest.mark.parametrize("which", ["the-read", "the-login"])
+async def test_a_gesture_of_login_that_cannot_be_planned_is_refused(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, which: str
+) -> None:
+    script = Script([gesture("login", site=SITE, path="/login")])
+    accounts = FakeAccountBrowser(a_login_page())
+    async with guided(monkeypatch, tmp_path, script, accounts=accounts) as g:
+        room = g.ela.sessions
+        planning = room._plan  # noqa: SLF001
+        refused = "browser.read_as_you" if which == "the-read" else "browser.login"
+
+        def plan(*args: Any) -> Any:
+            return None if args[4] == refused else planning(*args)
+
+        monkeypatch.setattr(room, "_plan", plan)
+        task = await planned(g)
+        assert (await run(g, task))["outcome"] == "waiting_approval"
+        await approve(g, task)
+        await asyncio.wait_for(run(g, task), WAIT_SECONDS)
+
+    (told,) = script.read
+    assert "not a call ELA can plan" in told

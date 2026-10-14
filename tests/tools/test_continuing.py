@@ -9,6 +9,7 @@ keeps is a ``browser.profile_busy`` that names the task; one the same task keeps
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 from typing import Any
 from uuid import UUID
@@ -436,3 +437,86 @@ async def test_after_the_yes_a_page_another_task_keeps_is_named_in_the_refusal()
     assert result.error is not None and result.error.code == PROFILE_BUSY
     assert f"task {OTHER}" in result.error.message
     assert "until that task ends" in result.error.message
+
+
+# ----------------------------------------------------------------------------------------
+# The edges of the way in
+# ----------------------------------------------------------------------------------------
+
+
+async def test_a_call_without_its_decision_runs_nothing() -> None:
+    """``_run`` is never the way in: a call of the browser is a step of a task."""
+    browser = FakeBrowser()
+    made = tool(BROWSER_READ, browser, FakeTaskPages())
+
+    outcome = await made._run(OPEN_READ, FakeStop())  # noqa: SLF001
+
+    assert outcome.code == ARGUMENTS_INVALID and browser.opened == []
+
+
+async def test_a_call_that_continues_with_no_task_in_its_decision_finds_no_page() -> None:
+    browser = FakeBrowser()
+    pages = FakeTaskPages()
+    await kept(browser, pages)
+    taskless = decision(BROWSER_READ).model_copy(update={"task_id": None})
+
+    result = await tool(BROWSER_READ, browser, pages).execute(taskless, READ_ON, FakeStop())
+
+    assert result.error is not None and result.error.code == NO_PAGE_TO_CONTINUE
+    assert browser.resumed == []
+
+
+async def test_a_login_never_continues() -> None:
+    from ela.tools.account import LoginTool
+
+    login = LoginTool(
+        SITES, FakeAccountBrowser(), None, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    )  # type: ignore[arg-type]
+
+    looked = login._shaped({"site": "sito.example", CONTINUES: True})  # noqa: SLF001
+
+    assert looked.code == ARGUMENTS_INVALID and "never continues" in looked.message
+
+
+async def test_an_action_that_continues_with_gestures_that_are_not_a_call_is_refused() -> None:
+    browser = FakeBrowser()
+    pages = FakeTaskPages()
+    await kept(browser, pages)
+
+    prospect = await tool(BROWSER_ACT, browser, pages).prospect({**ACT_ON, "fill": "x"}, TASK)
+
+    assert prospect.refusal is not None and prospect.refusal.code == ARGUMENTS_INVALID
+    assert "fill must be a list" in prospect.refusal.message
+
+
+def test_a_wait_abandoned_after_it_ended_has_its_end_read() -> None:
+    """The callback on a wait the tool stopped waiting for: an end that came anyway is read, so
+    that nobody is told later of an exception never retrieved."""
+    from ela.tools.browser import _retrieved
+
+    loop = asyncio.new_event_loop()
+    try:
+        ended = loop.create_future()
+        ended.set_exception(TimeoutError())
+        _retrieved(ended)
+        cancelled = loop.create_future()
+        cancelled.cancel()
+        _retrieved(cancelled)
+    finally:
+        loop.close()
+
+
+async def test_a_page_of_a_task_the_room_no_longer_names_is_still_said_to_end_with_the_task() -> (
+    None
+):
+    """The adapter says a task holds the profile, and the room has no page of it on the profile
+    any more — it closed it a moment ago: the sentence says what it can."""
+    browser = FakeAccountBrowser()
+    browser.raising["open"] = ProfileBusy(PROFILE_TASK)
+
+    result = await tool(BROWSER_READ_AS_YOU, browser, FakeTaskPages()).execute(
+        decision(BROWSER_READ_AS_YOU), OPEN_READ, FakeStop()
+    )
+
+    assert result.error is not None and result.error.code == PROFILE_BUSY
+    assert "a page a task keeps between two of its steps holds it" in result.error.message

@@ -7,6 +7,7 @@ the real database, and so are the executor, the question and the engine's stop o
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,7 @@ import pytest
 from ela.testing.fakes import FakeAccountBrowser
 from tests.api.guided import Guided, Script, approve, guided, question, run
 
+EXAMPLE = Path(__file__).resolve().parents[2] / "docs" / "examples" / "two-steps-one-page.json"
 READ_ID = "c4c2d7e1-5a3f-4b69-8d20-0000000000a1"
 ACT_ID = "c4c2d7e1-5a3f-4b69-8d20-0000000000a2"
 
@@ -178,3 +180,27 @@ async def test_the_status_of_the_browser_says_which_task_keeps_a_page_until_when
             "until": asked["expires_at"],
             "stop": f"ela task cancel {task}",
         }
+
+
+async def test_the_example_of_two_steps_on_one_page_runs_as_the_section_says(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``docs/examples/two-steps-one-page.json``, the plan of step 1 of section 29: the read of
+    step 2 opens nothing, takes the page of step 1 back, and waits for the element with the name
+    step 1 wrote."""
+    plan = json.loads(EXAMPLE.read_text(encoding="utf-8"))
+    async with guided(monkeypatch, tmp_path, Script([])) as g:
+        received = '{"form": {"custname": "ELA prova 7431"}}'
+        g.browser.page.texts['pre:has-text("ELA prova 7431")'] = received
+        task = str((await g.client.post("/tasks", json={"text": "due passi"})).json()["id"])
+        attached = await g.client.post(f"/tasks/{task}/plan", json=plan)
+        assert attached.status_code == 200, attached.text
+        assert (await run(g, task))["outcome"] == "waiting_approval"
+        await approve(g, task)
+        ran = await run(g, task)
+
+    assert ran["outcome"] == "completed", ran
+    assert g.browser.opened == ["https://httpbin.org/forms/post"], "one page, opened once"
+    assert g.browser.resumed == ["page-1"]
+    assert g.browser.waited[-1] == 'pre:has-text("ELA prova 7431")'
+    assert [value for _, value in g.browser.fills][0] == "ELA prova 7431"

@@ -428,3 +428,33 @@ async def test_a_task_that_waits_for_nothing_that_ends_keeps_its_page_until_it_e
 
 def test_the_watch_looks_once_a_minute() -> None:
     assert WATCH_SECONDS == 60
+
+
+async def test_a_step_the_plan_does_not_have_leaves_nothing_kept(world: World) -> None:
+    task = await world.task(1, step(FIRST, READ), step(SECOND, ACT, continues=True))
+    page = await world.page()
+
+    assert await world.room.leave(task, THIRD, page, world.browser, profile=False) is False
+    assert world.browser.holding == []
+
+
+async def test_a_grant_that_never_expires_keeps_the_page_until_the_task_ends(world: World) -> None:
+    task = await world.task(1, step(FIRST, READ), step(SECOND, ACT, continues=True))
+    answered = await world.asked(task, SECOND, ApprovalStatus.GRANTED)
+    lasting = Authorization(
+        id=AuthorizationId(UUID(int=901)),
+        created_at=world.clock.now(),
+        capability_id=ACT,
+        granted_by="tommaso",
+        approval_id=answered.id,
+        task_id=task,
+        step_id=SECOND,
+        expires_at=None,
+        max_uses=1,
+    )
+    await world.authorizations.grant(lasting)
+    page = await world.page()
+
+    await world.room.leave(task, FIRST, page, world.browser, profile=False)
+
+    assert await world.room.waiting() == (WaitingPage(task=task, profile=False, until=None),)

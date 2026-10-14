@@ -161,10 +161,13 @@ def test_every_example_explains_itself() -> None:
     with the user's accounts of section 28 — a reading, a session and a gesture as you, the capture
     that does not start, and the shape of a login from the vault; forty since the review of
     2026-10-11 (decision 95), which chose the site of that login: the plan of the login of the
-    proof, and the reading that finds the user inside after it.
+    proof, and the reading that finds the user inside after it; forty-five since M13.10, which
+    brought the five of section 29 — two steps on one page, the same with a question between them,
+    the stop inside a wait, the login from a phrase, and the message on WhatsApp with its
+    placeholders.
     """
     found = sorted(EXAMPLES.glob("*.json"))
-    assert len(found) == 40, [path.name for path in found]
+    assert len(found) == 45, [path.name for path in found]
     for path in found:
         plan = json.loads(path.read_text(encoding="utf-8"))
         assert NOTE in plan, path.name
@@ -668,6 +671,7 @@ def guide_section_23_names(worst: str) -> bool:
 
 def test_the_guided_examples_are_found() -> None:
     assert [path.name for path in GUIDED] == [
+        "guided-as-you-login.json",
         "guided-as-you-youtube.json",
         "guided-form.json",
         "guided-outside.json",

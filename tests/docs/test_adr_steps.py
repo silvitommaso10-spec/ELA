@@ -7,6 +7,7 @@ no other —, and the pin on **today's** totals, taken over from ADR 0064.
 
 from __future__ import annotations
 
+import re
 import tomllib
 from pathlib import Path
 
@@ -110,6 +111,75 @@ def test_the_sentence_of_what_leaves_is_the_one_of_decision_32() -> None:
         "whether its form was still there — never the entry, the username or the password"
     )
     assert said in SENDS_AS_YOU and said in " ".join(adr_text().split())
+
+
+# ----------------------------------------------------------------------------------------
+# The ADRs it revises say so
+# ----------------------------------------------------------------------------------------
+
+REVISED_MARK = "**Rivista da ADR 0065 (M13.10)**"
+REVISED_ROW = re.compile(r"^- \*\*ADR (\d{4})\b")
+
+
+def status_of(text: str) -> str:
+    return text.split("- **Stato:**", 1)[1].split("\n- **", 1)[0]
+
+
+def revised_by_the_list() -> set[str]:
+    """The numbers of the ADRs the list «Righe riviste» of this ADR names, one bullet each."""
+    block = conseguenze().split("**Righe riviste**", 1)[1].split("\n\n", 2)[1]
+    return {match.group(1) for line in block.splitlines() if (match := REVISED_ROW.match(line))}
+
+
+def written() -> dict[str, str]:
+    return {
+        path.name[:4]: path.read_text(encoding="utf-8")
+        for path in ADR_PATH.parent.glob("[0-9]*.md")
+        if path != ADR_PATH
+    }
+
+
+def revised_by_their_state(texts: dict[str, str]) -> set[str]:
+    return {number for number, text in texts.items() if REVISED_MARK in status_of(text)}
+
+
+def test_the_adrs_it_revises_say_so_on_their_state_line_and_no_other_does() -> None:
+    """X13 and decision 33 of the review of M13.10's SPEC: closed both ways."""
+    listed = revised_by_the_list()
+
+    assert listed == {"0045", "0052", "0060", "0063", "0064"}
+    assert listed == revised_by_their_state(written())
+
+
+def test_a_revised_adr_that_does_not_say_so_is_found() -> None:
+    texts, listed = written(), revised_by_the_list()
+    silent = min(listed)
+    texts[silent] = texts[silent].replace(REVISED_MARK, "", 1)
+
+    assert revised_by_their_state(texts) == listed - {silent}
+
+
+def test_each_mark_names_a_section_of_this_adr_that_is_there() -> None:
+    sections = set(re.findall(r"^### (\d+)\. ", adr_text(), re.MULTILINE))
+    for number in revised_by_the_list():
+        state = status_of(written()[number])
+        said = state.split(REVISED_MARK, 1)[1]
+        named = set(re.findall(r"ADR 0065 §(\d+)", said))
+        assert named and named <= sections, number
+
+
+def test_the_registration_of_m13_10_for_the_files_is_among_the_revised_rows() -> None:
+    """Decision 48: the files went to M13.13, and the rows say so."""
+    assert "**La registrazione di M13.10**, per i file" in conseguenze()
+    assert "M13.13" in conseguenze()
+
+
+def test_what_it_declares_and_does_not_solve_is_a_numbered_section() -> None:
+    """X14 (i): a section of its own, numbered, as from ADR 0043 on — not a heading of
+    «Vincoli dichiarati», which the census of the constraints would count."""
+    assert "### 5. Ciò che questo ADR dichiara e non risolve" in adr_text()
+    assert "### Vincoli dichiarati" not in adr_text()
+    assert "**Ciò che non è misurato, per nome**" in conseguenze()
 
 
 # ----------------------------------------------------------------------------------------
