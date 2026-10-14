@@ -139,6 +139,7 @@ from ela.ports import (
     NotFoundError,
     NoWindow,
     Opened,
+    PageForm,
     PageGone,
     ProfileBusy,
     Prospect,
@@ -149,6 +150,7 @@ from ela.ports import (
     SessionHandle,
     SessionHost,
     SessionPlan,
+    SessionTool,
     StopPoint,
     TaskStop,
     ToolPort,
@@ -213,6 +215,7 @@ __all__ = [
     "ToolCall",
     "VerifierCall",
     "finished",
+    "session_tool_names",
 ]
 
 DEFAULT_START: Final = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
@@ -1105,6 +1108,9 @@ class FakePage:
     waited: str | None = None
     """What a page taken back with ``resume`` says the boundary refused while it waited between
     two steps (M13.10): :attr:`~ela.ports.Opened.waited`."""
+    forms: tuple[PageForm, ...] = ()
+    """The forms that hold a password field, as the browser with the profile reads them
+    (M13.10)."""
 
 
 @dataclass
@@ -1439,11 +1445,17 @@ class FakeBrowser:
         self._within(page, self.moves.get("glance"), made=False)
         self._within(page, self.moves_during.get("glance"), made=True)
         texts = self.page.texts if self.page.changes_to is None else self.page.changes_to
+        found: int | None = None
+        if selector is not None:
+            counts = self.page.counts_after_click if self._clicked else {}
+            found = counts.get(selector, self.page.counts.get(selector, 1))
         return Glanced(
             text=texts.get(selector) if selector in texts else None,
             shown=None if expect is None else self.page.shown,
             left=self.page.left_after_click if self._clicked else self.page.left,
             another=self.page.another,
+            found=found,
+            status=self.page.landed_status if self._clicked else self.page.status,
         )
 
     async def hold(self, page: str) -> None:
@@ -1648,6 +1660,12 @@ class FakeAccountBrowser(FakeBrowser):
     async def profiles(self) -> int:
         self._raise("profiles")
         return self.profiles_answer
+
+    async def forms(self, page: str) -> tuple[PageForm, ...]:
+        self._on(page, "forms")
+        self._raise("forms")
+        self._done(page, "forms")
+        return self.page.forms
 
     async def fill_secret(self, page: str, selector: str, value: Secret) -> None:
         self._on(page, "fill_secret")
@@ -2468,9 +2486,15 @@ def finished(text: str = "done", subtype: str = "success") -> SessionEnd:
     )
 
 
+def session_tool_names(offered: Sequence[SessionTool]) -> frozenset[str]:
+    """The names a session gives the tools ``offered``: ``mcp__ela__<tool>``, as Claude Code does
+    for ELA's server (the adapter's own rule, written again for the fakes)."""
+    return frozenset(f"mcp__ela__{one.name}" for one in offered)
+
+
 async def _starts_and_ends(plan: SessionPlan, host: SessionHost) -> SessionEnd:
-    """The default script: the two tools at the start, and the turn ended."""
-    refused = await host.started(tuple(sorted(FAKE_SESSION_TOOLS)))
+    """The default script: the tools of the plan at the start, and the turn ended."""
+    refused = await host.started(tuple(sorted(session_tool_names(plan.tools))))
     if refused is not None:
         return finished("", "error_during_execution")
     return finished()
@@ -2504,9 +2528,9 @@ class FakeAgentSession:
         self._left_running = left_running
         self._alive: set[StepId] = set()
 
-    @property
-    def tools(self) -> frozenset[str]:
-        return FAKE_SESSION_TOOLS
+    async def tools(self, offered: Sequence[SessionTool]) -> frozenset[str]:
+        """The names a session gives the tools of its plan, as the adapter names them."""
+        return session_tool_names(offered)
 
     async def ready(self) -> ErrorMetadata | None:
         return self._unready

@@ -115,10 +115,12 @@ from ela.ports import (
     BrowserNotInstalled,
     BrowserUnsupported,
     Field,
+    FormField,
     Glanced,
     Landed,
     NoWindow,
     Opened,
+    PageForm,
     PageGone,
     ProfileBusy,
     ProfileUndeclared,
@@ -296,6 +298,32 @@ answers ``form.method`` with a field of its own named ``method`` if it has one �
 posts and has such a field would not be seen to post. A button that sends carries its own
 ``formmethod`` over the form's; anything that is not ``post`` or ``dialog`` is ``get``, which is
 what a browser does with it."""
+FORMS_OF: Final = """() => {
+  const attribute = (node, name) => Element.prototype.getAttribute.call(node, name) || "";
+  const visible = node => {
+    const box = node.getBoundingClientRect();
+    const style = getComputedStyle(node);
+    return box.width > 0 && box.height > 0 && style.visibility !== "hidden";
+  };
+  const field = node => ({
+    tag: node.tagName.toLowerCase(),
+    type: attribute(node, "type").toLowerCase(),
+    name: attribute(node, "name"),
+    autocomplete: attribute(node, "autocomplete").toLowerCase(),
+    visible: visible(node),
+  });
+  const secret = 'input[type="password" i]';
+  const forms = [...document.querySelectorAll("form")]
+    .filter(form => form.querySelector(secret))
+    .map(form => ({fields: [...form.querySelectorAll("input, button")].map(field), in: true}));
+  const loose = [...document.querySelectorAll(secret)].filter(node => !node.closest("form"));
+  if (loose.length) forms.push({fields: loose.map(field), in: false});
+  return forms;
+}"""
+"""The forms of a page that hold a password field, each element **as it declares itself**
+(M13.10, ADR 0065 §4): its tag, its type, its name, its ``autocomplete`` and whether it has a box
+on the page — never a value, a label or a text. The attributes are read through the prototype,
+for :data:`METHOD_OF`'s reason; what a login form is, the tool decides."""
 
 
 def with_preferences(found: object) -> dict[str, Any]:
@@ -1084,6 +1112,13 @@ class AccountChrome(PlaywrightBrowser):
 
         return await self._on(page, read)
 
+    async def forms(self, page: str) -> tuple[PageForm, ...]:
+        async def read(opened: _Open) -> tuple[PageForm, ...]:
+            found = await opened.page.evaluate(FORMS_OF)
+            return tuple(_form(one) for one in found if isinstance(one, dict))
+
+        return await self._on(page, read)
+
     async def fill_secret(self, page: str, selector: str, value: Secret) -> None:
         """Type what ``value`` holds. **The engine's own exception does not leave**, not even as
         the context of the one that does: its message names the call with what was typed
@@ -1418,3 +1453,23 @@ class AccountChrome(PlaywrightBrowser):
         finally:
             for waiting in counted:
                 waiting.cancel()
+
+
+def _form(read: dict[str, Any]) -> PageForm:
+    """A form as the page's script answered it, every value made the type it must be: the page
+    runs the script, and what comes back is the page's word."""
+    fields = read.get("fields")
+    return PageForm(
+        fields=tuple(
+            FormField(
+                tag=str(one.get("tag", "")),
+                type=str(one.get("type", "")),
+                name=str(one.get("name", "")),
+                autocomplete=str(one.get("autocomplete", "")),
+                visible=one.get("visible") is True,
+            )
+            for one in (fields if isinstance(fields, list) else [])
+            if isinstance(one, dict)
+        ),
+        in_a_form=read.get("in") is True,
+    )

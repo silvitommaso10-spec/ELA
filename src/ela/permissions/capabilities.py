@@ -1284,7 +1284,8 @@ def browser_login(sites: Sequence[str] = UNDECLARED_SITES) -> CapabilitySpec:
     site's.
 
     The username and the password in the same page: a login in more pages is a sequence, and is
-    not this capability.
+    not this capability. ``expect_text`` is **optional** since M13.10 (ADR 0065 §4, decision 31 of
+    the review of its SPEC): without it the verifier looks for the form to be gone.
     """
     selector: dict[str, JsonValue] = {
         "type": "string",
@@ -1322,7 +1323,6 @@ def browser_login(sites: Sequence[str] = UNDECLARED_SITES) -> CapabilitySpec:
                 "username_field",
                 "password_field",
                 "click",
-                "expect_text",
                 "purpose",
             ],
             "additionalProperties": False,

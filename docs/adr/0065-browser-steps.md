@@ -58,9 +58,9 @@ Port estesi:
 | Port | Spec | Modalità | Membri |
 |---|---|---|---|
 | `Browser` | §19 | async | `appeared`, `hold`, `resume`, `where` |
-| `AccountBrowser` | §19 | async | `appeared`, `hold`, `resume`, `where` |
+| `AccountBrowser` | §19 | async | `appeared`, `hold`, `resume`, `where`, `forms` |
 
-`hold`, `resume` e `where` sono del §3.
+`hold`, `resume` e `where` sono del §3, `forms` del §4.
 
 **Righe dei tool, riscritte.** Un ADR accettato non si riscrive: le righe di un tool che M13.10 cambia — un
 codice d'errore in più o in meno, un numero dell'audit in più — si riscrivono qui **per intero**, e la riga
@@ -179,8 +179,65 @@ Capability estese:
 | `browser.read_as_you` | MEDIUM | `undeclared` | `site` | sì | `site: string`, `purpose: string` | `path: string`, `selector: string`, `continues: boolean` |
 | `browser.act_as_you` | HIGH | `undeclared` | `site` | sì | `site: string`, `fill: array`, `click: string`, `expect_text: string`, `purpose: string` | `path: string`, `continues: boolean` |
 
+| `browser.login` | HIGH | `undeclared` | `site` | sì | `site: string`, `path: string`, `username_field: string`, `password_field: string`, `click: string`, `purpose: string` | `entry: string`, `expect_text: string` |
+
 `path` e `continues` sono facoltativi uno per uno ed esattamente uno dei due c'è: la tabella non ha una
-colonna per un `oneOf`, e lo dice qui.
+colonna per un `oneOf`, e lo dice qui. La riga di `browser.login` è del §4.
+
+### 4. Il login chiesto dal modello
+
+**Una sessione con il profilo offre al suo modello un terzo strumento, `login`** (decisioni 12, 22, 31, 32,
+43 e 45 della review). Il modello dà il sito, e facoltativi il percorso — la radice, senza — e un testo da
+aspettare; niente altro, e ciò che non è quello la stanza lo rifiuta da sé. **Mai la password**: né nel
+prompt, né in un risultato, né in un errore; il modello non la dà e non la riceve, e non vede mai la voce del
+vault né il nome utente.
+
+- **Gli strumenti di una sessione sono un dato**: ognuno è nome, descrizione e schema (`SessionTool`), il
+  piano della sessione li porta, l'adapter li offre come sono scritti, e l'insieme che il budget controlla a
+  ogni chiamata è **calcolato da quel dato** (misura (f) della SPEC: il binario vero ne elenca tre).
+  `SessionGestures` guadagna `login`, che è `browser.login` per la sessione con il profilo e niente per
+  l'altra. `AgentSession.tools` diventa la funzione che dà i nomi di quegli strumenti, asincrona come il port.
+- **Un gesto di login sono due figli**, e **conta due gesti** fra quelli che il sì ha concesso (decisione 45):
+  la descrizione dello strumento lo dice. (1) **La lettura**: un `browser.read_as_you` della pagina, coperto
+  dalla sessione come ogni sua lettura. **Ogni lettura con il profilo riporta il modulo di accesso** della
+  sua pagina — o perché non c'è, o perché è ambiguo — in campi suoi del risultato, `login_form` e
+  `no_login_form`, fuori dall'audit e da ciò che la sessione legge (decisione 43 (ii)); nessun argomento
+  nuovo. (2) **Il login**: solo se il modulo è stato trovato, un `browser.login` con quei selettori — `HIGH`,
+  chiede a ogni uso, e vale tutto ADR 0063 §5: una policy di `browser.guided_as_you` non lo copre. Senza un
+  modulo — `browser.login_form_not_found`, `browser.login_form_ambiguous` — il secondo figlio non nasce:
+  nessuna domanda, nessun sì speso. Un login riuscito conta fra gli atti della sessione.
+- **La regola** (decisione 22) conta i campi password che `browser.login` riempirebbe — `type="password"`,
+  visibili, che non si dichiarano `new-password`, `one-time-code` o di una carta — e ne vuole uno; il modulo
+  è quello che lo contiene, il campo del nome è il campo di testo o email visibile prima di lui nello stesso
+  modulo, l'elemento che invia è il solo di quel modulo. Su Hacker News (misura (e)) trova il modulo di
+  accesso e lascia quello di registrazione, il cui campo si dichiara `new-password`. **I selettori si
+  scrivono dallo stesso fatto**, mai dalla posizione: il campo password per ciò che dichiara, gli altri due
+  per il loro nome o il loro tipo, dentro il modulo che contiene quel campo (`form:has(…)`); ognuno è
+  contato sulla pagina prima di essere scritto — uno, o il modulo è ambiguo —, e il tool del login li
+  ricontrolla tutti dopo il sì. L'adapter legge dei moduli solo ciò che ogni elemento dichiara di sé — il
+  tag, il tipo, il nome, `autocomplete`, se è visibile —, mai un valore o un'etichetta (`forms`).
+- **`expect_text` è facoltativo** per ogni login (decisione 31). Senza, la condizione è
+  **`browser.login_form_gone`**: la pagina sul sito dello step, nessun elemento per il selettore del campo
+  password, lo stato del documento sotto 400. Il nome dice ciò che il verifier guarda, non «entrato». Lo
+  sguardo guadagna quanti elementi trova il selettore e lo stato del documento (`Glanced.found`,
+  `Glanced.status`). **La stanza sceglie le condizioni dal fatto** — con `expect_text`
+  `browser.expect_visible`, senza `browser.login_form_gone` —, non più tutte quelle del verifier.
+- **Che cosa vede il modello** di un login (decisione 12): una lista della stanza, sua e chiusa — lo stato
+  del figlio, il codice, `ended_at`, `ended_status`, `password_field_still_there`; il codice dice anche
+  `browser.second_factor` quando è il verifier a dirlo. **Mai la frase** di una fine, che per ogni altro
+  gesto la stanza mostra intera; un no è «denied», e niente altro.
+- **La domanda della sessione con il profilo** dice in `sends` (decisione 32): «the text of the pages read as
+  you, and of a login where its page ended, its status and whether its form was still there — never the
+  entry, the username or the password».
+- **Una pagina può dire al modello di chiedere un login.** Resta `HIGH`, chiede a Tommaso ogni volta, la
+  domanda nomina il sito e la voce, e il modello non può dire altro che un percorso del solo sito della
+  sessione. Dichiarato.
+
+Righe dei verifier, riscritte:
+
+| Capability | Verifier | Nome | Condizioni | Codici di fallimento |
+|---|---|---|---|---|
+| `browser.login` | `LoginVerifier` | `browser-login-verifier` | `browser.expect_visible`, `browser.login_form_gone` | `browser.expect_missing`, `browser.page_gone`, `browser.second_factor`, `browser.left_site`, `browser.another_page`, `browser.login_form_still_there`, `browser.http_status` |
 
 ## Conseguenze
 

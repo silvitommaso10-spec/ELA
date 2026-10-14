@@ -47,6 +47,7 @@ from ela.permissions.capabilities import (
     BROWSER_ACT_AS_YOU,
     BROWSER_GUIDED,
     BROWSER_GUIDED_AS_YOU,
+    BROWSER_LOGIN,
     BROWSER_READ,
     BROWSER_READ_AS_YOU,
     COST_PATTERN,
@@ -66,6 +67,7 @@ from ela.ports import (
     GUIDED_PERMISSION_ASKED,
     GUIDED_ROUTE_CHANGED,
     GUIDED_STOPPED,
+    LOGIN_TOOL,
     PROVIDER_ERROR_CODES,
     PROVIDER_UNAVAILABLE,
     ROUTING_ERROR_CODES,
@@ -87,6 +89,7 @@ from ela.ports import (
     SessionHost,
     SessionPlan,
     SessionTally,
+    SessionTool,
     StopPoint,
     TaskStop,
     ToolStopped,
@@ -113,9 +116,14 @@ __all__ = [
     "SESSION_AS_YOU",
     "SessionKind",
     "ACT_DESCRIPTION",
+    "ACT_SCHEMA",
     "LAUNCH",
+    "LOGIN_DESCRIPTION",
+    "LOGIN_SCHEMA",
+    "LOOKS_OF_A_LOGIN",
     "NOTHING_SENT",
     "READ_DESCRIPTION",
+    "READ_SCHEMA",
     "BrowserGuidedTool",
     "BrowserGuidedVerifier",
 ]
@@ -174,6 +182,75 @@ chooses writes; who gives the tool says the grammar. The adapter hands these to 
 stand, in
 :class:`~ela.ports.SessionPlan`."""
 
+LOGIN_DESCRIPTION: Final = (
+    "Sign the user in to the site of this session, with a password ELA takes from the user's "
+    "vault: ELA reads the page, finds its one login form, and asks the user — every time. You "
+    "never give or see the password, the entry of the vault or the username. site is the site; "
+    "path, optional, the page of the form, the root of the site when absent; expect_text, "
+    "optional, a text the page shows once the user is signed in — without it ELA looks for the "
+    "form to be gone. It costs two gestures: the reading of the page, and the login. What comes "
+    "back is the state, a code, where the page ended and with which status, whether the password "
+    "field was still there, and whether the site asked for a second factor."
+)
+"""What the model is told of ``login`` (M13.10, ADR 0065 §4; decision 45 of the review of its
+SPEC: a login asked by the model counts two looks, and the description says so)."""
+
+SITE_SAID: Final = "one of the sites, a host name"
+PATH_SAID: Final = 'what follows the site, starting with "/"'
+READ_SCHEMA: Final[dict[str, JsonValue]] = {
+    "type": "object",
+    "properties": {
+        "site": {"type": "string", "description": SITE_SAID},
+        "path": {"type": "string", "description": PATH_SAID},
+        "selector": {
+            "type": "string",
+            "description": "optional: the one element to read, a selector as the tool says",
+        },
+    },
+    "required": ["site", "path"],
+    "additionalProperties": False,
+}
+ACT_SCHEMA: Final[dict[str, JsonValue]] = {
+    "type": "object",
+    "properties": {
+        "site": {"type": "string", "description": SITE_SAID},
+        "path": {"type": "string", "description": PATH_SAID},
+        "fill": {
+            "type": "array",
+            "description": "pairs [selector, value], filled in order",
+            "items": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 2},
+        },
+        "click": {"type": "string", "description": "the selector of the one element to click"},
+        "expect_text": {
+            "type": "string",
+            "description": "the text the page must show after the click",
+        },
+    },
+    "required": ["site", "path", "fill", "click", "expect_text"],
+    "additionalProperties": False,
+}
+LOGIN_SCHEMA: Final[dict[str, JsonValue]] = {
+    "type": "object",
+    "properties": {
+        "site": {"type": "string", "description": SITE_SAID},
+        "path": {"type": "string", "description": f"optional: {PATH_SAID}"},
+        "expect_text": {
+            "type": "string",
+            "description": "optional: a text the page shows once the user is signed in",
+        },
+    },
+    "required": ["site"],
+    "additionalProperties": False,
+}
+"""The schemas of the tools of a session, **with the tools** since M13.10 (ADR 0065 §4): the plan
+carries each tool whole, and the adapter offers it as it is written here."""
+LOOKS_OF_A_LOGIN: Final = 2
+"""How many of the session's gestures a login costs: the reading of its page, and the login."""
+
+READ_TOOL: Final = SessionTool("read", READ_DESCRIPTION, READ_SCHEMA)
+ACT_TOOL: Final = SessionTool("act", ACT_DESCRIPTION, ACT_SCHEMA)
+LOGIN: Final = SessionTool(LOGIN_TOOL, LOGIN_DESCRIPTION, LOGIN_SCHEMA)
+
 SENDS: Final = (
     "the sentence, ELA's instructions and the text of every page read in the session go to {}, "
     "the model's provider"
@@ -185,18 +262,22 @@ BROWSER_GUIDED_AS_YOU_TOOL_NAME: Final = "browser-guided-as-you"
 BROWSER_GUIDED_AS_YOU_VERIFIER_NAME: Final = "browser-guided-as-you-verifier"
 
 SENDS_AS_YOU: Final = (
-    "the sentence, ELA's instructions and the text of every page read in the session go to {}, "
-    "the model's provider: these are pages you are signed in to, so what goes is your own "
-    "content — your mail, your messages"
+    "the sentence, ELA's instructions, the text of the pages read as you, and of a login where its "
+    "page ended, its status and whether its form was still there — never the entry, the username "
+    "or the password — go to {}, the model's provider: these are pages you are signed in to, so "
+    "what goes is your own content — your mail, your messages"
 )
 """What leaves the machine in a session with the profile (§57; ADR 0063, which rewrites the answer
-of ADR 0060 §8 for it): the same things, and among them the user's own content."""
+of ADR 0060 §8 for it): the same things, and among them the user's own content — and, since
+M13.10, what a login asked by the model gives back (decision 32 of the review of its SPEC)."""
 
 INSTRUCTIONS_AS_YOU: Final = (
     INSTRUCTIONS
     + """
 The user is signed in to this site: opening an address may act as the user. Do not open an \
-address that confirms, cancels, unsubscribes or signs out unless the goal asks for exactly that."""
+address that confirms, cancels, unsubscribes or signs out unless the goal asks for exactly that.
+If the site asks the user to sign in, use the tool login: ELA asks the user, and you never see a \
+password."""
 )
 """The instructions of a session with the profile: the same, and one line more — inside its site a
 model may open any address as the user, and a site that acts when an address is opened acts."""
@@ -215,6 +296,8 @@ class SessionKind:
     one_site: bool
     tool_name: str
     verifier_name: str
+    tools: tuple[SessionTool, ...] = (READ_TOOL, ACT_TOOL)
+    """What the session offers its model, as data (M13.10, ADR 0065 §4)."""
 
 
 EMPTY_SESSION: Final = SessionKind(
@@ -230,16 +313,18 @@ EMPTY_SESSION: Final = SessionKind(
 
 SESSION_AS_YOU: Final = SessionKind(
     capability=BROWSER_GUIDED_AS_YOU,
-    gestures=SessionGestures(read=BROWSER_READ_AS_YOU, act=BROWSER_ACT_AS_YOU),
+    gestures=SessionGestures(read=BROWSER_READ_AS_YOU, act=BROWSER_ACT_AS_YOU, login=BROWSER_LOGIN),
     sends=SENDS_AS_YOU,
     instructions=INSTRUCTIONS_AS_YOU,
     one_site=True,
     tool_name=BROWSER_GUIDED_AS_YOU_TOOL_NAME,
     verifier_name=BROWSER_GUIDED_AS_YOU_VERIFIER_NAME,
+    tools=(READ_TOOL, ACT_TOOL, LOGIN),
 )
 """``browser.guided_as_you``: the same session with the profile that lasts — its reads and its
-acts are the profile's, it names **one site** (decision 30), and it has **no gesture of login**: a
-model does not see the attributes of a field."""
+acts are the profile's, it names **one site** (decision 30), and since M13.10 (ADR 0065 §4) it has
+**a gesture of login**: the model asks for it by the site alone, ELA finds the form — the model
+does not see the attributes of a field — and asks the user."""
 
 _QUOTED: Final = UUID(int=0)
 """The id of a request built only to be weighed: it is never sent."""
@@ -473,7 +558,7 @@ class BrowserGuidedTool(Tool):
             step,
             capability=self.capability_id,
             sites=prepared.sites,
-            tools=self._sessions.tools,
+            tools=await self._sessions.tools(self._kind.tools),
             gestures=self._kind.gestures,
         )
         if isinstance(opened, ErrorMetadata):
@@ -494,8 +579,7 @@ class BrowserGuidedTool(Tool):
             instructions=self._kind.instructions.format(
                 sites=", ".join(prepared.sites), looks=prepared.looks
             ),
-            read_description=READ_DESCRIPTION,
-            act_description=ACT_DESCRIPTION,
+            tools=self._kind.tools,
             model=prepared.worst.model,
             max_tokens=GUIDED_MAX_TOKENS,
             gateway=f"{self._gateway}{opened.path}",
@@ -522,7 +606,8 @@ class BrowserGuidedTool(Tool):
         asked = [0]
 
         async def gesture(name: str, arguments: JsonMapping) -> str:
-            asked[0] += 1
+            # A login costs two gestures (decision 45): the reading of its page, and the login.
+            asked[0] += LOOKS_OF_A_LOGIN if name == LOGIN_TOOL else 1
             if asked[0] > looks:
                 await self._gestures.halt(
                     session,

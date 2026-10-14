@@ -21,7 +21,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import secrets
-from collections.abc import AsyncIterator, Iterable, Sequence
+from collections.abc import AsyncIterator, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Final
 from uuid import UUID, uuid5
@@ -30,10 +30,13 @@ from pydantic import ValidationError
 
 from ela.domain import (
     Admission,
+    AuditEventType,
     CapabilityId,
     ErrorMetadata,
+    ExecutionResult,
     ExecutionStatus,
     JsonMapping,
+    JsonValue,
     PlanAuthor,
     PlanAuthorKind,
     PlanId,
@@ -50,10 +53,16 @@ from ela.executive.runner import TaskRunner
 from ela.executive.spending import BudgetRefusal, SessionBudget, SpendingGate
 from ela.executive.stops import StopOfTask
 from ela.ports import (
+    BROWSER_EXPECT_VISIBLE,
+    BROWSER_LOGIN_FORM_GONE,
     GUIDED_FOLDER_CHANGED,
     GUIDED_SESSION_GONE,
     GUIDED_STOPPED,
     GUIDED_UNRESERVED,
+    LOGIN_FORM,
+    LOGIN_FORM_NOT_FOUND,
+    NO_LOGIN_FORM,
+    AuditLog,
     CapabilityRegistryPort,
     ExecutionResultStore,
     Forwarded,
@@ -135,8 +144,10 @@ class SessionRoom:
         spending: SpendingGate,
         gateway: ModelGateway,
         running: set[TaskId],
+        audit: AuditLog,
     ) -> None:
         self._engine = engine
+        self._audit = audit
         self._repository = repository
         self._results = results
         self._capabilities = capabilities
@@ -225,9 +236,14 @@ class SessionRoom:
         number = live.looks
         if capability == live.gestures.act:
             live.acts += 1
-        if capability not in (live.gestures.read, live.gestures.act):
+        if capability not in live.gestures.capabilities():
             live.refused += 1
             return Gesture(f"gesture {number}: no such gesture", TaskState.DENIED, acted=False)
+        if capability == live.gestures.login:
+            # Shielded, like every gesture: a login is two children walked to their end.
+            return await asyncio.shield(
+                asyncio.ensure_future(self._login(live, session, number, arguments))
+            )
         # Shielded (M14.3): the interrupt of the session cancels the call of its in-process tool,
         # and a runner cancelled halfway would leave the child's step open and its lock let go.
         # The gesture goes on to the end its own stop gives it; the session stops waiting for it.
@@ -403,6 +419,125 @@ class SessionRoom:
                 stopped.append(await self._engine.cancel(identifier, reason=reason))
         return stopped
 
+    # A login, as two children (M13.10, ADR 0065 §4) ------------------------------------------
+
+    async def _login(
+        self, live: _Live, session: StepId, number: int, arguments: JsonMapping
+    ) -> Gesture:
+        """The login the model asked for: **a read of its page**, covered by the session as every
+        read, whose result says the one login form of the page — or why there is none, and then
+        nothing more is born: no question, no yes spent —; and **the login itself**, a
+        ``browser.login`` with the selectors the read wrote, which asks the user every time. Two
+        gestures of the session, each a child with a key of its own. The model gives the site,
+        and optionally the path and the text to wait for; it never gives or sees the password,
+        the entry or the username."""
+        site, path, expect = (
+            arguments.get("site"),
+            arguments.get("path", "/"),
+            arguments.get("expect_text"),
+        )
+        if (
+            set(arguments) - {"site", "path", "expect_text"}
+            or not isinstance(site, str)
+            or not isinstance(path, str)
+            or (expect is not None and (not isinstance(expect, str) or not expect))
+        ):
+            live.refused += 1
+            return Gesture(
+                f"gesture {number}: its arguments are not a call ELA can plan",
+                TaskState.DENIED,
+                acted=False,
+            )
+        read = await self._made(
+            live, session, number, live.gestures.read, {"site": site, "path": path}
+        )
+        if read is None or read.state is not TaskState.COMPLETED:
+            live.refused += 1
+            if read is None:
+                return Gesture(
+                    f"gesture {number}: its arguments are not a call ELA can plan",
+                    TaskState.DENIED,
+                    acted=False,
+                )
+            return Gesture(await self._said(number, read), read.state, acted=False)
+        found = await self._output(read)
+        form = found.get(LOGIN_FORM)
+        if not isinstance(form, Mapping):
+            code = found.get(NO_LOGIN_FORM)
+            return Gesture(
+                f"gesture {number}: no login — {code or LOGIN_FORM_NOT_FOUND}: no form ELA can "
+                "name, and no question was asked",
+                TaskState.FAILED,
+                acted=False,
+            )
+        assert live.gestures.login is not None  # noqa: S101 — the caller said it is this one
+        live.looks += 1
+        second = live.looks
+        called: dict[str, JsonValue] = {"site": site, "path": path, **form}
+        if expect is not None:
+            called["expect_text"] = expect
+        # The conditions by the fact (decision 31): a text to wait for, or the form gone.
+        conditions = (BROWSER_EXPECT_VISIBLE,) if expect is not None else (BROWSER_LOGIN_FORM_GONE,)
+        child = await self._made(
+            live, session, second, live.gestures.login, called, conditions=conditions
+        )
+        if child is None:
+            live.refused += 1
+            return Gesture(
+                f"gesture {second}: its arguments are not a call ELA can plan",
+                TaskState.DENIED,
+                acted=False,
+            )
+        if child.state is TaskState.DENIED:
+            live.refused += 1
+        acted = child.state is TaskState.COMPLETED
+        if acted:
+            live.acts += 1
+        return Gesture(await self._logged(second, child), child.state, acted=acted)
+
+    async def _output(self, child: Task) -> JsonMapping:
+        """What the last result of a child that worked holds."""
+        plan = await self._repository.plan(child.id)
+        rows = await self._results.for_step(child.id, plan.steps[0].id)
+        done = [row.output for row in rows if row.status is ExecutionStatus.SUCCEEDED]
+        return done[-1] if done else {}
+
+    async def _logged(self, number: int, child: Task) -> str:
+        """What the model reads of a login (decision 12): **a list of the room's own, closed** —
+        the state of the child, its code, where the page ended, with which status, and whether
+        the password field was still there. **Never the sentence** of an end, which for every
+        other gesture the room shows whole; a no of the user's is «denied», and nothing else."""
+        lines = [f"gesture {number}: {child.state.value}"]
+        if child.state is TaskState.DENIED:
+            return lines[0]
+        plan = await self._repository.plan(child.id)
+        rows = await self._results.for_step(child.id, plan.steps[0].id)
+        if child.state is not TaskState.COMPLETED:
+            lines.extend(f"code: {code}" for code in await self._codes(child, rows))
+        said = rows[-1].output if rows else {}
+        lines.extend(f"{key}: {said[key]}" for key in _LOGIN_SHOWN if key in said)
+        return "\n".join(lines)
+
+    async def _codes(self, child: Task, rows: Sequence[ExecutionResult]) -> list[str]:
+        """The codes of a login that did not complete: the tool's own, or — for a verification
+        that failed — each failure's, as the step's ``STEP_FAILED`` recorded it; the code of the
+        end when neither is there. Codes, never sentences."""
+        failed = [row.error.code for row in rows if row.error is not None]
+        for event in reversed(await self._audit.read(task_id=child.id)):
+            error = event.error
+            if event.event_type is AuditEventType.STEP_FAILED and error is not None:
+                found = error.details.get("failures")
+                codes = [
+                    str(one["code"])
+                    for one in (found if isinstance(found, (list, tuple)) else ())
+                    if isinstance(one, Mapping) and isinstance(one.get("code"), str)
+                ]
+                return codes or [error.code]
+        if failed:
+            return failed[-1:]
+        ending = await self._engine.ending(child)
+        return [ending.code] if ending is not None and ending.code else []
+
     # A gesture, as a child task ---------------------------------------------------------------
 
     async def _made(
@@ -412,9 +547,11 @@ class SessionRoom:
         number: int,
         capability: CapabilityId,
         arguments: JsonMapping,
+        *,
+        conditions: tuple[str, ...] | None = None,
     ) -> Task | None:
         """The child of a gesture, created, planned and walked to its end — or ``None``."""
-        child = await self._child(live, session, number, capability, arguments)
+        child = await self._child(live, session, number, capability, arguments, conditions)
         return None if child is None else await self._walk(live, child)
 
     async def _child(
@@ -424,6 +561,7 @@ class SessionRoom:
         number: int,
         capability: CapabilityId,
         arguments: JsonMapping,
+        conditions: tuple[str, ...] | None = None,
     ) -> Task | None:
         site = arguments.get("site")
         where = site if isinstance(site, str) and site in live.sites else "a site outside it"
@@ -435,7 +573,7 @@ class SessionRoom:
         # A gesture's number is the session's own count, so its child is always new: no retry
         # finds one half made in this room, and a room does not outlive its process.
         child = await self._engine.start_planning(child.id)
-        plan = self._plan(live, session, number, child, capability, arguments)
+        plan = self._plan(live, session, number, child, capability, arguments, conditions)
         if plan is None:
             await self._engine.cancel(
                 child.id, reason="the arguments of the gesture are not a call ELA can plan"
@@ -452,10 +590,13 @@ class SessionRoom:
         child: Task,
         capability: CapabilityId,
         arguments: JsonMapping,
+        chosen: tuple[str, ...] | None = None,
     ) -> TaskPlan | None:
         assert self._verifiers is not None, "the room of the sessions has no verifiers: bind() it"
         spec = self._capabilities.get(capability)
-        conditions = tuple(sorted(self._verifiers.get(capability).conditions))
+        conditions = (
+            tuple(sorted(self._verifiers.get(capability).conditions)) if chosen is None else chosen
+        )
         plan_id = PlanId(uuid5(_NAMESPACE, f"{child.id}/gesture"))
         try:
             step = TaskStep(
@@ -523,6 +664,14 @@ class SessionRoom:
         done = [row.output for row in rows if row.status is ExecutionStatus.SUCCEEDED]
         return "\n".join([f"gesture {number}: {child.state.value}", *_lines(done[-1])])
 
+
+_LOGIN_SHOWN: Final = (
+    "ended_at",
+    "ended_status",
+    "_".join(("password", "field", "still", "there")),
+)
+"""What of a login's result the session reads, beside the state and the code (decision 12): where
+the page ended, with which status, and whether the password field was still there."""
 
 _SHOWN: Final = ("address", "status", "title", "gestures", "another_page", "text")
 """What of a gesture's result the session reads, in this order: the text last, since it is long.

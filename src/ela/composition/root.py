@@ -978,6 +978,7 @@ async def build(
             spending=spending,
             gateway=anthropic_gateway(settings=settings.anthropic),
             running=running,
+            audit=audit,
         )
         agents = ClaudeAgentSession(sessions_dir_beside(settings.captures.capture_dir))
         # The room of the pages a task keeps between two of its steps (M13.10, ADR 0065 §3):

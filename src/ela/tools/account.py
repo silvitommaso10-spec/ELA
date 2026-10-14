@@ -35,10 +35,19 @@ and a field that no longer holds what was typed stops the click.
 from __future__ import annotations
 
 import asyncio
+import re
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import ClassVar, Final
 
-from ela.domain import ErrorMetadata, ExecutionResult, JsonMapping, PermissionDecision, TaskId
+from ela.domain import (
+    ErrorMetadata,
+    ExecutionResult,
+    JsonMapping,
+    JsonValue,
+    PermissionDecision,
+    TaskId,
+)
 from ela.permissions import (
     BROWSER_ACT_AS_YOU,
     BROWSER_LOGIN,
@@ -47,8 +56,13 @@ from ela.permissions import (
     EXPECT_MAX_LENGTH,
 )
 from ela.ports import (
+    BROWSER_LOGIN_FORM_GONE,
     HELD,
     HELD_IN_PART,
+    LOGIN_FORM,
+    LOGIN_FORM_AMBIGUOUS,
+    LOGIN_FORM_NOT_FOUND,
+    NO_LOGIN_FORM,
     PROFILE_PROCESS,
     PROFILE_STEP,
     PROFILE_TASK,
@@ -59,9 +73,11 @@ from ela.ports import (
     BrowserStopped,
     BrowserUnsupported,
     Clock,
+    FormField,
     IdGenerator,
     NoWindow,
     Opened,
+    PageForm,
     ProfileBusy,
     ProfileUndeclared,
     ProfileUnsafe,
@@ -79,6 +95,7 @@ from ela.tools.browser import (
     ELEMENT_MISSING,
     FAILED,
     FIRST_GESTURE,
+    HTTP_STATUS,
     LEFT_SITE,
     NOT_INSTALLED,
     SECRET_FIELD,
@@ -124,6 +141,7 @@ __all__ = [
     "ENTRY_NOT_NAMED",
     "FIELD_CHANGED",
     "LOGIN_FORM_GET",
+    "LOGIN_FORM_STILL_THERE",
     "LOGS_IN",
     "NAMED_ENTRY",
     "NOT_A_PASSWORD_FIELD",
@@ -142,6 +160,7 @@ __all__ = [
     "LoginVerifier",
     "ProfileLook",
     "kept_on_the_profile",
+    "login_form_of",
     "look_at",
 ]
 
@@ -189,6 +208,8 @@ typed — a page that keeps less than it is given —, said without saying how m
 ACCOUNT_CODES: Final[frozenset[str]] = frozenset({PROFILE_UNDECLARED, PROFILE_UNSAFE, PROFILE_BUSY})
 
 BROWSER_SECOND_FACTOR: Final = "browser.second_factor"
+LOGIN_FORM_STILL_THERE: Final = "browser.login_form_still_there"
+"""The password field of the login is on the page still, after the login was sent."""
 """After the click the page asks for a one-time code: ELA takes none and types none."""
 GESTURES_OF_A_LOGIN: Final = 3
 """The username typed, the password typed, the click: after the third the form has been sent."""
@@ -268,6 +289,76 @@ the entry and whose it is (ADR 0063 §9), and an empty name would have shown nei
 NEW_OR_NOT_A_PASSWORD: Final = frozenset({"new-password", "one-time-code", "cc-number", "cc-csc"})
 """What a password field may not declare itself, for this tool as for every other: a password to
 choose, a one-time code, a card."""
+
+PASSWORD_ITSELF: Final = (
+    'input[type="password" i]:not([autocomplete~="new-password" i])'
+    ':not([autocomplete~="one-time-code" i]):not([autocomplete^="cc-" i])'
+)
+"""A password field a login would fill, by what it declares — the rule of decision 22 written as a
+selector: of type password, and declaring itself neither a password to choose, nor a one-time code,
+nor a card."""
+SENDERS: Final = frozenset(
+    {("input", "submit"), ("input", "image"), ("button", "submit"), ("button", "")}
+)
+"""The elements of a form that send it, by their tag and declared type: a button with no type
+sends."""
+TEXTS: Final = frozenset({"text", "email", ""})
+"""The fields a username is typed in, by their declared type: an input with no type is text."""
+_PLAIN_NAME: Final = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
+"""A name a selector can carry as it is, with nothing to escape."""
+
+
+def login_form_of(forms: Sequence[PageForm]) -> dict[str, str] | str:
+    """The one login form of a page, as the three selectors a login fills and clicks — or the code
+    that says why there is none (M13.10, ADR 0065 §4; decision 22 of the review of its SPEC).
+
+    The rule counts the password fields ``browser.login`` would fill — of type ``password``,
+    visible, declaring none of :data:`NEW_OR_NOT_A_PASSWORD` — and wants **one**; the form is the
+    one that holds it, the field of the name is the one visible text or e-mail field before it in
+    that form, the element that sends is the one of that form. **The selectors are written from
+    the same facts**, never from a position: the password field by what it declares, the other two
+    by their name or their type, each inside the form that holds that field. Each is counted on
+    the page before it is written to a result — one, or the form is ambiguous."""
+    wanted = [
+        (form, index)
+        for form in forms
+        for index, one in enumerate(form.fields)
+        if one.type == "password" and one.visible and not _not_a_login(one.autocomplete)
+    ]
+    if len(wanted) != 1:
+        return LOGIN_FORM_AMBIGUOUS if wanted else LOGIN_FORM_NOT_FOUND
+    form, index = wanted[0]
+    if not form.in_a_form:
+        return LOGIN_FORM_NOT_FOUND
+    names = [
+        one
+        for one in form.fields[:index]
+        if one.tag == "input" and one.type in TEXTS and one.visible
+    ]
+    senders = [one for one in form.fields if (one.tag, one.type) in SENDERS and one.visible]
+    for found in (names, senders):
+        if len(found) != 1:
+            return LOGIN_FORM_AMBIGUOUS if found else LOGIN_FORM_NOT_FOUND
+    scope = f"form:has({PASSWORD_ITSELF})"
+    return {
+        "username_field": f"{scope} {_written(names[0])}",
+        "password_field": f"{scope} {PASSWORD_ITSELF}:visible",
+        "click": f"{scope} {_written(senders[0])}",
+    }
+
+
+def _not_a_login(autocomplete: str) -> bool:
+    tokens = autocomplete.split()
+    return bool(set(tokens) & NEW_OR_NOT_A_PASSWORD) or any(t.startswith("cc-") for t in tokens)
+
+
+def _written(one: FormField) -> str:
+    """An element of the form by its name when it has a plain one, or by its type."""
+    if _PLAIN_NAME.match(one.name):
+        return f'{one.tag}[name="{one.name}"]'
+    if one.type:
+        return f'{one.tag}[type="{one.type}" i]:visible'
+    return f"{one.tag}:not([type]):visible"
 
 
 STOP_A_TASK: Final = "ela task cancel"
@@ -422,6 +513,10 @@ class AccountReadTool(_OnTheProfile, BrowserReadTool):
     """Opens one page of a declared site with the profile and reads its text (**MEDIUM**)."""
 
     error_codes: ClassVar[frozenset[str]] = BrowserReadTool.error_codes | ACCOUNT_CODES
+    output_keys: ClassVar[frozenset[str]] = BrowserReadTool.output_keys | {
+        LOGIN_FORM,
+        NO_LOGIN_FORM,
+    }
     does: ClassVar[str] = READS_AS_YOU
     continuing: ClassVar[str] = READS_ON_AS_YOU
 
@@ -438,6 +533,24 @@ class AccountReadTool(_OnTheProfile, BrowserReadTool):
         _BrowserTool.__init__(
             self, BROWSER_READ_AS_YOU, browsing, browser, clock, ids, name=name, pages=pages
         )
+
+    async def _work(self, call: _Call, opened: Opened, done: _Done, stop: TaskStop) -> Outcome:
+        """``browser.read``'s — and **the login form of the page, always** (M13.10, decision 43
+        (ii) of the review of its SPEC): in a key of the result of its own, outside the audit and
+        outside what a model is shown. No argument asks for it: a read the room makes for a login
+        is a read like every other."""
+        outcome = await super()._work(call, opened, done, stop)
+        if not outcome.succeeded:
+            return outcome
+        found = login_form_of(await self._browser.forms(opened.page))
+        if isinstance(found, dict):
+            for selector in found.values():
+                if await self._browser.count(opened.page, selector) != 1:
+                    found = LOGIN_FORM_AMBIGUOUS
+                    break
+        said: JsonValue = dict(found) if isinstance(found, dict) else found
+        key = LOGIN_FORM if isinstance(found, dict) else NO_LOGIN_FORM
+        return replace(outcome, output={**outcome.output, key: said})
 
     def _gestures(self, arguments: JsonMapping, site: str, address: str) -> Outcome | _Call:
         """``browser.read``'s — with **the site the call names as the whole boundary**, where the
@@ -537,12 +650,13 @@ class LoginTool(_OnTheProfile, _BrowserTool):
             refused = _selector(selector, which)
             if refused is not None:
                 return refused
-        expect, entry = arguments.get("expect_text"), arguments.get("entry")
-        if not isinstance(expect, str) or not 0 < len(expect) <= EXPECT_MAX_LENGTH:
+        expect, entry = arguments.get("expect_text", ""), arguments.get("entry")
+        if not isinstance(expect, str) or len(expect) > EXPECT_MAX_LENGTH:
+            # Optional since M13.10 (decision 31): absent, the verifier looks for the form gone.
             return Outcome(
                 {},
                 ARGUMENTS_INVALID,
-                f"expect_text must be a text of 1 to {EXPECT_MAX_LENGTH} characters",
+                f"expect_text, when given, must be a text of 1 to {EXPECT_MAX_LENGTH} characters",
             )
         if entry is not None and (
             not isinstance(entry, str) or not 0 < len(entry) <= ENTRY_MAX_LENGTH
@@ -926,13 +1040,17 @@ class LoginVerifier(_PageVerifier):
     its field is answered with the missing text, which is true.
     """
 
-    conditions: ClassVar[frozenset[str]] = frozenset({BROWSER_EXPECT_VISIBLE})
+    conditions: ClassVar[frozenset[str]] = frozenset(
+        {BROWSER_EXPECT_VISIBLE, BROWSER_LOGIN_FORM_GONE}
+    )
     failure_codes: ClassVar[frozenset[str]] = COMMON_FAILURE_CODES | {
         BROWSER_EXPECT_MISSING,
         BROWSER_SECOND_FACTOR,
         BROWSER_PAGE_GONE,
         BROWSER_LEFT_SITE,
         BROWSER_ANOTHER_PAGE,
+        LOGIN_FORM_STILL_THERE,
+        HTTP_STATUS,
     }
 
     def __init__(
@@ -948,6 +1066,8 @@ class LoginVerifier(_PageVerifier):
     async def _check(
         self, condition: str, arguments: JsonMapping, result: ExecutionResult
     ) -> ErrorMetadata | None:
+        if condition == BROWSER_LOGIN_FORM_GONE:
+            return await self._gone_form(condition, arguments, result)
         expect = arguments.get("expect_text")
         if not isinstance(expect, str) or not expect:
             return self._failure(
@@ -982,3 +1102,47 @@ class LoginVerifier(_PageVerifier):
             "(`ela task results`), and in no other place",
             retryable=False,
         )
+
+    async def _gone_form(
+        self, condition: str, arguments: JsonMapping, result: ExecutionResult
+    ) -> ErrorMetadata | None:
+        """The login form is gone (M13.10): the page on the step's site — a page elsewhere is
+        refused by the look itself —, no element left for the password field's selector, and
+        the document below 400. Looked at once, on the page as it is now: no text is awaited."""
+        word = arguments.get("password_field")
+        if not isinstance(word, str) or not word:
+            return self._failure(
+                condition,
+                VERIFICATION_ARGUMENTS_INVALID,
+                "password_field must be a selector",
+                retryable=False,
+            )
+        glanced = await self._glanced(condition, result, selector=word, expect=None)
+        if isinstance(glanced, ErrorMetadata):
+            return glanced
+        if glanced.second_factor:
+            return self._failure(
+                condition,
+                BROWSER_SECOND_FACTOR,
+                "the site asks for a second factor: do it by hand in ELA's window — ELA takes no "
+                "one-time code, and typed none",
+                retryable=False,
+            )
+        if glanced.found != 0:
+            return self._failure(
+                condition,
+                LOGIN_FORM_STILL_THERE,
+                "the password field of the login is on the page still, after the login was sent: "
+                "the site may have refused it",
+                retryable=False,
+            )
+        if glanced.status is None or glanced.status >= 400:
+            said = "no status" if glanced.status is None else f"the status {glanced.status}"
+            return self._failure(
+                condition,
+                HTTP_STATUS,
+                f"the page the login ended on has {said}: a page of error or of refusal without "
+                "the form is not a login",
+                retryable=False,
+            )
+        return None

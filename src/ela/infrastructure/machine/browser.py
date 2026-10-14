@@ -942,9 +942,12 @@ def _answered(documents: list[int | None], response: Response, page: Page) -> No
 async def _look(opened: _Open, selector: str | None, expect: str | None, seconds: float) -> Glanced:
     """What the verifier asked about, on the page as it is now."""
     text: str | None = None
+    found: int | None = None
     if selector is not None or expect is None:
         element = opened.page.locator(selector or "body")
-        if await element.count() == 1:
+        counted = await element.count()
+        found = counted if selector is not None else None
+        if counted == 1:
             text = await element.inner_text()
     shown: bool | None = None
     if expect is not None:
@@ -960,6 +963,8 @@ async def _look(opened: _Open, selector: str | None, expect: str | None, seconds
         shown=shown,
         left=opened.refused[-1] if opened.refused else None,
         another=opened.gate.another,
+        found=found,
+        status=opened.documents[-1] if opened.documents else None,
     )
 
 

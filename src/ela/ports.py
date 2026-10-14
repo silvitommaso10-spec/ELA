@@ -113,6 +113,8 @@ __all__ = [
     "AuthorizationRevokedError",
     "AuthorizationStore",
     "AuthorizingGuardianPort",
+    "BROWSER_EXPECT_VISIBLE",
+    "BROWSER_LOGIN_FORM_GONE",
     "Bell",
     "Browser",
     "BrowserError",
@@ -138,6 +140,7 @@ __all__ = [
     "EnrollmentStore",
     "ExecutionResultStore",
     "Field",
+    "FormField",
     "Forwarded",
     "GUIDED_CACHE",
     "GUIDED_CAP_BELOW_ONE_CALL",
@@ -178,6 +181,10 @@ __all__ = [
     "LISTEN_TRANSCRIPTION_FAILED",
     "LISTEN_TRANSCRIPTION_UNAVAILABLE",
     "LISTEN_UNSUPPORTED",
+    "LOGIN_FORM",
+    "LOGIN_FORM_AMBIGUOUS",
+    "LOGIN_FORM_NOT_FOUND",
+    "LOGIN_TOOL",
     "Landed",
     "LeftSite",
     "ListeningPort",
@@ -187,6 +194,7 @@ __all__ = [
     "ModelRouterPort",
     "NAVIGATION",
     "NOT_HELD",
+    "NO_LOGIN_FORM",
     "NoWindow",
     "NotAllowedError",
     "NotFoundError",
@@ -212,6 +220,7 @@ __all__ = [
     "PROVIDER_UNKNOWN_MODEL_HINT",
     "PROVIDER_UNREACHABLE",
     "PROVIDER_UNSUPPORTED_PARAMETER",
+    "PageForm",
     "PageGone",
     "PerceptionProbe",
     "PermissionGuardianPort",
@@ -254,6 +263,7 @@ __all__ = [
     "SessionHost",
     "SessionPlan",
     "SessionTally",
+    "SessionTool",
     "SiteUnreachable",
     "SpeechPort",
     "StopPoint",
@@ -2915,6 +2925,12 @@ class Glanced:
     left: str | None
     second_factor: bool | None = None
     another: AnotherPage | None = None
+    found: int | None = None
+    """How many elements the selector finds on the page now — ``None`` when no selector was
+    asked (M13.10, ADR 0065 §4): what tells a login form that is gone from one that is still there,
+    where ``text`` says ``None`` for zero **and** for two."""
+    status: int | None = None
+    """The status of the document the page is on now, ``None`` when none came back (M13.10)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -3118,6 +3134,30 @@ class NoWindow(BrowserError):
     with a window is never opened without (M13.9, decision 143 of the review of 2026-10-13)."""
 
 
+@dataclass(frozen=True, slots=True)
+class FormField:
+    """One element of a form, **as it declares itself** (M13.10, ADR 0065 §4): its tag and its
+    type, its name and its ``autocomplete`` — lower-cased, empty when absent — and whether it is
+    visible. Never its value, never a label, never a text: what a login form is, the tool
+    decides from these alone."""
+
+    tag: str
+    type: str
+    name: str
+    autocomplete: str
+    visible: bool
+
+
+@dataclass(frozen=True, slots=True)
+class PageForm:
+    """A form of a page that holds a field of type ``password``, its ``input`` and ``button``
+    elements in the order of the document (M13.10). ``in_a_form`` is ``False`` for the password
+    fields of the page that are in no form, gathered as one."""
+
+    fields: tuple[FormField, ...]
+    in_a_form: bool = True
+
+
 @runtime_checkable
 class AccountBrowser(Browser, Protocol):
     """ELA's own browser **with the profile that lasts**: the sites the user signed in to (§19,
@@ -3178,6 +3218,11 @@ class AccountBrowser(Browser, Protocol):
         """Where the main frame is **once the document the last gesture led to is there**, and
         the status of that document. An event of the page — its document parsed —, with no time
         of its own: the tool's deadline is around it, as around every other call."""
+
+    async def forms(self, page: str) -> tuple[PageForm, ...]:
+        """The forms of the page that hold a field of type ``password``, each element as it
+        declares itself (M13.10, ADR 0065 §4) — what the read with the profile finds a login form
+        in. A use of the page like any other: the boundary is asked before and after."""
 
     async def occupied(self) -> str | None:
         """Who holds the profile now — :data:`PROFILE_STEP`, :data:`PROFILE_WINDOW`,
@@ -3356,6 +3401,29 @@ class ModelGateway(Protocol):
         usage that says it was not sent."""
 
 
+BROWSER_EXPECT_VISIBLE: Final = "browser.expect_visible"
+"""The text the plan expects **appears** on the page after the click, within the tool's time — a
+condition of the verifiers of the browser, here since M13.10 because the room of the sessions
+chooses it for a login (ADR 0065 §4)."""
+BROWSER_LOGIN_FORM_GONE: Final = "browser.login_form_gone"
+"""The condition of a login with no text to wait for (M13.10, ADR 0065 §4; decision 31 of the
+review of its SPEC): **what the verifier looks at**, and not «signed in» — the page on the site of
+the step, no element left for the selector of its password field, and the document's status below
+400. ADR 0063 §5: an error's status without the field is a page of error or of refusal, not a
+login."""
+LOGIN_FORM: Final = "login_form"
+"""The key of the result of a read with the profile that found **the one login form** of its page
+(M13.10, ADR 0065 §4; decision 43 (ii) of the review of its SPEC): the three selectors a
+``browser.login`` would fill and click — ``username_field``, ``password_field``, ``click`` —,
+written from the fact the form was chosen by. Never in the audit, never shown to a model."""
+NO_LOGIN_FORM: Final = "no_login_form"
+"""The key of the result of a read with the profile whose page has no login form ELA can name: its
+code, :data:`LOGIN_FORM_NOT_FOUND` or :data:`LOGIN_FORM_AMBIGUOUS`."""
+LOGIN_FORM_NOT_FOUND: Final = "browser.login_form_not_found"
+"""The page has no password field a login would fill, or its form lacks a field for the name or an
+element that sends."""
+LOGIN_FORM_AMBIGUOUS: Final = "browser.login_form_ambiguous"
+"""The page has more than one: which one would be a guess."""
 CONTINUES: Final = "continues"
 """The argument of a step of the browser that **continues on the page the step right before it
 left**, instead of opening one (M13.10, ADR 0065 §3): ``true``, and exactly one of it and
@@ -3454,20 +3522,42 @@ class SessionTally:
 
 @dataclass(frozen=True, slots=True)
 class SessionGestures:
-    """Which capability each of the two tools of a guided session asks for (M13.9, ADR 0063).
+    """Which capability each of the tools of a guided session asks for (M13.9, ADR 0063).
 
     A fact of the capability of the session, handed to the room when the session opens: the
     session on the empty browser reads with ``browser.read`` and acts with ``browser.act``; the
-    one with the profile, with their two of the profile. Until M13.9 the pair was a constant in
-    two modules, which was true while there was one kind of session."""
+    one with the profile, with their two of the profile — **and signs in with** ``browser.login``
+    (M13.10, ADR 0065 §4), which the empty one does not: ``login`` is ``None`` there. Until M13.9
+    the pair was a constant in two modules, which was true while there was one kind of session."""
 
     read: CapabilityId
     act: CapabilityId
+    login: CapabilityId | None = None
 
     def named(self, tool: str) -> CapabilityId | None:
-        """The capability the session's tool ``tool`` asks for, or ``None``: the model's two
-        tools are called ``read`` and ``act``, whatever the session."""
-        return {"read": self.read, "act": self.act}.get(tool)
+        """The capability the session's tool ``tool`` asks for, or ``None``: the model's tools are
+        called ``read``, ``act`` and — in a session that has it — ``login``."""
+        return {"read": self.read, "act": self.act, LOGIN_TOOL: self.login}.get(tool)
+
+    def capabilities(self) -> frozenset[CapabilityId]:
+        """Every capability a gesture of this session may ask for."""
+        return frozenset({self.read, self.act} | ({self.login} if self.login else set()))
+
+
+LOGIN_TOOL: Final = "login"
+"""The name of the tool of a session that signs in (M13.10, ADR 0065 §4)."""
+
+
+@dataclass(frozen=True, slots=True)
+class SessionTool:
+    """One tool a guided session offers its model, **as a datum** (M13.10, ADR 0065 §4; measure
+    (f) of its SPEC): its name, what the model is told of it, and the schema of its arguments.
+    The session's plan carries them, the adapter offers them, and the set the budget holds every
+    call to is computed from them — never a second list."""
+
+    name: str
+    description: str
+    schema: JsonMapping
 
 
 @runtime_checkable
@@ -3524,15 +3614,15 @@ class Gestures(Protocol):
 @dataclass(frozen=True, slots=True)
 class SessionPlan:
     """What a guided session is launched with, all of it written by ELA (M14.3, ADR 0060): the
-    sentence, ELA's instructions and what the two tools are — the grammar of a selector among it
-    (decision 44 of the review of the second round) —, the model and ``max_tokens`` the gateway
-    holds it to, the address of the gateway and the token, and how long it may last."""
+    sentence, ELA's instructions and **its tools** — each with what it is, the grammar of a
+    selector among it (decision 44 of the review of the second round), and its schema, as data
+    since M13.10 —, the model and ``max_tokens`` the gateway holds it to, the address of the
+    gateway and the token, and how long it may last."""
 
     session: StepId
     goal: str
     instructions: str
-    read_description: str
-    act_description: str
+    tools: tuple[SessionTool, ...]
     model: str
     max_tokens: int
     gateway: str
@@ -3582,10 +3672,11 @@ class AgentSession(Protocol):
     its environment is closed, and its only way to a model is ELA's gateway, with a token.
     """
 
-    @property
-    def tools(self) -> frozenset[str]:
-        """The names of the two tools every session offers its model: the budget holds every call
-        to exactly these."""
+    async def tools(self, offered: Sequence[SessionTool]) -> frozenset[str]:
+        """The names the session gives the tools ``offered`` — the tools of its plan —, as the
+        session names them: the budget holds every call to exactly these (M13.10: computed from
+        the plan's tools, two or three, never a list of its own). ``async`` as the port is: a
+        port has one mode (ADR 0005 §1)."""
 
     async def ready(self) -> ErrorMetadata | None:
         """Whether a session could be launched now: the binary there, the folder preparable."""

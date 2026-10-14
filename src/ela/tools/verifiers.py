@@ -44,6 +44,7 @@ from ela.domain import (
 )
 from ela.permissions import BROWSER_ACT, BROWSER_READ
 from ela.ports import (
+    BROWSER_EXPECT_VISIBLE,
     Browser,
     BrowserStopped,
     Glanced,
@@ -1088,8 +1089,6 @@ BROWSER_ACT_VERIFIER_NAME: Final = "browser-act-verifier"
 BROWSER_TEXT_MATCHES: Final = "browser.text_matches"
 """The text the result carries is the text the page shows **now**, under the same selector and cut
 the same way."""
-BROWSER_EXPECT_VISIBLE: Final = "browser.expect_visible"
-"""The text the plan expects **appears** on the page after the click, within the tool's time."""
 BROWSER_TEXT_MISMATCH: Final = "browser.text_mismatch"
 BROWSER_EXPECT_MISSING: Final = "browser.expect_missing"
 BROWSER_PAGE_GONE: Final = "browser.page_gone"
