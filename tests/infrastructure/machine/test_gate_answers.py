@@ -8,17 +8,23 @@ let it out, and the loop printed «Task exception was never retrieved» in the m
 
 **Not answering is safe**: a request the gate does not let go stays paused, and a paused request
 never leaves (ADR 0064 §2). So whatever the driver says to the answer, the task of the answer ends
-quietly.
+quietly — **quietly, not silently** (decision 53 of the review of M13.10's implementation): a line
+at WARNING says the type of what the driver raised and whether the answer let the request go or
+refused it, and never the address, which is the user's.
 """
 
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any
 
 import pytest
 
+from ela.infrastructure.machine import browser as adapter
 from ela.infrastructure.machine.browser import _Gate
+
+ADDRESS = "https://sito.example/la-pagina-di-chi-usa-ela"
 
 
 class GoneDriver:
@@ -53,9 +59,29 @@ async def test_an_answer_the_dead_driver_cannot_take_ends_quietly(leaves: bool) 
     )
     gate = a_gate(session, leaves=leaves)
 
-    await gate._answered({"requestId": "1", "request": {"url": "https://sito.example/"}})
+    await gate._answered({"requestId": "1", "request": {"url": ADDRESS}})
 
     assert session.sent == ["Fetch.continueRequest" if leaves else "Fetch.failRequest"]
+
+
+class DriverSays(Exception):
+    """What a driver raised, by a type of its own: the line names the type."""
+
+
+@pytest.mark.parametrize(("leaves", "said"), [(True, "let go"), (False, "refused")])
+async def test_an_answer_not_written_is_said_at_warning_with_its_type_and_not_its_address(
+    leaves: bool, said: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    gate = a_gate(GoneDriver(DriverSays(f"{ADDRESS} closed")), leaves=leaves)
+
+    with caplog.at_level(logging.WARNING, logger=adapter.__name__):
+        await gate._answered({"requestId": "1", "request": {"url": ADDRESS}})
+
+    [line] = [r for r in caplog.records if r.name == adapter.__name__]
+    assert line.levelno == logging.WARNING
+    assert "DriverSays" in line.getMessage()
+    assert said in line.getMessage()
+    assert "sito.example" not in caplog.text, "the address is the user's: the line names the type"
 
 
 async def test_a_cancelled_answer_is_still_a_cancellation() -> None:

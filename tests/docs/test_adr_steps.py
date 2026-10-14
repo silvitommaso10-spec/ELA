@@ -201,6 +201,32 @@ def test_what_it_declares_and_does_not_solve_is_a_numbered_section() -> None:
     assert "**Ciò che non è misurato, per nome**" in conseguenze()
 
 
+THE_DEBT = (
+    "### 6. Un debito datato: "
+    "un processo del browser lasciato su ubuntu da un test non identificato"
+)
+CHARGED_TO = (
+    "**Debito a carico di M13.13, la milestone dei file dal browser**, dichiarato il **2026-10-14**"
+)
+
+
+def test_the_debt_of_the_process_left_on_ubuntu_is_dated_charged_and_named_by_who_pays_it() -> None:
+    """Decision 56 (b) of the review of M13.10's implementation. A process of the browser was left
+    on ubuntu by a test nobody could name, and the merge does not wait for it: the section has the
+    form STATO reads, it names the defence — the fixture that names the process whole —, and the
+    milestone it is charged to names it among what it inherits. The day it is paid, the payment is
+    written in an ADR, and this test is turned."""
+    text = adr_text()
+
+    assert THE_DEBT in text
+    section = text.split(THE_DEBT, 1)[1].split("\n## ", 1)[0]
+    assert CHARGED_TO in section
+    assert "`/proc/<pid>/cmdline`" in section
+    assert "tests/infrastructure/machine/test_nothing_left_behind.py" in section
+    files = (ROOT / "docs" / "milestones" / "M13.13.md").read_text(encoding="utf-8")
+    assert "ADR 0065 §6" in files.split("## Che cosa eredita", 1)[1].split("\n## ", 1)[0]
+
+
 # ----------------------------------------------------------------------------------------
 # The rule it adds, and the totals of today
 # ----------------------------------------------------------------------------------------
