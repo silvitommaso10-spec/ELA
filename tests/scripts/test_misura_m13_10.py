@@ -8,6 +8,7 @@ import ast
 import importlib.util
 import re
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
 
@@ -177,3 +178,95 @@ def test_a_phone_number_is_digits_with_its_prefix_and_nothing_else() -> None:
     assert misura.PHONE.match("393331234567")
     assert not misura.PHONE.match("+39 333 1234567")
     assert not misura.PHONE.match("12345")
+
+
+# ----------------------------------------------------------------------------------------
+# The first measure, 2026-10-14: the chat was open, and the script found nothing — it looked
+# in the first ``footer`` of the page only, and told that as «the page did not hold»
+# ----------------------------------------------------------------------------------------
+
+
+class _Counted:
+    async def count(self) -> int:
+        return 0
+
+
+class Quiet:
+    """A page on which the script finds nothing: no element of any kind, no selector that finds
+    one — what the first measure saw with the chat open."""
+
+    async def evaluate(self, script: str, argument: object = None) -> object:
+        return []
+
+    def locator(self, selector: str) -> _Counted:
+        return _Counted()
+
+
+def answering(said: dict[str, str]) -> Callable[[str], str]:
+    """Tommaso at the Terminal: the answer to the question that has those words, Invio to the
+    rest."""
+
+    def ask(prompt: str) -> str:
+        return next((answer for words, answer in said.items() if words in prompt), "")
+
+    return ask
+
+
+@pytest.mark.parametrize(
+    ("answer", "word", "yes_or_no"), [("s", "PASSATO", "sì"), ("n", "SALTATO", "no")]
+)
+async def test_whether_the_page_held_is_told_by_your_eye_and_never_by_what_the_script_found(
+    answer: str, word: str, yes_or_no: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(misura.getpass, "getpass", lambda prompt: "")
+    report = misura.Report()
+
+    await misura.measure(
+        report,
+        answering({"casella del messaggio in basso": answer, "messaggio che hai mandato tu": "n"}),
+        Quiet(),
+    )
+
+    assert [line for line in report.lines if "ha retto" in line] == [
+        f"{word} — la pagina ha retto senza service worker fino alla casella del messaggio, "
+        f"a occhio: {yes_or_no}"
+    ]
+    assert "SALTATO — gli elementi in cui si scrive, visibili nella pagina: 0" in report.lines
+
+
+def test_a_candidate_keeps_only_the_listed_places_narrowest_first_and_a_true_focus() -> None:
+    (found,) = misura.candidates_of(
+        [
+            {
+                "tag": "div",
+                "attributes": {"data-tab": "10"},
+                "classes": [],
+                "places": ["footer", "body > div", "#main", "#main footer"],
+                "focused": "yes",
+            }
+        ]
+    )
+
+    assert found.places == ("#main footer", "#main", "footer")
+    assert found.focused is False
+    assert misura.candidates_of([{"tag": "div", "focused": True}])[0].focused is True
+
+
+def test_a_selector_is_written_in_each_place_of_the_element_narrowest_first_then_in_none() -> None:
+    candidate = misura.Candidate("div", {"data-tab": "10"}, (), ("#main footer", "#main"))
+
+    assert misura.selectors_for(candidate) == [
+        '#main footer div[data-tab="10"]',
+        '#main div[data-tab="10"]',
+        'div[data-tab="10"]',
+    ]
+
+
+def test_a_number_that_is_not_one_is_asked_again_and_an_empty_one_skips_the_address(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    said = iter(["+39 333 1234567", "+393331234567"])
+
+    assert misura.asked_number(lambda prompt: next(said)) == "+393331234567"
+    assert misura.asked_number(lambda prompt: "") is None
+    assert "1234567" not in capsys.readouterr().out
