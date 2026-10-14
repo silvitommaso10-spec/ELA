@@ -1529,6 +1529,12 @@ class Prospect:
     guided: Guided | None = None
     """What a guided session of the browser would be, when the call is one (M14.3, ADR 0060);
     ``None`` otherwise."""
+    named: JsonMapping | None = None
+    """**What the tool found composing the question, and must use after the yes** (M13.10,
+    ADR 0065): for a login, the id of the entry of the vault the question named. The executor
+    keeps it beside the approval, never shows it, never writes it in the audit, and hands it back
+    to :meth:`ToolPort.execute` with the yes — so the yes stays bound to what the user read, across
+    a restart too, and no tool remembers anything between the question and the yes."""
 
 
 def audited_numbers(declared: frozenset[str], output: JsonMapping) -> dict[str, JsonValue]:
@@ -1717,12 +1723,19 @@ class ToolPort(Protocol):
         """
 
     async def execute(
-        self, decision: PermissionDecision, arguments: JsonMapping, stop: TaskStop
+        self,
+        decision: PermissionDecision,
+        arguments: JsonMapping,
+        stop: TaskStop,
+        named: JsonMapping | None = None,
     ) -> ExecutionResult:
         """Run the capability under ``decision``; :class:`NotAllowedError` if it does not allow.
 
         ``stop`` is the stop of the task (M6.3c): the tool calls :meth:`TaskStop.listen` at its
-        point, and :class:`ToolStopped` leaves the call there, before any effect."""
+        point, and :class:`ToolStopped` leaves the call there, before any effect. ``named`` is
+        what :attr:`Prospect.named` said when the question of this call was composed, handed back
+        by the executor from the approval that gave the grant (M13.10, ADR 0065) — ``None`` when
+        no question was asked, and on a node, where it never travels."""
 
 
 @runtime_checkable
@@ -2985,6 +2998,13 @@ class Browser(Protocol):
 
     async def count(self, page: str, selector: str) -> int:
         """How many elements ``selector`` finds on the page."""
+
+    async def appeared(self, page: str, selector: str) -> int:
+        """Wait until ``selector`` finds **one visible element** on the page, and answer how many
+        elements it finds then (M13.10, ADR 0065): ``1``, or more than one when the engine finds
+        several — which it says at once, also when one of them is hidden. **No deadline of its
+        own**: the time of the tool is the one, and a wait that is cancelled leaves the page
+        usable. Never ``0``: an element that is not there is waited for."""
 
     async def field(self, page: str, selector: str) -> Field:
         """What the one element ``selector`` finds declares of itself."""

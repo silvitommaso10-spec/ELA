@@ -150,7 +150,8 @@ Use the tools read and act."""
 READ_DESCRIPTION: Final = (
     "Open one page of one of the sites and read its visible text: never its links, its images or "
     "the attributes of its elements. selector, optional, is the one element to read; "
-    f"{SELECTOR_GRAMMAR}."
+    f"{SELECTOR_GRAMMAR}. ELA waits for that element until the tool's time runs out: a selector "
+    "that names nothing costs the whole time of the tool."
 )
 """What the model is told of ``read`` (decision 44 of the review of the second round): the grammar
 of a selector is ``ela.tools.browser``'s, the one the refusal of a selector says."""
@@ -159,14 +160,17 @@ ACT_DESCRIPTION: Final = (
     "Fill fields and click on one page of one of the sites: the user is asked every time. fill is "
     "a list of pairs [selector, value], filled in order; click is the selector of the one element "
     "clicked after them; expect_text is the text the page must show after the click, which ELA's "
-    f"verifier looks for. Selectors: {SELECTOR_GRAMMAR}. ELA checks every element before the "
-    "first gesture, and if one is missing or not alone it makes no gesture at all. The text of a "
+    f"verifier looks for. Selectors: {SELECTOR_GRAMMAR}. Each gesture waits for its own element, "
+    "one and visible, until the tool's time runs out: the gestures before a missing element are "
+    "made, and a selector that names nothing costs the whole time of the tool. The text of a "
     "page carries no attributes: build the selectors from what the goal names."
 )
 """What the model is told of ``act`` (decision 44): the second round of the proof, 2026-10-09, had
 the model write ``custname`` and ``Submit order`` as selectors — nobody had told it the grammar —,
-and ELA, as ADR 0052 §8 wants, made no gesture. Who chooses writes; who gives the tool says the
-grammar. The adapter hands these to Claude Code as they stand, in
+and ELA, as ADR 0052 §8 then wanted, made no gesture. Since M13.10 (ADR 0065, decision 45 of its
+review) every gesture waits for its own element, and the description says what that costs. Who
+chooses writes; who gives the tool says the grammar. The adapter hands these to Claude Code as they
+stand, in
 :class:`~ela.ports.SessionPlan`."""
 
 SENDS: Final = (
@@ -452,7 +456,11 @@ class BrowserGuidedTool(Tool):
         return Outcome({}, ARGUMENTS_INVALID, "a guided session runs only with its decision")
 
     async def _decided(
-        self, decision: PermissionDecision, arguments: JsonMapping, stop: TaskStop
+        self,
+        decision: PermissionDecision,
+        arguments: JsonMapping,
+        stop: TaskStop,
+        named: JsonMapping,
     ) -> Outcome:
         prepared = await self._prepared(arguments)
         if isinstance(prepared, Outcome):

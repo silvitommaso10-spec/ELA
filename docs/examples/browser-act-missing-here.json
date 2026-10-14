@@ -1,12 +1,12 @@
 {
   "_nota": [
-    "La prova a mano di M13.1e per un fallimento dopo un sì, senza nessuna chiamata al modello:",
-    "un clic su un bottone, `#non-esiste`, che sulla pagina di example.com non c'è. Il sito è",
-    "quello che la prova di M14.2 ha controllato fra i siti dichiarati. Si scopre solo aprendo",
-    "la pagina, cioè dopo il sì, e ELA se ne accorge PRIMA DEL PRIMO GESTO: niente cliccato, lo",
-    "step fallisce con browser.element_missing, e la ragione della fine lo dice con il codice.",
-    "Il testo atteso è quello della pagina, perché lo schema lo chiede; non si arriva a leggerlo.",
-    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+    "La prova a mano di M13.1e per un fallimento dopo un sì, senza nessuna chiamata al modello: un clic su un",
+    "bottone, `#non-esiste`, che sulla pagina di example.com non c'è. Il sito è quello che la prova di M14.2",
+    "ha controllato fra i siti dichiarati. Si scopre solo aprendo la pagina, cioè dopo il sì; da M13.10 (ADR",
+    "0065) ELA aspetta il bottone fino allo scadere dei 30 secondi dello step: niente cliccato, lo step",
+    "fallisce con browser.element_missing, e la ragione della fine lo dice con il codice. Il testo atteso è",
+    "quello della pagina, perché lo schema lo chiede; non si arriva a leggerlo. Questa chiave è ignorata",
+    "dall'API (ADR 0025 §8)."
   ],
   "goal": "un bottone che non c'è",
   "steps": [

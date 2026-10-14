@@ -1,10 +1,11 @@
 {
   "_nota": [
-    "La prova a mano di M13.4 per una pagina che NON è quella del piano: il bottone `#non-esiste`",
-    "non c'è. Si scopre solo aprendo la pagina, cioè dopo il sì — la domanda non guarda la rete —,",
-    "e ELA se ne accorge PRIMA DEL PRIMO GESTO: nessun campo riempito, niente inviato, lo step",
-    "fallisce con browser.element_missing. Il sì è speso: un altro run chiede di nuovo.",
-    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+    "La prova a mano di M13.4 per una pagina che NON è quella del piano: il bottone `#non-esiste` non c'è. Si",
+    "scopre solo aprendo la pagina, cioè dopo il sì — la domanda non guarda la rete. Da M13.10 (ADR 0065) ogni",
+    "gesto aspetta il suo elemento quando serve: ELA scrive il nome nel campo, poi aspetta il bottone fino",
+    "allo scadere dei 30 secondi dello step, e lo step fallisce con browser.element_missing, «gesture 2 of 2 …",
+    "1 gesture was made». Il sì è speso: un altro run chiede di nuovo. Questa chiave è ignorata dall'API (ADR",
+    "0025 §8)."
   ],
   "goal": "un modulo con un bottone che non c'è",
   "steps": [

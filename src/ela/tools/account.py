@@ -35,11 +35,10 @@ and a field that no longer holds what was typed stops the click.
 from __future__ import annotations
 
 import asyncio
-import json
 from dataclasses import dataclass, replace
 from typing import ClassVar, Final
 
-from ela.domain import ErrorMetadata, ExecutionResult, JsonMapping
+from ela.domain import ErrorMetadata, ExecutionResult, JsonMapping, PermissionDecision
 from ela.permissions import (
     BROWSER_ACT_AS_YOU,
     BROWSER_LOGIN,
@@ -73,6 +72,8 @@ from ela.tools.base import ARGUMENTS_INVALID, Outcome
 from ela.tools.browser import (
     ANOTHER_PAGE,
     BROWSER_CODES,
+    ELEMENT_AMBIGUOUS,
+    ELEMENT_MISSING,
     FAILED,
     FIRST_GESTURE,
     LEFT_SITE,
@@ -85,6 +86,7 @@ from ela.tools.browser import (
     Browsing,
     _BrowserTool,
     _Call,
+    _Done,
     _secret,
     _selector,
     boundary,
@@ -115,10 +117,11 @@ __all__ = [
     "BROWSER_READ_AS_YOU_TOOL_NAME",
     "BROWSER_READ_AS_YOU_VERIFIER_NAME",
     "BROWSER_SECOND_FACTOR",
-    "ENTRY_FORGOTTEN",
+    "ENTRY_NOT_NAMED",
     "FIELD_CHANGED",
     "LOGIN_FORM_GET",
     "LOGS_IN",
+    "NAMED_ENTRY",
     "NOT_A_PASSWORD_FIELD",
     "NO_WINDOW",
     "PROFILE_BUSY",
@@ -157,9 +160,13 @@ LOGIN_FORM_GET: Final = "browser.login_form_get"
 """The form of the password field does not send with ``POST``: sent with ``GET``, the password
 would be in an address — in the history of the profile, and in what ELA remembers of a
 navigation."""
-ENTRY_FORGOTTEN: Final = "vault.entry_forgotten"
-"""ELA does not know any more which entry the question named: it was started again between the
-question and the yes. Nothing is typed, and the step is asked again."""
+ENTRY_NOT_NAMED: Final = "vault.entry_not_named"
+"""The yes was given to a question that named no entry of the vault: a question composed before
+ELA kept the entry with the yes (M13.10, decision 38 of its review). ELA does not look for one
+again — the yes covers what the question named —: nothing is typed, and the step is asked again."""
+NAMED_ENTRY: Final = "entry"
+"""The key, in what the question of a login named (:attr:`~ela.ports.Prospect.named`), of the id of
+the entry of the vault the question named (M13.10, ADR 0065): handed back with the yes."""
 NO_WINDOW: Final = "browser.no_window"
 """A login wants a window, and ELA could not tell that one can be had — its process is not
 inside a session of the screen, or the system did not say: a login does not start without one
@@ -172,10 +179,6 @@ not with a real key); and a page may itself change what is typed into its field.
 click. Whether a key sent the form — a Return does, by itself — ELA does not know.** One case
 has a sentence of its own (decision 152): a field that holds **only a beginning** of what was
 typed — a page that keeps less than it is given —, said without saying how much."""
-CLICK_ASKED: Final = 1
-"""What a login adds to the count of its gestures the instant before it asks for the click: a
-time that runs out with two gestures counted ran out **inside the click** if this is there, and
-while the two fields were being read again if it is not."""
 ACCOUNT_CODES: Final[frozenset[str]] = frozenset({PROFILE_UNDECLARED, PROFILE_UNSAFE, PROFILE_BUSY})
 
 BROWSER_SECOND_FACTOR: Final = "browser.second_factor"
@@ -240,8 +243,6 @@ SPENT: Final = "; the yes was spent, and nothing was typed"
 UNNAMED: Final = "(an entry of your vault that has no name)"
 """What the question calls an entry the user never named: every surface that offers a yes shows
 the entry and whose it is (ADR 0063 §9), and an empty name would have shown neither."""
-REMEMBERED: Final = 256
-"""How many questions a login tool remembers the entry of: the oldest goes first."""
 NEW_OR_NOT_A_PASSWORD: Final = frozenset({"new-password", "one-time-code", "cc-number", "cc-csc"})
 """What a password field may not declare itself, for this tool as for every other: a password to
 choose, a one-time code, a card."""
@@ -320,13 +321,13 @@ class _OnTheProfile(_BrowserTool):
             {}, look.code, f"{look.message}{unasked}", retryable=look.code == PROFILE_BUSY
         )
 
-    async def _run(self, arguments: JsonMapping, stop: TaskStop) -> Outcome:
+    async def _ran(self, looked: _Call, stop: TaskStop) -> Outcome:
         """The run of the empty browser's tool — and what only a profile can refuse, found by the
         opening itself: the folder became held, or unfit, between the question and the yes. The
         yes is spent and nothing was started (ADR 0052 §7)."""
         nothing = {"gestures": 0} if self.acts else {}
         try:
-            return await super()._run(arguments, stop)
+            return await super()._ran(looked, stop)
         except ProfileBusy as busy:
             return Outcome(
                 nothing,
@@ -397,11 +398,10 @@ class AccountActTool(_OnTheProfile, BrowserActTool):
 
 @dataclass(frozen=True, slots=True)
 class _Login(_Call):
-    """A login that would start: the call, the entry the plan named — if it named one —, and the
-    key this call is remembered by."""
+    """A login that would start: the call, and the entry — the one the plan named, or, after the
+    yes, the one the question named (M13.10)."""
 
     entry: str | None = None
-    key: str = ""
 
 
 class LoginTool(_OnTheProfile, _BrowserTool):
@@ -409,7 +409,7 @@ class LoginTool(_OnTheProfile, _BrowserTool):
 
     error_codes: ClassVar[frozenset[str]] = (
         frozenset({ARGUMENTS_INVALID, *BROWSER_CODES, *ACCOUNT_CODES, *VAULT_CODES})
-        | {NOT_A_PASSWORD_FIELD, LOGIN_FORM_GET, ENTRY_FORGOTTEN, NO_WINDOW, FIELD_CHANGED}
+        | {NOT_A_PASSWORD_FIELD, LOGIN_FORM_GET, ENTRY_NOT_NAMED, NO_WINDOW, FIELD_CHANGED}
     ) - {KEY_REFUSED}
     output_keys: ClassVar[frozenset[str]] = frozenset(
         {
@@ -446,7 +446,6 @@ class LoginTool(_OnTheProfile, _BrowserTool):
     ) -> None:
         super().__init__(BROWSER_LOGIN, browsing, browser, clock, ids, name=name)
         self._vault = vault
-        self._found: dict[str, str | None] = {}
 
     def _gestures(self, arguments: JsonMapping, site: str, address: str) -> Outcome | _Call:
         username, word, click = (
@@ -492,7 +491,6 @@ class LoginTool(_OnTheProfile, _BrowserTool):
             selector=None,
             allowed=boundary(frozenset({self._browsing.origin(site)})),
             entry=entry,
-            key=json.dumps(dict(arguments), sort_keys=True, default=str),
         )
 
     async def _installed(self) -> Outcome | None:
@@ -517,12 +515,39 @@ class LoginTool(_OnTheProfile, _BrowserTool):
         """The page of a login, opened **with a window whatever the switch says**."""
         return await self._browser.open_shown(call.visit.address, call.allowed, stop)
 
-    async def _run(self, arguments: JsonMapping, stop: TaskStop) -> Outcome:
+    async def _decided(
+        self,
+        decision: PermissionDecision,
+        arguments: JsonMapping,
+        stop: TaskStop,
+        named: JsonMapping,
+    ) -> Outcome:
+        """The login of **the entry the question named** (M13.10, ADR 0065): the plan's, when it
+        named one, or the one the executor hands back with the yes — never one found again after
+        the yes, which is what a restart would otherwise make of it. A yes to a question that
+        named none is :data:`ENTRY_NOT_NAMED`, and nothing is typed."""
+        looked = self._shaped(arguments)
+        if isinstance(looked, Outcome):
+            return looked
+        assert isinstance(looked, _Login)  # noqa: S101 — ``_gestures`` builds no other call
+        entry = looked.entry
+        if entry is None:
+            said = named.get(NAMED_ENTRY)
+            entry = said if isinstance(said, str) and said else None
+        if entry is None:
+            return self._none_typed(
+                ENTRY_NOT_NAMED,
+                "the question this yes answered named no entry of the vault, and ELA does not "
+                "look for one again: ask again",
+            )
+        return await self._ran(replace(looked, entry=entry), stop)
+
+    async def _ran(self, looked: _Call, stop: TaskStop) -> Outcome:
         """The run of every tool of the profile — and the one thing only a page asked with a
         window can be refused for, by the opening itself: the session of the screen went away
         between the question and the yes. Nothing was started, and the vault was not asked."""
         try:
-            return await super()._run(arguments, stop)
+            return await super()._ran(looked, stop)
         except NoWindow:
             return self._none_typed(NO_WINDOW, NO_WINDOW_MESSAGE)
 
@@ -543,7 +568,6 @@ class LoginTool(_OnTheProfile, _BrowserTool):
         found = await self._vault.find(looked.visit.site, looked.entry)
         if isinstance(found, VaultProblem):
             return self._refused(found.code, found.message, found.code in {LOCKED, TIMEOUT})
-        self._remember(looked.key, found.id)
         username, word = looked.fills[0][0], looked.fills[1][0]
         gestures = (
             f"types the username of that entry into {username}",
@@ -556,7 +580,10 @@ class LoginTool(_OnTheProfile, _BrowserTool):
                 gestures=gestures,
                 entry=found.name or UNNAMED,
                 username=found.username,
-            )
+            ),
+            # What the yes will cover, handed back with it (M13.10, ADR 0065): kept beside the
+            # approval, shown by no surface, and in no event of the audit.
+            named={NAMED_ENTRY: found.id},
         )
 
     def _refused(self, code: str, message: str, retryable: bool) -> Prospect:
@@ -566,22 +593,10 @@ class LoginTool(_OnTheProfile, _BrowserTool):
             )
         )
 
-    def _remember(self, key: str, entry: str) -> None:
-        """Which entry the question of this call named: what the yes covers. Kept in memory, for
-        the questions that are waiting — a bounded number, the oldest first out.
-
-        **One tool serves every task, and the key is the call.** Two questions for the same call
-        that named **different** entries — the same plan asked twice, with the vault changed in
-        between — leave ``None``: ELA cannot tell which of them a yes is for, and types neither
-        (re-read of 2026-10-11)."""
-        known = self._found.pop(key, entry)
-        self._found[key] = entry if known == entry else None
-        while len(self._found) > REMEMBERED:
-            del self._found[next(iter(self._found))]
-
-    async def _work(self, call: _Call, opened: Opened, done: list[int], stop: TaskStop) -> Outcome:
-        """Every element and the form before anything is asked of the vault; the stop of the task;
-        then one reading of the entry, and the three gestures."""
+    async def _work(self, call: _Call, opened: Opened, done: _Done, stop: TaskStop) -> Outcome:
+        """Every element and the form before anything is asked of the vault — each element
+        **awaited** when it is not there yet (M13.10: one rule, an element is awaited when it is
+        needed) —; the stop of the task; then one reading of the entry, and the three gestures."""
         assert isinstance(call, _Login) and call.click is not None  # noqa: S101
         site, page = call.visit.site, opened.page
         # Where the page is, the browser's adapter asks the boundary at every use of it — the
@@ -593,9 +608,15 @@ class LoginTool(_OnTheProfile, _BrowserTool):
             (word, "password_field"),
             (call.click, "click"),
         ):
-            refused = await self._one(page, selector, which, site)
-            if refused is not None:
-                return self._none_typed(refused.code or FAILED, refused.message)
+            found = await self._awaited(page, selector, stop, done, which)
+            if found is None:
+                # Stopped while an element was awaited: nothing is typed, and the vault is not
+                # asked — the point of the tool, heard here.
+                stop.listen(FIRST_GESTURE)
+            elif found > 1:
+                return self._none_typed(
+                    ELEMENT_AMBIGUOUS, f"{which} names {found} elements on the page of {site}"
+                )
         secret = await self._browser.field(page, word)
         if secret.type != "password":
             return self._none_typed(
@@ -628,10 +649,8 @@ class LoginTool(_OnTheProfile, _BrowserTool):
             # A task that is stopped by now is heard before the vault is asked: no password is
             # taken for a step that will type nothing.
             stop.listen(FIRST_GESTURE)
-        entry = call.entry or self._found.get(call.key)
-        if entry is None:
-            return self._none_typed(ENTRY_FORGOTTEN, self._forgotten(call.key))
-        taken = await self._vault.take(site, entry)
+        assert call.entry is not None  # noqa: S101 — ``_decided`` names it, or the step ends there
+        taken = await self._vault.take(site, call.entry)
         if isinstance(taken, VaultProblem):
             return self._none_typed(taken.code, taken.message, taken.code in {LOCKED, TIMEOUT})
         # The reading took its seconds — the door, the program, the vault —, and the world went
@@ -671,7 +690,7 @@ class LoginTool(_OnTheProfile, _BrowserTool):
             # vault gave. But this case is told apart, and by no number: how much the field
             # kept is something of what was typed.
             return Outcome(
-                {"status": opened.status, "gestures": done[0]},
+                {"status": opened.status, "gestures": done.made},
                 FIELD_CHANGED,
                 f"right before the click, a field of the login form on the page of {site} held "
                 "only a beginning of what ELA had typed in it — the page keeps less than it is "
@@ -679,7 +698,7 @@ class LoginTool(_OnTheProfile, _BrowserTool):
             )
         if held != HELD:
             return Outcome(
-                {"status": opened.status, "gestures": done[0]},
+                {"status": opened.status, "gestures": done.made},
                 FIELD_CHANGED,
                 f"right before the click, a field of the login form on the page of {site} did "
                 "not hold what ELA had typed in it — a key pressed while its window had the "
@@ -688,12 +707,15 @@ class LoginTool(_OnTheProfile, _BrowserTool):
             )
         if stop.is_set():
             return self._stopped(opened, done, site)
-        done.append(CLICK_ASKED)
+        # What the count says the instant before the click is asked: a time that runs out with
+        # two gestures counted ran out **inside the click** if this is set, and while the two
+        # fields were being read again if it is not.
+        done.click_asked = True
         await self._gesture(done, self._browser.click(page, call.click))
         left = await self._browser.left(page)
         if left is not None:
             return Outcome(
-                {"status": opened.status, "gestures": done[0]},
+                {"status": opened.status, "gestures": done.made},
                 LEFT_SITE,
                 self._left(site, origin_of(left)) + self._after(done),
             )
@@ -710,7 +732,7 @@ class LoginTool(_OnTheProfile, _BrowserTool):
         return Outcome(
             {
                 "status": opened.status,
-                "gestures": done[0],
+                "gestures": done.made,
                 "page": page,
                 ENDED_AT: place_of(landed.address),
                 ENDED_STATUS: landed.status,
@@ -718,11 +740,11 @@ class LoginTool(_OnTheProfile, _BrowserTool):
             }
         )
 
-    def _still_at_work(self, site: str, done: list[int]) -> str:
+    def _still_at_work(self, site: str, done: _Done) -> str:
         """A time that ran out **after the click** is not a page still at work: the password was
         typed and the form was sent, and what the site did with it ELA does not know (decision
         111). Said as it is — and never asked again: a login sent twice is sent twice."""
-        if done[0] == GESTURES_OF_A_LOGIN - 1 and CLICK_ASKED not in done[1:]:
+        if done.made == GESTURES_OF_A_LOGIN - 1 and not done.click_asked:
             # Both values typed, and the click not asked yet: the time ran out while the two
             # fields were being read again (decision 144). ELA did not click — and a key
             # pressed in the window, which has the keyboard, may have sent the form by itself.
@@ -732,7 +754,7 @@ class LoginTool(_OnTheProfile, _BrowserTool):
                 "ran out: ELA closed the browser. ELA did not click, and does not know whether "
                 f"a key sent the form{self._after(done)}"
             )
-        if done[0] == GESTURES_OF_A_LOGIN - 1:
+        if done.made == GESTURES_OF_A_LOGIN - 1:
             # Both values typed, and the third gesture not counted: the time ran out **inside
             # the click**, which waits for the navigation it starts. The form may have left.
             return (
@@ -741,7 +763,7 @@ class LoginTool(_OnTheProfile, _BrowserTool):
                 "browser and does not know whether the login was sent, nor how it ended"
                 f"{self._after(done)}"
             )
-        if done[0] < GESTURES_OF_A_LOGIN:
+        if done.made < GESTURES_OF_A_LOGIN:
             return super()._still_at_work(site, done)
         return (
             f"the login was sent to {site}, and the page it led to was still arriving after "
@@ -749,27 +771,22 @@ class LoginTool(_OnTheProfile, _BrowserTool):
             f"it ended — the site may have signed you in{self._after(done)}"
         )
 
-    def _forgotten(self, key: str) -> str:
-        """Why the tool does not know which entry a yes is for — and the slate wiped, so that
-        the next question for this call is the only one."""
-        disagreed = key in self._found
-        self._found.pop(key, None)
-        if disagreed:
-            return (
-                "two questions for this same call named different entries of the vault, and ELA "
-                "does not guess which one the yes was for: ask again"
+    def _timed_out(self, site: str, done: _Done) -> Outcome:
+        """A time that runs out while an element of the form is awaited: nothing was typed and
+        the vault was not asked, and the refusal says it as every refusal of a login before its
+        first gesture does."""
+        if done.waiting is not None:
+            return self._none_typed(
+                ELEMENT_MISSING,
+                f"{done.waiting} names no visible element on the page of {site} within the "
+                f"{self._browsing.timeout_seconds} s of the step",
             )
-        return (
-            "ELA was started again after it asked, and does not know any more which entry of "
-            "the vault the question named: ask again"
-        )
+        return super()._timed_out(site, done)
 
-    def _elsewhere(
-        self, site: str, address: str, done: list[int], opened: Opened | None
-    ) -> Outcome:
+    def _elsewhere(self, site: str, address: str, done: _Done, opened: Opened | None) -> Outcome:
         """Before the first gesture a login that finds its page elsewhere has typed nothing, and
         says so as every refusal of its own does; after it, as every action."""
-        if done[0]:
+        if done.made:
             return super()._elsewhere(site, address, done, opened)
         return self._none_typed(
             LEFT_SITE,
@@ -780,9 +797,9 @@ class LoginTool(_OnTheProfile, _BrowserTool):
     def _none_typed(self, code: str, message: str, retryable: bool = False) -> Outcome:
         return Outcome({"gestures": 0}, code, message + SPENT, retryable=retryable)
 
-    def _stopped(self, opened: Opened, done: list[int], site: str) -> Outcome:
+    def _stopped(self, opened: Opened, done: _Done, site: str) -> Outcome:
         return Outcome(
-            {"status": opened.status, "gestures": done[0]},
+            {"status": opened.status, "gestures": done.made},
             STOPPED,
             f"the task was stopped on the page of {site}{self._after(done)}, and no other gesture "
             "followed",

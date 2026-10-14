@@ -3021,15 +3021,17 @@ In un task nuovo, `browser-act-missing.json`: il sì, poi di nuovo `run`.
 
 ```
 outcome        failed
-reason         fail: EXECUTING -> FAILED (browser.element_missing: gesture 2 of 2 names no element on the page of httpbin.org; no gesture was made)
+reason         fail: EXECUTING -> FAILED (browser.element_missing: gesture 2 of 2 names no visible element on the page of httpbin.org within the 30 s of the step; 1 gesture was made)
 state          FAILED
 steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000006
 stopped step   —
 ```
 
-**Che cosa si deve vedere**: la frase dice che nessun gesto è stato fatto — il controllo di ogni
-elemento viene prima del primo gesto, e sulla pagina non lo vedi, perché ELA l'ha chiusa —, e il sì è
-speso: la domanda è nata prima che ELA aprisse la pagina, e questo è il suo prezzo.
+**Che cosa si deve vedere**: dopo trenta secondi, la frase dice che **un gesto è stato fatto** — il nome è
+scritto nel campo, e il bottone che non c'è è stato aspettato fino allo scadere del tempo dello step: da
+M13.10 ogni gesto aspetta il suo elemento quando serve (ADR 0065), e i gesti prima di uno che manca sono
+fatti —; sulla pagina non lo vedi, perché ELA l'ha chiusa. Il sì è speso: la domanda è nata prima che ELA
+aprisse la pagina, e questo è il suo prezzo.
 
 ### 6. Il «ferma» a metà corsa, com'è oggi
 
@@ -5001,7 +5003,8 @@ answered by <nome di chi ha risposto> (phone)
 ### 5. Un fallimento dopo un sì
 
 `docs/examples/browser-act-missing-here.json`: un clic su `#non-esiste`, che sulla pagina di `example.com` non c'è. La
-domanda è `HIGH`; dopo il sì la pagina si apre, e prima del primo gesto ELA vede che il bottone non c'è.
+domanda è `HIGH`; dopo il sì la pagina si apre, e ELA aspetta il bottone fino allo scadere dei trenta secondi dello
+step (da M13.10 ogni gesto aspetta il suo elemento: ADR 0065): non c'è, e niente è cliccato.
 
 <!-- prova: 5.comando -->
 ```
@@ -5028,7 +5031,7 @@ uv run ela task run <id>
 <!-- prova: 5.atteso -->
 ```
 outcome failed
-reason fail: EXECUTING -> FAILED (browser.element_missing: gesture 1 of 1 names no element on the page of example.com; no gesture was made)
+reason fail: EXECUTING -> FAILED (browser.element_missing: gesture 1 of 1 names no visible element on the page of example.com within the 30 s of the step; no gesture was made)
 ```
 
 <!-- prova: 5.fine -->
@@ -5447,8 +5450,9 @@ task che chiede, e il modulo parte. `httpbin.org` rimanda indietro ciò che rice
 **Il modello non vede gli attributi della pagina**: `read` gli dà il testo visibile, che non porta il nome di un campo, il
 suo tipo o la sua etichetta. Gli strumenti gli dicono la grammatica di un selettore — CSS come lo legge Playwright,
 `input[name="custname"]`, `button:has-text("Submit order")`, uno che nomini esattamente un elemento —, e la frase nomina il
-campo e il bottone: i selettori li costruisce da lì. Se non ci riesce, ELA controlla ogni elemento prima del primo gesto e
-non agisce — il figlio finisce `FAILED` con `browser.element_missing` —: è successo al secondo giro, il 2026-10-09, quando
+campo e il bottone: i selettori li costruisce da lì. Se non ci riesce, ELA controllava ogni elemento prima del primo gesto
+e non agiva — il figlio finiva `FAILED` con `browser.element_missing` — (***da M13.10*** ogni gesto aspetta il suo elemento
+entro il tempo del tool, e i gesti prima di uno che manca sono fatti: ADR 0065): è successo al secondo giro, il 2026-10-09, quando
 gli strumenti non dicevano la grammatica e il modello ha scritto `custname` e `Submit order`. Una lettura che restituisca i
 campi di un modulo è un limite dichiarato di M14.3, che si riapre con i numeri del terzo giro.
 

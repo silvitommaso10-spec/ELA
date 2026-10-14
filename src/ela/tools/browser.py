@@ -12,8 +12,12 @@ value, and every refusal are decided here, in the gate.
 the grammar of the site, of the path and of the selectors, the shape of the gestures and their
 limits, and whether the browser the lock names is installed. Opening the page would be a visit the
 audit does not record, so everything else is found after the yes — and never with an effect other
-than the one approved: before the first gesture every element is there exactly once, and none
-declares itself secret (form H).
+than the one approved. **Every element is awaited when it is needed** (M13.10, ADR 0065, revising
+decision 7 of M13.4): each gesture waits for its own element — there, alone, visible — together
+with the stop of its task, within the time of the tool and with no deadline of its own; a field is
+refused if it declares itself secret right before the gesture that would fill it; and a read with
+a selector waits for its element the same way. An element that comes after a gesture — a menu, a
+second field, the button a message's text makes appear — is the reason.
 
 **A secret field is refused, and the refusal does not protect the secret** (decision 6): it comes
 after the yes, when the value is already in the plan, in the question and on the phone. It protects
@@ -90,6 +94,7 @@ __all__ = [
     "SITE",
     "SECRET_FIELD",
     "STOPPED",
+    "STOPPED_AT",
     "TEXT_MAX_BYTES",
     "TIMEOUT",
     "UNREACHABLE",
@@ -178,6 +183,9 @@ ASKED_FOR_NOTHING: Final = "a page that had asked for nothing"
 
 SITE: Final = "site"
 """What the target of the two capabilities is called, in the tools' own word (M13.2 dec. 12)."""
+STOPPED_AT: Final = "stopped_at"
+"""The key of a result that says at which gesture a sequence stopped, counted from 1 (M13.10): the
+first gesture that was not made. Absent when every gesture was made."""
 FIRST_GESTURE: Final = "the first gesture"
 """Where ``browser.act`` listens for the stop of its task: a field filled, or the click (M6.3c)."""
 
@@ -306,6 +314,24 @@ class Browsing:
     timeout_seconds: int = BROWSER_TIMEOUT_SECONDS
 
 
+@dataclass(slots=True)
+class _Done:
+    """What a step has done by now (M13.10): how many gestures were made, of how many, which one is
+    waiting for its element — in the words its refusal would use —, and whether a login has asked
+    for its click. What a time that runs out, a stop or a refusal says is read from here."""
+
+    made: int = 0
+    total: int = 0
+    waiting: str | None = None
+    click_asked: bool = False
+
+
+def _retrieved(task: asyncio.Future[int]) -> None:
+    """Retrieve what a wait that was abandoned ended with, so that nobody is told of it later."""
+    if not task.cancelled():
+        task.exception()
+
+
 @dataclass(frozen=True, slots=True)
 class _Call:
     """A browser call that would start: the facts of the question, and what the page needs."""
@@ -426,8 +452,12 @@ class _BrowserTool(Tool):
         looked = self._shaped(arguments)
         if isinstance(looked, Outcome):
             return looked
+        return await self._ran(looked, stop)
+
+    async def _ran(self, looked: _Call, stop: TaskStop) -> Outcome:
+        """The run of a call already shaped: the page opened, the work, every way out."""
         site = looked.visit.site
-        done = [0]
+        done = _Done()
         opened: Opened | None = None
         handed_over = False
         try:
@@ -436,7 +466,7 @@ class _BrowserTool(Tool):
                     opened = await self._opened(looked, stop)
                     outcome = await self._on_the_page(looked, opened, done, stop)
             except TimeoutError:
-                outcome = Outcome(self._partial(done), TIMEOUT, self._still_at_work(site, done))
+                outcome = self._timed_out(site, done)
             except BrowserNotInstalled:
                 outcome = Outcome({}, NOT_INSTALLED, NOT_INSTALLED_MESSAGE)
             except SiteUnreachable as away:
@@ -476,8 +506,44 @@ class _BrowserTool(Tool):
         """The page of the call, opened: as the browser opens any page."""
         return await self._browser.open(call.visit.address, call.allowed, stop)
 
+    async def _awaited(
+        self, page: str, selector: str, stop: TaskStop, done: _Done, words: str
+    ) -> int | None:
+        """How many elements ``selector`` finds once one of them is visible — or ``None`` when the
+        stop of the task came first (M13.10). **The engine waits, and the stop is listened to
+        while it does**: no deadline of its own, the tool's is the one, and while the wait lasts
+        ``done`` says which element is awaited, in ``words``, for the refusal of a time that runs
+        out there."""
+        done.waiting = words
+        waiting = asyncio.ensure_future(self._browser.appeared(page, selector))
+        halted = asyncio.ensure_future(stop.stopped())
+        try:
+            await asyncio.wait({waiting, halted}, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            halted.cancel()
+            if not waiting.done():
+                waiting.cancel()
+                waiting.add_done_callback(_retrieved)
+        if not waiting.done() or waiting.cancelled():
+            return None
+        found = waiting.result()
+        done.waiting = None
+        return found
+
+    def _timed_out(self, site: str, done: _Done) -> Outcome:
+        """The time of the step ran out: while an element was awaited it is that element that is
+        missing, and the refusal says which; at any other moment the page was still at work."""
+        if done.waiting is not None:
+            return Outcome(
+                self._partial(done),
+                ELEMENT_MISSING,
+                f"{done.waiting} names no visible element on the page of {site} within the "
+                f"{self._browsing.timeout_seconds} s of the step{self._after(done)}",
+            )
+        return Outcome(self._partial(done), TIMEOUT, self._still_at_work(site, done))
+
     async def _on_the_page(
-        self, call: _Call, opened: Opened, done: list[int], stop: TaskStop
+        self, call: _Call, opened: Opened, done: _Done, stop: TaskStop
     ) -> Outcome:
         """What happens once the page is open: the refusals of the page, then the work."""
         site = call.visit.site
@@ -494,19 +560,8 @@ class _BrowserTool(Tool):
         return await self._work(call, opened, done, stop)
 
     @abstractmethod
-    async def _work(self, call: _Call, opened: Opened, done: list[int], stop: TaskStop) -> Outcome:
+    async def _work(self, call: _Call, opened: Opened, done: _Done, stop: TaskStop) -> Outcome:
         """What the capability does on a page that answered, on its own site."""
-
-    async def _one(self, page: str, selector: str, which: str, site: str) -> Outcome | None:
-        """``None`` when ``selector`` finds exactly one element; the refusal otherwise."""
-        found = await self._browser.count(page, selector)
-        if found == 1:
-            return None
-        if found == 0:
-            return Outcome({}, ELEMENT_MISSING, f"{which} names no element on the page of {site}")
-        return Outcome(
-            {}, ELEMENT_AMBIGUOUS, f"{which} names {found} elements on the page of {site}"
-        )
 
     def _inside(self) -> str:
         """What the boundary of this tool is, in the words of its refusals."""
@@ -518,13 +573,11 @@ class _BrowserTool(Tool):
             "not follow, and nothing was sent there"
         )
 
-    def _elsewhere(
-        self, site: str, address: str, done: list[int], opened: Opened | None
-    ) -> Outcome:
+    def _elsewhere(self, site: str, address: str, done: _Done, opened: Opened | None) -> Outcome:
         """The page is outside the boundary: said by its origin alone, with what had been done
         by then — and nothing of the page, which is not handed to the verifier either."""
         made: dict[str, JsonValue] = self._partial(done)
-        if done[0] and opened is not None:
+        if done.made and opened is not None:
             made = {"status": opened.status, **made}
         return Outcome(
             made,
@@ -542,7 +595,7 @@ class _BrowserTool(Tool):
         said = ASKED_FOR_NOTHING if another.address is None else origin_of(another.address)
         return replace(outcome, output={**outcome.output, ANOTHER_PAGE: said})
 
-    async def _gesture(self, done: list[int], gesture: Awaitable[None]) -> None:
+    async def _gesture(self, done: _Done, gesture: Awaitable[None]) -> None:
         """A gesture, counted when it was made — **also when the page was found elsewhere once
         it was**: a gesture that happened is not reported as one that did not, or an action
         would be asked again on that word."""
@@ -550,26 +603,26 @@ class _BrowserTool(Tool):
             await gesture
         except LeftSite as elsewhere:
             if elsewhere.made:
-                done[0] += 1
+                done.made += 1
             raise
-        done[0] += 1
+        done.made += 1
 
-    def _still_at_work(self, site: str, done: list[int]) -> str:
+    def _still_at_work(self, site: str, done: _Done) -> str:
         """What the step says when its time ran out, with what had been done by then."""
         return (
             f"the page of {site} was still at work after {self._browsing.timeout_seconds} s: "
             f"ELA closed the browser{self._after(done)}"
         )
 
-    def _partial(self, done: list[int]) -> dict[str, JsonValue]:
-        return {"gestures": done[0]} if self.acts else {}
+    def _partial(self, done: _Done) -> dict[str, JsonValue]:
+        return {"gestures": done.made} if self.acts else {}
 
-    def _after(self, done: list[int]) -> str:
+    def _after(self, done: _Done) -> str:
         if not self.acts:
             return ""
-        if done[0] == 0:
+        if done.made == 0:
             return "; no gesture was made"
-        return "; 1 gesture was made" if done[0] == 1 else f"; {done[0]} gestures were made"
+        return "; 1 gesture was made" if done.made == 1 else f"; {done.made} gestures were made"
 
 
 class BrowserReadTool(_BrowserTool):
@@ -618,12 +671,26 @@ class BrowserReadTool(_BrowserTool):
             allowed=boundary(origins),
         )
 
-    async def _work(self, call: _Call, opened: Opened, done: list[int], stop: TaskStop) -> Outcome:
+    async def _work(self, call: _Call, opened: Opened, done: _Done, stop: TaskStop) -> Outcome:
+        """The text of the page, or of the one element the selector names — **awaited** when it
+        is not there yet (M13.10): the read has made its visit, and a stop that comes while it
+        waits ends it with nothing read."""
         site = call.visit.site
         if call.selector is not None:
-            refused = await self._one(opened.page, call.selector, "the selector", site)
-            if refused is not None:
-                return refused
+            found = await self._awaited(opened.page, call.selector, stop, done, "the selector")
+            if found is None:
+                return Outcome(
+                    {},
+                    STOPPED,
+                    f"the task was stopped while the selector waited for its element on the page "
+                    f"of {site}: ELA read nothing of it",
+                )
+            if found > 1:
+                return Outcome(
+                    {},
+                    ELEMENT_AMBIGUOUS,
+                    f"the selector names {found} elements on the page of {site}",
+                )
         text, shown, total = cut(await self._browser.text(opened.page, call.selector))
         return Outcome(
             {
@@ -642,10 +709,13 @@ class BrowserActTool(_BrowserTool):
     """Fills fields on one page of a declared site and clicks (§19, **HIGH**)."""
 
     error_codes: ClassVar[frozenset[str]] = frozenset({ARGUMENTS_INVALID, *BROWSER_CODES})
-    output_keys: ClassVar[frozenset[str]] = frozenset({"status", "gestures", "page", ANOTHER_PAGE})
-    audit_numbers: ClassVar[frozenset[str]] = frozenset({"status", "gestures"})
-    """The status of the page of the form, and how many gestures were made: never a selector, a
-    value or the page (ADR 0047 §10)."""
+    output_keys: ClassVar[frozenset[str]] = frozenset(
+        {"status", "gestures", STOPPED_AT, "page", ANOTHER_PAGE}
+    )
+    audit_numbers: ClassVar[frozenset[str]] = frozenset({"status", "gestures", STOPPED_AT})
+    """The status of the page of the form, how many gestures were made, and — when the sequence did
+    not reach its end — the number of the gesture it stopped at (M13.10): never a selector, a value
+    or the page (ADR 0047 §10)."""
     idempotent: ClassVar[bool] = False
     """**Not idempotent**: a submission sent twice is sent twice. The executor writes a STARTED
     record before the first gesture, and a retry that finds it without an outcome closes the step as
@@ -654,7 +724,11 @@ class BrowserActTool(_BrowserTool):
     acts: ClassVar[bool] = True
     stop_point: ClassVar[StopPoint] = StopPoint(here=FIRST_GESTURE, on_a_node=None)
     """Before the first gesture (decision 2 of M6.3c); the navigation before it is listened to
-    without being this tool's point, and after it no gesture follows a stop (decision 5)."""
+    without being this tool's point, and after it no gesture follows a stop (decision 5). **One
+    point declared, and the stop heard before every gesture and inside every wait** (M13.10,
+    decision 41 of its review): once a gesture is made the tool ends the step itself, with
+    ``browser.stopped`` and the gestures counted — never the executor's «stopped before it
+    acted», which would be false."""
 
     def __init__(
         self,
@@ -720,56 +794,78 @@ class BrowserActTool(_BrowserTool):
             allowed=boundary(frozenset({self._browsing.origin(site)})),
         )
 
-    async def _work(self, call: _Call, opened: Opened, done: list[int], stop: TaskStop) -> Outcome:
-        """Every element before the first gesture, then the gestures, in order (form H).
+    async def _work(self, call: _Call, opened: Opened, done: _Done, stop: TaskStop) -> Outcome:
+        """The gestures, in order, **each awaiting its own element** (M13.10, ADR 0065).
 
-        The stop of the task is listened to right before the first gesture — the point — and
-        looked at before every other one: a gesture never follows a stop (M6.3c, decision 5)."""
+        For each: its element — there, alone, visible — awaited together with the stop of the
+        task; a field that declares itself secret refused right before the gesture that would
+        fill it; the stop looked at; and the gesture, with no wait between that look and it. At
+        the first gesture the look is the tool's point (M6.3c): a task stopped there leaves with
+        ``ToolStopped``, and nothing was done. After it the tool ends the step itself."""
+        assert call.click is not None  # noqa: S101 — an action always clicks
         site, page = call.visit.site, opened.page
-        total = len(call.fills) + 1
-        for index, (selector, _) in enumerate(call.fills, start=1):
-            which = f"gesture {index} of {total}"
-            refused = await self._one(page, selector, which, site)
-            if refused is not None:
-                return self._none_made(refused)
-            declared = await self._browser.field(page, selector)
-            if _secret(declared.type, declared.autocomplete):
-                return self._none_made(
-                    Outcome(
-                        {},
+        steps: list[tuple[str, str | None]] = [*call.fills, (call.click, None)]
+        done.total = len(steps)
+        for index, (selector, value) in enumerate(steps, start=1):
+            which = f"gesture {index} of {done.total}"
+            found = await self._awaited(page, selector, stop, done, which)
+            if found is None:
+                if not done.made:
+                    stop.listen(FIRST_GESTURE)
+                return self._stopped(opened, done, site)
+            if found > 1:
+                return self._refused_at(
+                    opened,
+                    done,
+                    ELEMENT_AMBIGUOUS,
+                    f"{which} names {found} elements on the page of {site}",
+                )
+            if value is not None:
+                declared = await self._browser.field(page, selector)
+                if _secret(declared.type, declared.autocomplete):
+                    return self._refused_at(
+                        opened,
+                        done,
                         SECRET_FIELD,
                         f"{which} names a field that declares itself a password, a one-time code "
                         f"or a card, on the page of {site}: ELA does not fill it",
                     )
-                )
-        assert call.click is not None  # noqa: S101 — an action always clicks
-        refused = await self._one(page, call.click, f"gesture {total} of {total}", site)
-        if refused is not None:
-            return self._none_made(refused)
-        stop.listen(FIRST_GESTURE)
-        for selector, value in call.fills:
-            if done[0] and stop.is_set():
+            if not done.made:
+                stop.listen(FIRST_GESTURE)
+            elif stop.is_set():
                 return self._stopped(opened, done, site)
-            await self._gesture(done, self._browser.fill(page, selector, value))
-        if done[0] and stop.is_set():
-            return self._stopped(opened, done, site)
-        await self._gesture(done, self._browser.click(page, call.click))
+            if value is None:
+                await self._gesture(done, self._browser.click(page, selector))
+            else:
+                await self._gesture(done, self._browser.fill(page, selector, value))
         left = await self._browser.left(page)
         if left is not None:
             return Outcome(
-                {"status": opened.status, "gestures": done[0]},
+                {"status": opened.status, "gestures": done.made},
                 LEFT_SITE,
                 self._left(site, origin_of(left)) + self._after(done),
             )
-        return Outcome({"status": opened.status, "gestures": done[0], "page": page})
+        return Outcome({"status": opened.status, "gestures": done.made, "page": page})
 
-    def _none_made(self, refused: Outcome) -> Outcome:
-        return Outcome({"gestures": 0}, refused.code, refused.message + "; no gesture was made")
+    def _partial(self, done: _Done) -> dict[str, JsonValue]:
+        """How many gestures were made — and, of a sequence that did not reach its end, the number
+        of the gesture it stopped at (M13.10)."""
+        made: dict[str, JsonValue] = {"gestures": done.made}
+        if done.made < done.total:
+            made[STOPPED_AT] = done.made + 1
+        return made
 
-    def _stopped(self, opened: Opened, done: list[int], site: str) -> Outcome:
+    def _refused_at(self, opened: Opened, done: _Done, code: str, message: str) -> Outcome:
+        """A gesture refused before it was made: what was made by then, and where it stopped."""
+        made = self._partial(done)
+        if done.made:
+            made = {"status": opened.status, **made}
+        return Outcome(made, code, message + self._after(done))
+
+    def _stopped(self, opened: Opened, done: _Done, site: str) -> Outcome:
         """The task was stopped after the first gesture: no other one is made (M6.3c)."""
         return Outcome(
-            {"status": opened.status, "gestures": done[0]},
+            {"status": opened.status, **self._partial(done)},
             STOPPED,
             f"the task was stopped on the page of {site}{self._after(done)}, and no other gesture "
             "followed",

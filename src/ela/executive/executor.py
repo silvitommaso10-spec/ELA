@@ -281,6 +281,13 @@ M12.5 dec. F: one bag, written when the question is composed (:meth:`Executor._a
 the shape that answers ``GET /approvals`` — so the terminal and a page show the same facts and
 neither recomposes them. Namespaced because ``metadata`` belongs to whoever writes it.
 """
+NAMED: Final = "named"
+"""The key under which an :class:`~ela.domain.Approval` keeps **what its tool found composing the
+question and must use after the yes** (M13.10, ADR 0065): :attr:`~ela.ports.Prospect.named`, written
+by :meth:`Executor._ask` beside :data:`ASKED` and read by :meth:`Executor.execute` from the approval
+that gave the grant, to be handed to the tool with the yes. **The second bag is never shown**: no
+module that builds an audit event names it, and no route serves it (architecture rule 71) — for a
+login it is the id of an entry of the vault, which no surface shows (ADR 0063 §9)."""
 UNSEEN: Final = (
     "ELA has not looked at that disk: what this question says of the file is what the plan "
     "asserts, and the node refuses before acting if the disk says otherwise"
@@ -821,6 +828,13 @@ def _may_travel(task: Task, stated: str) -> str:
     return f"{joined}this task may run on a {task.max_privacy.value} node"
 
 
+def _named(approval: Approval) -> JsonMapping | None:
+    """What the question of ``approval`` named for its tool (:data:`NAMED`), or ``None`` when it
+    named nothing — a question composed before M13.10 among them."""
+    found = approval.metadata.get(NAMED)
+    return found if isinstance(found, Mapping) else None
+
+
 def approved_targets(decision: PermissionDecision) -> tuple[str, ...]:
     """The targets of a decision as an approval carries them: the strings of
     ``metadata["targets"]`` (ADR 0011 §10), nothing if the decision has none."""
@@ -996,8 +1010,12 @@ class Executor:
         authorization: Authorization | None
         author: PlanAuthor | None = None
         session: SessionCover | None = None
+        named: JsonMapping | None = None
         if granted:
             authorization, uses = await self._grant(granted[-1], task, step, spec, now)
+            # What the question named, handed to the tool with the yes it was asked for (M13.10,
+            # ADR 0065): read from the approval that gives the grant, and from nowhere else.
+            named = _named(granted[-1])
         else:
             # The room's word, read now and never kept (M13.9, decision 29): a session covers
             # the reads its model wrote for as long as it is open, and a session that is over
@@ -1096,7 +1114,9 @@ class Executor:
                 return await self._denied_by_cap(task_id, step_id, decision, authorization, opened)
             record = opened
         await self._sensor_activated(spec, decision, device_id)
-        result = await self._run_here(tool, decision, arguments, device_id, spent, record, stop)
+        result = await self._run_here(
+            tool, decision, arguments, device_id, spent, record, stop, named
+        )
         if result is None:
             refused = ErrorMetadata(
                 code=TOOL_REFUSED,
@@ -1123,6 +1143,7 @@ class Executor:
         spent: AuthorizationId | None,
         record: ExecutionResult | None,
         stop: StopOfTask,
+        named: JsonMapping | None = None,
     ) -> ExecutionResult | None:
         """The tool on this machine and its result stored: the span :meth:`running_here` counts.
 
@@ -1132,7 +1153,9 @@ class Executor:
         self._running_here += 1
         try:
             spends = record is not None and record.worst_case is not None
-            produced = await self._run_tool(tool, decision, arguments, stop, spends=spends)
+            produced = await self._run_tool(
+                tool, decision, arguments, stop, spends=spends, named=named
+            )
             if produced is None:
                 return None
             produced = _as_text(_counted(tool, produced), tool)
@@ -2091,7 +2114,8 @@ class Executor:
                     spending,
                     prospect.guided,
                     why,
-                )
+                ),
+                **({} if not prospect.named else {NAMED: dict(prospect.named)}),
             },
         )
         await self._approvals.add(approval)  # stored before the task waits on it (ADR 0015 §6)
@@ -2367,8 +2391,10 @@ class Executor:
         stop: TaskStop,
         *,
         spends: bool = False,
+        named: JsonMapping | None = None,
     ) -> ExecutionResult | None:
-        """The only call of a tool in the Core (rule 16), with an ALLOWED decision in hand.
+        """The only call of a tool in the Core (rule 16), with an ALLOWED decision in hand — and
+        what the question of the call named, when one was asked (M13.10, ADR 0065).
 
         ``None`` if the tool refused the decision before acting; a FAILED result if it raised
         while acting, so that the run is recorded whatever happened (§32); a ``CANCELLED`` one if
@@ -2380,7 +2406,7 @@ class Executor:
         if stop.is_set():
             return self._stopped(tool, decision, spends=spends)
         try:
-            return await tool.execute(decision, arguments, stop)
+            return await tool.execute(decision, arguments, stop, named)
         except NotAllowedError:
             return None
         except ToolStopped:

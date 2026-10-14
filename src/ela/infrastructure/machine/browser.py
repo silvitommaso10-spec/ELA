@@ -576,6 +576,26 @@ class PlaywrightBrowser:
     async def count(self, page: str, selector: str) -> int:
         return await self._on(page, lambda opened: opened.page.locator(selector).count())
 
+    async def appeared(self, page: str, selector: str) -> int:
+        """The engine's own wait, **strict**, on the selector itself (M13.10, measures (a) and (g)
+        of its SPEC): it ends when the selector finds one visible element, and raises at once when
+        it finds several — then the count says how many. It looks at the page at intervals of its
+        own, up to half a second: an element is seen at most about half a second after it is
+        there. No timeout here: the tool's time is the one."""
+
+        async def wait(opened: _Open) -> int:
+            element = opened.page.locator(selector)
+            try:
+                await element.wait_for(state="visible", timeout=0)
+            except PlaywrightError:
+                found = await element.count()
+                if found > 1:
+                    return found
+                raise
+            return await element.count()
+
+        return await self._on(page, wait)
+
     async def field(self, page: str, selector: str) -> Field:
         async def read(opened: _Open) -> Field:
             element = opened.page.locator(selector)

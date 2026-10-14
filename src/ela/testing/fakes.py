@@ -1234,6 +1234,11 @@ class FakeBrowser:
         """The grace of every :meth:`settle`, in order: what ELA's close gave it (M13.4e)."""
         self.moves: dict[str, str] = {}
         self.moves_during: dict[str, str] = {}
+        self.appearing: dict[str, asyncio.Event] = {}
+        """The elements :meth:`appear_later` holds: :meth:`appeared` waits for each until the test
+        sets its event (M13.10)."""
+        self.waited: list[str] = []
+        """Every selector :meth:`appeared` was asked to wait for, in order."""
         self._open: dict[str, bool] = {}
         self._boundaries: dict[str, Callable[[str], bool]] = {}
         self._where: str | None = None
@@ -1247,9 +1252,9 @@ class FakeBrowser:
             raise error
 
     def hold(self, member: str) -> tuple[asyncio.Event, asyncio.Event]:
-        """Hold ``count`` or ``text`` from now on: the first event is set when the member is
-        reached, and the member answers when the test sets the second."""
-        if member not in ("count", "text"):
+        """Hold ``count``, ``appeared`` or ``text`` from now on: the first event is set when the
+        member is reached, and the member answers when the test sets the second."""
+        if member not in ("count", "appeared", "text"):
             raise ValueError(f"{member} is not a member this fake holds")
         self._held[member] = (asyncio.Event(), asyncio.Event())
         return self._held[member]
@@ -1327,6 +1332,34 @@ class FakeBrowser:
         if self._clicked and selector in self.page.counts_after_click:
             return self.page.counts_after_click[selector]
         return self.page.counts.get(selector, 1)
+
+    def appear_later(self, selector: str) -> asyncio.Event:
+        """Hold the element ``selector`` names: :meth:`appeared` waits for it until the test sets
+        the event it answers — an element that appears after a gesture, or never, built instead of
+        raced for (M13.10)."""
+        self.appearing[selector] = asyncio.Event()
+        return self.appearing[selector]
+
+    async def appeared(self, page: str, selector: str) -> int:
+        """How many elements ``selector`` finds once one is visible (M13.10). One the script counts
+        ``0`` is never there: **the tool's time runs out while it is waited for**, and the fake
+        says so at once with the ``TimeoutError`` that deadline raises, instead of making the test
+        wait it. One :meth:`appear_later` holds is waited for until the test lets it appear."""
+        self._on(page, "appeared")
+        self.waited.append(selector)
+        await self._wait("appeared")
+        held = self.appearing.get(selector)
+        if held is not None:
+            await held.wait()
+        self._raise("appeared")
+        self._done(page, "appeared")
+        if self._clicked and selector in self.page.counts_after_click:
+            found = self.page.counts_after_click[selector]
+        else:
+            found = self.page.counts.get(selector, 1)
+        if found == 0:
+            raise TimeoutError
+        return found
 
     async def field(self, page: str, selector: str) -> Field:
         self._on(page, "field")
@@ -1408,7 +1441,7 @@ class FakeBrowser:
         from then on every use of a page says so (M13.4c) — not that the page is gone."""
         self._stopped = True
         self._open.clear()
-        for member in ("open", "count", "fill", "click", "text", "glance", "installed"):
+        for member in ("open", "count", "appeared", "fill", "click", "text", "glance", "installed"):
             self.raising[member] = BrowserStopped("ELA is stopping")
 
 
@@ -1606,6 +1639,9 @@ class FakeTool:
         own — a result that did not succeed says why, or the domain does not build it (§64)."""
         self._usage = usage
         self.calls: tuple[ToolCall, ...] = ()
+        self.named: tuple[JsonMapping | None, ...] = ()
+        """What every :meth:`execute` was handed as ``named``, in order (M13.10): what the
+        executor gave back of the question, with the yes."""
         self.prospects = Prospect() if prospect is None else prospect
         self.assertions = Prospect()
         self.bound: WorstCase | ErrorMetadata | None = None
@@ -1645,8 +1681,13 @@ class FakeTool:
         return self.bound
 
     async def execute(
-        self, decision: PermissionDecision, arguments: JsonMapping, stop: TaskStop
+        self,
+        decision: PermissionDecision,
+        arguments: JsonMapping,
+        stop: TaskStop,
+        named: JsonMapping | None = None,
     ) -> ExecutionResult:
+        self.named = (*self.named, named)
         if decision.capability_id != self._capability_id:
             raise NotAllowedError(
                 self._capability_id, f"the decision is about {decision.capability_id}"
