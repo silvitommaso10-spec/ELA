@@ -40,9 +40,12 @@ def outlasting_the_heartbeat(w: World) -> None:
     ran = tool.execute
 
     async def long_step(
-        decision: PermissionDecision, arguments: JsonMapping, stop: TaskStop
+        decision: PermissionDecision,
+        arguments: JsonMapping,
+        stop: TaskStop,
+        named: JsonMapping | None = None,
     ) -> ExecutionResult:
-        result = await ran(decision, arguments, stop)
+        result = await ran(decision, arguments, stop, named)
         w.clock.advance(PAST_THE_TTL)
         w.power.source = PowerSource.BATTERY
         return result

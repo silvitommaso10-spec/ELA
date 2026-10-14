@@ -24,6 +24,7 @@ from ela.domain import (
 )
 from ela.permissions import BROWSER_ACT, BROWSER_READ, FILLS_MAX, VALUE_MAX_LENGTH
 from ela.ports import (
+    NAVIGATION,
     BrowserFailed,
     BrowserNotInstalled,
     BrowserStopped,
@@ -33,6 +34,7 @@ from ela.ports import (
     PageGone,
     SiteUnreachable,
     TaskStop,
+    ToolStopped,
 )
 from ela.testing.fakes import FakeBrowser, FakeClock, FakeIdGenerator, FakePage, FakeStop
 from ela.tools.base import ARGUMENTS_INVALID
@@ -42,6 +44,7 @@ from ela.tools.browser import (
     ELEMENT_AMBIGUOUS,
     ELEMENT_MISSING,
     FAILED,
+    FIRST_GESTURE,
     HTTP_STATUS,
     LEFT_SITE,
     NOT_INSTALLED,
@@ -49,6 +52,7 @@ from ela.tools.browser import (
     SECRET_FIELD,
     SITE,
     STOPPED,
+    STOPPED_AT,
     TEXT_MAX_BYTES,
     TIMEOUT,
     UNREACHABLE,
@@ -105,7 +109,7 @@ def test_what_the_two_tools_declare() -> None:
     assert BrowserActTool.idempotent is False
     assert BrowserReadTool.relocatable is False and BrowserActTool.relocatable is False
     assert BrowserReadTool.audit_numbers == {"status", "shown", "total"}
-    assert BrowserActTool.audit_numbers == {"status", "gestures"}
+    assert BrowserActTool.audit_numbers == {"status", "gestures", STOPPED_AT}
     assert SECRET_FIELD not in BrowserReadTool.error_codes
     assert SECRET_FIELD in BrowserActTool.error_codes
 
@@ -325,7 +329,7 @@ async def test_a_read_of_the_whole_page_keeps_its_beginning() -> None:
         (FakePage(status=None), UNREACHABLE, "gave no answer"),
         (FakePage(status=404), HTTP_STATUS, "answered 404"),
         (FakePage(left="https://example.org/altrove?q=1"), LEFT_SITE, "https://example.org,"),
-        (FakePage(counts={"h1": 0}), ELEMENT_MISSING, "names no element"),
+        (FakePage(counts={"h1": 0}), ELEMENT_MISSING, "names no visible element"),
         (FakePage(counts={"h1": 3}), ELEMENT_AMBIGUOUS, "names 3 elements"),
     ],
 )
@@ -443,26 +447,187 @@ async def test_an_action_with_no_field_is_one_click() -> None:
 @pytest.mark.parametrize(
     ("page", "code"),
     [
-        (FakePage(counts={"form button": 0}), ELEMENT_MISSING),
-        (FakePage(counts={"form button": 2}), ELEMENT_AMBIGUOUS),
         (FakePage(counts={"input[name=custname]": 0}), ELEMENT_MISSING),
+        (FakePage(counts={"input[name=custname]": 2}), ELEMENT_AMBIGUOUS),
         (FakePage(fields={"input[name=custname]": Field("password", "")}), SECRET_FIELD),
         (FakePage(fields={"input[name=custname]": Field("text", "cc-number")}), SECRET_FIELD),
         (FakePage(fields={"input[name=custname]": Field("text", "one-time-code")}), SECRET_FIELD),
     ],
 )
-async def test_a_page_that_is_not_the_plan_s_gets_no_gesture(page: FakePage, code: str) -> None:
+async def test_a_page_that_refuses_the_first_gesture_gets_no_gesture(
+    page: FakePage, code: str
+) -> None:
     browser = FakeBrowser(page)
 
     result = await act(browser).execute(decision(BROWSER_ACT), ACT, FakeStop())
 
     assert result.error is not None and result.error.code == code
-    assert result.output == {"gestures": 0}
+    assert result.output == {"gestures": 0, STOPPED_AT: 1}
     assert result.error.message.endswith("no gesture was made")
+    assert "gesture 1 of 2" in result.error.message
     assert browser.fills == [] and browser.clicks == []
     assert "input[name=custname]" not in result.error.message
     assert "form button" not in result.error.message
     assert "ELA prova" not in result.error.message
+
+
+@pytest.mark.parametrize(
+    ("page", "code"),
+    [
+        (FakePage(counts={"form button": 0}), ELEMENT_MISSING),
+        (FakePage(counts={"form button": 2}), ELEMENT_AMBIGUOUS),
+    ],
+)
+async def test_a_page_that_refuses_the_click_has_had_the_gestures_before_it(
+    page: FakePage, code: str
+) -> None:
+    """M13.10, ADR 0065: every element is awaited when it is needed — the fill before the click is
+    made, and the refusal says so (decision 45 of the review accepts it)."""
+    browser = FakeBrowser(page)
+
+    result = await act(browser).execute(decision(BROWSER_ACT), ACT, FakeStop())
+
+    assert result.error is not None and result.error.code == code
+    assert "gesture 2 of 2" in result.error.message
+    assert result.error.message.endswith("1 gesture was made")
+    assert "nothing" not in result.error.message
+    assert browser.fills == [("input[name=custname]", "ELA prova 7431")] and browser.clicks == []
+    assert result.output["gestures"] == 1 and result.output[STOPPED_AT] == 2
+    assert "form button" not in result.error.message and "ELA prova" not in result.error.message
+
+
+async def test_an_element_that_appears_after_a_gesture_is_awaited() -> None:
+    browser = FakeBrowser()
+    appears = browser.appear_later("form button")
+    running = asyncio.create_task(act(browser).execute(decision(BROWSER_ACT), ACT, FakeStop()))
+    await _until(lambda: browser.waited == ["input[name=custname]", "form button"])
+
+    assert browser.fills == [("input[name=custname]", "ELA prova 7431")] and browser.clicks == []
+    appears.set()
+    result = await running
+
+    assert result.status is ExecutionStatus.SUCCEEDED
+    assert result.output == {"status": 200, "gestures": 2, "page": "page-1"}
+    assert browser.clicks == ["form button"]
+
+
+async def test_a_stop_while_a_gesture_waits_for_its_element_ends_the_step_with_what_was_made() -> (
+    None
+):
+    browser = FakeBrowser()
+    browser.appear_later("form button")
+    stop = FakeStop()
+    running = asyncio.create_task(act(browser).execute(decision(BROWSER_ACT), ACT, stop))
+    await _until(lambda: browser.waited == ["input[name=custname]", "form button"])
+
+    stop.event.set()
+    result = await running
+
+    assert result.error is not None and result.error.code == STOPPED
+    assert result.output == {"status": 200, "gestures": 1, STOPPED_AT: 2}
+    assert result.error.message.endswith("1 gesture was made, and no other gesture followed")
+    assert "nothing" not in result.error.message
+    assert browser.clicks == []
+    assert browser.closed == ["page-1"]
+
+
+async def test_a_stop_while_the_first_element_is_awaited_is_the_tool_s_point() -> None:
+    """Nothing was made: the executor's «stopped before it acted» is true there, and the tool's
+    point is heard (M6.3c)."""
+    browser = FakeBrowser()
+    browser.appear_later("input[name=custname]")
+    stop = FakeStop()
+    running = asyncio.create_task(act(browser).execute(decision(BROWSER_ACT), ACT, stop))
+    await _until(lambda: browser.waited == ["input[name=custname]"])
+
+    stop.event.set()
+    with pytest.raises(ToolStopped):
+        await running
+
+    assert stop.listened == [NAVIGATION, FIRST_GESTURE]
+    assert browser.fills == [] and browser.clicks == [] and browser.closed == ["page-1"]
+
+
+async def test_a_stop_between_two_gestures_whose_element_is_there_stops_the_second() -> None:
+    browser = FakeBrowser()
+    stop = FakeStop(after=FIRST_GESTURE)
+
+    result = await act(browser).execute(decision(BROWSER_ACT), ACT, stop)
+
+    assert result.error is not None and result.error.code == STOPPED
+    assert result.output == {"status": 200, "gestures": 1, STOPPED_AT: 2}
+    assert browser.fills == [("input[name=custname]", "ELA prova 7431")] and browser.clicks == []
+
+
+async def test_a_field_that_appears_after_a_gesture_and_declares_itself_secret_is_not_filled() -> (
+    None
+):
+    browser = FakeBrowser(FakePage(fields={"#seconda": Field("password", "")}))
+    arguments = with_(ACT, fill=[["input[name=custname]", "ELA prova 7431"], ["#seconda", "x"]])
+
+    result = await act(browser).execute(decision(BROWSER_ACT), arguments, FakeStop())
+
+    assert result.error is not None and result.error.code == SECRET_FIELD
+    assert "gesture 2 of 3" in result.error.message
+    assert result.error.message.endswith("1 gesture was made")
+    assert result.output == {"status": 200, "gestures": 1, STOPPED_AT: 2}
+    assert browser.fills == [("input[name=custname]", "ELA prova 7431")]
+
+
+async def test_a_time_that_runs_out_while_the_click_waits_is_its_element_missing() -> None:
+    browser = FakeBrowser()
+    browser.appear_later("form button")
+
+    result = await act(browser, Browsing(sites=("httpbin.org",), timeout_seconds=0)).execute(
+        decision(BROWSER_ACT), with_(ACT, fill=[]), FakeStop()
+    )
+
+    assert result.error is not None and result.error.code == ELEMENT_MISSING
+    assert result.error.message == (
+        "gesture 1 of 1 names no visible element on the page of httpbin.org within the 0 s of the "
+        "step; no gesture was made"
+    )
+    assert result.output == {"gestures": 0, STOPPED_AT: 1}
+
+
+async def test_a_read_awaits_the_element_of_its_selector() -> None:
+    browser = FakeBrowser(FakePage(texts={"h1": "un titolo"}))
+    appears = browser.appear_later("h1")
+    running = asyncio.create_task(
+        read(browser).execute(decision(BROWSER_READ), with_(READ, selector="h1"), FakeStop())
+    )
+    await _until(lambda: browser.waited == ["h1"])
+
+    appears.set()
+    result = await running
+
+    assert result.status is ExecutionStatus.SUCCEEDED and result.output["text"] == "un titolo"
+
+
+async def test_a_stop_while_a_read_awaits_its_element_ends_it_with_nothing_read() -> None:
+    browser = FakeBrowser(FakePage(texts={"h1": "un titolo"}))
+    browser.appear_later("h1")
+    stop = FakeStop()
+    running = asyncio.create_task(
+        read(browser).execute(decision(BROWSER_READ), with_(READ, selector="h1"), stop)
+    )
+    await _until(lambda: browser.waited == ["h1"])
+
+    stop.event.set()
+    result = await running
+
+    assert result.error is not None and result.error.code == STOPPED
+    assert "ELA read nothing of it" in result.error.message
+    assert result.output == {} and browser.closed == ["page-1"]
+
+
+async def _until(look: Callable[[], bool]) -> None:
+    """Let the tool run until ``look`` is true: an event of the fake, not a time."""
+    for _ in range(1000):
+        if look():
+            return
+        await asyncio.sleep(0)
+    raise AssertionError("the tool never got there")
 
 
 async def test_a_click_that_starts_a_navigation_off_the_site_is_stopped_and_said() -> None:
@@ -495,7 +660,7 @@ async def test_a_stop_during_a_gesture_says_how_many_were_made() -> None:
 
     assert result.error is not None and result.error.code == STOPPED
     assert result.error.message.endswith("1 gesture was made")
-    assert result.output == {"gestures": 1}
+    assert result.output == {"gestures": 1, STOPPED_AT: 2}
 
 
 async def test_a_failure_during_a_gesture_is_named_by_its_type() -> None:
@@ -509,21 +674,31 @@ async def test_a_failure_during_a_gesture_is_named_by_its_type() -> None:
     assert result.error.message.endswith("no gesture was made")
 
 
-async def test_a_timeout_before_the_first_gesture_says_none_was_made() -> None:
-    class Slow(FakeBrowser):
-        async def count(self, page: str, selector: str) -> int:
-            await asyncio.Event().wait()
-            return 1
-
-    browser = Slow()
+async def test_a_time_that_runs_out_while_the_first_element_is_awaited_says_none_was_made() -> None:
+    browser = FakeBrowser()
+    browser.appear_later("input[name=custname]")
 
     result = await act(browser, Browsing(sites=("httpbin.org",), timeout_seconds=0)).execute(
         decision(BROWSER_ACT), ACT, FakeStop()
     )
 
+    assert result.error is not None and result.error.code == ELEMENT_MISSING
+    assert result.error.message.endswith("no gesture was made")
+    assert result.output == {"gestures": 0, STOPPED_AT: 1}
+
+
+async def test_a_time_that_runs_out_inside_a_gesture_is_a_page_still_at_work() -> None:
+    class Slow(FakeBrowser):
+        async def fill(self, page: str, selector: str, value: str) -> None:
+            raise TimeoutError  # the tool's deadline, arriving while the fill is in flight
+
+    browser = Slow()
+
+    result = await act(browser).execute(decision(BROWSER_ACT), ACT, FakeStop())
+
     assert result.error is not None and result.error.code == TIMEOUT
     assert result.error.message.endswith("no gesture was made")
-    assert result.output == {"gestures": 0}
+    assert result.output == {"gestures": 0, STOPPED_AT: 1}
 
 
 # ----------------------------------------------------------------------------------------
@@ -573,7 +748,7 @@ async def test_an_action_cancelled_before_its_first_gesture_closes_its_page_and_
     None
 ):
     browser = FakeBrowser()
-    reached, _ = browser.hold("count")
+    reached, _ = browser.hold("appeared")
     running = asyncio.create_task(act(browser).execute(decision(BROWSER_ACT), ACT, FakeStop()))
     await reached.wait()
 

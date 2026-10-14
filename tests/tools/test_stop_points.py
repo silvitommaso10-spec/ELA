@@ -733,13 +733,13 @@ async def test_browser_act_closes_its_page_when_stopped_before_its_first_gesture
     browser = FakeBrowser()
     tool = BrowserActTool(SITES, browser, FakeClock(), FakeIdGenerator())
     stop = FakeStop()
-    counting = browser.count
+    counting = browser.appeared
 
     async def stopped_while_counting(page: str, selector: str) -> int:
         stop.event.set()
         return await counting(page, selector)
 
-    browser.count = stopped_while_counting  # type: ignore[method-assign]
+    browser.appeared = stopped_while_counting  # type: ignore[method-assign]
 
     with pytest.raises(ToolStopped):
         await tool.execute(browser_decision(BROWSER_ACT), dict(ACT), stop)
@@ -758,18 +758,20 @@ async def test_browser_act_opens_through_the_navigation_without_passing_its_poin
     tool = BrowserActTool(SITES, browser, FakeClock(), FakeIdGenerator())
     stop = StopOfTask(asyncio.Event(), tool.stop_point.here)
     seen: list[bool] = []
-    counting = browser.count
+    counting = browser.appeared
 
     async def looking(page: str, selector: str) -> int:
         seen.append(stop.passed)
         return await counting(page, selector)
 
-    browser.count = looking  # type: ignore[method-assign]
+    browser.appeared = looking  # type: ignore[method-assign]
 
     result = await tool.execute(browser_decision(BROWSER_ACT), dict(ACT), stop)
 
     assert result.status is ExecutionStatus.SUCCEEDED
-    assert seen and not any(seen), "the navigation was taken for the first gesture"
+    # The first element is awaited after the navigation and before the first gesture: the point
+    # is not passed there. The second is awaited after the first gesture (M13.10): it is.
+    assert seen == [False, True], "the navigation was taken for the first gesture"
     assert stop.passed
 
 

@@ -1300,6 +1300,7 @@ class Changing:
 
 USES: dict[str, Callable[[Any, str], Awaitable[Any]]] = {
     "count": lambda b, p: b.count(p, "#f"),
+    "appeared": lambda b, p: b.appeared(p, "#f"),
     "field": lambda b, p: b.field(p, "#f"),
     "fill": lambda b, p: b.fill(p, "#f", "x"),
     "click": lambda b, p: b.click(p, "#go"),

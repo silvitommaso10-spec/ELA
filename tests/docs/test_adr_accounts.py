@@ -34,6 +34,8 @@ from ela.tools.base import Perceiving
 from ela.tools.guided import SESSION_AS_YOU, BrowserGuidedTool, BrowserGuidedVerifier
 from tests.architecture.rules import RULES
 from tests.contracts.protocols import members, port_protocols
+from tests.docs.steps_additions import added_members as steps_members
+from tests.docs.steps_additions import rewritten_rows
 from tests.docs.test_adr_browser import CODE, TOOL_ROW, VERIFIER_ROW, codes
 from tests.docs.test_adr_cli import coded_commands
 from tests.docs.test_adr_composition import coded_routes
@@ -103,6 +105,8 @@ def test_the_tool_rows_are_the_running_tools() -> None:
     }
 
     assert set(rows) == set(running)
+    # Where ADR 0065 (M13.10) wrote a row again, that row wins: an accepted ADR is not rewritten.
+    rows |= {capability: row for capability, row in rewritten_rows().items() if capability in rows}
     for capability, tool in running.items():
         _, class_name, name, idempotent, errors, numbers = rows[capability]
         assert class_name == tool.__name__
@@ -137,9 +141,12 @@ def test_the_verifier_rows_are_the_running_verifiers() -> None:
 
 
 def test_the_port_row_is_the_running_port() -> None:
+    """This ADR's row, and what ADR 0065 (M13.10) added to it."""
     line = next(line for line in adr_text().splitlines() if line.startswith("| `AccountBrowser` |"))
+    here, later = frozenset(CODE.findall(line.split("|")[4])), steps_members()["AccountBrowser"]
 
-    assert frozenset(CODE.findall(line.split("|")[4])) == frozenset(members(AccountBrowser))
+    assert not here & later
+    assert here | later == frozenset(members(AccountBrowser))
 
 
 def test_a_tool_row_that_forgets_a_code_is_found() -> None:

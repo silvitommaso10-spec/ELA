@@ -100,16 +100,20 @@ class Hooked(FakeTool):
         self.fails_before_the_point = False
 
     async def execute(
-        self, decision: PermissionDecision, arguments: JsonMapping, stop: TaskStop
+        self,
+        decision: PermissionDecision,
+        arguments: JsonMapping,
+        stop: TaskStop,
+        named: JsonMapping | None = None,
     ) -> ExecutionResult:
         if self.before is not None:
             await self.before()
         if self.fails_before_the_point:
-            return _failed(await self._plain().execute(decision, arguments, _Unheard()))
+            return _failed(await self._plain().execute(decision, arguments, _Unheard(), named))
         stop.listen(POINT_NAME)
         if self.during is not None:
             await self.during()
-        return await self._plain().execute(decision, arguments, stop)
+        return await self._plain().execute(decision, arguments, stop, named)
 
     def _plain(self) -> FakeTool:
         return FakeTool(ECHO.id, self._clock, self._ids, name=self.name, output=self.output)

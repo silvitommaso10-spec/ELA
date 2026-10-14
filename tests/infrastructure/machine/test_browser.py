@@ -79,9 +79,11 @@ from ela.ports import (
 )
 from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeStop
 from ela.tools.browser import (
+    ELEMENT_AMBIGUOUS,
     ELEMENT_MISSING,
     LEFT_SITE,
     SECRET_FIELD,
+    STOPPED,
     BrowserActTool,
     BrowserReadTool,
     Browsing,
@@ -597,27 +599,23 @@ async def test_a_form_that_sends_to_another_site_is_not_sent(
 
 
 @pytest.mark.parametrize(
-    ("page", "code"),
+    "page",
     [
-        ('<input id="nome"><button id="invia">Invia</button>', ELEMENT_MISSING),
-        ('<input id="nome" type="password"><button id="altro">Invia</button>', SECRET_FIELD),
-        (
-            '<input id="nome" autocomplete="cc-number"><button id="altro">Invia</button>',
-            SECRET_FIELD,
-        ),
+        '<input id="nome" type="password"><button id="altro">Invia</button>',
+        '<input id="nome" autocomplete="cc-number"><button id="altro">Invia</button>',
     ],
 )
-async def test_nothing_is_touched_when_the_page_is_not_the_plan_s(
-    browser: PlaywrightBrowser, served: list[Site], page: str, code: str
+async def test_a_field_that_declares_itself_secret_is_not_touched(
+    browser: PlaywrightBrowser, served: list[Site], page: str
 ) -> None:
-    """The wrong element **last**, after the field: a check made element by element would fill the
-    field before finding out, and the page would report it."""
+    """The first gesture would fill a field that declares itself secret: refused before it, and
+    the page reports nothing."""
     web = site(served, {"/": (200, {}, page + REPORTS)})
     arguments = {
         "site": "sito0.example",
         "path": "/",
         "fill": [["#nome", "ELA"]],
-        "click": "#manca" if code == ELEMENT_MISSING else "#altro",
+        "click": "#altro",
         "expect_text": "ok",
         "purpose": "x",
     }
@@ -626,9 +624,134 @@ async def test_nothing_is_touched_when_the_page_is_not_the_plan_s(
         decision(BROWSER_ACT), arguments, FakeStop()
     )
 
-    assert result.error is not None and result.error.code == code
+    assert result.error is not None and result.error.code == SECRET_FIELD
     assert web.events == []
     assert [line for line in web.requests if line.startswith("POST")] == []
+
+
+async def test_a_button_that_is_not_there_is_awaited_and_the_field_before_it_is_filled(
+    browser: PlaywrightBrowser, served: list[Site]
+) -> None:
+    """M13.10, ADR 0065 (decision 45 of its review): the wrong element **last**, after the field —
+    each gesture awaits its own element, so the field is filled, and the button is awaited until
+    the time of the step runs out. The page reports the fill; nothing is sent."""
+    web = site(
+        served, {"/": (200, {}, '<input id="nome"><button id="invia">Invia</button>' + REPORTS)}
+    )
+    arguments = {
+        "site": "sito0.example",
+        "path": "/",
+        "fill": [["#nome", "ELA"]],
+        "click": "#manca",
+        "expect_text": "ok",
+        "purpose": "x",
+    }
+    lasting = Browsing(sites=("sito0.example",), origin=lambda name: web.origin, timeout_seconds=1)
+
+    result = await BrowserActTool(lasting, browser, CLOCK, FakeIdGenerator()).execute(
+        decision(BROWSER_ACT), arguments, FakeStop()
+    )
+
+    assert result.error is not None and result.error.code == ELEMENT_MISSING
+    assert result.output == {"gestures": 1, "stopped_at": 2}
+    assert result.error.message.endswith("within the 1 s of the step; 1 gesture was made")
+    assert "input" in web.events and "click" not in web.events
+    assert [line for line in web.requests if line.startswith("POST")] == []
+
+
+APPEARS = """
+<input id="nome"><span id="slot"></span>
+<script>
+document.querySelector('#nome').addEventListener('input', () => setTimeout(() => {
+  const b = document.createElement('button'); b.id = 'invia'; b.textContent = 'Invia';
+  document.querySelector('#slot').append(b);
+}, 0), {once: true});
+</script>
+"""
+
+
+async def test_an_element_that_appears_after_a_gesture_is_awaited_and_used(
+    browser: PlaywrightBrowser, served: list[Site]
+) -> None:
+    """The button comes only once the field is written — the fact of WhatsApp Web's send button
+    that M13.10 inherited: awaited as an event, it is clicked."""
+    web = site(served, {"/": (200, {}, APPEARS + REPORTS)})
+    arguments = {
+        "site": "sito0.example",
+        "path": "/",
+        "fill": [["#nome", "ELA"]],
+        "click": "#invia",
+        "expect_text": "ok",
+        "purpose": "x",
+    }
+
+    result = await BrowserActTool(browsing(web), browser, CLOCK, FakeIdGenerator()).execute(
+        decision(BROWSER_ACT), arguments, FakeStop()
+    )
+    await browser.close(str(result.output["page"]))
+
+    assert result.status is ExecutionStatus.SUCCEEDED, result.error
+    assert result.output["gestures"] == 2
+    assert web.events.count("click") == 1
+
+
+async def test_two_elements_the_first_hidden_are_ambiguous_at_once(
+    browser: PlaywrightBrowser, served: list[Site]
+) -> None:
+    """«One alone»: the engine's strict wait sees two, the first of them hidden — the answer is
+    the ambiguity, at once, and not the end of the step's time (measure (g) of M13.10's SPEC)."""
+    page = (
+        '<input id="nome"><button class="x" style="display:none">a</button>'
+        '<button class="x">b</button>'
+    )
+    web = site(served, {"/": (200, {}, page + REPORTS)})
+    arguments = {
+        "site": "sito0.example",
+        "path": "/",
+        "fill": [["#nome", "ELA"]],
+        "click": ".x",
+        "expect_text": "ok",
+        "purpose": "x",
+    }
+
+    result = await BrowserActTool(browsing(web), browser, CLOCK, FakeIdGenerator()).execute(
+        decision(BROWSER_ACT), arguments, FakeStop()
+    )
+
+    assert result.error is not None and result.error.code == ELEMENT_AMBIGUOUS
+    assert "gesture 2 of 2 names 2 elements" in result.error.message
+    assert result.output["gestures"] == 1 and "click" not in web.events
+
+
+async def test_a_stop_while_an_element_is_awaited_ends_the_step_and_the_page_answers_after(
+    browser: PlaywrightBrowser, served: list[Site]
+) -> None:
+    """The engine's wait, cancelled by the stop: the step ends with the gesture made, and the
+    page closes with nothing left behind (the fixture of this file asserts it)."""
+    web = site(served, {"/": (200, {}, '<input id="nome">' + REPORTS)})
+    arguments = {
+        "site": "sito0.example",
+        "path": "/",
+        "fill": [["#nome", "ELA"]],
+        "click": "#mai",
+        "expect_text": "ok",
+        "purpose": "x",
+    }
+    stop = FakeStop()
+    running = asyncio.create_task(
+        BrowserActTool(browsing(web), browser, CLOCK, FakeIdGenerator()).execute(
+            decision(BROWSER_ACT), arguments, stop
+        )
+    )
+    async with asyncio.timeout(20):
+        while "input" not in web.events:
+            await asyncio.sleep(0.02)
+
+    stop.event.set()
+    result = await running
+
+    assert result.error is not None and result.error.code == STOPPED
+    assert result.output == {"status": 200, "gestures": 1, "stopped_at": 2}
 
 
 # ----------------------------------------------------------------------------------------

@@ -804,7 +804,9 @@ async def test_a_grant_that_vanished_fails_the_step_and_runs_nothing() -> None:
 
 
 class _RaisingTool(FakeTool):
-    async def execute(self, decision: PermissionDecision, arguments: Any, stop: Any) -> Any:
+    async def execute(
+        self, decision: PermissionDecision, arguments: Any, stop: Any, named: Any = None
+    ) -> Any:
         raise RuntimeError("the disk caught fire")
 
 

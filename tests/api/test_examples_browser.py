@@ -146,9 +146,12 @@ async def test_an_action_asks_and_its_question_names_everything(
     assert browser.fills == [("input[name=custname]", "ELA prova 7431")]
 
 
-async def test_a_button_that_is_not_there_gets_no_gesture_after_the_yes(
+async def test_a_button_that_is_not_there_is_awaited_and_the_fill_before_it_is_made(
     world: tuple[AsyncClient, FakeBrowser],
 ) -> None:
+    """M13.10, ADR 0065 (decision 45 of its review): every gesture awaits its own element — the
+    fill is made, the button is awaited until the time of the step runs out, and the reason says
+    one gesture was made."""
     client, browser = world
     browser.page = FakePage(counts={"#non-esiste": 0})
 
@@ -159,10 +162,10 @@ async def test_a_button_that_is_not_there_gets_no_gesture_after_the_yes(
 
     assert ran["outcome"] == "failed", ran
     assert ran["reason"] == (
-        "fail: EXECUTING -> FAILED (browser.element_missing: gesture 2 of 2 names no element on "
-        "the page of httpbin.org; no gesture was made)"
+        "fail: EXECUTING -> FAILED (browser.element_missing: gesture 2 of 2 names no visible "
+        "element on the page of httpbin.org within the 30 s of the step; 1 gesture was made)"
     )
-    assert browser.fills == [] and browser.clicks == []
+    assert browser.fills == [("input[name=custname]", "ELA prova 7431")] and browser.clicks == []
 
 
 def test_the_sites_of_the_plans_are_the_line_the_guide_tells_you_to_write() -> None:

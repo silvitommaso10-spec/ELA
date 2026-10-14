@@ -20,6 +20,8 @@ from tests.architecture.rules import MACHINE_LIBRARIES
 from tests.contracts.protocols import members, port_protocols
 from tests.docs.boundary_additions import added_codes, added_members
 from tests.docs.guided_ports import ACCOUNT_CAPABILITIES, ACCOUNT_PORTS, GUIDED_PORTS
+from tests.docs.steps_additions import added_members as steps_members
+from tests.docs.steps_additions import rewritten_rows
 from tests.docs.test_adr_composition import coded_routes, routes_after_0056
 from tests.docs.test_adr_filesystem import verifiers_today
 from tests.docs.test_adr_placement import _rules_up_to
@@ -89,6 +91,8 @@ def test_the_conseguenze_count_the_rules_the_ports_and_the_routes_of_today() -> 
 
 
 def test_the_tool_rows_are_the_running_tools() -> None:
+    """The rows of this ADR — and, where ADR 0065 (M13.10) wrote a row again, that row: an
+    accepted ADR is not rewritten, and the rewritten row wins."""
     rows = {
         match.group(1): match.groups()
         for line in adr_text().splitlines()
@@ -96,6 +100,7 @@ def test_the_tool_rows_are_the_running_tools() -> None:
     }
 
     assert set(rows) == {BROWSER_READ, BROWSER_ACT}
+    rows |= {capability: row for capability, row in rewritten_rows().items() if capability in rows}
     for tool in (BrowserReadTool, BrowserActTool):
         capability = BROWSER_READ if tool is BrowserReadTool else BROWSER_ACT
         _, class_name, name, idempotent, errors, numbers = rows[capability]
@@ -132,12 +137,14 @@ def test_the_verifier_rows_are_the_running_verifiers() -> None:
 
 
 def test_the_port_row_is_the_running_port() -> None:
-    """The members of this ADR's row, and the one ADR 0064 (M13.4f) added after it."""
+    """The members of this ADR's row, the one ADR 0064 (M13.4f) added after it, and the one ADR
+    0065 (M13.10) added after that."""
     line = next(line for line in adr_text().splitlines() if line.startswith("| `Browser` |"))
     here, later = frozenset(CODE.findall(line.split("|")[4])), added_members()["Browser"]
+    latest = steps_members()["Browser"]
 
-    assert not here & later
-    assert here | later == frozenset(members(Browser))
+    assert not here & later and not (here | later) & latest
+    assert here | later | latest == frozenset(members(Browser))
 
 
 def test_playwright_is_one_of_the_ways_out_of_rule_32() -> None:

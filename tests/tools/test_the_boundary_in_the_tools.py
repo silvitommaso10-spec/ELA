@@ -108,7 +108,7 @@ BROWSERS = pytest.mark.parametrize("made", [FakeBrowser, FakeAccountBrowser])
 
 
 @BROWSERS
-@pytest.mark.parametrize("member", ["count", "text", "title"])
+@pytest.mark.parametrize("member", ["appeared", "text", "title"])
 @pytest.mark.parametrize("when", ["before", "during"])
 async def test_a_read_that_finds_the_page_elsewhere_carries_nothing_of_it(
     made: Any, member: str, when: str
@@ -130,7 +130,7 @@ async def test_a_read_that_finds_the_page_elsewhere_carries_nothing_of_it(
 # An action
 # ----------------------------------------------------------------------------------------
 
-GESTURES_BEFORE = {"count": 0, "field": 0, "fill": 0, "click": 1, "left": 2}
+GESTURES_BEFORE = {"appeared": 0, "field": 0, "fill": 0, "click": 1, "left": 2}
 """How many gestures an action with one field has made when it reaches each use of its page."""
 
 
@@ -195,7 +195,7 @@ async def test_a_page_that_opened_elsewhere_says_nothing_of_itself_not_even_its_
 # A login
 # ----------------------------------------------------------------------------------------
 
-BEFORE_THE_VAULT = ("count", "field")
+BEFORE_THE_VAULT = ("appeared", "field")
 
 
 @pytest.mark.parametrize("member", [*BEFORE_THE_VAULT, "fill_secret", "click", "left", "landed"])
@@ -213,7 +213,9 @@ async def test_a_login_that_finds_the_page_elsewhere_types_nothing_more(
     result = await tool.execute(decision(BROWSER_LOGIN), LOGIN, FakeStop())
 
     said = nothing_of_that_page(result)
-    typed = {"count": 0, "field": 0, "fill_secret": 0, "click": 2, "left": 3, "landed": 3}[member]
+    typed = {"appeared": 0, "field": 0, "fill_secret": 0, "click": 2, "left": 3, "landed": 3}[
+        member
+    ]
     assert result.output["gestures"] == typed
     assert len(browser.secrets) + len(browser.clicks) == typed
     assert (vault.calls == []) is (member in BEFORE_THE_VAULT), "no password taken for nothing"
