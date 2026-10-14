@@ -17,6 +17,7 @@ from ela.ports import Prospect
 from ela.tools.account import ENTRY_NOT_NAMED
 from tests.architecture.rules import NAMED_CONSTANT, RULES
 from tests.contracts.protocols import port_protocols
+from tests.docs.guided_ports import STEPS_PORTS
 from tests.docs.test_adr_cli import coded_commands
 from tests.docs.test_adr_composition import coded_routes
 from tests.docs.test_adr_placement import _rules_up_to
@@ -72,7 +73,8 @@ def test_the_conseguenze_count_the_totals_of_today() -> None:
     assert len(RULES) == 71
     assert set(RULES) - set(_rules_up_to(70)) == {THE_RULE}
     assert "**quindici**" in text and len(contracts) == 15
-    assert "**trentacinque**" in text and len(tuple(port_protocols())) == 35
+    assert "**trentasei**" in text and len(tuple(port_protocols())) == 36
+    assert {port.__name__ for port in port_protocols()} >= STEPS_PORTS == {"TaskPages"}
     assert "**settantadue**" in text and len(coded_routes()) == 72
     assert "**trentanove**" in text and len(coded_commands()) == 39
     assert "**diciotto**" in text and len(production_catalogue().specs()) == 18

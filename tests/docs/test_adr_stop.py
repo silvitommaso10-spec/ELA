@@ -110,7 +110,11 @@ def test_the_conseguenze_count_the_rules_the_ports_the_routes_and_the_commands_o
     assert "**cinquantanove**" in text
     assert len(_rules_up_to(59)) == 59  # rules 60 and 61 are ADR 0057's
     assert "**trenta**" in text
-    later = ("0060-guided-browser.md", "0063-browser-with-your-accounts.md")
+    later = (
+        "0060-guided-browser.md",
+        "0063-browser-with-your-accounts.md",
+        "0065-browser-steps.md",
+    )
     assert len(ports_before(*(ADR_PATH.with_name(name) for name in later))) == 30
     assert "**quarantanove**" in text
     assert len(coded_routes() - routes_after_0056()) == 49

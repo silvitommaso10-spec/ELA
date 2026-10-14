@@ -25,7 +25,7 @@ import pytest
 from playwright.async_api import async_playwright
 
 from ela.infrastructure.machine.browser import PlaywrightBrowser
-from ela.testing.fakes import FakeStop
+from ela.testing.fakes import FakeStop, FakeTaskPages
 from ela.tools.browser import boundary
 from tests.infrastructure.machine import test_account_browser as account
 from tests.infrastructure.machine import test_browser as shell
@@ -174,7 +174,7 @@ async def test_a_read_does_not_return_the_text_of_a_site_nobody_declared(
     arguments = {"site": "sito0.example", "path": "/", "selector": "h1", "purpose": "x"}
 
     result = await BrowserReadTool(
-        shell.browsing(web), browser, shell.CLOCK, FakeIdGenerator()
+        shell.browsing(web), browser, shell.CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
     ).execute(shell.decision(BROWSER_READ), arguments, FakeStop())
     page = result.output.get("page")
     if isinstance(page, str):
@@ -214,7 +214,7 @@ async def test_an_action_types_nothing_on_the_page_of_a_site_nobody_declared(
     }
 
     result = await BrowserActTool(
-        shell.browsing(web), browser, shell.CLOCK, FakeIdGenerator()
+        shell.browsing(web), browser, shell.CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
     ).execute(shell.decision(BROWSER_ACT), arguments, FakeStop())
     page = result.output.get("page")
     if isinstance(page, str):

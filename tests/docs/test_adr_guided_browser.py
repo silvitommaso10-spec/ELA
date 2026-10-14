@@ -19,7 +19,7 @@ from ela.executive.spending import BudgetCode
 from ela.permissions import BROWSER_GUIDED
 from ela.tools.guided import BrowserGuidedTool, BrowserGuidedVerifier
 from tests.contracts.protocols import port_protocols
-from tests.docs.guided_ports import ACCOUNT_PORTS, GUIDED_PORTS, before_the_accounts
+from tests.docs.guided_ports import ACCOUNT_PORTS, GUIDED_PORTS, STEPS_PORTS, before_the_accounts
 from tests.docs.test_adr_cli import coded_commands, commands_after_0061
 from tests.docs.test_adr_composition import coded_routes, routes_after_0061
 from tests.docs.test_adr_placement import _rules_up_to
@@ -76,7 +76,10 @@ def test_the_conseguenze_count_the_totals_of_their_day() -> None:
     assert set(_rules_up_to(65)) - set(_rules_up_to(64)) == {"who-spends-passes-the-gate"}
     assert "**quindici**" in text and len(contracts) == 15
     assert "**trentatré**" in text
-    assert len(tuple(p for p in port_protocols() if p.__name__ not in ACCOUNT_PORTS)) == 33
+    assert (
+        len(tuple(p for p in port_protocols() if p.__name__ not in ACCOUNT_PORTS | STEPS_PORTS))
+        == 33
+    )
     assert {port.__name__ for port in port_protocols()} >= GUIDED_PORTS
     assert "**cinquantadue**" in text and len(coded_routes() - routes_after_0061()) == 52
     assert "**ventotto**" in text and len(coded_commands() - commands_after_0061()) == 28

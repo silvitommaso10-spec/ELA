@@ -22,6 +22,7 @@ import sqlite3
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -52,6 +53,7 @@ from ela.ports import (
     NOT_HELD,
     PROFILE_PROCESS,
     PROFILE_STEP,
+    PROFILE_TASK,
     PROFILE_WINDOW,
     AccountBrowser,
     BrowserFailed,
@@ -1374,7 +1376,13 @@ async def test_what_the_adapter_itself_has_in_flight_holds_the_folder_before_any
     assert await made.occupied() == PROFILE_STEP
     made._opening = 0
 
-    made._pages["a page"] = object()  # type: ignore[assignment]
+    made._pages["a page"] = SimpleNamespace(held=False)  # type: ignore[assignment]
+    assert await made.occupied() == PROFILE_STEP
+    # A page a task keeps between two of its steps (M13.10, ADR 0065 §3): the task's, beside a
+    # step's — and a step beside it is still a step.
+    made._pages["a page"] = SimpleNamespace(held=True)  # type: ignore[assignment]
+    assert await made.occupied() == PROFILE_TASK
+    made._pages["another"] = SimpleNamespace(held=False)  # type: ignore[assignment]
     assert await made.occupied() == PROFILE_STEP
     made._pages.clear()
 

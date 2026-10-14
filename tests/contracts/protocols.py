@@ -49,6 +49,7 @@ REQUIRED_PORTS = frozenset(
         "Vault",
         "AccountBrowser",
         "AgentSession",
+        "TaskPages",
     }
 )
 """The eleven ports of M1.3, the two of M5.1 (ADR 0013: the audited Guardian, the tools), the
@@ -68,7 +69,8 @@ every page), and the three of M14.3 (ADR 0060: ``ModelGateway``, where a call of
 leaves with the key; ``Gestures``, the room where every gesture becomes a child task;
 ``AgentSession``, a session of Claude Code launched as a program), and the two of M13.9 (ADR 0063:
 ``Vault``, the passwords that stay in the vault; ``AccountBrowser``, the browser with the profile
-that lasts), by name."""
+that lasts), and ``TaskPages`` from M13.10 (ADR 0065 §3: where the page a step leaves waits for
+the step that continues on it), by name."""
 
 
 def is_protocol(obj: object) -> bool:

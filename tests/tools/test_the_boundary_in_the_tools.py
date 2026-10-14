@@ -33,6 +33,7 @@ from ela.testing.fakes import (
     FakeIdGenerator,
     FakePage,
     FakeStop,
+    FakeTaskPages,
     FakeVault,
 )
 from ela.tools.account import (
@@ -89,14 +90,22 @@ def nothing_of_that_page(result: ExecutionResult) -> str:
 
 def read_tool(browser: Any) -> Any:
     if isinstance(browser, FakeAccountBrowser):
-        return AccountReadTool(SITES, browser, CLOCK, FakeIdGenerator()), BROWSER_READ_AS_YOU
-    return BrowserReadTool(SITES, browser, CLOCK, FakeIdGenerator()), BROWSER_READ
+        return AccountReadTool(
+            SITES, browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+        ), BROWSER_READ_AS_YOU
+    return BrowserReadTool(
+        SITES, browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    ), BROWSER_READ
 
 
 def act_tool(browser: Any) -> Any:
     if isinstance(browser, FakeAccountBrowser):
-        return AccountActTool(SITES, browser, CLOCK, FakeIdGenerator()), BROWSER_ACT_AS_YOU
-    return BrowserActTool(SITES, browser, CLOCK, FakeIdGenerator()), BROWSER_ACT
+        return AccountActTool(
+            SITES, browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+        ), BROWSER_ACT_AS_YOU
+    return BrowserActTool(
+        SITES, browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    ), BROWSER_ACT
 
 
 BROWSERS = pytest.mark.parametrize("made", [FakeBrowser, FakeAccountBrowser])

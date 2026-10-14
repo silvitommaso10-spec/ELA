@@ -32,6 +32,7 @@ from ela.testing.fakes import (
     FakeProviderRegistry,
     FakeScreenCapture,
     FakeSpeech,
+    FakeTaskPages,
     FakeTextRecognition,
     FakeTool,
 )
@@ -264,6 +265,7 @@ def _production(tmp_path: Path) -> tuple[ToolRegistry, VerifierRegistry, Capture
         accounts=an_account_browser(),
         vault=a_door(),
         not_now=any_moment,
+        pages=FakeTaskPages(),
     )
     verifiers = production_verifiers(
         root=tmp_path,

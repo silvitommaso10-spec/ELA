@@ -19,7 +19,7 @@ from ela.tools.verifiers import BrowserActVerifier, BrowserReadVerifier
 from tests.architecture.rules import MACHINE_LIBRARIES
 from tests.contracts.protocols import members, port_protocols
 from tests.docs.boundary_additions import added_codes, added_members
-from tests.docs.guided_ports import ACCOUNT_CAPABILITIES, ACCOUNT_PORTS, GUIDED_PORTS
+from tests.docs.guided_ports import ACCOUNT_CAPABILITIES, ACCOUNT_PORTS, GUIDED_PORTS, STEPS_PORTS
 from tests.docs.steps_additions import added_members as steps_members
 from tests.docs.steps_additions import rewritten_rows
 from tests.docs.test_adr_composition import coded_routes, routes_after_0056
@@ -79,7 +79,12 @@ def test_the_conseguenze_count_the_rules_the_ports_and_the_routes_of_today() -> 
         "no rule is new: rule 32 names playwright among its ways out"
     )
     assert "**ventinove**" in text
-    later = {"TaskStop", *GUIDED_PORTS, *ACCOUNT_PORTS}  # ADR 0054, ADR 0060 and ADR 0063
+    later = {
+        "TaskStop",
+        *GUIDED_PORTS,
+        *ACCOUNT_PORTS,
+        *STEPS_PORTS,
+    }  # ADR 0054, ADR 0060 and ADR 0063
     assert len(tuple(p for p in port_protocols() if p.__name__ not in later)) == 29
     assert "**quarantanove**" in text
     assert len(coded_routes() - routes_after_0056()) == 49  # ADR 0057's is later

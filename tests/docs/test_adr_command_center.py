@@ -18,7 +18,7 @@ from ela.api.security import CONSOLE_CODE_ROUTES, CONSOLE_ROUTES, Kind
 from ela.domain import DeviceRole
 from tests.architecture.rules import RULES
 from tests.contracts.protocols import port_protocols
-from tests.docs.guided_ports import ACCOUNT_PORTS, GUIDED_PORTS
+from tests.docs.guided_ports import ACCOUNT_PORTS, GUIDED_PORTS, STEPS_PORTS
 from tests.docs.test_adr_composition import coded_routes, routes_after_0048
 from tests.docs.test_adr_placement import _rules_up_to
 
@@ -66,6 +66,7 @@ def test_the_conseguenze_count_what_the_tree_had_when_it_was_written() -> None:
                     "TaskStop",
                     *GUIDED_PORTS,
                     *ACCOUNT_PORTS,
+                    *STEPS_PORTS,
                 }
             )
         )

@@ -36,7 +36,14 @@ from ela.ports import (
     TaskStop,
     ToolStopped,
 )
-from ela.testing.fakes import FakeBrowser, FakeClock, FakeIdGenerator, FakePage, FakeStop
+from ela.testing.fakes import (
+    FakeBrowser,
+    FakeClock,
+    FakeIdGenerator,
+    FakePage,
+    FakeStop,
+    FakeTaskPages,
+)
 from ela.tools.base import ARGUMENTS_INVALID
 from ela.tools.browser import (
     ACTS,
@@ -88,11 +95,11 @@ def decision(capability: str) -> PermissionDecision:
 
 
 def read(browser: FakeBrowser, browsing: Browsing = SITES) -> BrowserReadTool:
-    return BrowserReadTool(browsing, browser, CLOCK, FakeIdGenerator())
+    return BrowserReadTool(browsing, browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages())
 
 
 def act(browser: FakeBrowser, browsing: Browsing = SITES) -> BrowserActTool:
-    return BrowserActTool(browsing, browser, CLOCK, FakeIdGenerator())
+    return BrowserActTool(browsing, browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages())
 
 
 def with_(arguments: JsonMapping, **changed: object) -> dict[str, object]:
@@ -720,7 +727,7 @@ async def test_a_read_cancelled_after_the_opening_closes_its_page_and_stays_a_ca
     """The defect of the base class (decision 8): a ``CancelledError`` is not an ``Exception``, and
     went through the ``try`` of the run past the block that closes."""
     browser = FakeBrowser()
-    reached, _ = browser.hold("text")
+    reached, _ = browser.stall("text")
     running = asyncio.create_task(read(browser).execute(decision(BROWSER_READ), READ, FakeStop()))
     await reached.wait()
 
@@ -748,7 +755,7 @@ async def test_an_action_cancelled_before_its_first_gesture_closes_its_page_and_
     None
 ):
     browser = FakeBrowser()
-    reached, _ = browser.hold("appeared")
+    reached, _ = browser.stall("appeared")
     running = asyncio.create_task(act(browser).execute(decision(BROWSER_ACT), ACT, FakeStop()))
     await reached.wait()
 
@@ -806,7 +813,7 @@ async def test_a_cancellation_given_again_while_the_page_closes_is_still_a_cance
             await asyncio.Event().wait()
 
     browser = SlowToClose()
-    reached, _ = browser.hold("text")
+    reached, _ = browser.stall("text")
     running = asyncio.create_task(read(browser).execute(decision(BROWSER_READ), READ, FakeStop()))
     await reached.wait()
     running.cancel()

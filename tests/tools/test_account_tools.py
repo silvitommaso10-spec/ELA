@@ -62,6 +62,7 @@ from ela.testing.fakes import (
     FakeIdGenerator,
     FakePage,
     FakeStop,
+    FakeTaskPages,
     FakeVault,
     FakeVaultEntry,
 )
@@ -198,14 +199,27 @@ async def door(vault: FakeVault | None, folder: Path | None, *, opened: bool = T
 async def login(
     browser: FakeAccountBrowser, vault: FakeVault | None, folder: Path | None, **options: Any
 ) -> LoginTool:
-    return LoginTool(SITES, browser, await door(vault, folder, **options), CLOCK, FakeIdGenerator())
+    return LoginTool(
+        SITES,
+        browser,
+        await door(vault, folder, **options),
+        CLOCK,
+        FakeIdGenerator(),
+        pages=FakeTaskPages(),
+    )
 
 
 def tools(browser: FakeAccountBrowser, vault_door: VaultDoor) -> dict[str, Any]:
     return {
-        BROWSER_READ_AS_YOU: AccountReadTool(SITES, browser, CLOCK, FakeIdGenerator()),
-        BROWSER_ACT_AS_YOU: AccountActTool(SITES, browser, CLOCK, FakeIdGenerator()),
-        BROWSER_LOGIN: LoginTool(SITES, browser, vault_door, CLOCK, FakeIdGenerator()),
+        BROWSER_READ_AS_YOU: AccountReadTool(
+            SITES, browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+        ),
+        BROWSER_ACT_AS_YOU: AccountActTool(
+            SITES, browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+        ),
+        BROWSER_LOGIN: LoginTool(
+            SITES, browser, vault_door, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+        ),
     }
 
 
@@ -361,9 +375,15 @@ async def test_a_browser_that_does_not_answer_in_time_is_a_refusal_and_not_a_wai
     browser.occupied = never  # type: ignore[method-assign]
     quick = Browsing(sites=SITES.sites, timeout_seconds=0)
     made = {
-        BROWSER_READ_AS_YOU: AccountReadTool(quick, browser, CLOCK, FakeIdGenerator()),
-        BROWSER_ACT_AS_YOU: AccountActTool(quick, browser, CLOCK, FakeIdGenerator()),
-        BROWSER_LOGIN: LoginTool(quick, browser, await door(None, None), CLOCK, FakeIdGenerator()),
+        BROWSER_READ_AS_YOU: AccountReadTool(
+            quick, browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+        ),
+        BROWSER_ACT_AS_YOU: AccountActTool(
+            quick, browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+        ),
+        BROWSER_LOGIN: LoginTool(
+            quick, browser, await door(None, None), CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+        ),
     }
 
     refusal = (await made[capability].prospect(CALLS[capability])).refusal
@@ -419,10 +439,10 @@ async def test_a_read_with_the_profile_does_not_leave_the_site_it_names() -> Non
     named the first."""
     accounts, empty = FakeAccountBrowser(), FakeBrowser()
 
-    await AccountReadTool(SITES, accounts, CLOCK, FakeIdGenerator()).execute(
+    await AccountReadTool(SITES, accounts, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()).execute(
         decision(BROWSER_READ_AS_YOU), READ, FakeStop()
     )
-    await BrowserReadTool(SITES, empty, CLOCK, FakeIdGenerator()).execute(
+    await BrowserReadTool(SITES, empty, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()).execute(
         decision("browser.read"), READ, FakeStop()
     )
 
@@ -436,9 +456,9 @@ async def test_a_read_with_the_profile_does_not_leave_the_site_it_names() -> Non
 async def test_a_redirect_to_another_declared_site_is_left_site_and_reads_nothing() -> None:
     browser = FakeAccountBrowser(FakePage(left="https://altro.example/accedi?next=x"))
 
-    result = await AccountReadTool(SITES, browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_READ_AS_YOU), READ, FakeStop()
-    )
+    result = await AccountReadTool(
+        SITES, browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    ).execute(decision(BROWSER_READ_AS_YOU), READ, FakeStop())
 
     assert result.error is not None and result.error.code == LEFT_SITE
     assert "https://altro.example," in result.error.message
@@ -467,9 +487,9 @@ async def test_an_action_with_the_profile_refuses_a_secret_field_like_the_empty_
         FakePage(fields={"#testo": Field("password", "current-password", "post")})
     )
 
-    result = await AccountActTool(SITES, browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_ACT_AS_YOU), ACT, FakeStop()
-    )
+    result = await AccountActTool(
+        SITES, browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    ).execute(decision(BROWSER_ACT_AS_YOU), ACT, FakeStop())
 
     assert result.error is not None and result.error.code == SECRET_FIELD
     assert browser.fills == [] and browser.secrets == []
@@ -1124,7 +1144,9 @@ async def test_a_browser_that_fails_while_it_types_names_the_failure_and_not_the
 
 
 async def test_a_read_with_a_selector_that_is_not_one_is_refused_like_the_empty_browser_s() -> None:
-    tool = AccountReadTool(SITES, FakeAccountBrowser(), CLOCK, FakeIdGenerator())
+    tool = AccountReadTool(
+        SITES, FakeAccountBrowser(), CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    )
 
     refusal = (await tool.prospect({**READ, "selector": "xpath=//h1"})).refusal
 
@@ -1480,6 +1502,7 @@ async def test_a_login_still_at_work_after_it_was_sent_says_so_and_is_not_asked_
         await door(FakeVault([MARIO]), tmp_path),
         CLOCK,
         FakeIdGenerator(),
+        pages=FakeTaskPages(),
     )
     await asked(tool)
 
@@ -1512,6 +1535,7 @@ async def test_a_login_still_at_work_before_it_was_sent_does_not_say_it_was_sent
         await door(FakeVault([MARIO]), tmp_path),
         CLOCK,
         FakeIdGenerator(),
+        pages=FakeTaskPages(),
     )
     await asked(tool)
 
@@ -1543,6 +1567,7 @@ async def test_a_login_whose_time_ran_out_inside_the_click_does_not_say_two_gest
         await door(FakeVault([MARIO]), tmp_path),
         CLOCK,
         FakeIdGenerator(),
+        pages=FakeTaskPages(),
     )
     await asked(tool)
 
@@ -1673,7 +1698,9 @@ async def test_whether_a_window_can_be_had_is_asked_within_the_time_of_the_tool(
     vault = FakeVault([MARIO])
     browser = NeverSays(page())
     sites = Browsing(sites=SITES.sites, timeout_seconds=0)
-    tool = LoginTool(sites, browser, await door(vault, tmp_path), CLOCK, FakeIdGenerator())
+    tool = LoginTool(
+        sites, browser, await door(vault, tmp_path), CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    )
 
     # The guard is the test's, and never the one that fires: a tool that waited for ever would
     # be a red here, and not a suite that hangs (found by the re-read of 2026-10-13).
@@ -1804,6 +1831,7 @@ async def test_a_login_whose_time_ran_out_while_the_fields_were_read_again_did_n
         await door(FakeVault([MARIO]), tmp_path),
         CLOCK,
         FakeIdGenerator(),
+        pages=FakeTaskPages(),
     )
     await asked(tool)
 

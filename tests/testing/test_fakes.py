@@ -358,7 +358,7 @@ async def test_the_browser_holds_a_member_until_the_test_lets_it_go(member: str)
     }[member]
     plain = await asked()
 
-    reached, released = browser.hold(member)
+    reached, released = browser.stall(member)
     asking = asyncio.create_task(asked())
     await reached.wait()
     assert not asking.done()
@@ -369,7 +369,7 @@ async def test_the_browser_holds_a_member_until_the_test_lets_it_go(member: str)
 
 def test_the_browser_holds_only_the_members_it_says() -> None:
     with pytest.raises(ValueError, match="click is not a member this fake holds"):
-        FakeBrowser().hold("click")
+        FakeBrowser().stall("click")
 
 
 async def test_after_its_stop_the_browser_says_stopped_for_every_use_of_a_page() -> None:

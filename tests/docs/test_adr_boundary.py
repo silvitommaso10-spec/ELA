@@ -35,6 +35,7 @@ from ela.tools.verifiers import (
 from tests.architecture.rules import COMMANDS_NEVER_SENT, REDOING_CALLS, RULES
 from tests.contracts.protocols import members, port_protocols
 from tests.docs.boundary_additions import added_codes, added_members
+from tests.docs.guided_ports import STEPS_PORTS
 from tests.docs.steps_additions import added_members as steps_members
 from tests.docs.test_adr_accounts import PASSED_ON, THE_PROOF
 from tests.docs.test_adr_browser import codes
@@ -151,7 +152,10 @@ def test_the_conseguenze_count_the_totals_as_this_adr_saw_them() -> None:
     assert len(_rules_up_to(70)) == 70 <= len(RULES)
     assert set(_rules_up_to(70)) - set(_rules_up_to(69)) == {THE_RULE}
     assert "**quindici**" in text and len(contracts) == 15
-    assert "**trentacinque**" in text and len(tuple(port_protocols())) == 35
+    assert (
+        "**trentacinque**" in text
+        and len(tuple(p for p in port_protocols() if p.__name__ not in STEPS_PORTS)) == 35
+    )
     assert "**settantadue**" in text and len(coded_routes()) == 72
     assert "**trentanove**" in text and len(coded_commands()) == 39
     assert "**diciotto**" in text and len(production_catalogue().specs()) == 18

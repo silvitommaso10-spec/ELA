@@ -146,6 +146,7 @@ def test_the_conseguenze_count_the_rules_the_ports_and_the_capabilities_of_today
                 ADR_DIR / "0054-stopped-midway.md",
                 ADR_DIR / "0060-guided-browser.md",
                 ADR_DIR / "0063-browser-with-your-accounts.md",
+                ADR_DIR / "0065-browser-steps.md",
             )
         )
         == 24

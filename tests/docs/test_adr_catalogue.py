@@ -22,6 +22,10 @@ ADDING = "Capability aggiunte:"
 EXTENDING_ADRS = ((ADR_DIR / "0022-model-router.md", EXTENDING),)
 """ADRs that give a capability a new argument (ADR 0022 §2: ``task_type`` on ``model.complete``),
 under a label, with the whole row rewritten."""
+LATER_EXTENDING_ADRS = ((ADR_DIR / "0065-browser-steps.md", EXTENDING),)
+"""The extensions of a capability an ADR **added** (M13.10: ``continues`` on the four browser
+capabilities ADR 0052 and ADR 0063 added): read after the additions, the form of
+``LATER_EXTENDING_ADRS`` in ``test_adr_ports.py``."""
 ADDING_ADRS = (
     (ADR_DIR / "0029-screen-capture.md", ADDING),
     (ADR_DIR / "0030-screen-text.md", ADDING),
@@ -87,6 +91,10 @@ def all_documented_capabilities() -> dict[str, Row]:
     for path, label in ADDING_ADRS:
         for cid, row in documented_catalogue(section(path, label)).items():
             assert cid not in union, f"{cid} is added twice ({path.name})"
+            union[cid] = row
+    for path, label in LATER_EXTENDING_ADRS:
+        for cid, row in documented_catalogue(section(path, label)).items():
+            assert cid in union, f"{cid} is extended before being declared ({path.name})"
             union[cid] = row
     return union
 

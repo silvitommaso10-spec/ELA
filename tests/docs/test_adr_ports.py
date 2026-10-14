@@ -81,6 +81,7 @@ INTRODUCING_ADRS: tuple[Source, ...] = (
     (ADR_DIR / "0054-stopped-midway.md", INTRODUCING),
     (ADR_DIR / "0060-guided-browser.md", INTRODUCING),
     (ADR_DIR / "0063-browser-with-your-accounts.md", INTRODUCING),
+    (ADR_DIR / "0065-browser-steps.md", INTRODUCING),
 )
 """ADRs that add whole ports (ADR 0013 §10, ADR 0014 §1, ADR 0015 §1): a port introduced must
 not exist already."""
@@ -112,6 +113,7 @@ INTRODUCED_PORTS = frozenset(
         "AgentSession",
         "Vault",
         "AccountBrowser",
+        "TaskPages",
     }
 )
 ROW = re.compile(r"^\| `(\w+)` \| ([^|]+) \| (sync|async) \| (.+) \|$")

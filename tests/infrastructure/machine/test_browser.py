@@ -77,7 +77,7 @@ from ela.ports import (
     SiteUnreachable,
     ToolStopped,
 )
-from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeStop
+from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeStop, FakeTaskPages
 from ela.tools.browser import (
     ELEMENT_AMBIGUOUS,
     ELEMENT_MISSING,
@@ -351,9 +351,9 @@ async def test_a_page_is_read_and_the_verifier_reads_it_again(
     web = site(served, {"/": (200, {}, "<title>Prova</title><h1>Pagina di prova</h1>")})
     arguments = {"site": "sito0.example", "path": "/", "selector": "h1", "purpose": "x"}
 
-    result = await BrowserReadTool(browsing(web), browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_READ), arguments, FakeStop()
-    )
+    result = await BrowserReadTool(
+        browsing(web), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    ).execute(decision(BROWSER_READ), arguments, FakeStop())
     failures = await BrowserReadVerifier(browser, 5.0).verify(
         [BROWSER_TEXT_MATCHES], arguments, result
     )
@@ -385,9 +385,9 @@ async def test_a_click_that_worked_is_verified_by_the_page(
         "purpose": "x",
     }
 
-    result = await BrowserActTool(browsing(web), browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_ACT), arguments, FakeStop()
-    )
+    result = await BrowserActTool(
+        browsing(web), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    ).execute(decision(BROWSER_ACT), arguments, FakeStop())
     failures = await BrowserActVerifier(browser, 5.0).verify(
         [BROWSER_EXPECT_VISIBLE], arguments, result
     )
@@ -414,9 +414,9 @@ async def test_a_click_that_did_nothing_is_not_a_click_that_worked(
         "purpose": "x",
     }
 
-    result = await BrowserActTool(browsing(web), browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_ACT), arguments, FakeStop()
-    )
+    result = await BrowserActTool(
+        browsing(web), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    ).execute(decision(BROWSER_ACT), arguments, FakeStop())
     (failure,) = await BrowserActVerifier(browser, 0.2).verify(
         [BROWSER_EXPECT_VISIBLE], arguments, result
     )
@@ -445,9 +445,9 @@ async def test_a_read_follows_a_redirect_on_the_same_site_and_reads_where_it_lan
     )
     arguments = {"site": "sito0.example", "path": "/", "selector": "h1", "purpose": "x"}
 
-    result = await BrowserReadTool(browsing(web), browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_READ), arguments, FakeStop()
-    )
+    result = await BrowserReadTool(
+        browsing(web), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    ).execute(decision(BROWSER_READ), arguments, FakeStop())
     failures = await BrowserReadVerifier(browser, 5.0).verify(
         [BROWSER_TEXT_MATCHES], arguments, result
     )
@@ -467,9 +467,9 @@ async def test_a_read_follows_a_redirect_to_another_declared_site(
     web = site(served, {"/": (302, {"Location": other.origin + "/altro"}, "")})
     arguments = {"site": "sito0.example", "path": "/", "selector": "h1", "purpose": "x"}
 
-    result = await BrowserReadTool(browsing(web, other), browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_READ), arguments, FakeStop()
-    )
+    result = await BrowserReadTool(
+        browsing(web, other), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    ).execute(decision(BROWSER_READ), arguments, FakeStop())
     failures = await BrowserReadVerifier(browser, 5.0).verify(
         [BROWSER_TEXT_MATCHES], arguments, result
     )
@@ -494,9 +494,9 @@ async def test_an_action_follows_a_redirect_on_its_site_to_the_form(
         "purpose": "x",
     }
 
-    result = await BrowserActTool(browsing(web), browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_ACT), arguments, FakeStop()
-    )
+    result = await BrowserActTool(
+        browsing(web), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    ).execute(decision(BROWSER_ACT), arguments, FakeStop())
     failures = await BrowserActVerifier(browser, 5.0).verify(
         [BROWSER_EXPECT_VISIBLE], arguments, result
     )
@@ -529,9 +529,9 @@ async def test_a_form_answered_with_a_303_is_followed_to_its_page(
         "purpose": "x",
     }
 
-    result = await BrowserActTool(browsing(web), browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_ACT), arguments, FakeStop()
-    )
+    result = await BrowserActTool(
+        browsing(web), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    ).execute(decision(BROWSER_ACT), arguments, FakeStop())
     failures = await BrowserActVerifier(browser, 5.0).verify(
         [BROWSER_EXPECT_VISIBLE], arguments, result
     )
@@ -585,9 +585,9 @@ async def test_a_form_that_sends_to_another_site_is_not_sent(
         "purpose": "x",
     }
 
-    result = await BrowserActTool(names, browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_ACT), arguments, FakeStop()
-    )
+    result = await BrowserActTool(
+        names, browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    ).execute(decision(BROWSER_ACT), arguments, FakeStop())
 
     assert result.error is not None and result.error.code == LEFT_SITE
     assert other.requests == []
@@ -620,9 +620,9 @@ async def test_a_field_that_declares_itself_secret_is_not_touched(
         "purpose": "x",
     }
 
-    result = await BrowserActTool(browsing(web), browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_ACT), arguments, FakeStop()
-    )
+    result = await BrowserActTool(
+        browsing(web), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    ).execute(decision(BROWSER_ACT), arguments, FakeStop())
 
     assert result.error is not None and result.error.code == SECRET_FIELD
     assert web.events == []
@@ -648,9 +648,9 @@ async def test_a_button_that_is_not_there_is_awaited_and_the_field_before_it_is_
     }
     lasting = Browsing(sites=("sito0.example",), origin=lambda name: web.origin, timeout_seconds=1)
 
-    result = await BrowserActTool(lasting, browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_ACT), arguments, FakeStop()
-    )
+    result = await BrowserActTool(
+        lasting, browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    ).execute(decision(BROWSER_ACT), arguments, FakeStop())
 
     assert result.error is not None and result.error.code == ELEMENT_MISSING
     assert result.output == {"gestures": 1, "stopped_at": 2}
@@ -685,9 +685,9 @@ async def test_an_element_that_appears_after_a_gesture_is_awaited_and_used(
         "purpose": "x",
     }
 
-    result = await BrowserActTool(browsing(web), browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_ACT), arguments, FakeStop()
-    )
+    result = await BrowserActTool(
+        browsing(web), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    ).execute(decision(BROWSER_ACT), arguments, FakeStop())
     await browser.close(str(result.output["page"]))
 
     assert result.status is ExecutionStatus.SUCCEEDED, result.error
@@ -714,9 +714,9 @@ async def test_two_elements_the_first_hidden_are_ambiguous_at_once(
         "purpose": "x",
     }
 
-    result = await BrowserActTool(browsing(web), browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_ACT), arguments, FakeStop()
-    )
+    result = await BrowserActTool(
+        browsing(web), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    ).execute(decision(BROWSER_ACT), arguments, FakeStop())
 
     assert result.error is not None and result.error.code == ELEMENT_AMBIGUOUS
     assert "gesture 2 of 2 names 2 elements" in result.error.message
@@ -739,9 +739,9 @@ async def test_a_stop_while_an_element_is_awaited_ends_the_step_and_the_page_ans
     }
     stop = FakeStop()
     running = asyncio.create_task(
-        BrowserActTool(browsing(web), browser, CLOCK, FakeIdGenerator()).execute(
-            decision(BROWSER_ACT), arguments, stop
-        )
+        BrowserActTool(
+            browsing(web), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+        ).execute(decision(BROWSER_ACT), arguments, stop)
     )
     async with asyncio.timeout(20):
         while "input" not in web.events:
@@ -1085,7 +1085,7 @@ async def test_a_tool_cancelled_after_the_opening_leaves_no_process_when_the_can
         await filling(page, selector, value)
 
     browser.fill = in_flight  # type: ignore[method-assign]
-    tool = BrowserActTool(browsing(web), browser, CLOCK, FakeIdGenerator())
+    tool = BrowserActTool(browsing(web), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages())
     running = asyncio.create_task(tool.execute(decision(BROWSER_ACT), arguments, FakeStop()))
     await reached.wait()
     assert descendants(), "a driver and a browser run while the fill waits"

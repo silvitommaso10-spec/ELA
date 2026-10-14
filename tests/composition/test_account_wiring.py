@@ -41,6 +41,7 @@ from ela.permissions import (
 from ela.ports import (
     PROFILE_PROCESS,
     PROFILE_STEP,
+    PROFILE_TASK,
     PROFILE_WINDOW,
     Browser,
     BrowserFailed,
@@ -160,6 +161,26 @@ async def test_no_tool_of_the_empty_browser_can_open_the_profile_and_none_of_its
         assert ela.browser is not ela.accounts
         assert not isinstance(ela.browser, AccountChrome), "the empty browser has no profile"
         assert not hasattr(ela.browser, "_profile")
+    finally:
+        await ela.aclose()
+
+
+async def test_the_five_tools_of_the_two_browsers_hold_ela_s_one_room_of_the_pages(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """M13.10, ADR 0065 §3: one page per task, whichever browser it is on — so one room for
+    the five tools, the one ``GET /browser`` reads; a tool handed another would keep pages
+    nobody sees and no task's end closes."""
+    ela = await built(monkeypatch, tmp_path, {PROFILE: str(tmp_path / "state" / "profile")})
+    try:
+        rooms = {
+            one.capability_id: one._pages  # noqa: SLF001
+            for one in ela.tools.tools()
+            if one.capability_id in EMPTY | WITH_THE_PROFILE
+        }
+
+        assert set(rooms) == EMPTY | WITH_THE_PROFILE
+        assert all(room is ela.pages for room in rooms.values())
     finally:
         await ela.aclose()
 
@@ -296,6 +317,14 @@ async def test_a_holder_ela_has_no_sentence_for_is_a_doubt_too() -> None:
 
 async def test_a_step_of_ela_s_own_is_no_hand_on_the_profile() -> None:
     accounts = FakeAccountBrowser(holder=PROFILE_STEP)
+
+    assert await while_the_user_signs_in(accounts)() is None
+
+
+async def test_a_page_a_task_keeps_between_two_steps_is_no_hand_on_the_profile() -> None:
+    """M13.10, decision 27 of the review of its SPEC: decision 148 of M13.9 stands — a page of
+    ELA's own, with nobody typing into it, does not refuse the perception."""
+    accounts = FakeAccountBrowser(holder=PROFILE_TASK)
 
     assert await while_the_user_signs_in(accounts)() is None
 

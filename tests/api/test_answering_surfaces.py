@@ -38,6 +38,7 @@ from ela.testing.fakes import (
     FakeProviderRegistry,
     FakeScreenCapture,
     FakeSpeech,
+    FakeTaskPages,
     FakeTextRecognition,
     FakeVault,
     FakeVaultEntry,
@@ -287,6 +288,7 @@ async def test_the_sentences_are_the_ones_the_capabilities_write(tmp_path: Path)
         accounts=an_account_browser(),
         vault=an_open_door(tmp_path),
         not_now=any_moment,
+        pages=FakeTaskPages(),
     )
     arguments = {
         FS_READ: {"path": "ELA/c.md", "purpose": "x"},

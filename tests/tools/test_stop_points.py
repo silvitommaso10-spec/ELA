@@ -69,6 +69,7 @@ from ela.testing.fakes import (
     FakeScreenCapture,
     FakeSpeech,
     FakeStop,
+    FakeTaskPages,
     FakeTextRecognition,
     FakeTool,
     FakeVault,
@@ -359,7 +360,7 @@ def _terminal(tmp_path: Path) -> Subject:
 def _browser_read(tmp_path: Path) -> Subject:
     browser = FakeBrowser()
     return Subject(
-        BrowserReadTool(SITES, browser, FakeClock(), FakeIdGenerator()),
+        BrowserReadTool(SITES, browser, FakeClock(), FakeIdGenerator(), pages=FakeTaskPages()),
         browser_decision(BROWSER_READ),
         dict(READ),
         lambda: bool(browser.opened),
@@ -370,7 +371,7 @@ def _browser_read(tmp_path: Path) -> Subject:
 def _browser_act(tmp_path: Path) -> Subject:
     browser = FakeBrowser()
     return Subject(
-        BrowserActTool(SITES, browser, FakeClock(), FakeIdGenerator()),
+        BrowserActTool(SITES, browser, FakeClock(), FakeIdGenerator(), pages=FakeTaskPages()),
         browser_decision(BROWSER_ACT),
         dict(ACT),
         lambda: bool(browser.fills or browser.clicks),
@@ -381,7 +382,7 @@ def _browser_act(tmp_path: Path) -> Subject:
 def _read_as_you(tmp_path: Path) -> Subject:
     browser = FakeAccountBrowser()
     return Subject(
-        AccountReadTool(SITES, browser, FakeClock(), FakeIdGenerator()),
+        AccountReadTool(SITES, browser, FakeClock(), FakeIdGenerator(), pages=FakeTaskPages()),
         browser_decision(BROWSER_READ_AS_YOU),
         dict(READ),
         lambda: bool(browser.opened),
@@ -392,7 +393,7 @@ def _read_as_you(tmp_path: Path) -> Subject:
 def _act_as_you(tmp_path: Path) -> Subject:
     browser = FakeAccountBrowser()
     return Subject(
-        AccountActTool(SITES, browser, FakeClock(), FakeIdGenerator()),
+        AccountActTool(SITES, browser, FakeClock(), FakeIdGenerator(), pages=FakeTaskPages()),
         browser_decision(BROWSER_ACT_AS_YOU),
         dict(ACT),
         lambda: bool(browser.fills or browser.clicks),
@@ -427,7 +428,7 @@ def _login(tmp_path: Path) -> Subject:
         "entry": "an-id",
     }
     return Subject(
-        LoginTool(SITES, browser, door, FakeClock(), FakeIdGenerator()),
+        LoginTool(SITES, browser, door, FakeClock(), FakeIdGenerator(), pages=FakeTaskPages()),
         browser_decision(BROWSER_LOGIN),
         arguments,
         lambda: bool(browser.secrets or browser.clicks),
@@ -731,7 +732,7 @@ async def test_browser_act_closes_its_page_when_stopped_before_its_first_gesture
 ) -> None:
     """B-R10 of the re-read: the stop raised in ``_work`` closes the page it opened."""
     browser = FakeBrowser()
-    tool = BrowserActTool(SITES, browser, FakeClock(), FakeIdGenerator())
+    tool = BrowserActTool(SITES, browser, FakeClock(), FakeIdGenerator(), pages=FakeTaskPages())
     stop = FakeStop()
     counting = browser.appeared
 
@@ -755,7 +756,7 @@ async def test_browser_act_opens_through_the_navigation_without_passing_its_poin
     """The same stop serves a listening that is not the point (B-R9): the navigation of
     ``browser.act`` is listened to, and does not count as the tool having acted."""
     browser = FakeBrowser()
-    tool = BrowserActTool(SITES, browser, FakeClock(), FakeIdGenerator())
+    tool = BrowserActTool(SITES, browser, FakeClock(), FakeIdGenerator(), pages=FakeTaskPages())
     stop = StopOfTask(asyncio.Event(), tool.stop_point.here)
     seen: list[bool] = []
     counting = browser.appeared
@@ -852,7 +853,7 @@ async def test_browser_act_makes_no_gesture_after_the_stop_between_two_fields(
     """Past its point, ``browser.act`` looks at the stop before every gesture (decision 5): the
     first field is filled, the second is not, and the result says one gesture was made."""
     browser = FakeBrowser()
-    tool = BrowserActTool(SITES, browser, FakeClock(), FakeIdGenerator())
+    tool = BrowserActTool(SITES, browser, FakeClock(), FakeIdGenerator(), pages=FakeTaskPages())
     two = {**ACT, "fill": [*ACT["fill"], ["input[name=custtel]", "0123"]]}
     stop = FakeStop(after="the first gesture")
 

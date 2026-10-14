@@ -13,7 +13,9 @@ import asyncio
 import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 from click.testing import Result
@@ -24,17 +26,21 @@ from ela.cli import client
 from ela.cli.app import app as ela_app
 from ela.cli.errors import OK, REFUSED
 from ela.composition import Ela, Settings, build
+from ela.domain import TaskId
 from ela.ports import (
     PROFILE_PROCESS,
     PROFILE_STEP,
+    PROFILE_TASK,
     PROFILE_WINDOW,
     SHUT_KILLED,
     SHUT_QUIT,
     SHUT_TOLD,
     ProfileBusy,
     ProfileUndeclared,
+    WaitingPage,
 )
 from ela.testing.fakes import FakeAccountBrowser, FakeBrowser, FakePower
+from ela.tools.account import STOP_A_TASK
 from tests.cli.support import LoopTransport
 from tests.composition.support import create_schema, database_url, declare
 
@@ -150,6 +156,7 @@ async def test_status_as_json_is_the_api_s_own_answer(browsed: Browsed) -> None:
         "saved": 0,
         "profiles": 1,
         "sites": SITES,
+        "waiting": [],
     }
 
 
@@ -316,8 +323,48 @@ async def test_close_does_not_end_a_step_and_exits_1(browsed: Browsed) -> None:
     result = await browsed("browser", "close")
 
     assert result.exit_code == REFUSED
-    assert "browser.profile_busy" in result.output and "ela task stop" in result.output
+    assert "browser.profile_busy" in result.output and "ela task cancel" in result.output
     assert browsed.accounts.shuts == []
+
+
+async def test_close_does_not_end_a_page_a_task_keeps_and_says_how_it_ends(
+    browsed: Browsed,
+) -> None:
+    browsed.accounts.holder = PROFILE_TASK
+
+    result = await browsed("browser", "close")
+
+    assert result.exit_code == REFUSED
+    assert "browser.profile_busy" in result.output
+    assert "between two of its steps" in result.output and "ela task cancel" in result.output
+    assert browsed.accounts.shuts == []
+
+
+async def test_status_says_which_task_keeps_a_page_until_when_and_what_ends_it(
+    browsed: Browsed, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    task = TaskId(UUID(int=7))
+    until = datetime(2026, 10, 14, 18, 30, tzinfo=UTC)
+
+    async def waiting() -> tuple[WaitingPage, ...]:
+        return (WaitingPage(task=task, profile=False, until=until),)
+
+    monkeypatch.setattr(browsed.ela.pages, "waiting", waiting)
+
+    result = await browsed("browser", "status")
+
+    assert row(result.output, "waiting") == (
+        f"a page of task {task}, on the empty browser, until 2026-10-14T18:30:00Z — "
+        f"ela task cancel {task}"
+    )
+
+
+async def test_the_command_the_sentences_name_to_end_a_task_is_the_cli_s() -> None:
+    """The sentences said `ela task stop` until M13.10, and the command is `ela task cancel`:
+    a name written on one side only is a command that does not exist."""
+    assert STOP_A_TASK == "ela task cancel"
+    assert CliRunner().invoke(ela_app, ["task", "cancel", "--help"]).exit_code == 0
+    assert CliRunner().invoke(ela_app, ["task", "stop", "--help"]).exit_code != 0
 
 
 async def test_close_on_what_is_not_ela_s_browser_exits_1_and_says_whose_it_is_to_end(
