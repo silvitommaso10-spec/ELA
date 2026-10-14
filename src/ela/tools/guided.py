@@ -39,6 +39,7 @@ from ela.domain import (
     ProviderRequestId,
     ProviderUsage,
     StepId,
+    TaskId,
     WorstCase,
 )
 from ela.permissions.capabilities import (
@@ -337,7 +338,7 @@ class BrowserGuidedTool(Tool):
 
     # Before the question ----------------------------------------------------------------------
 
-    async def prospect(self, arguments: JsonMapping) -> Prospect:
+    async def prospect(self, arguments: JsonMapping, task: TaskId | None = None) -> Prospect:
         """«Partirebbe» (ADR 0045 §6-bis): the arguments, the route, the bound of one call, the cost
         under it, the binary and the folder — and what the question names."""
         prepared = await self._prepared(arguments)

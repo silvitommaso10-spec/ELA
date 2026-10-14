@@ -106,6 +106,7 @@ from ela.ports import (
     NOT_HELD,
     PROFILE_PROCESS,
     PROFILE_STEP,
+    PROFILE_TASK,
     PROFILE_WINDOW,
     SHUT_KILLED,
     SHUT_QUIT,
@@ -838,9 +839,12 @@ class AccountChrome(PlaywrightBrowser):
             )
 
     def _mine(self) -> str | None:
-        """What this adapter itself has on the folder: a step of ELA's, or its window."""
-        if self._pages or self._opening or self._closing:
+        """What this adapter itself has on the folder: a step of ELA's, a page a task keeps
+        between two of its steps (M13.10, ADR 0065 §3), or its window."""
+        if self._opening or self._closing or any(not one.held for one in self._pages.values()):
             return PROFILE_STEP
+        if self._pages:
+            return PROFILE_TASK
         if self._windowing or self._window is not None:
             return PROFILE_WINDOW
         return None
@@ -1217,8 +1221,9 @@ class AccountChrome(PlaywrightBrowser):
         if launching is not None and not launching.done():
             # A window is being started: what is told is the window, once it is there.
             await asyncio.wait({launching})
-        if self._pages or self._opening or self._closing:
-            raise ProfileBusy(PROFILE_STEP)
+        mine = self._mine()
+        if mine in {PROFILE_STEP, PROFILE_TASK}:
+            raise ProfileBusy(mine)
         window, watched = self._window, self._watched
         if window is not None and watched is not None:
             self._refuse_if_stopping()

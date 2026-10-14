@@ -2059,7 +2059,9 @@ class Executor:
         # ELA already knows it will refuse, and nobody is woken for it either.
         tool = self._tools.get(spec.id)
         if there is None:
-            prospect = await tool.prospect(arguments)
+            # The task, for a step that continues on the page its task keeps (M13.10, ADR 0065
+            # §3): only its own task's page can make that question worth asking.
+            prospect = await tool.prospect(arguments, task.id)
         else:
             prospect = await tool.asserted(arguments)
         if prospect.refusal is not None:

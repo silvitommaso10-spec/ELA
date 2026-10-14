@@ -57,20 +57,25 @@ Port estesi:
 
 | Port | Spec | Modalità | Membri |
 |---|---|---|---|
-| `Browser` | §19 | async | `appeared` |
-| `AccountBrowser` | §19 | async | `appeared` |
+| `Browser` | §19 | async | `appeared`, `hold`, `resume`, `where` |
+| `AccountBrowser` | §19 | async | `appeared`, `hold`, `resume`, `where` |
+
+`hold`, `resume` e `where` sono del §3.
 
 **Righe dei tool, riscritte.** Un ADR accettato non si riscrive: le righe di un tool che M13.10 cambia — un
 codice d'errore in più o in meno, un numero dell'audit in più — si riscrivono qui **per intero**, e la riga
-riscritta vince su quella dell'ADR che ha introdotto il tool, come `Capability estese:` fa per uno schema
-(decisione 44 della review). I test delle righe degli ADR vecchi la leggono accanto alla loro.
+riscritta vince su quella dell'ADR che ha introdotto il tool, come la tabella delle capability estese fa per uno schema
+(decisione 44 della review). I test delle righe degli ADR vecchi la leggono accanto alla loro. Ci sono anche
+le righe del §3: `browser.no_page_to_continue` sui quattro tool che continuano.
 
 Righe dei tool, riscritte:
 
 | Capability | Tool | Nome | Idempotente | Codici d'errore | Numeri nell'audit |
 |---|---|---|---|---|---|
-| `browser.act` | `BrowserActTool` | `browser-act` | no | `arguments.invalid`, `browser.element_ambiguous`, `browser.element_missing`, `browser.failed`, `browser.http_status`, `browser.left_site`, `browser.not_installed`, `browser.secret_field`, `browser.stopped`, `browser.timeout`, `browser.unreachable`, `browser.unsupported_system` | `gestures`, `status`, `stopped_at` |
-| `browser.act_as_you` | `AccountActTool` | `browser-act-as-you` | no | `arguments.invalid`, `browser.element_ambiguous`, `browser.element_missing`, `browser.failed`, `browser.http_status`, `browser.left_site`, `browser.not_installed`, `browser.profile_busy`, `browser.profile_undeclared`, `browser.profile_unsafe`, `browser.secret_field`, `browser.stopped`, `browser.timeout`, `browser.unreachable`, `browser.unsupported_system` | `gestures`, `status`, `stopped_at` |
+| `browser.read` | `BrowserReadTool` | `browser-read` | sì | `arguments.invalid`, `browser.element_ambiguous`, `browser.element_missing`, `browser.failed`, `browser.http_status`, `browser.left_site`, `browser.no_page_to_continue`, `browser.not_installed`, `browser.stopped`, `browser.timeout`, `browser.unreachable`, `browser.unsupported_system` | `shown`, `status`, `total` |
+| `browser.act` | `BrowserActTool` | `browser-act` | no | `arguments.invalid`, `browser.element_ambiguous`, `browser.element_missing`, `browser.failed`, `browser.http_status`, `browser.left_site`, `browser.no_page_to_continue`, `browser.not_installed`, `browser.secret_field`, `browser.stopped`, `browser.timeout`, `browser.unreachable`, `browser.unsupported_system` | `gestures`, `status`, `stopped_at` |
+| `browser.read_as_you` | `AccountReadTool` | `browser-read-as-you` | sì | `arguments.invalid`, `browser.element_ambiguous`, `browser.element_missing`, `browser.failed`, `browser.http_status`, `browser.left_site`, `browser.no_page_to_continue`, `browser.not_installed`, `browser.profile_busy`, `browser.profile_undeclared`, `browser.profile_unsafe`, `browser.stopped`, `browser.timeout`, `browser.unreachable`, `browser.unsupported_system` | `shown`, `status`, `total` |
+| `browser.act_as_you` | `AccountActTool` | `browser-act-as-you` | no | `arguments.invalid`, `browser.element_ambiguous`, `browser.element_missing`, `browser.failed`, `browser.http_status`, `browser.left_site`, `browser.no_page_to_continue`, `browser.not_installed`, `browser.profile_busy`, `browser.profile_undeclared`, `browser.profile_unsafe`, `browser.secret_field`, `browser.stopped`, `browser.timeout`, `browser.unreachable`, `browser.unsupported_system` | `gestures`, `status`, `stopped_at` |
 | `browser.login` | `LoginTool` | `browser-login` | no | `arguments.invalid`, `browser.element_ambiguous`, `browser.element_missing`, `browser.failed`, `browser.field_changed`, `browser.http_status`, `browser.left_site`, `browser.login_form_get`, `browser.no_window`, `browser.not_a_password_field`, `browser.not_installed`, `browser.profile_busy`, `browser.profile_undeclared`, `browser.profile_unsafe`, `browser.secret_field`, `browser.stopped`, `browser.timeout`, `browser.unreachable`, `browser.unsupported_system`, `vault.entry_ambiguous`, `vault.entry_not_for_site`, `vault.entry_not_named`, `vault.failed`, `vault.locked`, `vault.no_entry`, `vault.no_password`, `vault.no_program`, `vault.program_changed`, `vault.program_gone`, `vault.program_is_a_script`, `vault.timeout`, `vault.unauthenticated`, `vault.undeclared` | `gestures`, `status` |
 
 ### 2. Ciò che il sì ha nominato arriva al tool con il sì
@@ -98,6 +103,85 @@ canale per far viaggiare il fatto approvato»: per ciò che la domanda nomina e 
   non accende — nessun modulo di `src/` abbassa un livello sotto il WARNING di partenza, fuori dall'INFO del
   server. Il test dei sette posti di M13.9 lo afferma così.
 
+### 3. Dentro un task, la pagina di uno step può essere quella del successivo
+
+**Rivede apertamente «un browser nuovo per step»** — ADR 0052 §3, e ADR 0063 §4 per il profilo —: dentro un
+task la pagina che uno step lascia può essere quella su cui lavora lo step dopo. Fra due task niente passa,
+come prima: per il browser con gli account solo la cartella del profilo, per quello vuoto niente.
+
+- **Non è una capability.** Nessuna riga del catalogo, nessun rischio, nessuna regola del Guardian: ogni step
+  è giudicato dalla sua capability come prima. ADR 0060 §1 chiamava «`browser.session`» ciò che questa
+  milestone avrebbe portato: non ha quel nome, e non è una capability.
+- **L'argomento `continues`**, `true`, su `browser.read`, `browser.act`, `browser.read_as_you` e
+  `browser.act_as_you` (decisioni 28 e 29 della review): **esattamente uno fra `continues` e `path`** — lo
+  schema lo dice con un `oneOf`, e il tool lo ricontrolla —; `site` resta, perché è il bersaglio del
+  Guardian e il confine. `browser.login` non continua mai: apre sempre la sua pagina, con la finestra.
+  **Le policy di `browser.guided_as_you` nate prima smettono di coprire**: la loro copia dello schema di
+  `browser.read_as_you` non è più quella di oggi (ADR 0063 §1), e si ricreano una volta. Il 14 ottobre 2026
+  non ce n'era nessuna viva.
+- **La stanza delle pagine**, `ela.executive.pages`, dietro il port `TaskPages`, costruita prima dei tool e
+  che non riceve niente dopo: «l'unico legame tardivo del grafo» (ADR 0060 §4) resta l'unico. **Una pagina
+  per task, e la chiave è il task**: due task con lo stesso piano — gli stessi id degli step — non hanno mai
+  la stessa pagina. La stanza **tiene** la pagina che uno step riuscito le lascia solo se **lo step subito
+  dopo** nel piano continua, e la consegna a quello step, sullo stesso browser: una pagina dell'altro browser
+  è chiusa, e lo step non la trova. Uno step in mezzo che non continua non la riceve: aprirebbe la sua
+  pagina, e la stanza chiude quella tenuta prima.
+- **Continuare.** Il tool chiede alla stanza la pagina del suo task — il task e lo step vengono dalla
+  decisione, mai da un argomento —; l'adapter la riprende con **il confine dello step che continua** al posto
+  di quello con cui era stata aperta, nel cancello e in ogni uso dopo (misura (g) della SPEC: una navigazione
+  verso il sito nuovo parte, una verso il vecchio no), e chiede a quel confine dove la pagina è: fuori dal
+  `site` dello step è `browser.left_site`, e niente della pagina è letto. Una pagina che non c'è è
+  **`browser.no_page_to_continue`**: prima della domanda, senza spendere un sì — `prospect` riceve il task
+  (decisione 25), facoltativo: la rotta delle policy non lo passa, e un tool che non continua non lo legge
+  —; e dopo il sì, con il sì speso e niente fatto.
+- **Il punto** di uno step che continua è quello della sua capability: per una lettura subito prima che la
+  pagina sia ripresa, per un gesto al primo gesto, come su una pagina aperta. Nel risultato `status` è lo
+  stato del documento su cui la pagina è adesso, `address` dove è adesso.
+- **La domanda** dice che lo step continua — la frase dello strumento cambia: «opens no page» — e **dov'è
+  adesso** la pagina: host e percorso, mai la query (decisione 26).
+- **Ciò che è successo nell'attesa non è dello step dopo**: un rimando rifiutato mentre nessuno usava la
+  pagina non fa fallire lo step che continua, e il suo risultato lo dice con l'origine sola, in
+  `left_while_waiting`, nella forma di `another_page`. Fuori dall'audit: non è un numero.
+- **Lo sguardo del verifier non chiude** una pagina tenuta, e la scadenza dell'adapter per una pagina
+  consegnata e mai guardata non vale per lei: da quando la stanza la tiene, chi la chiude è la stanza.
+- **Chi chiude, e quando** — un posto solo: la stanza. Quando il task arriva a uno stato finale, che la
+  stanza **sente** dalla fermata del task che il motore alza per ogni fine, senza che nessuno la chiami;
+  quando lo stesso task apre un'altra pagina; e quando **finisce ciò che il task aspetta** (decisione 26): la
+  domanda dello step che continua finché non ha risposta, e dopo il sì il grant (`expires_at`) finché lo step
+  non gira. Un no chiude subito. L'orologio è quello del custode del vault: un'attesa di un minuto alla volta
+  che chiede all'orologio, mai al tempo del loop, che si ferma mentre il Mac dorme. Il task resta com'è. Alla
+  fermata di ELA chiudono i browser stessi (ADR 0038 §11), e la stanza dimentica. **Nessuno spazzino dei
+  browser all'avvio** (decisione 42): una pagina vive in memoria, e un'ELA uccisa non lascia niente da
+  spazzare (misura (g)); lo step che continua e non trova la pagina ha il suo codice.
+- **Il profilo.** Una pagina tenuta sul browser con gli account lo tiene: l'adapter lo dice con un nome
+  nuovo, **`task`**, accanto a `step` (decisione 27: la decisione 148 di M13.9 resta, e la percezione non si
+  rifiuta per una pagina di ELA a cui nessuno scrive). Un altro task riceve `browser.profile_busy`,
+  ritentabile, con **l'id del task** che tiene la pagina, fino a quando, e il comando che lo ferma; lo stesso
+  task no (decisione 44). Uno step che continua eredita la finestra, o la sua assenza, del lancio che ha
+  aperto la pagina.
+- **Le parole.** `GET /browser` dice `task` nello stato del profilo e, in `waiting`, ogni pagina tenuta su
+  uno dei due browser: il task, fino a quando, e il comando che la chiude; `ela browser status` e la console
+  «Il browser di ELA» lo stesso. Il comando è **`ela task cancel`**: le frasi dicevano `ela task stop`, un
+  comando che non c'è, e la frase della chiusura del profilo è riparata con loro.
+
+Port introdotti:
+
+| Port | Spec | Modalità | Membri |
+|---|---|---|---|
+| `TaskPages` | §19 | async | `leave`, `take`, `where`, `release`, `waiting` |
+
+Capability estese:
+
+| Capability | Rischio | Scope | Argomenti scoped | Autorizzazione | Argomenti obbligatori | Argomenti opzionali |
+|---|---|---|---|---|---|---|
+| `browser.read` | LOW | `undeclared` | `site` | no | `site: string`, `purpose: string` | `path: string`, `selector: string`, `continues: boolean` |
+| `browser.act` | HIGH | `undeclared` | `site` | sì | `site: string`, `fill: array`, `click: string`, `expect_text: string`, `purpose: string` | `path: string`, `continues: boolean` |
+| `browser.read_as_you` | MEDIUM | `undeclared` | `site` | sì | `site: string`, `purpose: string` | `path: string`, `selector: string`, `continues: boolean` |
+| `browser.act_as_you` | HIGH | `undeclared` | `site` | sì | `site: string`, `fill: array`, `click: string`, `expect_text: string`, `purpose: string` | `path: string`, `continues: boolean` |
+
+`path` e `continues` sono facoltativi uno per uno ed esattamente uno dei due c'è: la tabella non ha una
+colonna per un `oneOf`, e lo dice qui.
+
 ## Conseguenze
 
 - **Regola di architettura 71**: ciò che una domanda ha nominato arriva al tool con il sì, e da nessun'altra
@@ -107,7 +191,7 @@ canale per far viaggiare il fatto approvato»: per ciò che la domanda nomina e 
   funzione di `ela.ports` e di un membro di `SessionGestures`, e una regola sulla parola li troverebbe.
 
 Con questo ADR le regole di architettura sono **settantuno** (la 71); i contratti di import-linter restano
-**quindici**, i port **trentacinque**, le rotte dell'API **settantadue** e i comandi della CLI **trentanove**; le
-capability restano **diciotto**, le identità del middleware **sei**.
+**quindici**, i port diventano **trentasei** (`TaskPages`), le rotte dell'API restano **settantadue** e i comandi
+della CLI **trentanove**; le capability restano **diciotto**, le identità del middleware **sei**.
 
 *Il resto si scrive con il resto dell'implementazione.*

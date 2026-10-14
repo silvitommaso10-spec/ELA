@@ -41,7 +41,15 @@ from dataclasses import dataclass, replace
 from typing import ClassVar, Final
 from urllib.parse import urlsplit
 
-from ela.domain import CapabilityId, ErrorMetadata, JsonMapping, JsonValue
+from ela.domain import (
+    CapabilityId,
+    ErrorMetadata,
+    JsonMapping,
+    JsonValue,
+    PermissionDecision,
+    StepId,
+    TaskId,
+)
 from ela.permissions import (
     BROWSER_ACT,
     BROWSER_READ,
@@ -54,6 +62,7 @@ from ela.permissions import (
     VALUE_MAX_LENGTH,
 )
 from ela.ports import (
+    CONTINUES,
     NAVIGATION,
     Browser,
     BrowserFailed,
@@ -68,6 +77,7 @@ from ela.ports import (
     Prospect,
     SiteUnreachable,
     StopPoint,
+    TaskPages,
     TaskStop,
     Visit,
 )
@@ -75,6 +85,7 @@ from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool
 
 __all__ = [
     "ACTS",
+    "ACTS_ON",
     "ANOTHER_PAGE",
     "ASKED_FOR_NOTHING",
     "BROWSER_ACT_TOOL_NAME",
@@ -86,8 +97,11 @@ __all__ = [
     "FAILED",
     "HTTP_STATUS",
     "LEFT_SITE",
+    "LEFT_WHILE_WAITING",
     "NOT_INSTALLED",
+    "NO_PAGE_TO_CONTINUE",
     "OPENS",
+    "READS_ON",
     "SECRET_AUTOCOMPLETE",
     "SELECTOR_EXAMPLES",
     "SELECTOR_GRAMMAR",
@@ -156,6 +170,17 @@ STOPPED: Final = "browser.stopped"
 """ELA was stopping, and closed the browser. Not :data:`TIMEOUT`: the time had not run out."""
 FAILED: Final = "browser.failed"
 """Anything else the engine raised, by its type's name: poor, and said (form J)."""
+NO_PAGE_TO_CONTINUE: Final = "browser.no_page_to_continue"
+"""A step continues, and its task keeps no page on its browser (M13.10, ADR 0065 §3): before the
+question, where nobody is asked a yes that cannot help; and after it — ELA restarted meanwhile,
+or what the task waited for ran out — with the yes spent and nothing done. Not retryable: the
+page is not coming back, and the plan asks again by opening one."""
+NO_PAGE: Final = (
+    "the task of this step keeps no page on {browser} — a step continues only on the page the "
+    "step right before it in the same task left, on the same browser, and that page is closed "
+    "when the task ends, when the task opens another, when what it waited for ran out, and when "
+    "ELA stops"
+)
 
 BROWSER_CODES: Final[frozenset[str]] = frozenset(
     {
@@ -183,6 +208,11 @@ ASKED_FOR_NOTHING: Final = "a page that had asked for nothing"
 
 SITE: Final = "site"
 """What the target of the two capabilities is called, in the tools' own word (M13.2 dec. 12)."""
+LEFT_WHILE_WAITING: Final = "left_while_waiting"
+"""The key of the result of a step that continued on a page (M13.10, ADR 0065 §3): the origin of
+the last navigation the boundary refused **while the page waited between two steps** — never the
+rest of the address. Absent when nothing was refused meanwhile. The step does not fail for it:
+nobody's step was running, as for :data:`ANOTHER_PAGE`."""
 STOPPED_AT: Final = "stopped_at"
 """The key of a result that says at which gesture a sequence stopped, counted from 1 (M13.10): the
 first gesture that was not made. Absent when every gesture was made."""
@@ -201,6 +231,20 @@ ACTS: Final = (
 )
 """What a yes to an action does (form G): it **can** send, always — said of the capability, never
 guessed from the argument —, and the browser holds nothing of the user's (form C)."""
+READS_ON: Final = (
+    "opens no page: it reads the page the step right before it in this task left open, where that "
+    "page is now, in ELA's own browser, which is empty — the site sees the visitor of that step, "
+    "with what the site gave it then, not you —; it fills in nothing and clicks nothing"
+)
+"""What a yes to a read that continues does (M13.10, ADR 0065 §3): «a visitor, not you» stays
+true of whose the browser is, and the visitor of step 2 carries the cookies of step 1."""
+ACTS_ON: Final = (
+    "opens no page: it fills in and clicks on the page the step right before it in this task left "
+    "open, where that page is now, in ELA's own browser, which is empty — the site sees the "
+    "visitor of that step, not your account —; what it sends (a form, a message, an order) ELA "
+    "cannot know before it happens, nor take back after"
+)
+"""What a yes to an action that continues does."""
 
 SECRET_AUTOCOMPLETE: Final[frozenset[str]] = frozenset(
     {"current-password", "new-password", "one-time-code", "cc-number", "cc-csc"}
@@ -341,6 +385,12 @@ class _Call:
     click: str | None
     selector: str | None
     allowed: Callable[[str], bool]
+    continues: bool = False
+    """The call continues on the page its task keeps, and opens none (M13.10, ADR 0065 §3)."""
+    task: TaskId | None = None
+    step: StepId | None = None
+    """The task and the step of the call, from its decision: whose page it continues on, and
+    whose page it leaves."""
 
 
 class _BrowserTool(Tool):
@@ -351,6 +401,12 @@ class _BrowserTool(Tool):
     machine is another visit — another address, another hour."""
     does: ClassVar[str]
     acts: ClassVar[bool]
+    continuing: ClassVar[str] = ""
+    """What a yes to a call that continues does, in the question's place of :attr:`does`; empty
+    for a tool that never continues (M13.10, ADR 0065 §3)."""
+    profile: ClassVar[bool] = False
+    """Whether the browser is the one with the user's accounts: what the room of the pages says of
+    a page it keeps."""
 
     def __init__(
         self,
@@ -361,19 +417,27 @@ class _BrowserTool(Tool):
         ids: IdGenerator,
         *,
         name: str,
+        pages: TaskPages,
     ) -> None:
         super().__init__(capability_id, clock, ids, name=name)
         self._browsing = browsing
         self._browser = browser
+        self._pages = pages
 
-    async def prospect(self, arguments: JsonMapping) -> Prospect:
+    async def prospect(self, arguments: JsonMapping, task: TaskId | None = None) -> Prospect:
         """What this call would do, and what the question names (form G): the shape and the
         grammar, then whether the shell is there — asked here, before the question, and **not in
         the run**, where the launch that does the work says it (decision 2 of the review of
-        2026-09-30: asking there cost a browser more at every step)."""
+        2026-09-30: asking there cost a browser more at every step).
+
+        A call that continues (M13.10, ADR 0065 §3) asks the room whether ``task`` keeps a page
+        on this browser — without one nobody is asked a yes that cannot help — and the question
+        names **where that page is now**, by its host and path, never its query."""
         looked = self._shaped(arguments)
+        if not isinstance(looked, Outcome) and looked.continues:
+            looked = await self._where(looked, task)
         if not isinstance(looked, Outcome):
-            missing = await self._installed()
+            missing = await self._installed(task)
             if missing is not None:
                 looked = missing
         if isinstance(looked, Outcome):
@@ -387,7 +451,19 @@ class _BrowserTool(Tool):
             )
         return Prospect(visit=looked.visit)
 
-    async def _installed(self) -> Outcome | None:
+    async def _where(self, call: _Call, task: TaskId | None) -> _Call | Outcome:
+        """The call that continues, with where the page of its task is now — or the refusal."""
+        where = None if task is None else await self._pages.where(task, self._browser)
+        if where is None:
+            return Outcome({}, NO_PAGE_TO_CONTINUE, f"{self._no_page()}: no question is asked")
+        return replace(call, visit=replace(call.visit, address=place_of(where)))
+
+    def _no_page(self) -> str:
+        return NO_PAGE.format(
+            browser="ELA's browser with your accounts" if self.profile else "ELA's empty browser"
+        )
+
+    async def _installed(self, task: TaskId | None = None) -> Outcome | None:
         """Whether the shell is there, from its executable and without starting it (form G)."""
         try:
             async with asyncio.timeout(self._browsing.timeout_seconds):
@@ -417,9 +493,15 @@ class _BrowserTool(Tool):
         return None
 
     def _shaped(self, arguments: JsonMapping) -> Outcome | _Call:
-        site, path = arguments.get("site"), arguments.get("path")
+        site, path, continues = (
+            arguments.get("site"),
+            arguments.get("path"),
+            arguments.get(CONTINUES),
+        )
         if not isinstance(site, str) or re.fullmatch(SITE_PATTERN, site) is None:
             return Outcome({}, ARGUMENTS_INVALID, "site must be a host name, such as example.com")
+        if continues is not None:
+            return self._continuing(arguments, site, path, continues)
         if (
             not isinstance(path, str)
             or len(path) > PATH_MAX_LENGTH
@@ -432,6 +514,30 @@ class _BrowserTool(Tool):
             )
         address = self._browsing.origin(site) + path
         return self._gestures(arguments, site, address)
+
+    def _continuing(
+        self, arguments: JsonMapping, site: str, path: object, continues: object
+    ) -> Outcome | _Call:
+        """A call that continues on the page its task keeps (M13.10, ADR 0065 §3): ``continues``
+        is ``true``, and there is **no** ``path`` — the call does not navigate —; ``site`` stays,
+        the target of the Guardian and the boundary the page is taken back with."""
+        if not self.continuing:
+            return Outcome(
+                {},
+                ARGUMENTS_INVALID,
+                f"{self.name} never continues on a page: it opens its own",
+            )
+        if continues is not True or path is not None:
+            return Outcome(
+                {},
+                ARGUMENTS_INVALID,
+                "a step either opens a page (path) or continues on the one its task keeps "
+                "(continues: true) — exactly one of the two",
+            )
+        looked = self._gestures(arguments, site, "")
+        if isinstance(looked, Outcome):
+            return looked
+        return replace(looked, continues=True, visit=replace(looked.visit, does=self.continuing))
 
     @abstractmethod
     def _gestures(self, arguments: JsonMapping, site: str, address: str) -> Outcome | _Call:
@@ -449,21 +555,52 @@ class _BrowserTool(Tool):
         )
 
     async def _run(self, arguments: JsonMapping, stop: TaskStop) -> Outcome:
+        """Never the way in (M13.10): a call of the browser is a step of a task — what it
+        continues on and what it leaves are its task's —, and the task is in its decision
+        alone (:meth:`_decided`), never in an argument a plan writes."""
+        return Outcome({}, ARGUMENTS_INVALID, "a call of the browser runs only with its decision")
+
+    async def _decided(
+        self,
+        decision: PermissionDecision,
+        arguments: JsonMapping,
+        stop: TaskStop,
+        named: JsonMapping,
+    ) -> Outcome:
+        """The call, with the task and the step its decision is for (M13.10, ADR 0065 §3)."""
         looked = self._shaped(arguments)
         if isinstance(looked, Outcome):
             return looked
-        return await self._ran(looked, stop)
+        return await self._ran(self._of(looked, decision), stop)
+
+    def _of(self, call: _Call, decision: PermissionDecision) -> _Call:
+        return replace(call, task=decision.task_id, step=decision.step_id)
 
     async def _ran(self, looked: _Call, stop: TaskStop) -> Outcome:
-        """The run of a call already shaped: the page opened, the work, every way out."""
+        """The run of a call already shaped: the page opened — or taken back from the room, for
+        a call that continues —, the work, every way out."""
         site = looked.visit.site
         done = _Done()
         opened: Opened | None = None
+        taken: str | None = None
         handed_over = False
         try:
             try:
                 async with asyncio.timeout(self._browsing.timeout_seconds):
-                    opened = await self._opened(looked, stop)
+                    if looked.continues:
+                        taken = await self._taken(looked)
+                        if taken is None:
+                            return self._without_a_page()
+                        if not self.acts:
+                            # The point of a read, right before the first use of the page (M6.3c):
+                            # a stopped task leaves the page unread.
+                            stop.listen(NAVIGATION)
+                        opened = await self._browser.resume(taken, looked.allowed)
+                    else:
+                        if looked.task is not None:
+                            # The same task opens another page: the one it keeps is closed first.
+                            await self._pages.release(looked.task)
+                        opened = await self._opened(looked, stop)
                     outcome = await self._on_the_page(looked, opened, done, stop)
             except TimeoutError:
                 outcome = self._timed_out(site, done)
@@ -490,17 +627,48 @@ class _BrowserTool(Tool):
                 )
             if opened is not None:
                 outcome = await self._with_another_page(opened, outcome)
+                if opened.waited is not None:
+                    outcome = replace(
+                        outcome,
+                        output={**outcome.output, LEFT_WHILE_WAITING: origin_of(opened.waited)},
+                    )
             if opened is not None and outcome.succeeded:
-                await self._browser.keep(opened.page)
+                await self._handed_over(looked, opened.page)
                 handed_over = True
             return outcome
         finally:
             # Every way out (M13.4b): the page is handed over, or it is closed — once. A result
             # that did not succeed; the task stopped before its point (M6.3c), which leaves with
             # ``ToolStopped``; a cancellation, which leaves as the cancellation it is — turned into
-            # a result it would not cancel —; an error this method does not name.
-            if opened is not None and not handed_over:
-                await self._browser.close(opened.page)
+            # a result it would not cancel —; an error this method does not name. A page taken
+            # back from the room is this step's from then on, and goes the same way.
+            page = opened.page if opened is not None else taken
+            if page is not None and not handed_over:
+                await self._browser.close(page)
+
+    async def _taken(self, call: _Call) -> str | None:
+        """The page the task of a call that continues keeps on this browser, now the step's."""
+        if call.task is None:
+            return None
+        return await self._pages.take(call.task, self._browser)
+
+    def _without_a_page(self) -> Outcome:
+        """The task keeps no page on this browser after the yes: ELA restarted meanwhile, or what
+        the task waited for ran out. Nothing was done."""
+        after = "; the yes was spent, and nothing was done" if self.acts else ": nothing was read"
+        return Outcome(self._partial(_Done()), NO_PAGE_TO_CONTINUE, f"{self._no_page()}{after}")
+
+    async def _handed_over(self, call: _Call, page: str) -> None:
+        """A page that worked goes to the room, when the step right after this one continues on
+        it — the room holds it, and the verifier's look leaves it open —, or to the verifier,
+        which closes it with its look."""
+        if call.task is not None and call.step is not None:
+            kept = await self._pages.leave(
+                call.task, call.step, page, self._browser, profile=self.profile
+            )
+            if kept:
+                return
+        await self._browser.keep(page)
 
     async def _opened(self, call: _Call, stop: TaskStop) -> Opened:
         """The page of the call, opened: as the browser opens any page."""
@@ -628,11 +796,21 @@ class _BrowserTool(Tool):
 class BrowserReadTool(_BrowserTool):
     """Opens one page of a declared site and reads its text (§19, **LOW**)."""
 
-    error_codes: ClassVar[frozenset[str]] = frozenset({ARGUMENTS_INVALID, *BROWSER_CODES}) - {
-        SECRET_FIELD
-    }
+    error_codes: ClassVar[frozenset[str]] = frozenset(
+        {ARGUMENTS_INVALID, NO_PAGE_TO_CONTINUE, *BROWSER_CODES}
+    ) - {SECRET_FIELD}
     output_keys: ClassVar[frozenset[str]] = frozenset(
-        {"address", "status", "title", "text", "shown", "total", "page", ANOTHER_PAGE}
+        {
+            "address",
+            "status",
+            "title",
+            "text",
+            "shown",
+            "total",
+            "page",
+            ANOTHER_PAGE,
+            LEFT_WHILE_WAITING,
+        }
     )
     audit_numbers: ClassVar[frozenset[str]] = frozenset({"status", "shown", "total"})
     """Numbers, and only numbers (ADR 0047 §10): never the address, the title or the text."""
@@ -641,6 +819,7 @@ class BrowserReadTool(_BrowserTool):
     page with a token in its query may act on a GET (decision 4). A read killed halfway is repaired
     by reading again, and a grant is not at stake: the row is LOW."""
     does: ClassVar[str] = OPENS
+    continuing: ClassVar[str] = READS_ON
     acts: ClassVar[bool] = False
     stop_point: ClassVar[StopPoint] = StopPoint(here=NAVIGATION, on_a_node=None)
     """The visit is the effect: the adapter listens right before the navigation (M6.3c)."""
@@ -653,8 +832,9 @@ class BrowserReadTool(_BrowserTool):
         ids: IdGenerator,
         *,
         name: str = BROWSER_READ_TOOL_NAME,
+        pages: TaskPages,
     ) -> None:
-        super().__init__(BROWSER_READ, browsing, browser, clock, ids, name=name)
+        super().__init__(BROWSER_READ, browsing, browser, clock, ids, name=name, pages=pages)
 
     def _gestures(self, arguments: JsonMapping, site: str, address: str) -> Outcome | _Call:
         selector = arguments.get("selector")
@@ -708,9 +888,11 @@ class BrowserReadTool(_BrowserTool):
 class BrowserActTool(_BrowserTool):
     """Fills fields on one page of a declared site and clicks (§19, **HIGH**)."""
 
-    error_codes: ClassVar[frozenset[str]] = frozenset({ARGUMENTS_INVALID, *BROWSER_CODES})
+    error_codes: ClassVar[frozenset[str]] = frozenset(
+        {ARGUMENTS_INVALID, NO_PAGE_TO_CONTINUE, *BROWSER_CODES}
+    )
     output_keys: ClassVar[frozenset[str]] = frozenset(
-        {"status", "gestures", STOPPED_AT, "page", ANOTHER_PAGE}
+        {"status", "gestures", STOPPED_AT, "page", ANOTHER_PAGE, LEFT_WHILE_WAITING}
     )
     audit_numbers: ClassVar[frozenset[str]] = frozenset({"status", "gestures", STOPPED_AT})
     """The status of the page of the form, how many gestures were made, and — when the sequence did
@@ -721,6 +903,7 @@ class BrowserActTool(_BrowserTool):
     record before the first gesture, and a retry that finds it without an outcome closes the step as
     interrupted and **never clicks again** (ADR 0021 §2)."""
     does: ClassVar[str] = ACTS
+    continuing: ClassVar[str] = ACTS_ON
     acts: ClassVar[bool] = True
     stop_point: ClassVar[StopPoint] = StopPoint(here=FIRST_GESTURE, on_a_node=None)
     """Before the first gesture (decision 2 of M6.3c); the navigation before it is listened to
@@ -738,8 +921,9 @@ class BrowserActTool(_BrowserTool):
         ids: IdGenerator,
         *,
         name: str = BROWSER_ACT_TOOL_NAME,
+        pages: TaskPages,
     ) -> None:
-        super().__init__(BROWSER_ACT, browsing, browser, clock, ids, name=name)
+        super().__init__(BROWSER_ACT, browsing, browser, clock, ids, name=name, pages=pages)
 
     def _gestures(self, arguments: JsonMapping, site: str, address: str) -> Outcome | _Call:
         fill, click, expect = (

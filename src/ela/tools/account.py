@@ -38,7 +38,7 @@ import asyncio
 from dataclasses import dataclass, replace
 from typing import ClassVar, Final
 
-from ela.domain import ErrorMetadata, ExecutionResult, JsonMapping, PermissionDecision
+from ela.domain import ErrorMetadata, ExecutionResult, JsonMapping, PermissionDecision, TaskId
 from ela.permissions import (
     BROWSER_ACT_AS_YOU,
     BROWSER_LOGIN,
@@ -51,6 +51,7 @@ from ela.ports import (
     HELD_IN_PART,
     PROFILE_PROCESS,
     PROFILE_STEP,
+    PROFILE_TASK,
     PROFILE_WINDOW,
     AccountBrowser,
     BrowserError,
@@ -66,7 +67,9 @@ from ela.ports import (
     ProfileUnsafe,
     Prospect,
     StopPoint,
+    TaskPages,
     TaskStop,
+    WaitingPage,
 )
 from ela.tools.base import ARGUMENTS_INVALID, Outcome
 from ela.tools.browser import (
@@ -110,6 +113,7 @@ from ela.tools.verify import COMMON_FAILURE_CODES, VERIFICATION_ARGUMENTS_INVALI
 __all__ = [
     "ACCOUNT_CODES",
     "ACTS_AS_YOU",
+    "ACTS_ON_AS_YOU",
     "BROWSER_ACT_AS_YOU_TOOL_NAME",
     "BROWSER_ACT_AS_YOU_VERIFIER_NAME",
     "BROWSER_LOGIN_TOOL_NAME",
@@ -128,6 +132,8 @@ __all__ = [
     "PROFILE_UNDECLARED",
     "PROFILE_UNSAFE",
     "READS_AS_YOU",
+    "READS_ON_AS_YOU",
+    "STOP_A_TASK",
     "AccountActTool",
     "AccountActVerifier",
     "AccountReadTool",
@@ -135,6 +141,7 @@ __all__ = [
     "LoginTool",
     "LoginVerifier",
     "ProfileLook",
+    "kept_on_the_profile",
     "look_at",
 ]
 
@@ -206,12 +213,27 @@ READS_AS_YOU: Final = (
 )
 """What a yes to a read with the profile does (ADR 0063): «where you are signed in», because ELA
 does not know, before it opens the page, whether there is a login on that site."""
+READS_ON_AS_YOU: Final = (
+    "opens no page: it reads the page the step right before it in this task left open, where that "
+    "page is now, in ELA's own browser, which keeps the sites you signed in to: where you are "
+    "signed in the site sees you, and what comes back is your own content; it fills in nothing "
+    "and clicks nothing"
+)
+"""What a yes to a read with the profile that continues does (M13.10, ADR 0065 §3)."""
 ACTS_AS_YOU: Final = (
     "fills in and clicks on this site in ELA's own browser, which keeps the sites you signed in "
     "to: where you are signed in it acts as you, on your account there — what it sends (a form, a "
     "message, an order) is sent in your name, and ELA cannot know it before it happens, nor take "
     "it back after"
 )
+ACTS_ON_AS_YOU: Final = (
+    "opens no page: it fills in and clicks on the page the step right before it in this task left "
+    "open, where that page is now, in ELA's own browser, which keeps the sites you signed in to: "
+    "where you are signed in it acts as you, on your account there — what it sends (a form, a "
+    "message, an order) is sent in your name, and ELA cannot know it before it happens, nor take "
+    "it back after"
+)
+"""What a yes to an action with the profile that continues does (M13.10, ADR 0065 §3)."""
 LOGS_IN: Final = (
     "takes one password from your vault, types it into this page and sends the form: you are "
     "signed in to this site as you. ELA keeps the password nowhere — not in the plan, in this "
@@ -248,8 +270,36 @@ NEW_OR_NOT_A_PASSWORD: Final = frozenset({"new-password", "one-time-code", "cc-n
 choose, a one-time code, a card."""
 
 
-def _held(holder: str) -> str:
+STOP_A_TASK: Final = "ela task cancel"
+"""The command that ends a task, and with it the page it keeps: what the sentences of a page that
+waits name (M13.10, decision 26 of the review of its SPEC)."""
+
+
+def _held(holder: str, waiting: WaitingPage | None = None) -> str:
+    if holder == PROFILE_TASK:
+        return f"ELA's browser with your accounts is in use — {_kept(waiting)}"
     return f"ELA's browser with your accounts is in use — {HELD_BY.get(holder, holder)}"
+
+
+def _kept(waiting: WaitingPage | None) -> str:
+    """Who keeps the profile between two steps, until when, and how it ends (M13.10, ADR 0065 §3;
+    decision 26 of the review of its SPEC)."""
+    if waiting is None:
+        return "a page a task keeps between two of its steps holds it, until that task ends"
+    until = (
+        "until that task ends"
+        if waiting.until is None
+        else f"until {waiting.until.isoformat(timespec='minutes')} at the latest"
+    )
+    return (
+        f"task {waiting.task} keeps a page on it between two of its steps, {until}: "
+        f"`{STOP_A_TASK} {waiting.task}` ends it"
+    )
+
+
+async def kept_on_the_profile(pages: TaskPages) -> WaitingPage | None:
+    """The page a task keeps on the browser with the profile now, if any."""
+    return next((one for one in await pages.waiting() if one.profile), None)
 
 
 @dataclass(frozen=True, slots=True)
@@ -266,11 +316,17 @@ class ProfileLook:
     code: str | None = None
     message: str = ""
     holder: str | None = None
+    task: TaskId | None = None
+    """The task that keeps a page on the profile between two of its steps, when the holder is
+    :data:`PROFILE_TASK` (M13.10, ADR 0065 §3)."""
 
 
-async def look_at(browser: AccountBrowser, seconds: float) -> ProfileLook:
+async def look_at(
+    browser: AccountBrowser, seconds: float, pages: TaskPages | None = None
+) -> ProfileLook:
     """Look at the profile through its port, within ``seconds``. Nothing is started, and the
-    folder is not read from here: the port answers with facts."""
+    folder is not read from here: the port answers with facts — and, of a page a task keeps
+    there, ``pages`` says which task, and until when."""
     try:
         async with asyncio.timeout(seconds):
             holder = await browser.occupied()
@@ -294,9 +350,17 @@ async def look_at(browser: AccountBrowser, seconds: float) -> ProfileLook:
         return ProfileLook(FAILED, f"whether the browser can start could not be read: {failed}")
     if not installed:
         return ProfileLook(NOT_INSTALLED, NOT_INSTALLED_MESSAGE)
-    if holder is not None:
-        return ProfileLook(PROFILE_BUSY, _held(holder), holder)
-    return ProfileLook()
+    if holder is None:
+        return ProfileLook()
+    if holder == PROFILE_TASK and pages is not None:
+        waiting = await kept_on_the_profile(pages)
+        return ProfileLook(
+            PROFILE_BUSY,
+            _held(holder, waiting),
+            holder,
+            None if waiting is None else waiting.task,
+        )
+    return ProfileLook(PROFILE_BUSY, _held(holder), holder)
 
 
 UNASKED: Final = frozenset({UNSUPPORTED_SYSTEM, PROFILE_BUSY})
@@ -309,12 +373,14 @@ class _OnTheProfile(_BrowserTool):
     looked at before the question and its refusals are named after the yes too."""
 
     _browser: AccountBrowser
+    profile: ClassVar[bool] = True
 
-    async def _installed(self) -> Outcome | None:
+    async def _installed(self, task: TaskId | None = None) -> Outcome | None:
         """Before the question: the system, the folder, the binary, and who holds the folder.
-        Nothing is started."""
-        look = await look_at(self._browser, self._browsing.timeout_seconds)
-        if look.code is None:
+        Nothing is started. **A page the same task keeps there is no refusal** (M13.10): the step
+        continues on it, or the room closes it before this step opens another."""
+        look = await look_at(self._browser, self._browsing.timeout_seconds, self._pages)
+        if look.code is None or (look.task is not None and look.task == task):
             return None
         unasked = ": no question is asked" if look.code in UNASKED else ""
         return Outcome(
@@ -329,10 +395,11 @@ class _OnTheProfile(_BrowserTool):
         try:
             return await super()._ran(looked, stop)
         except ProfileBusy as busy:
+            waiting = await kept_on_the_profile(self._pages) if busy.by == PROFILE_TASK else None
             return Outcome(
                 nothing,
                 PROFILE_BUSY,
-                f"{_held(busy.by)}: the yes was spent, and no browser was started",
+                f"{_held(busy.by, waiting)}: the yes was spent, and no browser was started",
                 retryable=True,
             )
         except ProfileUndeclared as undeclared:
@@ -356,6 +423,7 @@ class AccountReadTool(_OnTheProfile, BrowserReadTool):
 
     error_codes: ClassVar[frozenset[str]] = BrowserReadTool.error_codes | ACCOUNT_CODES
     does: ClassVar[str] = READS_AS_YOU
+    continuing: ClassVar[str] = READS_ON_AS_YOU
 
     def __init__(
         self,
@@ -365,8 +433,11 @@ class AccountReadTool(_OnTheProfile, BrowserReadTool):
         ids: IdGenerator,
         *,
         name: str = BROWSER_READ_AS_YOU_TOOL_NAME,
+        pages: TaskPages,
     ) -> None:
-        _BrowserTool.__init__(self, BROWSER_READ_AS_YOU, browsing, browser, clock, ids, name=name)
+        _BrowserTool.__init__(
+            self, BROWSER_READ_AS_YOU, browsing, browser, clock, ids, name=name, pages=pages
+        )
 
     def _gestures(self, arguments: JsonMapping, site: str, address: str) -> Outcome | _Call:
         """``browser.read``'s — with **the site the call names as the whole boundary**, where the
@@ -383,6 +454,7 @@ class AccountActTool(_OnTheProfile, BrowserActTool):
 
     error_codes: ClassVar[frozenset[str]] = BrowserActTool.error_codes | ACCOUNT_CODES
     does: ClassVar[str] = ACTS_AS_YOU
+    continuing: ClassVar[str] = ACTS_ON_AS_YOU
 
     def __init__(
         self,
@@ -392,8 +464,11 @@ class AccountActTool(_OnTheProfile, BrowserActTool):
         ids: IdGenerator,
         *,
         name: str = BROWSER_ACT_AS_YOU_TOOL_NAME,
+        pages: TaskPages,
     ) -> None:
-        _BrowserTool.__init__(self, BROWSER_ACT_AS_YOU, browsing, browser, clock, ids, name=name)
+        _BrowserTool.__init__(
+            self, BROWSER_ACT_AS_YOU, browsing, browser, clock, ids, name=name, pages=pages
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -443,8 +518,9 @@ class LoginTool(_OnTheProfile, _BrowserTool):
         ids: IdGenerator,
         *,
         name: str = BROWSER_LOGIN_TOOL_NAME,
+        pages: TaskPages,
     ) -> None:
-        super().__init__(BROWSER_LOGIN, browsing, browser, clock, ids, name=name)
+        super().__init__(BROWSER_LOGIN, browsing, browser, clock, ids, name=name, pages=pages)
         self._vault = vault
 
     def _gestures(self, arguments: JsonMapping, site: str, address: str) -> Outcome | _Call:
@@ -493,10 +569,10 @@ class LoginTool(_OnTheProfile, _BrowserTool):
             entry=entry,
         )
 
-    async def _installed(self) -> Outcome | None:
+    async def _installed(self, task: TaskId | None = None) -> Outcome | None:
         """What every tool of the profile looks at before its question — and whether a window
         can be had, which only a login needs: asked last, of a profile a browser can start on."""
-        missing = await super()._installed()
+        missing = await super()._installed(task)
         if missing is not None:
             return missing
         try:
@@ -540,7 +616,7 @@ class LoginTool(_OnTheProfile, _BrowserTool):
                 "the question this yes answered named no entry of the vault, and ELA does not "
                 "look for one again: ask again",
             )
-        return await self._ran(replace(looked, entry=entry), stop)
+        return await self._ran(self._of(replace(looked, entry=entry), decision), stop)
 
     async def _ran(self, looked: _Call, stop: TaskStop) -> Outcome:
         """The run of every tool of the profile — and the one thing only a page asked with a
@@ -551,15 +627,16 @@ class LoginTool(_OnTheProfile, _BrowserTool):
         except NoWindow:
             return self._none_typed(NO_WINDOW, NO_WINDOW_MESSAGE)
 
-    async def prospect(self, arguments: JsonMapping) -> Prospect:
+    async def prospect(self, arguments: JsonMapping, task: TaskId | None = None) -> Prospect:
         """What the question names: the site, the address, **the entry** — by its name and its
         username masked, in two fields of their own —, the fields, the click, the text awaited and
         the time. Before it, every refusal of the profile and of the vault, each with its code;
-        none of them names an entry.
+        none of them names an entry. A login never continues: a page its task keeps is closed
+        when it opens its own (M13.10).
         """
         looked = self._shaped(arguments)
         if not isinstance(looked, Outcome):
-            missing = await self._installed()
+            missing = await self._installed(task)
             if missing is not None:
                 looked = missing
         if isinstance(looked, Outcome):

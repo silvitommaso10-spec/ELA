@@ -80,6 +80,7 @@ from ela.api.schemas import (
     TaskOut,
     TermsOut,
     VaultOut,
+    WaitingPageOut,
 )
 from ela.api.security import CONSOLE_SURFACE, Anonymous, Identity, note, welcome
 from ela.api.tasks import cancel_task, finished_tasks, list_tasks, read_task
@@ -1110,7 +1111,19 @@ def _profile_pairs(profile: BrowserOut) -> pages.Markup:
         pairs.append(
             pages.fragment(HERE, "pair", key="Profili nella cartella", value=str(profile.profiles))
         )
+    # The pages tasks keep between two of their steps (M13.10, ADR 0065 §3): which task, on which
+    # browser, until when, and the command that ends it.
+    pairs.extend(
+        pages.fragment(HERE, "pair", key="Una pagina aspetta", value=_waiting(one))
+        for one in profile.waiting
+    )
     return pages.joined(pairs)
+
+
+def _waiting(page: WaitingPageOut) -> str:
+    which = "con i tuoi account" if page.profile else "vuoto"
+    until = "la fine del task" if page.until is None else page.until.isoformat(timespec="minutes")
+    return f"il task {page.task}, sul browser {which}, fino a {until} — {page.stop}"
 
 
 def _window_form(profile: BrowserOut) -> pages.Markup:

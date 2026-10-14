@@ -30,7 +30,7 @@ import stat
 from pathlib import Path
 from typing import ClassVar, Final
 
-from ela.domain import CapabilityId, ErrorMetadata, JsonMapping
+from ela.domain import CapabilityId, ErrorMetadata, JsonMapping, TaskId
 from ela.ports import ENVELOPE, Clock, IdGenerator, Prospect, StopPoint, Target, TaskStop
 from ela.tools.base import ARGUMENTS_INVALID, FIRST_WRITE, Outcome, Tool
 from ela.tools.paths import (
@@ -198,7 +198,7 @@ class FsReadTool(Tool):
         """The resolved root: ``ELA_FS_ROOT``, never created here."""
         return self._root
 
-    async def prospect(self, arguments: JsonMapping) -> Prospect:
+    async def prospect(self, arguments: JsonMapping, task: TaskId | None = None) -> Prospect:
         """What a read of this path would meet now (dec. G, and the rule of ADR 0045 §6-bis)."""
         return _prospect(self._look(arguments), self.name)
 
@@ -301,7 +301,7 @@ class FsWriteTool(Tool):
         does = ASSERTED_OVERWRITES if overwrite else ASSERTED_CREATES
         return _as_written(path, exists=overwrite, does=does, tool_name=self.name)
 
-    async def prospect(self, arguments: JsonMapping) -> Prospect:
+    async def prospect(self, arguments: JsonMapping, task: TaskId | None = None) -> Prospect:
         """What a write of this path would meet now (dec. G, and ADR 0045 §6-bis).
 
         **This is where the contradiction is caught.** If the plan asserts «nothing is there» and

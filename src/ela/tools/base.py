@@ -31,6 +31,7 @@ from ela.domain import (
     PermissionDecision,
     PermissionOutcome,
     ProviderUsage,
+    TaskId,
     WorstCase,
 )
 from ela.ports import Clock, IdGenerator, NotAllowedError, Prospect, StopPoint, TaskStop
@@ -197,7 +198,7 @@ class Tool(ABC):
             duration_ms=max(0, int((finished - started).total_seconds() * 1000)),
         )
 
-    async def prospect(self, arguments: JsonMapping) -> Prospect:
+    async def prospect(self, arguments: JsonMapping, task: TaskId | None = None) -> Prospect:
         """Nothing to show and nothing to refuse, unless a tool works on a path (dec. G).
 
         The default is empty and not an abstract method, unlike :attr:`idempotent`: silence here
@@ -282,7 +283,7 @@ class Perceiving(Tool):
         super().__init__(capability_id, clock, ids, name=name)
         self._not_now = not_now
 
-    async def prospect(self, arguments: JsonMapping) -> Prospect:
+    async def prospect(self, arguments: JsonMapping, task: TaskId | None = None) -> Prospect:
         """«It would start», unless this is a moment in which ELA must not: nothing else is
         looked at here — the permission and the store are the run's, as they were."""
         refused = await self._withheld()

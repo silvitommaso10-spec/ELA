@@ -120,6 +120,7 @@ __all__ = [
     "BrowserNotInstalled",
     "BrowserStopped",
     "BrowserUnsupported",
+    "CONTINUES",
     "CallRequest",
     "CapabilityRegistryPort",
     "Captured",
@@ -193,6 +194,7 @@ __all__ = [
     "OpenedSession",
     "PROFILE_PROCESS",
     "PROFILE_STEP",
+    "PROFILE_TASK",
     "PROFILE_WINDOW",
     "PROVIDER_AUTHENTICATION_ERROR",
     "PROVIDER_BAD_REQUEST",
@@ -256,6 +258,7 @@ __all__ = [
     "SpeechPort",
     "StopPoint",
     "Target",
+    "TaskPages",
     "TaskRepository",
     "TaskStop",
     "TextRecognitionPort",
@@ -279,6 +282,7 @@ __all__ = [
     "VerifierPort",
     "VerifierRegistryPort",
     "Visit",
+    "WaitingPage",
     "WireCode",
     "audited_numbers",
     "check_answer",
@@ -1675,8 +1679,13 @@ class ToolPort(Protocol):
         its own into a log that is never redacted, built narrow (ADR 0047).
         """
 
-    async def prospect(self, arguments: JsonMapping) -> Prospect:
+    async def prospect(self, arguments: JsonMapping, task: TaskId | None = None) -> Prospect:
         """What this call would meet now: what to show, and whether to ask at all.
+
+        ``task`` is the task the call is a step of, when the asker knows it (M13.10, ADR 0065 §3;
+        decision 25 of the review of its SPEC): a step that continues on a page asks whether
+        **its** task has one. The route of the policies does not pass it, and a tool that does
+        not continue does not read it.
 
         Read-only and **not an execution**: it is how a question learns the facts it must name
         before anybody answers it, and how the executor learns that there is nothing to ask
@@ -2789,6 +2798,9 @@ class LeftSite(BrowserError):
 
 PROFILE_STEP: Final = "step"
 """The profile is held by a page of ELA's own: a step that is running."""
+PROFILE_TASK: Final = "task"
+"""The profile is held by a page a task of ELA's keeps **between two of its steps** (M13.10, ADR
+0065 §3): no step is running on it, nobody is typing into it, and the stop of that task ends it."""
 PROFILE_WINDOW: Final = "window"
 """The profile is held by the window ELA opened for the user to sign in by hand."""
 PROFILE_PROCESS: Final = "process"
@@ -2820,8 +2832,8 @@ class ProfileUnsafe(BrowserError):
 
 class ProfileBusy(BrowserError):
     """A process already holds the profile, and ELA does not launch a second one on a folder it
-    found held: ``by`` is one of :data:`PROFILE_STEP`, :data:`PROFILE_WINDOW` and
-    :data:`PROFILE_PROCESS`. Retryable: what holds it ends."""
+    found held: ``by`` is one of :data:`PROFILE_STEP`, :data:`PROFILE_TASK`,
+    :data:`PROFILE_WINDOW` and :data:`PROFILE_PROCESS`. Retryable: what holds it ends."""
 
     def __init__(self, by: str) -> None:
         super().__init__(f"the profile of ELA's browser is held ({by})")
@@ -2837,12 +2849,18 @@ class Opened:
     ``left`` the address of a navigation of the main frame that the boundary refused — the request
     was never sent —, ``None`` when there was none. An address and not an origin: what an origin is,
     the tool says, once (``ela.tools.browser.origin_of``).
+
+    ``waited`` is what only a page taken back with :meth:`Browser.resume` has (M13.10, ADR 0065
+    §3): the address of the last navigation the boundary refused **while the page waited between
+    two steps** of its task — nobody's step, and so nobody's failure —, ``None`` when nothing was
+    refused meanwhile and for a page just opened.
     """
 
     page: str
     status: int | None
     address: str
     left: str | None
+    waited: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -2960,8 +2978,8 @@ class Browser(Protocol):
     * **every use of a page asks** ``allowed`` **where the page is**, before the use and once it
       is made, and raises :class:`LeftSite` when the page is not inside: nothing is read,
       written or looked at there, and what was read on a page that ended elsewhere meanwhile is
-      thrown away. All the members that are given a page, but :meth:`keep`, :meth:`close` and
-      :meth:`another`;
+      thrown away. All the members that are given a page, but :meth:`keep`, :meth:`close`,
+      :meth:`another`, :meth:`hold` and :meth:`where`;
     * ELA works on **one page**. Of a page that one opens **no document leaves** — not its
       navigation, not a link, not a form, not a frame written in it —, nothing of it is read,
       and :meth:`another` says it was opened. What the first page has loaded in an empty page it
@@ -2976,6 +2994,10 @@ class Browser(Protocol):
       by its opening (M13.4c);
     * a page kept with :meth:`keep` waits for :meth:`glance`, and an implementation closes it
       itself if nobody looks before its deadline;
+    * a page held with :meth:`hold` waits for :meth:`resume` or :meth:`close`, **and nothing of
+      the implementation's own closes it** — not the verifier's look, not a deadline —: whoever
+      holds it closes it (M13.10, ADR 0065 §3). Its browser, its cookies and whatever the page does
+      by itself last until then;
     * when :meth:`close` returns, the kernel knows no process of that page's browser any more.
     """
 
@@ -3039,11 +3061,39 @@ class Browser(Protocol):
     async def glance(
         self, page: str, *, selector: str | None, expect: str | None, seconds: float
     ) -> Glanced:
-        """The verifier's one look, and the page is released with it.
+        """The verifier's one look, and the page is released with it — **unless it is held**
+        (:meth:`hold`): a held page is looked at and stays.
 
         The text under ``selector`` when one is asked (or of the page, when ``selector`` is ``None``
         and ``expect`` is too), and whether ``expect`` appeared within ``seconds``.
         """
+
+    async def hold(self, page: str) -> None:
+        """Hand the page over to a task, **between two of its steps** (M13.10, ADR 0065 §3): it
+        stays open until :meth:`resume` or :meth:`close`. The verifier's :meth:`glance` looks at it
+        and does not close it, and a deadline :meth:`keep` started does not run any more.
+
+        Never raises: a page that is not there any more is found gone by the step that continues.
+        """
+
+    async def resume(self, page: str, allowed: Callable[[str], bool]) -> Opened:
+        """Take back a page held with :meth:`hold`, **with the boundary of the step that
+        continues** in the place of the one it was opened with — in what judges the browser's
+        requests and in every use of the page after —, and ask that boundary where the page is.
+
+        What it returns is the page as it is now: where its main frame is, the status of the
+        document it is on, and :attr:`Opened.waited`; :attr:`Opened.left` is ``None``, and what
+        :meth:`left` says from here on is the step's own. The page is not held any more.
+
+        :raises LeftSite: the page is outside the new boundary — nothing of it is said.
+        :raises PageGone, BrowserStopped, BrowserFailed:
+        """
+
+    async def where(self, page: str) -> str | None:
+        """Where a page is now: the address of its main frame as the implementation knows it, with
+        no call to the browser — ``None`` for a page that is not there any more. **Not a use of
+        the page**: nothing of it is read but where it is, which the question of a step that
+        continues names without its query (M13.10, ADR 0065 §3). Never raises."""
 
     async def close(self, page: str) -> None:
         """Close the page and its browser; nothing of it runs when this returns. Idempotent, and
@@ -3162,8 +3212,10 @@ class AccountBrowser(Browser, Protocol):
         never with its group, and only if the system still says that process is that browser.
 
         :raises ProfileBusy: ``by`` :data:`PROFILE_STEP` — a page ELA drives ends with its step,
-            or with the stop of its task —, or :data:`PROFILE_PROCESS`: what holds the folder is
-            not ELA's browser, or could not be told, and ELA signals nothing it cannot name.
+            or with the stop of its task —, :data:`PROFILE_TASK` — a page a task keeps between two
+            of its steps ends with the task, or with the stop of it —, or :data:`PROFILE_PROCESS`:
+            what holds the folder is not ELA's browser, or could not be told, and ELA signals
+            nothing it cannot name.
         :raises ProfileUndeclared, ProfileUnsafe, BrowserUnsupported, BrowserStopped,
             BrowserFailed:
         """
@@ -3302,6 +3354,64 @@ class ModelGateway(Protocol):
         """Send ``body`` as it is to the provider with the key, and hand its answer back event by
         event. Never raises: a call that could not leave answers with a status of its own and a
         usage that says it was not sent."""
+
+
+CONTINUES: Final = "continues"
+"""The argument of a step of the browser that **continues on the page the step right before it
+left**, instead of opening one (M13.10, ADR 0065 §3): ``true``, and exactly one of it and
+``path``. Read by the tools that continue and by the room that keeps the page."""
+
+
+@dataclass(frozen=True, slots=True)
+class WaitingPage:
+    """A page a task keeps between two of its steps, as :meth:`TaskPages.waiting` says it (M13.10,
+    ADR 0065 §3): **which task**, whether it is on the browser with the user's accounts
+    (``profile``) or on the empty one, and **until when** — the end of what the task waits for: the
+    question of its next step until it is answered, then the grant of the yes until the step runs.
+    ``None`` when the task waits for nothing that ends: the page lasts until the task ends, and the
+    stop of the task is what ends it."""
+
+    task: TaskId
+    profile: bool
+    until: datetime | None
+
+
+@runtime_checkable
+class TaskPages(Protocol):
+    """Where the page a step of a task leaves waits for the step that continues on it (M13.10, ADR
+    0065 §3).
+
+    **One page per task, and two tasks never have the same page**: the key is the task. A step
+    leaves its page only when the step right after it in the plan continues; the page is handed to
+    that step, on the same browser, and to no other. **Whoever holds a page closes it**: the room,
+    when the task ends, when the same task opens another page, when what the task waits for is
+    over, and when ELA stops (the browser's own stop closes every page). Not a capability: no row
+    of the catalogue, no risk, no rule of the Guardian — every step is judged by its own.
+    """
+
+    async def leave(
+        self, task: TaskId, step: StepId, page: str, browser: Browser, *, profile: bool
+    ) -> bool:
+        """Offered the page ``step`` of ``task`` leaves once it succeeded: **kept** — held on
+        ``browser`` (:meth:`Browser.hold`), and ``True`` — when the step right after it in the plan
+        continues; ``False`` otherwise, and the page is the step's to hand to its verifier as
+        before. A page the task kept already is closed first."""
+
+    async def take(self, task: TaskId, browser: Browser) -> str | None:
+        """The page ``task`` keeps, handed to the step that continues on it — and not kept any
+        more. ``None`` when the task keeps none, or keeps one on the other browser, which is then
+        closed: a step continues only on the page of its own browser."""
+
+    async def where(self, task: TaskId, browser: Browser) -> str | None:
+        """Where the page ``task`` keeps on ``browser`` is now (:meth:`Browser.where`), for the
+        question of the step that continues; ``None`` when it keeps none there. Nothing changes."""
+
+    async def release(self, task: TaskId) -> None:
+        """The same task opens another page: the one it keeps, if any, is closed first."""
+
+    async def waiting(self) -> tuple[WaitingPage, ...]:
+        """Every page kept now, with its task and until when: what ``ela browser status`` and the
+        console say, and what a step of another task is refused with."""
 
 
 @dataclass(frozen=True, slots=True)

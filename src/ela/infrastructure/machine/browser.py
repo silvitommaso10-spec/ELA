@@ -207,6 +207,9 @@ class _Open:
     last is the page's own, and ``None`` for one that never came (M13.9, decision 106)."""
     kept: asyncio.Task[None] | None = None
     looking: bool = False
+    held: bool = False
+    """Held by a task between two of its steps (M13.10, ADR 0065 §3): the look does not close it,
+    and no deadline of this adapter's does — whoever holds it closes it."""
     tasks: set[asyncio.Task[None]] = field(default_factory=set)
 
 
@@ -652,7 +655,45 @@ class PlaywrightBrowser:
                 page, lambda found: self._looked(found, selector, expect, seconds)
             )
         finally:
-            await self.close(page)
+            opened.looking = False
+            if not opened.held:
+                await self.close(page)
+
+    async def hold(self, page: str) -> None:
+        """The page is a task's between two of its steps (M13.10, ADR 0065 §3): the deadline a
+        :meth:`keep` started stops, and the look will not close it."""
+        opened = self._pages.get(page)
+        if opened is None:
+            return
+        opened.held = True
+        if opened.kept is not None:
+            opened.kept.cancel()
+            opened.kept = None
+
+    async def resume(self, page: str, allowed: Callable[[str], bool]) -> Opened:
+        """A held page, taken back with the boundary of the step that continues — in the gate,
+        which judges every request of the browser from now on, and in every use after —, and
+        asked where it is (measure (g) of M13.10's SPEC: a navigation toward the new site leaves,
+        one toward the old does not). What the gate refused while nobody used the page is handed
+        over once, as :attr:`Opened.waited`, and is not the step's: :meth:`left` starts again."""
+        opened = self._page(page)
+        opened.held = False
+        opened.allowed = allowed
+        opened.gate.rebound(allowed)
+        waited = opened.refused[-1] if opened.refused else None
+        del opened.refused[:]
+        self._within(opened)
+        return Opened(
+            page=page,
+            status=opened.documents[-1] if opened.documents else None,
+            address=_where(opened.page),
+            left=None,
+            waited=waited,
+        )
+
+    async def where(self, page: str) -> str | None:
+        opened = self._pages.get(page)
+        return None if opened is None else _where(opened.page)
 
     async def close(self, page: str) -> None:
         opened = self._pages.pop(page, None)
@@ -760,6 +801,11 @@ class _Gate:
         self._judging: set[asyncio.Task[None]] = set()
         session.on("Fetch.requestPaused", self._told)
         session.on("Target.targetCreated", self._born)
+
+    def rebound(self, allowed: Callable[[str], bool]) -> None:
+        """Judge from now on with ``allowed``: the boundary of the step that continues on this
+        page (M13.10, ADR 0065 §3). The requests already judged were judged with the old one."""
+        self._allowed = allowed
 
     async def on(self) -> None:
         """Ask to be told of every page that is opened, and of every request."""

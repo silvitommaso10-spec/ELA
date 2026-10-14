@@ -37,13 +37,14 @@ from ela.api.schemas import (
     BrowserOut,
     BrowserWindowIn,
     BrowserWindowOut,
+    WaitingPageOut,
 )
 from ela.api.security import Identity
 from ela.composition import Ela
 from ela.composition.root import BROWSER_CLOSE_GRACE_SECONDS
 from ela.domain import AuditEvent, AuditEventId, AuditEventType, visible
-from ela.ports import PROFILE_STEP, BrowserError, BrowserStopped, ProfileBusy
-from ela.tools.account import PROFILE_BUSY, look_at
+from ela.ports import PROFILE_STEP, PROFILE_TASK, BrowserError, BrowserStopped, ProfileBusy
+from ela.tools.account import PROFILE_BUSY, STOP_A_TASK, look_at
 from ela.tools.browser import (
     BROWSER_TIMEOUT_SECONDS,
     FAILED,
@@ -75,12 +76,20 @@ NOTHING: Final = "nothing"
 PREFIX: Final = "browser."
 A_STEP: Final = (
     "a step of ELA's is using its browser, and the command ends the browser where you sign in "
-    "by hand — to end a step, stop its task (ela task stop)"
+    f"by hand — to end a step, stop its task ({STOP_A_TASK} <id>)"
 )
+A_TASK: Final = (
+    "a task of ELA's keeps a page on its browser between two of its steps, and the command ends "
+    f"the browser where you sign in by hand — to end that page, stop the task ({STOP_A_TASK} "
+    "<id>; `ela browser status` names it)"
+)
+"""What a close says when the profile is held by a page a task keeps (M13.10, ADR 0065 §3)."""
 NOT_ELA_S: Final = (
     "the profile is held by a process that is not ELA's browser, or that ELA could not tell: "
     "ELA signals nothing it cannot name — it is yours to quit"
 )
+CLOSING_BUSY: Final = {PROFILE_STEP: A_STEP, PROFILE_TASK: A_TASK}
+"""What a close says of a profile ELA itself holds: a step, or a page a task keeps."""
 READ: Final = frozenset({None, PROFILE_BUSY})
 """The looks after which the folder is read for what the browser says of itself: a profile a
 browser can start on — free, or held."""
@@ -103,7 +112,7 @@ async def browser_of(ela: Ela) -> BrowserOut:
     names —, or the tools' refusal without its prefix; ``linked`` and ``saved`` are what the
     browser says of itself, read again each time and ``None`` where nothing could be read; and
     whether a login could be given its window now is asked of the port the same way."""
-    look = await look_at(ela.accounts, BROWSER_TIMEOUT_SECONDS)
+    look = await look_at(ela.accounts, BROWSER_TIMEOUT_SECONDS, ela.pages)
     linked: bool | None = None
     saved: int | None = None
     profiles: int | None = None
@@ -135,6 +144,15 @@ async def browser_of(ela: Ela) -> BrowserOut:
         saved=saved,
         profiles=profiles,
         sites=ela.settings.browser.sites,
+        waiting=tuple(
+            WaitingPageOut(
+                task=one.task,
+                profile=one.profile,
+                until=one.until,
+                stop=f"{STOP_A_TASK} {one.task}",
+            )
+            for one in await ela.pages.waiting()
+        ),
     )
 
 
@@ -206,9 +224,7 @@ async def window_shut(ela: Ela, identity: Identity) -> BrowserClosedOut:
     try:
         outcome = await ela.accounts.shut(_the_grace)
     except ProfileBusy as busy:
-        raise BrowserRefusedError(
-            PROFILE_BUSY, A_STEP if busy.by == PROFILE_STEP else NOT_ELA_S
-        ) from None
+        raise BrowserRefusedError(PROFILE_BUSY, CLOSING_BUSY.get(busy.by, NOT_ELA_S)) from None
     except BrowserStopped:
         raise BrowserRefusedError(
             STOPPED, "ELA was stopping: its own close ends the window it started"

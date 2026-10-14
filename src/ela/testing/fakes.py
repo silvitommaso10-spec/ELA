@@ -91,6 +91,7 @@ from ela.ports import (
     NAVIGATION,
     NOT_HELD,
     PROFILE_STEP,
+    PROFILE_TASK,
     PROFILE_WINDOW,
     PROVIDER_UNAVAILABLE,
     SHUT_QUIT,
@@ -116,6 +117,7 @@ from ela.ports import (
     AuthorizationExhaustedError,
     AuthorizationExpiredError,
     AuthorizationRevokedError,
+    Browser,
     BrowserStopped,
     CallRequest,
     Clock,
@@ -156,6 +158,7 @@ from ela.ports import (
     VaultNotOpen,
     VaultTaken,
     VerifierPort,
+    WaitingPage,
     check_answer,
     check_limit,
     check_verifiable,
@@ -196,6 +199,7 @@ __all__ = [
     "FakeScreenCapture",
     "FakeSpeech",
     "FakeStop",
+    "FakeTaskPages",
     "FakeTaskRepository",
     "FakeTextRecognition",
     "FakeTool",
@@ -1098,6 +1102,9 @@ class FakePage:
     landed_status: int | None = 200
     counts_after_click: dict[str, int] = field(default_factory=dict)
     another: AnotherPage | None = None
+    waited: str | None = None
+    """What a page taken back with ``resume`` says the boundary refused while it waited between
+    two steps (M13.10): :attr:`~ela.ports.Opened.waited`."""
 
 
 @dataclass
@@ -1199,8 +1206,11 @@ class FakeBrowser:
     each gesture — and to answer **when the test decides**. ``raising`` makes one member raise the
     given error; ``click_reached`` and ``click_released``, when set, hold the click until the test
     lets it go — the precondition of a stop given halfway, built instead of waited for.
-    :meth:`hold` does the same for ``count`` and ``text`` (M13.4b): a cancellation that arrives
+    :meth:`stall` does the same for ``count`` and ``text`` (M13.4b): a cancellation that arrives
     **after the opening** needs the tool held on the page, and a read has no click to be held at.
+
+    A page handed to a task with :meth:`hold` (M13.10) is in ``holding``, and the look leaves it
+    open; :meth:`resume` takes it back with a new boundary and is in ``resumed``.
 
     **Every use of a page asks the boundary where the page is, before and after, as the real
     adapters do** (M13.4f, ADR 0064 §4) — the function the tool handed to :meth:`open`, about
@@ -1239,6 +1249,11 @@ class FakeBrowser:
         sets its event (M13.10)."""
         self.waited: list[str] = []
         """Every selector :meth:`appeared` was asked to wait for, in order."""
+        self.holding: list[str] = []
+        """Every page handed to a task with :meth:`hold`, in order (M13.10)."""
+        self.resumed: list[str] = []
+        """Every page taken back with :meth:`resume`, in order."""
+        self._kept_by_a_task: set[str] = set()
         self._open: dict[str, bool] = {}
         self._boundaries: dict[str, Callable[[str], bool]] = {}
         self._where: str | None = None
@@ -1251,7 +1266,7 @@ class FakeBrowser:
         if error is not None:
             raise error
 
-    def hold(self, member: str) -> tuple[asyncio.Event, asyncio.Event]:
+    def stall(self, member: str) -> tuple[asyncio.Event, asyncio.Event]:
         """Hold ``count``, ``appeared`` or ``text`` from now on: the first event is set when the
         member is reached, and the member answers when the test sets the second."""
         if member not in ("count", "appeared", "text"):
@@ -1284,12 +1299,16 @@ class FakeBrowser:
     def _within(self, page: str, moved: str | None, *, made: bool) -> None:
         if moved is not None:
             self._where = moved
-        address = self._where
-        if address is None:
-            landed = self.page.landed if self._clicked else None
-            address = landed or self.page.address or self.opened[-1]
+        address = self._address()
         if not self._boundaries[page](address):
             raise LeftSite(address, made=made)
+
+    def _address(self) -> str:
+        """Where the page of the script is now."""
+        if self._where is not None:
+            return self._where
+        landed = self.page.landed if self._clicked else None
+        return landed or self.page.address or self.opened[-1]
 
     async def installed(self) -> bool:
         self._raise("installed")
@@ -1414,8 +1433,9 @@ class FakeBrowser:
         if not self._open.get(page, False):
             raise PageGone(page)
         # The look releases the page whatever it finds — also a page that is elsewhere, before
-        # the wait or once it has ended, of which it then says nothing.
-        del self._open[page]
+        # the wait or once it has ended, of which it then says nothing —, unless a task holds it.
+        if page not in self._kept_by_a_task:
+            del self._open[page]
         self._within(page, self.moves.get("glance"), made=False)
         self._within(page, self.moves_during.get("glance"), made=True)
         texts = self.page.texts if self.page.changes_to is None else self.page.changes_to
@@ -1426,9 +1446,39 @@ class FakeBrowser:
             another=self.page.another,
         )
 
+    async def hold(self, page: str) -> None:
+        if page in self._open:
+            self._open[page] = True
+            self._kept_by_a_task.add(page)
+            self.holding.append(page)
+
+    async def resume(self, page: str, allowed: Callable[[str], bool]) -> Opened:
+        self._raise("resume")
+        if self._stopped:
+            raise BrowserStopped("ELA is stopping")
+        if page not in self._open:
+            raise PageGone(page)
+        self._kept_by_a_task.discard(page)
+        self._open[page] = False
+        self._boundaries[page] = allowed
+        self.allowed.append(allowed)
+        self.resumed.append(page)
+        self._within(page, self.moves.get("resume"), made=False)
+        return Opened(
+            page=page,
+            status=self.page.status,
+            address=self._address(),
+            left=None,
+            waited=self.page.waited,
+        )
+
+    async def where(self, page: str) -> str | None:
+        return self._address() if page in self._open else None
+
     async def close(self, page: str) -> None:
         self.closed.append(page)
         self._open.pop(page, None)
+        self._kept_by_a_task.discard(page)
 
     async def settle(self, grace: Callable[[], Awaitable[None]]) -> tuple[str, ...]:
         """What ELA's close asks of the browser it was built with (the composition's contract,
@@ -1441,7 +1491,18 @@ class FakeBrowser:
         from then on every use of a page says so (M13.4c) — not that the page is gone."""
         self._stopped = True
         self._open.clear()
-        for member in ("open", "count", "appeared", "fill", "click", "text", "glance", "installed"):
+        self._kept_by_a_task.clear()
+        for member in (
+            "open",
+            "count",
+            "appeared",
+            "fill",
+            "click",
+            "text",
+            "glance",
+            "installed",
+            "resume",
+        ):
             self.raising[member] = BrowserStopped("ELA is stopping")
 
 
@@ -1496,7 +1557,9 @@ class FakeAccountBrowser(FakeBrowser):
         self.landings: list[str] = []
 
     def _held_by(self) -> str | None:
-        return PROFILE_STEP if self._open else self.holder
+        if any(page not in self._kept_by_a_task for page in self._open):
+            return PROFILE_STEP
+        return PROFILE_TASK if self._open else self.holder
 
     async def occupied(self) -> str | None:
         self._raise("occupied")
@@ -1565,8 +1628,8 @@ class FakeAccountBrowser(FakeBrowser):
         folder is free. The grace is kept, never waited for."""
         self._raise("shut")
         holder = self._held_by()
-        if holder == PROFILE_STEP:
-            raise ProfileBusy(PROFILE_STEP)
+        if holder in {PROFILE_STEP, PROFILE_TASK}:
+            raise ProfileBusy(holder)
         if holder is None:
             return None
         self.shuts.append(grace)
@@ -1591,6 +1654,64 @@ class FakeAccountBrowser(FakeBrowser):
         self._raise("fill_secret")
         self.secrets.append((selector, value.reveal()))
         self._done(page, "fill_secret")
+
+
+class FakeTaskPages:
+    """The room of the pages a task keeps between two of its steps (port ``TaskPages``, M13.10),
+    for the tools and the routes.
+
+    ``continued`` are the steps whose page is kept for the step right after them — the fact the
+    real room reads from the plan, here said by the test. What is kept is held on its browser and
+    handed back as the real room does: one page per task, to the same browser, and a page of the
+    other browser closed. ``offered`` is every page a step offered, ``released`` every task that
+    opened another page; ``until`` is what :meth:`waiting` says of every page.
+    """
+
+    def __init__(self, continued: Iterable[StepId] = (), *, until: datetime | None = None) -> None:
+        self.continued = set(continued)
+        self.until = until
+        self.kept: dict[TaskId, tuple[str, Browser, bool]] = {}
+        self.offered: list[tuple[TaskId, StepId, str]] = []
+        self.released: list[TaskId] = []
+
+    async def leave(
+        self, task: TaskId, step: StepId, page: str, browser: Browser, *, profile: bool
+    ) -> bool:
+        self.offered.append((task, step, page))
+        if step not in self.continued:
+            return False
+        await self.release(task)
+        await browser.hold(page)
+        self.kept[task] = (page, browser, profile)
+        return True
+
+    async def take(self, task: TaskId, browser: Browser) -> str | None:
+        kept = self.kept.pop(task, None)
+        if kept is None:
+            return None
+        page, holder, _ = kept
+        if holder is not browser:
+            await holder.close(page)
+            return None
+        return page
+
+    async def where(self, task: TaskId, browser: Browser) -> str | None:
+        kept = self.kept.get(task)
+        if kept is None or kept[1] is not browser:
+            return None
+        return await browser.where(kept[0])
+
+    async def release(self, task: TaskId) -> None:
+        self.released.append(task)
+        kept = self.kept.pop(task, None)
+        if kept is not None:
+            await kept[1].close(kept[0])
+
+    async def waiting(self) -> tuple[WaitingPage, ...]:
+        return tuple(
+            WaitingPage(task=task, profile=profile, until=self.until)
+            for task, (_, _, profile) in self.kept.items()
+        )
 
 
 class FakeTool:
@@ -1666,7 +1787,7 @@ class FakeTool:
     def relocatable(self, value: bool) -> None:
         self._relocatable = value
 
-    async def prospect(self, arguments: JsonMapping) -> Prospect:
+    async def prospect(self, arguments: JsonMapping, task: TaskId | None = None) -> Prospect:
         """Whatever the test set: nothing to show and nothing to refuse, by default."""
         return self.prospects
 

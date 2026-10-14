@@ -72,6 +72,7 @@ from ela.domain import (
     StepState,
     SystemPermission,
     Task,
+    TaskId,
     TaskPlan,
     TaskState,
     TaskStep,
@@ -1482,11 +1483,24 @@ class VaultLockedOut(BaseModel):
     locked: bool
 
 
+class WaitingPageOut(BaseModel):
+    """A page a task keeps between two of its steps (M13.10, ADR 0065 §3): **which task**, whether
+    it is on the browser with the user's accounts or on the empty one, **until when** — ``None``
+    while the task waits for nothing that ends, and then the page lasts until the task ends —, and
+    **the command that ends it**: stopping the task."""
+
+    task: TaskId
+    profile: bool
+    until: datetime | None
+    stop: str
+
+
 class BrowserOut(BaseModel):
     """What the profile of ELA's browser is now, looked at through its port at every request
     (M13.9, ADR 0063 §8; decision 35).
 
-    ``state`` is ``free``; or who holds the folder — ``step``, ``window``, ``process`` —; or why
+    ``state`` is ``free``; or who holds the folder — ``step``, ``task``, ``window``, ``process``
+    —; or why
     no browser can start on it, in the tools' own code without its prefix:
     ``unsupported_system``, ``profile_undeclared``, ``profile_unsafe``, ``not_installed``,
     ``failed``, ``stopped``. ``message`` is the sentence of that state, empty for a free profile.
@@ -1511,6 +1525,9 @@ class BrowserOut(BaseModel):
     saved: int | None
     profiles: int | None
     sites: tuple[str, ...]
+    waiting: tuple[WaitingPageOut, ...] = ()
+    """The pages tasks keep between two of their steps, on either browser (M13.10, ADR 0065 §3;
+    decision 26 of the review of its SPEC): which task, until when, and what ends it."""
 
 
 class BrowserWindowIn(BaseModel):
