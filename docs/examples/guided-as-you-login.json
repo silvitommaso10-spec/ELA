@@ -1,0 +1,33 @@
+{
+  "_nota": [
+    "La sezione 29 della guida, passo 3 (M13.10, ADR 0065 §4): il login da una frase. Il modello dice solo dove serve entrare; ELA legge la pagina, trova il solo modulo di accesso, chiede il sì nominando la voce del vault e scrive la password dal vault. Il modello non vede mai la password, la voce o il nome utente.",
+    "Un login conta due gesti fra i `looks`: la lettura della pagina e il login. news.ycombinator.com va dichiarato in ELA_BROWSER_SITES. Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "entrare in news.ycombinator.com da una frase",
+  "steps": [
+    {
+      "id": "c0de1a28-0000-4b00-8a00-000000001006",
+      "goal": "entrare, e dire che cosa mostra la pagina da dentro",
+      "required_capabilities": [
+        "browser.guided_as_you"
+      ],
+      "arguments": {
+        "goal": "Entra in Hacker News con il mio account e dimmi se in alto a destra la pagina mostra il link per uscire.",
+        "sites": [
+          "news.ycombinator.com"
+        ],
+        "max_cost_usd": "1.10",
+        "looks": 6,
+        "seconds": 300
+      },
+      "risk": "MEDIUM",
+      "expected_result": "la risposta del modello dice ciò che vede solo chi è entrato",
+      "success_conditions": [
+        "guided.closed",
+        "guided.gestures_audited",
+        "guided.reservations_closed"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}

@@ -33,7 +33,6 @@ from ela.domain import (
     AuditEventType,
     CapabilityId,
     ErrorMetadata,
-    ExecutionResult,
     ExecutionStatus,
     JsonMapping,
     JsonValue,
@@ -451,14 +450,10 @@ class SessionRoom:
         read = await self._made(
             live, session, number, live.gestures.read, {"site": site, "path": path}
         )
-        if read is None or read.state is not TaskState.COMPLETED:
-            live.refused += 1
-            if read is None:
-                return Gesture(
-                    f"gesture {number}: its arguments are not a call ELA can plan",
-                    TaskState.DENIED,
-                    acted=False,
-                )
+        if read is None:
+            return self._unplanned(live, number)
+        if read.state is not TaskState.COMPLETED:
+            live.refused += int(read.state is TaskState.DENIED)  # a read said no to is refused
             return Gesture(await self._said(number, read), read.state, acted=False)
         found = await self._output(read)
         form = found.get(LOGIN_FORM)
@@ -482,18 +477,22 @@ class SessionRoom:
             live, session, second, live.gestures.login, called, conditions=conditions
         )
         if child is None:
-            live.refused += 1
-            return Gesture(
-                f"gesture {second}: its arguments are not a call ELA can plan",
-                TaskState.DENIED,
-                acted=False,
-            )
+            return self._unplanned(live, second)
         if child.state is TaskState.DENIED:
             live.refused += 1
         acted = child.state is TaskState.COMPLETED
         if acted:
             live.acts += 1
         return Gesture(await self._logged(second, child), child.state, acted=acted)
+
+    @staticmethod
+    def _unplanned(live: _Live, number: int) -> Gesture:
+        live.refused += 1
+        return Gesture(
+            f"gesture {number}: its arguments are not a call ELA can plan",
+            TaskState.DENIED,
+            acted=False,
+        )
 
     async def _output(self, child: Task) -> JsonMapping:
         """What the last result of a child that worked holds."""
@@ -513,16 +512,15 @@ class SessionRoom:
         plan = await self._repository.plan(child.id)
         rows = await self._results.for_step(child.id, plan.steps[0].id)
         if child.state is not TaskState.COMPLETED:
-            lines.extend(f"code: {code}" for code in await self._codes(child, rows))
+            lines.extend(f"code: {code}" for code in await self._codes(child))
         said = rows[-1].output if rows else {}
         lines.extend(f"{key}: {said[key]}" for key in _LOGIN_SHOWN if key in said)
         return "\n".join(lines)
 
-    async def _codes(self, child: Task, rows: Sequence[ExecutionResult]) -> list[str]:
-        """The codes of a login that did not complete: the tool's own, or — for a verification
-        that failed — each failure's, as the step's ``STEP_FAILED`` recorded it; the code of the
-        end when neither is there. Codes, never sentences."""
-        failed = [row.error.code for row in rows if row.error is not None]
+    async def _codes(self, child: Task) -> list[str]:
+        """The codes of a login that did not complete, as the step's ``STEP_FAILED`` recorded them
+        — the tool's own, or each failure of a verification that failed —; the code of the end of
+        the task when its step never failed: a no, a stop. Codes, never sentences."""
         for event in reversed(await self._audit.read(task_id=child.id)):
             error = event.error
             if event.event_type is AuditEventType.STEP_FAILED and error is not None:
@@ -533,8 +531,6 @@ class SessionRoom:
                     if isinstance(one, Mapping) and isinstance(one.get("code"), str)
                 ]
                 return codes or [error.code]
-        if failed:
-            return failed[-1:]
         ending = await self._engine.ending(child)
         return [ending.code] if ending is not None and ending.code else []
 

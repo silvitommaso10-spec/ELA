@@ -225,9 +225,10 @@ class PageRoom:
                 seconds = min(seconds, left)
             if await self._first(ended, seconds):
                 return
-        if self._kept.get(kept.task) is kept:
-            del self._kept[kept.task]
-            await kept.browser.close(kept.page)
+        # Nobody took the page or let it go meanwhile: whoever does cancels this watch first, and
+        # no wait stands between the last look and here.
+        del self._kept[kept.task]
+        await kept.browser.close(kept.page)
 
     async def _first(self, ended: asyncio.Event, seconds: float) -> bool:
         """Wait for the task's end, ELA's stop or ``seconds``, whichever comes first: ``True`` if

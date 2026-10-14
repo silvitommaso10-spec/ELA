@@ -20,6 +20,7 @@
   `browser.left_site` e `browser.another_page`; §10, da quando la fermata è alzata non parte nessuna richiesta di
   cui il cancello è avvisato; §11, il port ha `another`; §14, ogni richiesta la fa il browser e ogni certificato lo giudica il
   browser.
+  **Rivista da ADR 0065 (M13.10)** il 2026-10-14: §3, «un browser nuovo per step»: dentro un task la pagina di uno step può essere quella del successivo (ADR 0065 §3); §4, §5 e §7, uno step che continua non ha `path` e la domanda nomina dov'è la pagina, senza la query; §8, ogni elemento è aspettato quando serve, e un campo segreto è rifiutato prima del gesto che lo riempirebbe (ADR 0065 §1); §9, lo sguardo non chiude una pagina tenuta, e la scadenza dell'adapter non vale per lei (ADR 0065 §3).
 - **Data:** 2026-09-29
 - **Riferimenti spec:** §10, §18, §19, §20, §27, §28, §29, §30, §32, §33, §39, §57, §59, §62, §63
 - **Milestone:** M13.4

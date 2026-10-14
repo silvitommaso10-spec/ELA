@@ -8,6 +8,7 @@
   Accettata quando quella prova fosse passata su un commit con questa riparazione. *`6d3c470` era l'ultimo commit
   del branch quando la prova è girata: i commit venuti dopo, questo compreso, portano solo documenti e i test dei
   documenti.*
+  **Rivista da ADR 0065 (M13.10)** il 2026-10-14: §1, il confine di una pagina che continua è quello dello step che continua, non più solo quello consegnato all'apertura (ADR 0065 §3).
 - **Data:** 2026-10-12
 - **Riferimenti spec:** §19, §33, §57
 - **Milestone:** M13.4f

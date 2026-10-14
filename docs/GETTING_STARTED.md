@@ -30,6 +30,7 @@ parentesi **non si incollano**. `ela task run <id>` si scrive `ela task run 55ed
 | `<id del companion>` | l'id della riga dell'iPhone nel registro | `ela device list`, colonna `ID` (§13) |
 | `<id della console>` | l'id della riga del Command Center nel registro | `ela device list`, colonna `ID` (§14) |
 | `<il piano del login>` | il file del piano del login dal vault della sezione 28 | nella prova è `docs/examples/login-news-ycombinator.json`, e lo dai allo script con `--login`; per un altro sito lo scrivi da `docs/examples/login-from-the-vault.json` |
+| `<il piano di WhatsApp>` | una copia del piano del passo 7 della sezione 29, con il tuo numero al posto di `NUMERO` | la scrive `scripts/prova_m13_10.py` in una cartella temporanea, dal numero che ti chiede nel Terminale: non la scrivi tu, e il numero non entra nel file della prova |
 | `<la cartella del profilo>` | la cartella in cui il browser di ELA tiene i siti in cui sei entrato | la scegli tu: sul Mac, fuori dal repository e da ciò che si sincronizza (sezione 28) |
 | `<il programma del vault>` | il percorso assoluto del programma `bw` di Bitwarden | dove l'hai installato: `which bw` lo dice (sezione 28) |
 | `<id della policy>` | l'id breve di una policy di §59, i primi otto caratteri del suo id | `ela policy list`, colonna `policy`; nella sezione 27 lo scrive `scripts/prova_m13_12.py`, dalla policy del passo 4 |
@@ -6709,6 +6710,340 @@ uv run ela task approve <id> --approval <approval-id>
 <!-- prova: 10.chiude -->
 ```
 SIGINT
+```
+
+## 29. Più passi, una pagina, e il login da una frase: la prova a mano di M13.10
+
+> **Scritta con l'implementazione il 14 ottobre 2026** (`milestones/M13.10.md`, decisioni 34, 35, 46 e 47 della review),
+> e `tests/docs/test_prova_m13_10.py` tiene lo script allineato a questa sezione. La si fa **sul Mac, senza il PC**, sul
+> branch di M13.10, con lo script `scripts/prova_m13_10.py`. **Il passo 7, WhatsApp, aspetta la misura**:
+> `scripts/misura_m13_10.py`, che lanci tu, trova i selettori della pagina; finché il piano di quel passo porta i suoi
+> segnaposto il passo è **SALTATO**, e la sezione si chiude dopo la misura. [ADR 0065](adr/0065-browser-steps.md) resta
+> Proposta finché questa prova non passa sull'ultimo commit del branch.
+
+Da M13.10 un lavoro nel browser può avere **più passi**: ogni gesto **aspetta il suo elemento**, così un campo o un
+pulsante che compare dopo un gesto non ferma più la sequenza; **la pagina di uno step può essere quella del successivo**,
+dentro lo stesso task — lo step dopo ha `continues` al posto di `path`, e non apre niente —; e **il modello di una sessione
+con il tuo profilo può chiedere un login** dicendo solo il sito: ELA trova il modulo, ti chiede il sì nominando la voce
+del vault, e il modello non vede mai la password, la voce o il nome utente.
+
+**Una riga per le policy di §59**: le policy di `browser.guided_as_you` nate prima di M13.10 **smettono di coprire** —
+lo schema della lettura con il profilo ha un argomento in più, `continues` —, e si ricreano una volta con `ela policy
+create`. Il 14 ottobre 2026 non ce n'era nessuna viva.
+
+**Che cosa serve**: in `ELA_BROWSER_SITES` anche `news.ycombinator.com` — la voce del tuo account di Hacker News nel
+vault c'è dal passo 6 della sezione 28 — e `web.whatsapp.com`; il vault chiuso, aperto al passo 4 con la riga di `ela
+vault status`; la chiave del modello e il tetto, come nella sezione 28. Lo script stampa **PASSATO**, **FALLITO**,
+**SALTATO** o **FERMATO** per ogni passo, e scrive tutto in `~/Downloads/prova-m13.10-<data>.txt`. I tipi dei blocchi
+sono quelli delle sezioni 26 e 28, e tre suoi: `ferma` è il «ferma» a tempo, dato dallo script mentre uno step aspetta;
+`pagina` ferma ELA mentre una pagina di un task aspetta fra due step, e guarda che non resti niente; `numero` ti chiede
+nel Terminale il tuo numero di telefono, che entra solo nel piano del passo 7 e **non nel file**.
+
+### 1. Prima
+
+Lo script controlla, e stampa **PASSATO** per ciascuno: il Mac è sull'ultimo commit del branch, con l'albero pulito; ELA
+risponde e gira dal codice del branch; i siti della prova sono dichiarati; il profilo è dichiarato e libero; il vault è
+dichiarato; la rotta della sessione, la chiave e ciò che il mese ha libero per la sessione del passo 4. **Se qualcosa
+manca, la prova si ferma lì** — **FERMATO** —, con ciò che manca.
+
+### 2. Due step, una pagina
+
+Il modulo di `httpbin.org`: il primo step lo riempie e lo invia, il secondo **non apre niente** e legge la pagina che il
+primo ha lasciato, aspettando l'elemento con il nome che il primo ha scritto. **Il sito riceve una sola richiesta della
+pagina del modulo.**
+
+<!-- prova: 2.comando -->
+```
+uv run ela task create --json "due passi su una pagina"
+uv run ela task plan <id> --file docs/examples/two-steps-one-page.json
+uv run ela task run <id>
+```
+
+<!-- prova: 2.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 2.sì -->
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+<!-- prova: 2.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 2.atteso -->
+```
+outcome completed
+```
+
+<!-- prova: 2.schermo -->
+```
+uv run ela task results <id>
+```
+
+<!-- prova: 2.occhio -->
+```
+Qui sopra, sullo schermo: il secondo risultato, di browser.read, porta «ELA prova 7431» letto dalla pagina che il primo step aveva lasciato, e il suo indirizzo è httpbin.org/post?
+```
+
+### 3. Il «ferma» dentro l'attesa
+
+Un campo e un pulsante che **non c'è**: il campo si riempie, e il gesto dopo aspetta il suo elemento fino ai trenta
+secondi dello step. Prima, lo script ferma il task: lo step finisce `browser.stopped`, **un gesto fatto**, e il risultato
+dice `stopped_at 2`, il primo gesto non fatto.
+
+<!-- prova: 3.comando -->
+```
+uv run ela task create --json "fermare un gesto che aspetta"
+uv run ela task plan <id> --file docs/examples/act-stop-while-waiting.json
+uv run ela task run <id>
+```
+
+<!-- prova: 3.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 3.sì -->
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+<!-- prova: 3.ferma -->
+```
+5
+```
+
+<!-- prova: 3.comando -->
+```
+uv run ela task results <id>
+```
+
+<!-- prova: 3.atteso -->
+```
+gestures 1
+stopped_at 2
+error browser.stopped
+```
+
+### 4. Il login da una frase
+
+**Prima esci da Hacker News** nel browser di ELA: lo script lo guarda lui, con una lettura come te della pagina
+pubblica, e **se ci trova `logout` si ferma** — FERMATO — dicendo come uscire. Poi la frase: il modello chiede il login
+con il solo sito; ELA legge la pagina, **trova il solo modulo di accesso** — non quello di registrazione, il cui campo si
+dichiara `new-password` —, e ti chiede il sì: **la domanda nomina la voce del vault e il nome utente mascherato**, e li
+leggi nel tuo terminale. Mentre ELA entra compare la finestra del suo browser: **finché c'è, non scrivere**. Un login
+conta **due gesti** della sessione: la lettura della pagina, e il login.
+
+<!-- prova: 4.mano -->
+```
+Esci da Hacker News nel browser di ELA: `uv run ela browser open news.ycombinator.com` nel tuo terminale, «logout» nella pagina se c'è, poi Cmd-Q — non il pulsante rosso.
+```
+
+<!-- prova: 4.comando -->
+```
+uv run ela task create --json "guardare che in quel sito non sono ancora dentro"
+uv run ela task plan <id> --file docs/examples/read-as-you-news-ycombinator.json
+uv run ela task run <id>
+```
+
+<!-- prova: 4.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 4.sì -->
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+<!-- prova: 4.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 4.atteso -->
+```
+outcome completed
+```
+
+<!-- prova: 4.assente -->
+```
+uv run ela task results <id>
+```
+
+<!-- prova: 4.comando -->
+```
+uv run ela task create --json "entrare in Hacker News da una frase"
+uv run ela task plan <id> --file docs/examples/guided-as-you-login.json
+uv run ela task run <id>
+```
+
+<!-- prova: 4.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 4.sì -->
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+<!-- prova: 4.sfondo -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 4.aspetta -->
+```
+browser.login WAITING_APPROVAL
+```
+
+<!-- prova: 4.sì -->
+```
+uv run ela task approve <id del figlio> --approval <approval-id>
+uv run ela task run <id del figlio>
+```
+
+<!-- prova: 4.atteso -->
+```
+outcome completed
+```
+
+<!-- prova: 4.fine -->
+```
+outcome completed
+```
+
+<!-- prova: 4.figli -->
+```
+browser.read_as_you COMPLETED
+browser.login COMPLETED
+```
+
+<!-- prova: 4.occhio -->
+```
+La risposta del modello, nel file, dice che in alto a destra la pagina mostra il link per uscire, e nel tuo vault non è cambiato niente?
+```
+
+### 5. ELA si ferma con una pagina che aspetta
+
+Il piano del passo 2 con **una domanda fra i due step**: dopo il primo, la sua pagina aspetta il tuo sì per il
+secondo, e mentre aspetta **ELA si ferma**. Lo script guarda che lo stato del browser dica che una pagina di questo task
+aspetta, ferma ELA, e poi che **non resti niente**: nessun processo del browser.
+
+<!-- prova: 5.comando -->
+```
+uv run ela task create --json "fermare ELA con una pagina che aspetta"
+uv run ela task plan <id> --file docs/examples/two-steps-a-question-between.json
+uv run ela task run <id>
+```
+
+<!-- prova: 5.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 5.sì -->
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+<!-- prova: 5.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 5.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 5.pagina -->
+```
+SIGTERM
+```
+
+### 6. Il riavvio, e la finestra
+
+ELA si riavvia **a mano**, nel suo Terminale; poi la finestra per i passi con il profilo, che il passo 7 vuole.
+
+<!-- prova: 6.mano -->
+```
+Riavvia ELA nel suo Terminale, con il comando di sempre, e aspetta che risponda.
+```
+
+<!-- prova: 6.comando -->
+```
+uv run ela browser window show
+```
+
+<!-- prova: 6.atteso -->
+```
+start with a window
+```
+
+### 7. WhatsApp, un messaggio a te stesso
+
+Due step con il profilo e la finestra: il primo apre la chat con te stesso, scrive un testo fisso e neutro e lo invia;
+il secondo **continua sulla stessa pagina** e aspetta la bolla di un messaggio uscito con quel testo. **Il numero è il
+tuo**: lo script te lo chiede nel Terminale, non lo mostra e non lo scrive; ogni invio è `HIGH` e chiede il tuo sì, e
+niente nasconde l'automazione. **Un tentativo solo**: se qualcosa non va, il passo è SALTATO con ciò che la pagina ha
+detto. Finché la misura non ha dato i selettori, il piano porta i segnaposto e il passo è SALTATO.
+
+<!-- prova: 7.numero -->
+```
+NUMERO
+```
+
+<!-- prova: 7.comando -->
+```
+uv run ela task create --json "mandarmi un messaggio su WhatsApp"
+uv run ela task plan <id> --file <il piano di WhatsApp>
+uv run ela task run <id>
+```
+
+<!-- prova: 7.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 7.sì -->
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+<!-- prova: 7.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 7.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 7.sì -->
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+<!-- prova: 7.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 7.atteso -->
+```
+outcome completed
+```
+
+<!-- prova: 7.occhio -->
+```
+Sul telefono, nella chat con te stesso, c'è il messaggio «ELA prova M13.10: un messaggio a me stesso», uno solo?
 ```
 
 ## Dove guardare dopo

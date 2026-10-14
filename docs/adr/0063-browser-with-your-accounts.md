@@ -30,6 +30,7 @@
   processo di quel browser nomina più la cartella (§8), un campo che porta solo un inizio è detto così (§5), e
   la vista della console dice del login (§10). La prova si rifà per intero. **Rifatta alle 18:16 dello stesso
   giorno, sul commit di quel giro: è quella in testa a questa riga.**
+  **Rivista da ADR 0065 (M13.10)** il 2026-10-14: §1, `continues` sullo schema coperto fa smettere di coprire le policy nate prima (ADR 0065 §3); §4, la pagina con il profilo può durare fra due step di un task (ADR 0065 §3); §5, la voce non è più ricordata in memoria — `named` (ADR 0065 §2) —, `expect_text` è facoltativo e i tre fatti vanno anche al modello di un login che ha chiesto lui (ADR 0065 §4); §6, la sessione con il profilo ha il gesto di login (ADR 0065 §4); §8, chi tiene il profilo può essere `task`, e lo dice la stanza (ADR 0065 §3).
 - **Data:** 2026-10-11
 - **Riferimenti spec:** §19, §27, §29, §30, §32, §33, §39, §57, §59, §62, §63
 - **Milestone:** M13.9, con M13.4b, M13.4c e M13.4e sullo stesso branch

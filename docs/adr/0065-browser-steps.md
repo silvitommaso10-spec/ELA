@@ -239,7 +239,40 @@ Righe dei verifier, riscritte:
 |---|---|---|---|---|
 | `browser.login` | `LoginVerifier` | `browser-login-verifier` | `browser.expect_visible`, `browser.login_form_gone` | `browser.expect_missing`, `browser.page_gone`, `browser.second_factor`, `browser.left_site`, `browser.another_page`, `browser.login_form_still_there`, `browser.http_status` |
 
+### 5. Ciò che questo ADR dichiara e non risolve
+
+1. **Il ritardo del motore** (§1): un elemento è visto fino a circa mezzo secondo dopo che c'è (misura (a)); nei
+   test l'elemento compare subito. Una soglia di tempo su quel ritardo non si fissa: questo Mac non la risolve.
+2. **Un selettore sbagliato costa il tempo dello step** (§1): i gesti prima di lui sono fatti. Dentro una
+   sessione il modello lo sa dalla descrizione dello strumento.
+3. **Una pagina che aspetta e un task che non aspetta niente che finisca** (§3): uno step che continua senza
+   domanda — una lettura — e una corsa che si ferma prima di lui lasciano la pagina viva finché il task non
+   finisce. Lo stato del browser e la console dicono quale task la tiene e come si ferma.
+4. **Un gesto di file dentro una sessione, e `continues` dentro una sessione**, non sono di nessuna milestone
+   (decisione 39): una sessione apre le sue pagine, e i file sono di [M13.13](../milestones/M13.13.md) con il
+   loro piano.
+5. **La lettura di un login gira come dice l'interruttore, il login sempre con la finestra** (§4): un sito può
+   servire due pagine diverse. Se dopo il sì i selettori non tornano, il login finisce con il suo codice, il sì
+   è speso e niente è scritto.
+6. **Una pagina può dire al modello di chiedere un login** (§4): resta `HIGH`, chiede ogni volta, la domanda
+   nomina il sito e la voce, e il modello non può dire altro che un percorso del solo sito della sessione.
+7. **Nessuno spazzino dei browser all'avvio** (§3): con la finestra non è misurato che cosa resta di un'ELA
+   uccisa con una pagina che aspetta; lì vale ciò che ADR 0063 dice di un browser che sopravvive a ELA, e lo
+   chiude `ela browser close`.
+
 ## Conseguenze
+
+**Righe riviste** — gli ADR non si riscrivono: si leggono con questo accanto, e la riga «Stato:» di ciascuno lo
+dice, con la sezione di questo ADR a cui guardare.
+
+- **ADR 0045** §4 e §6-bis — §6-bis: per ciò che la domanda nomina e il piano non porta serve un secondo canale, `named` (§2). §4: `prospect` riceve il task, facoltativo (§3).
+- **ADR 0052** §3, §4, §5, §7, §8 e §9 — §3: dentro un task la pagina di uno step può essere quella del successivo (§3). §4, §5 e §7: uno step che continua non ha `path`, e la domanda nomina dov'è la pagina. §8: ogni elemento è aspettato quando serve (§1). §9: lo sguardo non chiude una pagina tenuta (§3).
+- **ADR 0060** §1, §2, §4, §5 e §8 — §1: non c'è una capability `browser.session` (§3). §2, §4 e §5: gli strumenti sono un dato, e un login sono due figli (§4). §8: ciò che il modello legge di un login (§4).
+- **ADR 0063** §1, §4, §5, §6 e §8 — §1: le policy di `browser.guided_as_you` nate prima smettono di coprire (§3). §4: la pagina con il profilo dura fra due step (§3). §5: la voce viaggia con il sì (§2), `expect_text` è facoltativo (§4). §6: il gesto di login (§4). §8: `task` (§3).
+- **ADR 0064** §1 — il confine di una pagina che continua è quello dello step che continua (§3).
+- **La registrazione di M13.10**, per i file: i due criteri che la nominano passano parola per parola a [M13.13](../milestones/M13.13.md), con le misure (c) e (d) e le domande 23, 24, 30 e 36 (decisioni 21 e 48 della review).
+
+Le altre conseguenze:
 
 - **Regola di architettura 71**: ciò che una domanda ha nominato arriva al tool con il sì, e da nessun'altra
   parte. Nessun modulo nomina la costante dell'executor `NAMED` dentro la costruzione di un `AuditEvent` — il
@@ -251,4 +284,6 @@ Con questo ADR le regole di architettura sono **settantuno** (la 71); i contratt
 **quindici**, i port diventano **trentasei** (`TaskPages`), le rotte dell'API restano **settantadue** e i comandi
 della CLI **trentanove**; le capability restano **diciotto**, le identità del middleware **sei**.
 
-*Il resto si scrive con il resto dell'implementazione.*
+**Ciò che non è misurato, per nome**: WhatsApp Web con il profilo e la finestra, fino alla misura di Tommaso
+(`scripts/misura_m13_10.py`, decisione 47) e alla prova; un login chiesto dal modello su un sito vero, fino alla
+prova (passo 3 della sezione 29); che cosa resta, con la finestra, di un'ELA uccisa con una pagina che aspetta.

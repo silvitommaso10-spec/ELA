@@ -846,8 +846,13 @@ class _Gate:
         if not leaves:
             answer["errorReason"] = REFUSED
         # A request that is gone by now — its page closed, its frame gone elsewhere — cannot be
-        # answered, and has not left: the browser says so, and that is not a failure.
-        with contextlib.suppress(PlaywrightError):
+        # answered, and has not left: the browser says so, and that is not a failure. Nor is a
+        # driver that died meanwhile — the browser closed at the end of a step, of a task, at
+        # ELA's stop —, which Playwright says with a plain ``Exception``, not one of its own
+        # (found by ``make check`` of M13.10): **an answer not written is a request that stays
+        # paused, and a paused request never leaves**. A cancellation is not an ``Exception``,
+        # and goes on as what it is.
+        with contextlib.suppress(Exception):
             await self._session.send(
                 "Fetch.continueRequest" if leaves else "Fetch.failRequest", answer
             )
