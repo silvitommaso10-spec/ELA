@@ -72,6 +72,25 @@ def test_the_bag_the_adr_names_is_the_executor_s_and_the_prospect_s() -> None:
     assert "`vault.entry_forgotten` è ritirato" in text
 
 
+def test_the_code_of_the_remembered_entry_is_in_no_file_of_the_product() -> None:
+    """Criterion 9 of M13.10: ``vault.entry_forgotten`` went with the entry remembered in memory —
+    in no module of ``src/``, and in no page of ``apps/``."""
+    gone = "vault." + "entry_forgotten"
+    found = [
+        path
+        for folder in (ROOT / "src", ROOT / "apps")
+        for path in folder.rglob("*")
+        if path.is_file()
+        and path.suffix in {".py", ".html", ".js", ".css", ".json"}
+        and gone in path.read_text(encoding="utf-8", errors="replace")
+    ]
+
+    assert found == []
+    assert ENTRY_NOT_NAMED in (ROOT / "src" / "ela" / "tools" / "account.py").read_text(
+        encoding="utf-8"
+    ), "the control: the reader reads the module where the code would be"
+
+
 # ----------------------------------------------------------------------------------------
 # §3 — the page between two steps of a task
 # ----------------------------------------------------------------------------------------
