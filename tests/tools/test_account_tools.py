@@ -32,9 +32,11 @@ from ela.permissions import (
     BROWSER_ACT_AS_YOU,
     BROWSER_LOGIN,
     BROWSER_READ_AS_YOU,
+    EXPECT_MAX_LENGTH,
     production_catalogue,
 )
 from ela.ports import (
+    BROWSER_LOGIN_FORM_GONE,
     HELD,
     PROFILE_PROCESS,
     PROFILE_STEP,
@@ -73,6 +75,7 @@ from ela.tools.account import (
     ENTRY_NOT_NAMED,
     FIELD_CHANGED,
     LOGIN_FORM_GET,
+    LOGIN_FORM_STILL_THERE,
     LOGS_IN,
     NAMED_ENTRY,
     NO_WINDOW,
@@ -95,6 +98,7 @@ from ela.tools.browser import (
     ELEMENT_MISSING,
     FAILED,
     FIRST_GESTURE,
+    HTTP_STATUS,
     LEFT_SITE,
     NOT_INSTALLED,
     OPENS,
@@ -506,7 +510,7 @@ async def test_an_action_with_the_profile_refuses_a_secret_field_like_the_empty_
         ({"username_field": ""}, "username_field"),
         ({WORD_FIELD: "xpath=//input"}, WORD_FIELD),
         ({"click": ">> x"}, "click"),
-        ({"expect_text": ""}, "expect_text"),
+        ({"expect_text": "x" * (EXPECT_MAX_LENGTH + 1)}, "expect_text"),
         ({"entry": ""}, "entry"),
         ({"entry": "x" * 65}, "entry"),
         ({"entry": 7}, "entry"),
@@ -1198,7 +1202,8 @@ def test_what_the_three_verifiers_declare() -> None:
 
     assert AccountReadVerifier.conditions == BrowserReadVerifier.conditions
     assert AccountActVerifier.conditions == BrowserActVerifier.conditions
-    assert LoginVerifier.conditions == {BROWSER_EXPECT_VISIBLE}
+    assert LoginVerifier.conditions == {BROWSER_EXPECT_VISIBLE, BROWSER_LOGIN_FORM_GONE}
+    assert {LOGIN_FORM_STILL_THERE, HTTP_STATUS} <= LoginVerifier.failure_codes
     assert BROWSER_SECOND_FACTOR in LoginVerifier.failure_codes
     assert BROWSER_SECOND_FACTOR not in AccountActVerifier.failure_codes
     assert {BROWSER_EXPECT_MISSING, BROWSER_PAGE_GONE} <= LoginVerifier.failure_codes

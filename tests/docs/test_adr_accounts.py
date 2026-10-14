@@ -36,7 +36,7 @@ from tests.architecture.rules import RULES
 from tests.contracts.protocols import members, port_protocols
 from tests.docs.guided_ports import STEPS_PORTS
 from tests.docs.steps_additions import added_members as steps_members
-from tests.docs.steps_additions import rewritten_rows
+from tests.docs.steps_additions import rewritten_rows, rewritten_verifier_rows
 from tests.docs.test_adr_browser import CODE, TOOL_ROW, VERIFIER_ROW, codes
 from tests.docs.test_adr_cli import coded_commands
 from tests.docs.test_adr_composition import coded_routes
@@ -134,6 +134,8 @@ def test_the_verifier_rows_are_the_running_verifiers() -> None:
     )
 
     assert set(rows) == {verifier.capability_id for verifier in running}
+    # Where ADR 0065 (M13.10) wrote a row again, that row wins: an accepted ADR is not rewritten.
+    rows |= rewritten_verifier_rows()
     for verifier in running:
         _, class_name, name, conditions, failures = rows[verifier.capability_id]
         assert class_name == type(verifier).__name__

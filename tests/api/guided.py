@@ -35,13 +35,13 @@ from ela.ports import Clock, IdGenerator, SessionEnd, SessionHost, SessionPlan
 from ela.providers.anthropic import AnthropicGateway, AnthropicProvider, AnthropicSettings
 from ela.providers.anthropic.models import HAIKU_5_5
 from ela.testing.fakes import (
-    FAKE_SESSION_TOOLS,
     FakeAccountBrowser,
     FakeAgentSession,
     FakeBrowser,
     FakePower,
     FakeVault,
     finished,
+    session_tool_names,
 )
 from tests.api.support import AUTHORIZED, BASE
 from tests.composition.support import create_schema, declare
@@ -142,6 +142,11 @@ class Anthropic:
         )
 
 
+def offered(plan: SessionPlan) -> frozenset[str]:
+    """The names of the tools of a session's plan, as the session lists them."""
+    return session_tool_names(plan.tools)
+
+
 def body_of(plan: SessionPlan, **update: Any) -> dict[str, Any]:
     """A call of the session as Claude Code sends it: its model, its ``max_tokens``, its tools."""
     return {
@@ -149,7 +154,7 @@ def body_of(plan: SessionPlan, **update: Any) -> dict[str, Any]:
         "max_tokens": plan.max_tokens,
         "stream": True,
         "system": [{"type": "text", "text": plan.instructions}],
-        "tools": [{"name": name, "input_schema": {}} for name in sorted(FAKE_SESSION_TOOLS)],
+        "tools": [{"name": name, "input_schema": {}} for name in sorted(offered(plan))],
         "messages": [{"role": "user", "content": plan.goal}],
         **update,
     }
@@ -205,7 +210,9 @@ class Script:
     """A fake session's turn: the tools of its start, then its steps, then its last text."""
 
     steps: list[Step]
-    tools: tuple[str, ...] = tuple(sorted(FAKE_SESSION_TOOLS))
+    tools: tuple[str, ...] | None = None
+    """The tools the start lists: those of the plan (M13.10: two, or three with the profile),
+    unless the test says otherwise."""
     answer: str = "Il canale è @MrBeast: https://www.youtube.com/results?search_query=MrBeast"
     app: FastAPI | None = None
     plans: list[SessionPlan] = field(default_factory=list)
@@ -218,7 +225,8 @@ class Script:
 
     async def __call__(self, plan: SessionPlan, host: SessionHost) -> SessionEnd:
         self.plans.append(plan)
-        if await host.started(self.tools) is not None:
+        listed = self.tools if self.tools is not None else tuple(sorted(offered(plan)))
+        if await host.started(listed) is not None:
             await asyncio.Event().wait()  # halted: ELA interrupts the session
         for step in self.steps:
             await step(self, plan, host)

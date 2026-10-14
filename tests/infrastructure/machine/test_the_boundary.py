@@ -1318,7 +1318,7 @@ USES: dict[str, Callable[[Any, str], Awaitable[Any]]] = {
 USED = shell.REPORTS + '<title>t</title><input id="f"><button id="go">go</button><p>x</p>'
 
 
-OF_THE_PROFILE_ALONE = {"fill_secret", "landed", "holds"}
+OF_THE_PROFILE_ALONE = {"fill_secret", "landed", "holds", "forms"}
 """The uses of a page only the browser of the profile has: walked in a test of their own."""
 
 
@@ -1431,10 +1431,13 @@ async def test_a_secret_is_not_typed_and_a_landing_is_not_told_on_a_page_outside
         await made.landed(opened.page)
     with pytest.raises(LeftSite) as compared:
         await made.holds(opened.page, "#f", Secret("-".join(("a", "word", "of", "the", "test"))))
+    with pytest.raises(LeftSite) as forms:
+        await made.forms(opened.page)
     await made.close(opened.page)
 
     assert typed.value.made is False and told.value.made is False, "before the use, not after"
     assert compared.value.made is False, "a field is not read again there either"
+    assert forms.value.made is False, "nor the forms of the page (M13.10)"
     assert web.events == []
 
 
@@ -1463,7 +1466,11 @@ async def test_a_secret_typed_on_a_page_that_ends_elsewhere_meanwhile_is_said_as
     allowed.closed, allowed.closes_at = False, allowed.asked + 2
     with pytest.raises(LeftSite) as compared:
         await made.holds(opened.page, "#f", Secret("-".join(("a", "word", "of", "the", "test"))))
+    allowed.closed, allowed.closes_at = False, allowed.asked + 2
+    with pytest.raises(LeftSite) as forms:
+        await made.forms(opened.page)
 
+    assert forms.value.made is True, "what was read of the forms is thrown away (M13.10)"
     assert typed.value.made is True
     assert told.value.made is True, "and where it landed, read before it was elsewhere, is not said"
     assert compared.value.made is True, "nor whether the field held what was typed"

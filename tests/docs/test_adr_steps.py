@@ -13,8 +13,30 @@ from pathlib import Path
 from ela.api.security import Kind
 from ela.executive import executor
 from ela.permissions import production_catalogue
-from ela.ports import Prospect
-from ela.tools.account import ENTRY_NOT_NAMED
+from ela.ports import (
+    BROWSER_LOGIN_FORM_GONE,
+    CONTINUES,
+    LOGIN_FORM,
+    LOGIN_FORM_AMBIGUOUS,
+    LOGIN_FORM_NOT_FOUND,
+    NO_LOGIN_FORM,
+    PROFILE_TASK,
+    Prospect,
+)
+from ela.tools.account import (
+    ENTRY_NOT_NAMED,
+    LOGIN_FORM_STILL_THERE,
+    STOP_A_TASK,
+    LoginTool,
+    LoginVerifier,
+)
+from ela.tools.browser import (
+    LEFT_WHILE_WAITING,
+    NO_PAGE_TO_CONTINUE,
+    BrowserActTool,
+    BrowserReadTool,
+)
+from ela.tools.guided import LOOKS_OF_A_LOGIN, SENDS_AS_YOU, SESSION_AS_YOU
 from tests.architecture.rules import NAMED_CONSTANT, RULES
 from tests.contracts.protocols import port_protocols
 from tests.docs.guided_ports import STEPS_PORTS
@@ -47,6 +69,47 @@ def test_the_bag_the_adr_names_is_the_executor_s_and_the_prospect_s() -> None:
     assert "named" in Prospect.__dataclass_fields__ and "`Prospect.named`" in text
     assert f"`{ENTRY_NOT_NAMED}`" in text
     assert "`vault.entry_forgotten` è ritirato" in text
+
+
+# ----------------------------------------------------------------------------------------
+# §3 — the page between two steps of a task
+# ----------------------------------------------------------------------------------------
+
+
+def test_the_names_of_the_page_between_steps_are_the_code_s() -> None:
+    text = adr_text()
+
+    assert f"`{CONTINUES}`" in text and f"`{NO_PAGE_TO_CONTINUE}`" in text
+    assert f"`{LEFT_WHILE_WAITING}`" in text and f"**`{PROFILE_TASK}`**" in text
+    assert "`ela task cancel`" in text and STOP_A_TASK == "ela task cancel"
+    assert NO_PAGE_TO_CONTINUE in BrowserReadTool.error_codes & BrowserActTool.error_codes
+    assert NO_PAGE_TO_CONTINUE not in LoginTool.error_codes, "a login never continues"
+    assert LEFT_WHILE_WAITING not in BrowserReadTool.audit_numbers | BrowserActTool.audit_numbers
+
+
+# ----------------------------------------------------------------------------------------
+# §4 — the login the model asks for
+# ----------------------------------------------------------------------------------------
+
+
+def test_the_names_of_the_login_of_the_model_are_the_code_s() -> None:
+    text = adr_text()
+
+    for name in (LOGIN_FORM, NO_LOGIN_FORM, LOGIN_FORM_NOT_FOUND, LOGIN_FORM_AMBIGUOUS):
+        assert f"`{name}`" in text, name
+    assert f"**`{BROWSER_LOGIN_FORM_GONE}`**" in text
+    assert BROWSER_LOGIN_FORM_GONE in LoginVerifier.conditions
+    assert LOGIN_FORM_STILL_THERE in LoginVerifier.failure_codes
+    assert [tool.name for tool in SESSION_AS_YOU.tools] == ["read", "act", "login"]
+    assert "**conta due gesti**" in text and LOOKS_OF_A_LOGIN == 2
+
+
+def test_the_sentence_of_what_leaves_is_the_one_of_decision_32() -> None:
+    said = (
+        "the text of the pages read as you, and of a login where its page ended, its status and "
+        "whether its form was still there — never the entry, the username or the password"
+    )
+    assert said in SENDS_AS_YOU and said in " ".join(adr_text().split())
 
 
 # ----------------------------------------------------------------------------------------

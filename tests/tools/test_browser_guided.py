@@ -197,7 +197,7 @@ async def test_a_step_whose_session_is_open_already_launches_nothing_and_spends_
         STEP_ID,
         capability=BROWSER_GUIDED,
         sites=("www.youtube.com",),
-        tools=world.session.tools,
+        tools=await world.session.tools(EMPTY_SESSION.tools),
         gestures=EMPTY_SESSION.gestures,
     )
     assert not isinstance(opened, ErrorMetadata)
@@ -300,7 +300,10 @@ async def test_a_session_launched_with_the_plan_ela_wrote() -> None:
     assert "www.youtube.com" in plan.instructions and "at most 8 gestures" in plan.instructions
     assert plan.seconds == 120 and plan.goal == ARGUMENTS["goal"]
     assert reservation.amount == Decimal("0.05")
-    assert (plan.read_description, plan.act_description) == (READ_DESCRIPTION, ACT_DESCRIPTION)
+    assert [(one.name, one.description) for one in plan.tools] == [
+        ("read", READ_DESCRIPTION),
+        ("act", ACT_DESCRIPTION),
+    ]
 
 
 # ----------------------------------------------------------------------------------------

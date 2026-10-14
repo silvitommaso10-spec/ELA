@@ -606,6 +606,7 @@ def _room() -> SessionRoom:
         spending=SpendingGate(results, None),
         gateway=FakeModelGateway(),
         running=set(),
+        audit=audit,
     )
 
 

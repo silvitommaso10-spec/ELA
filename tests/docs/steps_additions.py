@@ -15,7 +15,9 @@ from pathlib import Path
 ADR_0065 = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0065-browser-steps.md"
 EXTENDED = "Port estesi:"
 REWRITTEN = "Righe dei tool, riscritte:"
+REWRITTEN_VERIFIERS = "Righe dei verifier, riscritte:"
 PORT_ROW = re.compile(r"^\| `(\w+)` \| ([^|]+) \| (sync|async) \| (.+) \|$")
+VERIFIER_ROW = re.compile(r"^\| `(browser\.\w+)` \| `(\w+)` \| `([\w-]+)` \| (.+?) \| (.+?) \|$")
 TOOL_ROW = re.compile(
     r"^\| `(browser\.\w+)` \| `(\w+)` \| `([\w-]+)` \| (sì|no) \| (.+?) \| (.+?) \|$"
 )
@@ -51,4 +53,14 @@ def rewritten_rows() -> dict[str, tuple[str, ...]]:
         match.group(1): match.groups()
         for line in _table_after(REWRITTEN)
         if (match := TOOL_ROW.match(line))
+    }
+
+
+def rewritten_verifier_rows() -> dict[str, tuple[str, ...]]:
+    """For each verifier whose row ADR 0065 writes again (M13.10: the login's, with the condition
+    of a form gone): the groups of that row — capability, class, name, conditions, failures."""
+    return {
+        match.group(1): match.groups()
+        for line in _table_after(REWRITTEN_VERIFIERS)
+        if (match := VERIFIER_ROW.match(line))
     }
