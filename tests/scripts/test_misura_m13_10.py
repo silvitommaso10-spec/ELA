@@ -93,24 +93,32 @@ def test_a_candidate_keeps_only_the_declared_attributes_and_the_classes_made_of_
     assert found == [
         misura.Candidate(
             "div",
-            {"contenteditable": "true", "role": "textbox"},
+            {"contenteditable": "true", "data-tab": "10", "role": "textbox"},
             ("message-out", "selectable-text"),
         )
     ]
 
 
-def test_a_value_with_a_space_or_that_begins_with_a_digit_is_not_a_value_a_selector_takes() -> None:
+def test_a_space_letters_after_a_digit_or_a_long_number_is_not_a_value_a_selector_takes() -> None:
     (found,) = misura.candidates_of(
         [
             {
                 "tag": "span",
-                "attributes": {"data-icon": "send now", "data-testid": "1a"},
+                "attributes": {"data-icon": "send now", "data-testid": "1a", "data-tab": "1234"},
                 "classes": [],
             }
         ]
     )
 
     assert found.attributes == {}
+
+
+def test_a_small_number_is_a_value_a_selector_takes_as_whatsapp_declares_its_box() -> None:
+    """``data-tab="10"`` tells the box from the search box when no place does (the first measure,
+    2026-10-14): a value of three digits at most, which is nobody's number."""
+    (found,) = misura.candidates_of([{"tag": "div", "attributes": {"data-tab": "10"}}])
+
+    assert found.attributes == {"data-tab": "10"}
 
 
 def test_a_selector_is_written_from_one_declared_fact_at_a_time_and_never_from_a_position() -> None:

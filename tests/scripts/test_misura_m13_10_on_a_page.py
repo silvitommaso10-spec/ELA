@@ -24,12 +24,14 @@ nothing_left_behind = shell.nothing_left_behind
 ENVIRONMENT = {"PATH": "/usr/bin:/bin", "HOME": str(Path.home()), "LANG": "C.UTF-8"}
 STYLE = "<style>[contenteditable] { display: block; min-height: 20px; width: 200px; }</style>"
 SEARCH = '<div contenteditable="true" role="textbox" data-tab="3"></div>'
-WRITTEN_INTO = "<script>document.querySelector('[data-tab=\"10\"]').focus()</script>"
-"""Where Tommaso wrote a character: the box has the focus, as it has in the window."""
+LOOKALIKE = '<div contenteditable="true" role="textbox"></div>'
+WRITTEN_INTO = "<script>document.getElementById('written').focus()</script>"
+"""Where Tommaso wrote a character: the box has the focus, as it has in the window. Its ``id`` is
+the test's mark, which the script does not write selectors from."""
 
 
-def box(editable: str = "true") -> str:
-    return f'<div contenteditable="{editable}" role="textbox" data-tab="10"></div>'
+def box(editable: str = "true", tab: str = ' data-tab="10"') -> str:
+    return f'<div id="written" contenteditable="{editable}" role="textbox"{tab}></div>'
 
 
 PAGES = {
@@ -41,6 +43,9 @@ PAGES = {
     "a box editable in another way than true": (
         f'<div id="side">{SEARCH}</div>'
         f'<div id="main"><footer>{box("plaintext-only")}</footer></div>'
+    ),
+    "a box like the search box in all but its place": (
+        f'<div id="side">{LOOKALIKE}</div><div id="main"><footer>{box(tab="")}</footer></div>'
     ),
 }
 
@@ -72,4 +77,4 @@ async def test_the_box_is_the_element_written_into_wherever_it_is_and_its_select
 
     assert len(writable) == 2, "the whole page is searched: the search box is seen too"
     assert chosen is not None
-    assert await page.locator(chosen).get_attribute("data-tab") == "10"
+    assert await page.locator(chosen).get_attribute("id") == "written"

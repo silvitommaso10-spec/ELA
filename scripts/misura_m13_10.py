@@ -9,22 +9,27 @@ worker tolti prima del lancio e bloccati, e la finestra — su ``https://web.wha
 solo sito come confine. Poi aspetta te: colleghi il telefono a mano, nella finestra, e apri la chat
 con te stesso.
 
-**Che cosa trova, e come.** Per **attributi dichiarati** dagli elementi — ``contenteditable``,
-``role``, ``data-tab``, ``data-testid``, ``data-icon``, ``type``, e le classi fatte solo di parole e
-trattini —, **mai** per il testo di un elemento, per il suo ``aria-label`` o il suo ``title`` (che
-possono portare un nome), né per la sua posizione: la casella del messaggio; l'elemento che invia,
-che compare dopo un carattere che **tu** scrivi a mano nella casella e poi cancelli; la bolla di un
-messaggio uscito; e se l'indirizzo ``/send?phone=`` con il tuo numero apre quella chat. Ogni
-selettore è contato sulla pagina: quanti elementi trova.
+**Che cosa trova, e come.** In **tutta la pagina**, per **attributi dichiarati** dagli elementi —
+``contenteditable``, ``role``, ``data-tab``, ``data-testid``, ``data-icon``, ``type``, e le classi
+fatte solo di parole e trattini —, **mai** per il testo di un elemento, per il suo ``aria-label`` o
+il suo ``title`` (che possono portare un nome), né per la sua posizione: la casella del messaggio,
+che è **l'elemento in cui scrivi a mano un carattere**, riconosciuto perché ha il fuoco; l'elemento
+che invia, che compare dopo quel carattere, che poi cancelli; la bolla di un messaggio uscito; e se
+l'indirizzo ``/send?phone=`` con il tuo numero apre quella chat. Ogni selettore si scrive dentro
+ciascuno dei posti dell'elemento (:data:`PLACES`) e poi senza posto, ed è contato sulla pagina:
+quanti elementi trova. **Se la pagina ha retto** senza service worker fino alla casella **lo dici
+tu**, a occhio: ciò che lo script non trova non lo dice. La prima misura, il 2026-10-14, cercava
+solo nel primo ``footer`` della pagina, e ha scritto «no» con la chat aperta.
 
 **Che cosa non fa.** Non scrive niente nella pagina, non clicca, non preme un tasto, non invia
-niente: ogni gesto nella finestra è tuo. Il tuo numero lo chiede qui, senza mostrarlo, lo usa per
-comporre un indirizzo, e **non lo scrive da nessuna parte**.
+niente: ogni gesto nella finestra è tuo. Il tuo numero lo chiede qui, senza mostrarlo, finché è un
+numero, lo usa per comporre un indirizzo, e **non lo scrive da nessuna parte**.
 
 **Il file**, ``~/Downloads/misura-m13.10-<data e ora>.txt``, va in chat: porta **solo selettori,
-conti, sì e no** — se la pagina ha retto senza service worker, se ogni selettore trova un elemento
-solo. Nessun testo della pagina, nessun nome, nessun numero: ogni riga passa da un filtro
-(:func:`withheld`), e alla fine lo script rilegge il file e lo dice.
+conti, sì e no** — se la pagina ha retto senza service worker, a occhio; dove sta ogni elemento in
+cui si scrive; se ogni selettore trova un elemento solo. Nessun testo della pagina, nessun nome,
+nessun numero: ogni riga passa da un filtro (:func:`withheld`), e alla fine lo script rilegge il
+file e lo dice.
 
 Le parole dell'esito: **PASSATO** — misurato —; **SALTATO** — il mondo non l'ha dato: un selettore
 che non si trova, una risposta «no» —; **FERMATO** — una precondizione non c'è, e la misura non
@@ -53,39 +58,46 @@ SAFE_ATTRIBUTES: Final = ("data-testid", "data-tab", "data-icon", "role", "conte
 """Gli attributi da cui un selettore si scrive, nell'ordine in cui si provano: dichiarazioni di chi
 ha fatto la pagina, e mai un testo per chi la legge. **Non** ``aria-label``, ``title``, ``alt``,
 ``placeholder`` né ``data-id``: portano parole, e a volte un nome o un numero."""
-SAFE_VALUE: Final = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,39}$")
-"""Il valore di un attributo che entra in un selettore: comincia con una lettera, niente spazi."""
+SAFE_VALUE: Final = re.compile(r"^(?:[A-Za-z][A-Za-z0-9_-]{0,39}|[0-9]{1,3})$")
+"""Il valore di un attributo che entra in un selettore: comincia con una lettera, niente spazi; o è
+un numero piccolo, di tre cifre al più — ``data-tab="10"`` —, che non è il numero di nessuno."""
 SAFE_CLASS: Final = re.compile(r"^[a-z]+(?:-[a-z]+)+$")
 """Una classe che entra in un selettore: parole minuscole e trattini — ``message-out`` —, mai un
 nome generato, che cambia a ogni versione della pagina."""
+TAG: Final = re.compile(r"[a-z][a-z0-9-]*")
 PHONE: Final = re.compile(r"^\+?[0-9]{6,15}$")
 DIGITS: Final = re.compile(r"[0-9]{6,}")
 """Sei cifre di fila in una riga del file: un numero, e la riga non si scrive."""
 
-SCOPES: Final = {"the box": "footer", "the element that sends": "footer", "the bubble": "#main"}
+PLACES: Final = ("#main footer", "#main", "footer")
+"""Dove un elemento può stare, dal più stretto — il piede del riquadro della chat, il riquadro, un
+piede qualsiasi —, per l'id e il tag che la pagina dichiara. Un elemento si cerca **in tutta la
+pagina**, e un selettore si scrive dentro ciascuno dei suoi posti e poi senza posto."""
 KINDS: Final = {
-    "the box": '[contenteditable="true"], textarea, input[type="text"]',
+    "the box": '[contenteditable]:not([contenteditable="false"]), [role="textbox"], textarea, '
+    'input[type="text"]',
     "the element that sends": 'button, [role="button"], span[data-icon]',
     "the bubble": "div, span",
 }
 
 CANDIDATES: Final = """
-([scope, kinds, safe]) => {
-  const root = document.querySelector(scope);
-  if (!root) return null;
+([kinds, safe, places]) => {
   const visible = (el) => { const r = el.getBoundingClientRect(), s = getComputedStyle(el);
     return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none'; };
-  return [...root.querySelectorAll(kinds)].filter(visible).map((el) => ({
+  return [...document.querySelectorAll(kinds)].filter(visible).map((el) => ({
     tag: el.tagName.toLowerCase(),
     attributes: Object.fromEntries(safe.filter((name) => el.hasAttribute(name))
       .map((name) => [name, el.getAttribute(name)])),
     classes: [...el.classList],
+    places: places.filter((place) => el.closest(place) !== null),
+    focused: el === document.activeElement,
   }));
 }
 """
-"""Ciò che la pagina dice di ogni elemento candidato: il nome del tag, gli attributi della lista e
-le classi. **Mai il testo**: questa funzione non legge ``textContent``, ``innerText`` né
-``value``."""
+"""Ciò che la pagina dice di ogni elemento candidato, in tutta la pagina: il nome del tag, gli
+attributi della lista, le classi, i posti di :data:`PLACES` in cui sta, e se ha il fuoco — se è
+l'elemento in cui hai scritto. **Mai il testo**: questa funzione non legge ``textContent``,
+``innerText`` né ``value``."""
 EMPTY: Final = """
 (selector) => { const el = document.querySelector(selector);
   return el ? (el.textContent.length === 0
@@ -96,18 +108,22 @@ EMPTY: Final = """
 
 @dataclass(frozen=True)
 class Candidate:
-    """Un elemento, com'è dichiarato: il tag, gli attributi della lista, le classi."""
+    """Un elemento, com'è dichiarato: il tag, gli attributi della lista, le classi; i posti di
+    :data:`PLACES` in cui sta, dal più stretto; e se ha il fuoco."""
 
     tag: str
     attributes: Mapping[str, str]
     classes: tuple[str, ...]
+    places: tuple[str, ...] = ()
+    focused: bool = False
 
-    def key(self) -> tuple[str, tuple[tuple[str, str], ...], tuple[str, ...]]:
-        return (self.tag, tuple(sorted(self.attributes.items())), self.classes)
+    def key(self) -> tuple[str, tuple[tuple[str, str], ...], tuple[str, ...], tuple[str, ...]]:
+        return (self.tag, tuple(sorted(self.attributes.items())), self.classes, self.places)
 
 
 def candidates_of(found: object) -> list[Candidate]:
-    """I candidati come la pagina li ha descritti, tenuti solo nei nomi e nei valori sicuri."""
+    """I candidati come la pagina li ha descritti, tenuti solo nei nomi e nei valori sicuri, e nei
+    posti della lista."""
     if not isinstance(found, list):
         return []
     made: list[Candidate] = []
@@ -120,22 +136,48 @@ def candidates_of(found: object) -> list[Candidate]:
             if name in SAFE_ATTRIBUTES and isinstance(value, str) and SAFE_VALUE.match(value)
         }
         classes = tuple(str(c) for c in one.get("classes") or () if SAFE_CLASS.match(str(c)))
-        made.append(Candidate(str(one.get("tag", "")), attributes, classes))
+        said = one.get("places")
+        places = tuple(place for place in PLACES if isinstance(said, list) and place in said)
+        made.append(
+            Candidate(
+                str(one.get("tag", "")), attributes, classes, places, one.get("focused") is True
+            )
+        )
     return made
 
 
 def selectors_of(candidate: Candidate, scope: str) -> list[str]:
-    """I selettori che si possono scrivere per ``candidate``: dentro ``scope``, per un attributo o
-    una classe alla volta, nell'ordine di :data:`SAFE_ATTRIBUTES`. Nessun testo e nessuna
-    posizione."""
-    tag = candidate.tag if re.fullmatch(r"[a-z][a-z0-9-]*", candidate.tag) else ""
+    """I selettori che si possono scrivere per ``candidate``: dentro ``scope``, o in tutta la
+    pagina se è vuoto, per un attributo o una classe alla volta, nell'ordine di
+    :data:`SAFE_ATTRIBUTES`. Nessun testo e nessuna posizione."""
+    tag = candidate.tag if TAG.fullmatch(candidate.tag) else ""
+    within = f"{scope} " if scope else ""
     written = [
-        f'{scope} {tag}[{name}="{candidate.attributes[name]}"]'
+        f'{within}{tag}[{name}="{candidate.attributes[name]}"]'
         for name in SAFE_ATTRIBUTES
         if name in candidate.attributes
     ]
-    written += [f"{scope} {tag}.{one}" for one in candidate.classes]
+    written += [f"{within}{tag}.{one}" for one in candidate.classes]
     return written
+
+
+def selectors_for(candidate: Candidate) -> list[str]:
+    """I selettori di ``candidate`` dentro ciascuno dei suoi posti, dal più stretto, e poi senza
+    posto."""
+    return [one for scope in (*candidate.places, "") for one in selectors_of(candidate, scope)]
+
+
+def described_line(candidate: Candidate) -> str:
+    """Un elemento in una riga del file: il tag, gli attributi della lista e le classi, i suoi
+    posti, e se ha il fuoco."""
+    tag = candidate.tag if TAG.fullmatch(candidate.tag) else "?"
+    facts = [f'[{name}="{value}"]' for name, value in candidate.attributes.items()]
+    facts += [f".{one}" for one in candidate.classes]
+    return (
+        f"{tag} {' '.join(facts) or '(nessun attributo della lista)'} — dentro: "
+        f"{', '.join(candidate.places) or 'nessuno dei posti'}"
+        f"{' — ha il fuoco' if candidate.focused else ''}"
+    )
 
 
 def withheld(line: str, secrets: Iterable[str] = ()) -> bool:
@@ -185,17 +227,50 @@ async def counted(page: Any, selectors: Sequence[str]) -> list[tuple[str, int]]:
 
 async def described(page: Any, what: str) -> list[Candidate]:
     return candidates_of(
-        await page.evaluate(CANDIDATES, [SCOPES[what], KINDS[what], list(SAFE_ATTRIBUTES)])
+        await page.evaluate(CANDIDATES, [KINDS[what], list(SAFE_ATTRIBUTES), list(PLACES)])
     )
 
 
-def unique_selectors(candidates: Iterable[Candidate], scope: str) -> list[str]:
+def unique_selectors(candidates: Iterable[Candidate]) -> list[str]:
     seen: list[str] = []
     for candidate in candidates:
-        for selector in selectors_of(candidate, scope):
+        for selector in selectors_for(candidate):
             if selector not in seen:
                 seen.append(selector)
     return seen
+
+
+async def found_one(
+    page: Any, candidates: Iterable[Candidate]
+) -> tuple[list[tuple[str, int]], str | None]:
+    """Ogni selettore dei candidati con quanti elementi trova, e il primo che ne trova uno solo."""
+    counts = await counted(page, unique_selectors(candidates))
+    return counts, next((selector for selector, number in counts if number == 1), None)
+
+
+async def the_box(page: Any) -> tuple[list[Candidate], list[tuple[str, int]], str | None]:
+    """Gli elementi in cui si scrive, visibili in tutta la pagina; e la casella, che è **quello in
+    cui hai scritto** — l'elemento che ha il fuoco, mai il suo testo —: i suoi selettori, con quanti
+    elementi trova ciascuno, e il primo che la trova sola. Accanto c'è un'altra casella che le
+    somiglia, quella della ricerca."""
+    writable = await described(page, "the box")
+    counts, box = await found_one(page, [one for one in writable if one.focused])
+    return writable, counts, box
+
+
+def asked_number(read: Callable[[str], str]) -> str | None:
+    """Il tuo numero, letto senza mostrarlo e chiesto di nuovo finché non è un numero; un Invio
+    vuoto salta l'indirizzo. Quello che hai scritto non si ripete mai, nemmeno quando non va."""
+    while True:
+        said = read(
+            "\n>>> Il tuo numero, con il prefisso del paese, senza spazi\n"
+            "    (non si vede mentre lo scrivi; Invio vuoto per saltare): "
+        ).strip()
+        if not said:
+            return None
+        if PHONE.match(said):
+            return said
+        print("    Non è un numero: solo cifre, con il + davanti se vuoi, senza spazi.", flush=True)
 
 
 async def measure(report: Report, ask: Callable[[str], str], page: Any) -> None:
@@ -208,27 +283,16 @@ async def measure(report: Report, ask: Callable[[str], str], page: Any) -> None:
         "    Quando vedi le chat,\n"
         "    apri la chat con te stesso. Non scrivere niente.",
     )
-    box_candidates = await described(page, "the box")
-    held = bool(box_candidates)
+    held = yes(ask, "Vedi la chat con te stesso, con la casella del messaggio in basso?")
     report.word(
         "PASSATO" if held else "SALTATO",
-        "la pagina ha retto senza service worker fino alla casella del messaggio: "
+        "la pagina ha retto senza service worker fino alla casella del messaggio, a occhio: "
         f"{'sì' if held else 'no'}",
     )
-    boxes = [
-        (s, n)
-        for s, n in await counted(page, unique_selectors(box_candidates, SCOPES["the box"]))
-        if n >= 1
-    ]
-    for selector, number in boxes:
+    for place, number in await counted(page, PLACES):
         report.say(
-            f"    la casella: {selector} — trova {number} element{'o' if number == 1 else 'i'}"
+            f"    il posto {place}: {number} element{'o' if number == 1 else 'i'} nella pagina"
         )
-    box = next((s for s, n in boxes if n == 1), None)
-    report.word(
-        "PASSATO" if box else "SALTATO",
-        f"un selettore della casella che trova un elemento solo: {box or 'nessuno'}",
-    )
 
     before = {c.key() for c in await described(page, "the element that sends")}
     wait_for_you(
@@ -236,14 +300,31 @@ async def measure(report: Report, ask: Callable[[str], str], page: Any) -> None:
         "Scrivi A MANO un carattere qualsiasi nella casella del messaggio.\n"
         "    NON premere Invio nella finestra.",
     )
+    writable, boxes, box = await the_box(page)
+    report.word(
+        "PASSATO" if writable else "SALTATO",
+        f"gli elementi in cui si scrive, visibili nella pagina: {len(writable)}",
+    )
+    for one in writable:
+        report.say(f"    {described_line(one)}")
+    for selector, number in boxes:
+        if number >= 1:
+            report.say(
+                f"    la casella: {selector} — trova {number} element{'o' if number == 1 else 'i'}"
+            )
+    report.word(
+        "PASSATO" if box else "SALTATO",
+        "un selettore della casella, l'elemento in cui hai scritto, che trova un elemento solo: "
+        f"{box or 'nessuno'}",
+    )
+
     after = [c for c in await described(page, "the element that sends") if c.key() not in before]
-    sends = await counted(page, unique_selectors(after, SCOPES["the element that sends"]))
+    sends, send = await found_one(page, after)
     for selector, number in sends:
         report.say(
             f"    l'elemento che compare dopo la scrittura: {selector} — trova {number} "
             f"element{'o' if number == 1 else 'i'}"
         )
-    send = next((s for s, n in sends if n == 1), None)
     report.word(
         "PASSATO" if send else "SALTATO",
         f"un selettore dell'elemento che invia che trova un elemento solo: {send or 'nessuno'}",
@@ -263,11 +344,7 @@ async def measure(report: Report, ask: Callable[[str], str], page: Any) -> None:
         outgoing = [
             c for c in bubbles if any("out" in one for one in (*c.classes, *c.attributes.values()))
         ]
-        found = [
-            (s, n)
-            for s, n in await counted(page, unique_selectors(outgoing, SCOPES["the bubble"]))
-            if n >= 1
-        ]
+        found = [(s, n) for s, n in (await found_one(page, outgoing))[0] if n >= 1]
         for selector, number in found:
             report.say(
                 f"    una bolla di un messaggio uscito: {selector} — trova {number} "
@@ -283,15 +360,12 @@ async def measure(report: Report, ask: Callable[[str], str], page: Any) -> None:
     else:
         report.word("SALTATO", "la bolla di un messaggio uscito: nella chat non ce n'era uno")
 
-    number = getpass.getpass(
-        "\n>>> Il tuo numero, con il prefisso del paese, senza spazi "
-        "(non si vede mentre lo scrivi): "
-    ).strip()
-    if not PHONE.match(number):
-        report.word("SALTATO", "l'indirizzo /send?phone=: il numero scritto non è un numero")
+    phone = asked_number(getpass.getpass)
+    if phone is None:
+        report.word("SALTATO", "l'indirizzo /send?phone=: nessun numero scritto")
         return
-    digits = number.lstrip("+")
-    report.secrets.extend([number, digits])
+    digits = phone.lstrip("+")
+    report.secrets.extend([phone, digits])
     await page.goto(SEND + digits, wait_until="load")
     opened = False
     if box is not None:
@@ -300,7 +374,7 @@ async def measure(report: Report, ask: Callable[[str], str], page: Any) -> None:
             opened = await page.locator(box).count() == 1
             if not opened:
                 await asyncio.sleep(0.5)
-    del number, digits
+    del phone, digits
     report.word(
         "PASSATO" if opened else "SALTATO",
         "l'indirizzo /send?phone= con il tuo numero apre una chat con la casella: "
