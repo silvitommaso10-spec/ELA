@@ -629,12 +629,33 @@ async def test_a_field_that_declares_itself_secret_is_not_touched(
     assert [line for line in web.requests if line.startswith("POST")] == []
 
 
+class Deadlines:
+    """The module of the tools' ``asyncio``, with every deadline a tool opens kept: what lets a
+    test end the time of a step **at the moment it chooses** — the precondition built by an event,
+    not by a number of seconds a slow runner may spend before the wait begins (the CI of
+    2026-10-14 on macOS: one second was gone in the launch)."""
+
+    def __init__(self) -> None:
+        self.opened: list[asyncio.Timeout] = []
+
+    def timeout(self, delay: float | None) -> asyncio.Timeout:
+        made = asyncio.timeout(delay)
+        self.opened.append(made)
+        return made
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(asyncio, name)
+
+
 async def test_a_button_that_is_not_there_is_awaited_and_the_field_before_it_is_filled(
-    browser: PlaywrightBrowser, served: list[Site]
+    browser: PlaywrightBrowser, served: list[Site], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """M13.10, ADR 0065 (decision 45 of its review): the wrong element **last**, after the field —
-    each gesture awaits its own element, so the field is filled, and the button is awaited until
-    the time of the step runs out. The page reports the fill; nothing is sent."""
+    each gesture awaits its own element, so the field is filled, and the button is awaited **with
+    no time of its own**: still waiting a moment after its wait began, and ended by the time of the
+    step when that runs out. The page reports the fill; nothing is sent."""
+    from ela.tools import browser as tools
+
     web = site(
         served, {"/": (200, {}, '<input id="nome"><button id="invia">Invia</button>' + REPORTS)}
     )
@@ -646,15 +667,32 @@ async def test_a_button_that_is_not_there_is_awaited_and_the_field_before_it_is_
         "expect_text": "ok",
         "purpose": "x",
     }
-    lasting = Browsing(sites=("sito0.example",), origin=lambda name: web.origin, timeout_seconds=1)
+    deadlines = Deadlines()
+    monkeypatch.setattr(tools, "asyncio", deadlines)
+    waiting = browser.appeared
+    still_waiting: list[bool] = []
+
+    async def appeared(page: str, selector: str) -> int:
+        if selector == "#manca":
+            loop = asyncio.get_running_loop()
+
+            def runs_out() -> None:
+                still_waiting.append(True)
+                deadlines.opened[-1].reschedule(loop.time())
+
+            loop.call_later(0.3, runs_out)
+        return await waiting(page, selector)
+
+    monkeypatch.setattr(browser, "appeared", appeared)
 
     result = await BrowserActTool(
-        lasting, browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+        browsing(web), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
     ).execute(decision(BROWSER_ACT), arguments, FakeStop())
 
+    assert still_waiting == [True], "the wait did not end by itself before the step's time did"
     assert result.error is not None and result.error.code == ELEMENT_MISSING
     assert result.output == {"gestures": 1, "stopped_at": 2}
-    assert result.error.message.endswith("within the 1 s of the step; 1 gesture was made")
+    assert result.error.message.endswith("within the 30 s of the step; 1 gesture was made")
     assert "input" in web.events and "click" not in web.events
     assert [line for line in web.requests if line.startswith("POST")] == []
 
