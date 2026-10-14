@@ -11,6 +11,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 import pytest
 
@@ -189,8 +190,9 @@ def test_a_phone_number_is_digits_with_its_prefix_and_nothing_else() -> None:
 
 
 # ----------------------------------------------------------------------------------------
-# The first measure, 2026-10-14: the chat was open, and the script found nothing — it looked
-# in the first ``footer`` of the page only, and told that as «the page did not hold»
+# The first measure, 2026-10-14: the loading bar of WhatsApp Web stood still and empty for two
+# hours, and no chat came (Tommaso, decision 65). The script wrote «the page did not hold» from
+# what it did not find — in the first ``footer`` of the page only —, and said nothing of why
 # ----------------------------------------------------------------------------------------
 
 
@@ -201,7 +203,7 @@ class _Counted:
 
 class Quiet:
     """A page on which the script finds nothing: no element of any kind, no selector that finds
-    one — what the first measure saw with the chat open."""
+    one."""
 
     async def evaluate(self, script: str, argument: object = None) -> object:
         return []
@@ -239,7 +241,113 @@ async def test_whether_the_page_held_is_told_by_your_eye_and_never_by_what_the_s
         f"{word} — la pagina ha retto senza service worker fino alla casella del messaggio, "
         f"a occhio: {yes_or_no}"
     ]
-    assert "SALTATO — gli elementi in cui si scrive, visibili nella pagina: 0" in report.lines
+
+
+async def test_when_the_box_has_not_come_the_file_says_why_and_the_measure_ends_there(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Decision 63: with the bar standing still, what the browser said is the why — and nothing
+    after it can be measured without the chat: no character to write in a box that is not
+    there."""
+    monkeypatch.setattr(misura.getpass, "getpass", lambda prompt: "")
+    asked: list[str] = []
+    said = answering({"casella del messaggio in basso": "n"})
+    seen = misura.Seen()
+    seen.refused["https://static.example"] += 2
+    seen.targets[("shared_worker", "https://web.example")] += 1
+    seen.errors["un'eccezione TypeError"] += 1
+    report = misura.Report()
+
+    await misura.measure(report, lambda prompt: asked.append(prompt) or said(prompt), Quiet(), seen)
+
+    assert all(line in report.lines for line in seen.lines())
+    assert not any("Scrivi A MANO" in prompt for prompt in asked)
+    assert report.lines[-1].startswith("SALTATO — il resto della misura vuole la chat")
+
+
+def test_an_address_is_told_by_its_origin_and_nothing_else() -> None:
+    assert misura.origin_of("https://web.whatsapp.com/send?phone=393331234567") == (
+        "https://web.whatsapp.com"
+    )
+    assert misura.origin_of("http://127.0.0.1:8123/x?y=1") == "http://127.0.0.1:8123"
+    assert misura.origin_of("blob:https://web.example/1b2c") == "blob:"
+    assert misura.origin_of("about:blank") == "about:"
+    assert misura.origin_of("not an address") == "?"
+
+
+class Gate:
+    """A gate with the two members the script listens to: it lets ``/in`` go."""
+
+    async def _leaves(self, event: dict[str, Any]) -> bool:
+        return bool(event["request"]["url"].endswith("/in"))
+
+    def _born(self, event: dict[str, Any]) -> None:
+        self.born = event
+
+
+def asked_for(address: str) -> dict[str, Any]:
+    return {"request": {"method": "GET", "url": address}}
+
+
+async def test_the_gate_is_listened_to_by_origin_and_type_and_decides_as_it_did() -> None:
+    leaves, born = Gate._leaves, Gate._born
+    seen = misura.Seen()
+
+    undo = misura.watching(Gate, seen)
+    gate = Gate()
+    decided = [
+        await gate._leaves(asked_for("https://web.example/in")),
+        await gate._leaves(asked_for("https://static.example/out?phone=393331234567")),
+    ]
+    gate._born({"targetInfo": {"type": "shared_worker", "url": "https://web.example/w.js?u=1"}})
+    undo()
+
+    assert decided == [True, False]
+    assert gate.born["targetInfo"]["type"] == "shared_worker", "the gate is still told"
+    assert seen.refused == {"https://static.example": 1}
+    assert seen.targets == {("shared_worker", "https://web.example"): 1}
+    assert Gate._leaves is leaves and Gate._born is born
+
+
+async def test_a_judgement_that_raises_is_a_refusal_and_still_raises() -> None:
+    class Broken(Gate):
+        async def _leaves(self, event: dict[str, Any]) -> bool:
+            raise RuntimeError("whoever judges could not say")
+
+    seen = misura.Seen()
+    undo = misura.watching(Broken, seen)
+    try:
+        with pytest.raises(RuntimeError):
+            await Broken()._leaves(asked_for("https://web.example/x"))
+    finally:
+        undo()
+
+    assert seen.refused == {"https://web.example": 1}
+
+
+def test_what_the_browser_said_is_one_line_a_thing_and_says_so_when_it_said_nothing() -> None:
+    seen = misura.Seen()
+    seen.refused["https://static.example"] += 3
+    seen.targets[("service_worker", "https://web.example")] += 1
+    seen.errors["console.error"] += 2
+
+    assert seen.lines() == [
+        "    rifiutata dal cancello: https://static.example — 3 richieste",
+        "    annunciato dal browser: service_worker — https://web.example — 1",
+        "    errore della console: console.error — 2",
+    ]
+    assert misura.Seen().lines() == [
+        "    rifiutata dal cancello: nessuna richiesta",
+        "    annunciato dal browser: niente",
+        "    errore della console: nessuno",
+    ]
+
+
+def test_a_type_that_is_not_a_word_is_not_written() -> None:
+    assert misura.kind_of("shared_worker") == "shared_worker"
+    assert misura.kind_of("TypeError") == "TypeError"
+    assert misura.kind_of("Mario Rossi 393331234567") == "?"
+    assert misura.kind_of(None) == "?"
 
 
 def test_a_candidate_keeps_only_the_listed_places_narrowest_first_and_a_true_focus() -> None:

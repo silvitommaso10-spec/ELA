@@ -227,6 +227,27 @@ def test_the_debt_of_the_process_left_on_ubuntu_is_dated_charged_and_named_by_wh
     assert "ADR 0065 §6" in files.split("## Che cosa eredita", 1)[1].split("\n## ", 1)[0]
 
 
+THE_BAR = "**WhatsApp Web, con il profilo di ELA, non è andato oltre la barra di caricamento**"
+THE_MEASURE = "`misura-m13.10-20261014-184951.txt`"
+
+
+def test_the_still_bar_is_declared_with_its_measure_its_candidates_and_no_milestone() -> None:
+    """Decision 62 of the review of M13.10's implementation: the fact, with the file of the measure
+    and the candidates by name — the service worker the site wants (ADR 0064 §6), a shared worker
+    the gate refuses (ADR 0064 §2), something else —; no milestone until the cause is known; and
+    STATO says so in the entry of M13.10."""
+    declared = adr_text().split("### 5. ", 1)[1].split("\n### ", 1)[0]
+
+    assert THE_BAR in declared
+    item = declared.split(THE_BAR, 1)[1].split("\n\n", 1)[0]
+    assert THE_MEASURE in item
+    assert "ADR 0064 §6" in item and "ADR 0064 §2" in item and "altro" in item
+    assert "nessuna milestone" in item.lower()
+    stato = (ROOT / "docs" / "STATO.md").read_text(encoding="utf-8")
+    entry = stato.split("- **M13.10 — più passi e i file**", 1)[1].split("\n- **", 1)[0]
+    assert "ADR 0065 §5" in entry and "WhatsApp" in entry and "esce dalla prova" in entry
+
+
 # ----------------------------------------------------------------------------------------
 # The rule it adds, and the totals of today
 # ----------------------------------------------------------------------------------------

@@ -164,10 +164,11 @@ def test_every_example_explains_itself() -> None:
     proof, and the reading that finds the user inside after it; forty-five since M13.10, which
     brought the five of section 29 — two steps on one page, the same with a question between them,
     the stop inside a wait, the login from a phrase, and the message on WhatsApp with its
-    placeholders.
+    placeholders; forty-four since the review of its implementation (decision 61), which took
+    WhatsApp out of that proof and its plan out of the repository.
     """
     found = sorted(EXAMPLES.glob("*.json"))
-    assert len(found) == 45, [path.name for path in found]
+    assert len(found) == 44, [path.name for path in found]
     for path in found:
         plan = json.loads(path.read_text(encoding="utf-8"))
         assert NOTE in plan, path.name
