@@ -726,6 +726,11 @@ async def test_an_element_that_appears_after_a_gesture_is_awaited_and_used(
     result = await BrowserActTool(
         browsing(web), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
     ).execute(decision(BROWSER_ACT), arguments, FakeStop())
+    # The page tells of the click with a beacon, which leaves on its own time: waited for as the
+    # event it is, before the page is closed (the CI of 2026-10-14 on ubuntu closed it first).
+    async with asyncio.timeout(20):
+        while "click" not in web.events:
+            await asyncio.sleep(0.02)
     await browser.close(str(result.output["page"]))
 
     assert result.status is ExecutionStatus.SUCCEEDED, result.error
