@@ -30,7 +30,6 @@ parentesi **non si incollano**. `ela task run <id>` si scrive `ela task run 55ed
 | `<id del companion>` | l'id della riga dell'iPhone nel registro | `ela device list`, colonna `ID` (§13) |
 | `<id della console>` | l'id della riga del Command Center nel registro | `ela device list`, colonna `ID` (§14) |
 | `<il piano del login>` | il file del piano del login dal vault della sezione 28 | nella prova è `docs/examples/login-news-ycombinator.json`, e lo dai allo script con `--login`; per un altro sito lo scrivi da `docs/examples/login-from-the-vault.json` |
-| `<il piano di WhatsApp>` | una copia del piano del passo 7 della sezione 29, con il tuo numero al posto di `NUMERO` | la scrive `scripts/prova_m13_10.py` in una cartella temporanea, dal numero che ti chiede nel Terminale: non la scrivi tu, e il numero non entra nel file della prova |
 | `<la cartella del profilo>` | la cartella in cui il browser di ELA tiene i siti in cui sei entrato | la scegli tu: sul Mac, fuori dal repository e da ciò che si sincronizza (sezione 28) |
 | `<il programma del vault>` | il percorso assoluto del programma `bw` di Bitwarden | dove l'hai installato: `which bw` lo dice (sezione 28) |
 | `<id della policy>` | l'id breve di una policy di §59, i primi otto caratteri del suo id | `ela policy list`, colonna `policy`; nella sezione 27 lo scrive `scripts/prova_m13_12.py`, dalla policy del passo 4 |
@@ -6716,10 +6715,11 @@ SIGINT
 
 > **Scritta con l'implementazione il 14 ottobre 2026** (`milestones/M13.10.md`, decisioni 34, 35, 46 e 47 della review),
 > e `tests/docs/test_prova_m13_10.py` tiene lo script allineato a questa sezione. La si fa **sul Mac, senza il PC**, sul
-> branch di M13.10, con lo script `scripts/prova_m13_10.py`. **Il passo 7, WhatsApp, aspetta la misura**:
-> `scripts/misura_m13_10.py`, che lanci tu, trova i selettori della pagina; finché il piano di quel passo porta i suoi
-> segnaposto il passo è **SALTATO**, e la sezione si chiude dopo la misura. [ADR 0065](adr/0065-browser-steps.md) resta
-> Proposta finché questa prova non passa sull'ultimo commit del branch.
+> branch di M13.10, con lo script `scripts/prova_m13_10.py`. **WhatsApp non è in questa prova** (decisione 61 della
+> review dell'implementazione): con il profilo di ELA la pagina non è andata oltre la sua barra di caricamento nella
+> prima misura, e il fatto, con i candidati della causa, è in [ADR 0065](adr/0065-browser-steps.md) §5; con lui escono il
+> riavvio e la finestra che il suo passo voleva. ADR 0065 resta Proposta finché questa prova non passa sull'ultimo commit
+> del branch.
 
 Da M13.10 un lavoro nel browser può avere **più passi**: ogni gesto **aspetta il suo elemento**, così un campo o un
 pulsante che compare dopo un gesto non ferma più la sequenza; **la pagina di uno step può essere quella del successivo**,
@@ -6732,12 +6732,11 @@ lo schema della lettura con il profilo ha un argomento in più, `continues` —,
 create`. Il 14 ottobre 2026 non ce n'era nessuna viva.
 
 **Che cosa serve**: in `ELA_BROWSER_SITES` anche `news.ycombinator.com` — la voce del tuo account di Hacker News nel
-vault c'è dal passo 6 della sezione 28 — e `web.whatsapp.com`; il vault chiuso, aperto al passo 4 con la riga di `ela
-vault status`; la chiave del modello e il tetto, come nella sezione 28. Lo script stampa **PASSATO**, **FALLITO**,
-**SALTATO** o **FERMATO** per ogni passo, e scrive tutto in `~/Downloads/prova-m13.10-<data>.txt`. I tipi dei blocchi
-sono quelli delle sezioni 26 e 28, e tre suoi: `ferma` è il «ferma» a tempo, dato dallo script mentre uno step aspetta;
-`pagina` ferma ELA mentre una pagina di un task aspetta fra due step, e guarda che non resti niente; `numero` ti chiede
-nel Terminale il tuo numero di telefono, che entra solo nel piano del passo 7 e **non nel file**.
+vault c'è dal passo 6 della sezione 28 —; il vault chiuso, aperto al passo 4 con la riga di `ela vault status`; la chiave
+del modello e il tetto, come nella sezione 28. Lo script stampa **PASSATO**, **FALLITO**, **SALTATO** o **FERMATO** per
+ogni passo, e scrive tutto in `~/Downloads/prova-m13.10-<data>.txt`. I tipi dei blocchi sono quelli delle sezioni 26 e
+28, e due suoi: `ferma` è il «ferma» a tempo, dato dallo script mentre uno step aspetta; `pagina` ferma ELA mentre una
+pagina di un task aspetta fra due step, e guarda che non resti niente.
 
 ### 1. Prima
 
@@ -6967,84 +6966,7 @@ outcome waiting_approval
 SIGTERM
 ```
 
-### 6. Il riavvio, e la finestra
-
-ELA si riavvia **a mano**, nel suo Terminale; poi la finestra per i passi con il profilo, che il passo 7 vuole.
-
-<!-- prova: 6.mano -->
-```
-Riavvia ELA nel suo Terminale, con il comando di sempre, e aspetta che risponda.
-```
-
-<!-- prova: 6.comando -->
-```
-uv run ela browser window show
-```
-
-<!-- prova: 6.atteso -->
-```
-start with a window
-```
-
-### 7. WhatsApp, un messaggio a te stesso
-
-Due step con il profilo e la finestra: il primo apre la chat con te stesso, scrive un testo fisso e neutro e lo invia;
-il secondo **continua sulla stessa pagina** e aspetta la bolla di un messaggio uscito con quel testo. **Il numero è il
-tuo**: lo script te lo chiede nel Terminale, non lo mostra e non lo scrive; ogni invio è `HIGH` e chiede il tuo sì, e
-niente nasconde l'automazione. **Un tentativo solo**: se qualcosa non va, il passo è SALTATO con ciò che la pagina ha
-detto. Finché la misura non ha dato i selettori, il piano porta i segnaposto e il passo è SALTATO.
-
-<!-- prova: 7.numero -->
-```
-NUMERO
-```
-
-<!-- prova: 7.comando -->
-```
-uv run ela task create --json "mandarmi un messaggio su WhatsApp"
-uv run ela task plan <id> --file <il piano di WhatsApp>
-uv run ela task run <id>
-```
-
-<!-- prova: 7.atteso -->
-```
-outcome waiting_approval
-```
-
-<!-- prova: 7.sì -->
-```
-uv run ela task approve <id> --approval <approval-id>
-```
-
-<!-- prova: 7.comando -->
-```
-uv run ela task run <id>
-```
-
-<!-- prova: 7.atteso -->
-```
-outcome waiting_approval
-```
-
-<!-- prova: 7.sì -->
-```
-uv run ela task approve <id> --approval <approval-id>
-```
-
-<!-- prova: 7.comando -->
-```
-uv run ela task run <id>
-```
-
-<!-- prova: 7.atteso -->
-```
-outcome completed
-```
-
-<!-- prova: 7.occhio -->
-```
-Sul telefono, nella chat con te stesso, c'è il messaggio «ELA prova M13.10: un messaggio a me stesso», uno solo?
-```
+Dopo il passo 5 ELA è ferma, e la prova finisce lì: ELA si riavvia a mano, come sempre.
 
 ## Dove guardare dopo
 

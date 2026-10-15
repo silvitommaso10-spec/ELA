@@ -266,6 +266,18 @@ Righe dei verifier, riscritte:
    mai l'indirizzo. **Con un driver vivo, una risposta non scritta lascia la pagina ad aspettare, e lo step
    finisce in `browser.timeout`**: nessuna lista dei messaggi di Playwright distingue i due casi, e la riga
    dice quale è stato.
+9. **WhatsApp Web, con il profilo di ELA, non è andato oltre la barra di caricamento** (decisioni 61, 62 e 65
+   della review dell'implementazione). Nella prima misura di Tommaso, il 2026-10-14 — il file
+   `misura-m13.10-20261014-184951.txt`, nella sua cartella `~/Downloads` e copiato in
+   `.git/m13.10-reference/misura-whatsapp/` —, dopo la scansione del codice la barra è rimasta ferma e vuota per
+   due ore, e nessuna chat è comparsa; se il collegamento sul telefono sia riuscito non è ancora noto. **I
+   candidati, per nome, e nessuno è misurato**: il service worker che il sito vuole, che ELA toglie e blocca a
+   ogni lancio che guida (ADR 0064 §6); un worker condiviso, le cui richieste il cancello rifiuta (ADR 0064 §2);
+   altro. **Nessuna milestone senza la causa**: la misura, da M13.10, la cerca — le origini che il cancello ha
+   rifiutato, i target che il browser ha annunciato con il tipo, i tipi degli errori della console, mai un testo
+   (decisione 63) —, e si rifà un altro giorno, dopo il controllo sul telefono. Fino ad allora **WhatsApp esce
+   dalla prova di M13.10** (sezione 29 della guida), e il piano esce dal repository; la decisione 23 di M13.9 —
+   sul numero di Tommaso, un solo messaggio a se stesso — resta valida per la milestone che lo riprenderà.
 
 ### 6. Un debito datato: un processo del browser lasciato su ubuntu da un test non identificato
 
@@ -314,6 +326,7 @@ Con questo ADR le regole di architettura sono **settantuno** (la 71); i contratt
 **quindici**, i port diventano **trentasei** (`TaskPages`), le rotte dell'API restano **settantadue** e i comandi
 della CLI **trentanove**; le capability restano **diciotto**, le identità del middleware **sei**.
 
-**Ciò che non è misurato, per nome**: WhatsApp Web con il profilo e la finestra, fino alla misura di Tommaso
-(`scripts/misura_m13_10.py`, decisione 47) e alla prova; un login chiesto dal modello su un sito vero, fino alla
-prova (passo 3 della sezione 29); che cosa resta, con la finestra, di un'ELA uccisa con una pagina che aspetta.
+**Ciò che non è misurato, per nome**: perché WhatsApp Web, con il profilo di ELA, non va oltre la barra di
+caricamento (§5, punto 9; `scripts/misura_m13_10.py`, decisioni 47 e 63); un login chiesto dal modello su un sito
+vero, fino alla prova (passo 4 della sezione 29); che cosa resta, con la finestra, di un'ELA uccisa con una pagina
+che aspetta.

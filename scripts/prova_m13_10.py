@@ -19,39 +19,30 @@ I tipi suoi, che la sezione spiega:
   il task con ``ela task cancel`` mentre lo step aspetta il suo elemento;
 * ``pagina``: ELA si ferma mentre una pagina del task aspetta fra due step — lo script guarda
   che lo stato del browser dica che quella pagina aspetta, manda a ELA il segnale del blocco, e
-  guarda che ELA esca e che **nessun processo del browser resti**;
-* ``numero``: il numero di telefono di Tommaso, chiesto nel Terminale senza mostrarlo, che
-  entra solo nella copia del piano di WhatsApp, in una cartella temporanea: **nessuna riga che lo
-  porti entra nel file** (decisione 46). Se il piano porta ancora i segnaposto della misura
-  (decisione 35), il passo è **SALTATO** e il numero non è chiesto.
+  guarda che ELA esca e che **nessun processo del browser resti**.
 
-**Il passo 7 è un tentativo solo** (decisione 16 di M13.10): ciò che lì non va è **SALTATO**,
-con ciò che la pagina ha detto, e non FALLITO.
+**WhatsApp non è in questa prova** (decisione 61 della review dell'implementazione di M13.10): con
+il profilo di ELA la pagina non è andata oltre la sua barra di caricamento nella prima misura (ADR
+0065 §5). Con lui escono il tipo ``numero``, il riavvio e la finestra che il suo passo voleva, e il
+piano, che resta in ``.git/m13.10-reference/examples/``.
 """
 
 from __future__ import annotations
 
 import argparse
-import getpass
-import json
 import os
-import re
 import shlex
 import signal
-import stat
 import sys
-import tempfile
 import time
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Final
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import misura_m13_10 as measure  # noqa: E402 — a sibling in scripts/, which is not a package
-import prova_m6_3c as base  # noqa: E402 — the same
+import prova_m6_3c as base  # noqa: E402 — a sibling in scripts/, which is not a package
 import prova_m13_9 as accounts  # noqa: E402 — the same
 import prova_m14_1 as spending  # noqa: E402 — the same
 import prova_m14_2 as planning  # noqa: E402 — the same
@@ -74,24 +65,17 @@ KINDS: Final = (
     "figli",
     "ferma",
     "pagina",
-    "numero",
 )
 ID = base.ID
 APPROVAL_ID: Final = guided.APPROVAL_ID
 CHILD: Final = guided.CHILD
-WHATSAPP_PLAN: Final = "<il piano di WhatsApp>"
-PLACEHOLDERS: Final = (ID, APPROVAL_ID, CHILD, WHATSAPP_PLAN)
+PLACEHOLDERS: Final = (ID, APPROVAL_ID, CHILD)
 EXAMPLES: Final = ROOT / "docs" / "examples"
 SESSION_PLAN: Final = EXAMPLES / "guided-as-you-login.json"
 """The one plan of the proof that spends: the session of step 4."""
 LOGIN_PLAN: Final = EXAMPLES / "login-news-ycombinator.json"
 """The plan of the login of section 28, whose awaited text the ``assente`` of step 4 looks for."""
-WHATSAPP: Final = EXAMPLES / "whatsapp-to-yourself.json"
-NUMBER: Final = "NUMERO"
-"""Where the number goes, in the path of the plan of WhatsApp: a word, never a number."""
-STILL_TO_MEASURE: Final = re.compile(r"<[^<>]+>")
-"""A placeholder of the measure (decision 35): a selector nobody has seen from inside yet."""
-SITES: Final = ("httpbin.org", "news.ycombinator.com", "web.whatsapp.com")
+SITES: Final = ("httpbin.org", "news.ycombinator.com")
 ROUTES: Final = ("/browser", "/vault")
 SIGNALS: Final = {"SIGTERM": signal.SIGTERM, "SIGINT": signal.SIGINT}
 WAIT: Final = 0.2
@@ -100,57 +84,20 @@ EXIT_SECONDS: Final = 30.0
 RUN_SECONDS: Final = 60.0
 BROWSERS: Final = ("chrome-headless-shell", "Google Chrome for Testing")
 """What the command line of a browser of ELA's names: the empty one, and the one of the profile."""
-WITHHELD: Final = "una riga tenuta fuori dal file: portava il tuo numero"
 STOP_REASON: Final = "il «ferma» della prova, mentre il gesto aspettava"
 SAID_NO: Final = accounts.SAID_NO
 CURRENCY: Final = guided.CURRENCY
 MODEL: Final = guided.MODEL
 
 
-class Skipped(Exception):
-    """The step cannot be tried as it stands: SALTATO, with why — and the proof goes on."""
-
-
-class Report(accounts.Report):
-    """The file of the proof, which **never writes a line that carries a secret**: the number of
-    step 7 above all, which the question of its gesture shows in the address. ``lenient`` turns a
-    failure into SALTATO: the one try of step 7 (decision 16)."""
-
-    def __init__(self, written: Any) -> None:
-        super().__init__(written)
-        self.secrets: list[str] = []
-        self.lenient = False
-
-    def say(self, text: str = "") -> None:
-        if any(secret and secret in text for secret in self.secrets):
-            text = f"    {WITHHELD}"
-        super().say(text)
-
-    def failure(self, step: int, what: str, output: str = "") -> None:
-        if self.lenient:
-            self.skipped(step, f"un tentativo solo, e non è andato: {what}")
-            return
-        super().failure(step, what, output)
-
-
-@dataclass
-class Proof(accounts.Proof):
-    whatsapp: Path | None = None
-    """The copy of the plan of WhatsApp with the number in it, in a folder of its own."""
-    secret_ask: Callable[[str], str] = getpass.getpass
-    """How the number is asked: with nothing shown on the screen."""
-    copies: list[Path] = field(default_factory=list)
-
-
-def filled(text: str, turn: guided.Turn, proof: Proof) -> str:
-    text = accounts.filled(text, turn, proof)
-    return text.replace(WHATSAPP_PLAN, str(proof.whatsapp) if proof.whatsapp else WHATSAPP_PLAN)
+Report = accounts.Report
+Proof = accounts.Proof
 
 
 def commands(lines: Sequence[str], turn: guided.Turn, proof: Proof) -> None:
     turn.last = ""
     for line in lines:
-        guided.a_command(filled(line, turn, proof), turn, proof)
+        guided.a_command(accounts.filled(line, turn, proof), turn, proof)
 
 
 # ----------------------------------------------------------------------------------------
@@ -227,39 +174,6 @@ def a_page_that_waits(number: int, block: base.Block, turn: guided.Turn, proof: 
         report.passed(number, "ELA è uscita, e del browser non resta niente")
 
 
-def still_to_measure(plan: dict[str, Any]) -> list[str]:
-    """The placeholders of the measure a plan still carries."""
-    return sorted(set(STILL_TO_MEASURE.findall(json.dumps(plan, ensure_ascii=False))))
-
-
-def a_number(number: int, block: base.Block, turn: guided.Turn, proof: Proof) -> None:
-    """``numero``: the number of Tommaso, asked with nothing shown, into a copy of the plan of
-    WhatsApp in a folder of its own — and nowhere else."""
-    (word,) = block.lines
-    plan = json.loads(WHATSAPP.read_text(encoding="utf-8"))
-    missing = still_to_measure(plan)
-    if missing:
-        raise Skipped(
-            "il piano di WhatsApp porta ancora i segnaposto della misura "
-            f"({', '.join(missing)}): la sezione si chiude dopo scripts/misura_m13_10.py"
-        )
-    said = proof.secret_ask(
-        f"[{number}] Il tuo numero, con il prefisso e senza spazi (non si vede, e non entra nel "
-        "file): "
-    ).strip()
-    if measure.PHONE.match(said) is None:
-        raise Skipped("il numero dato non è un numero con il suo prefisso")
-    digits = said.lstrip("+")
-    proof.report.secrets.extend([said, digits])
-    folder = Path(tempfile.mkdtemp(prefix="prova-m13.10-"))
-    copy = folder / "whatsapp.json"
-    copy.write_text(json.dumps(plan, ensure_ascii=False).replace(word, digits), encoding="utf-8")
-    copy.chmod(stat.S_IRUSR | stat.S_IWUSR)
-    proof.whatsapp = copy
-    proof.copies.append(copy)
-    proof.report.passed(number, "il numero è nella copia del piano, e solo lì")
-
-
 def a_block(number: int, block: base.Block, turn: guided.Turn, proof: Proof) -> None:
     kind = block.kind
     if kind == "comando":
@@ -278,8 +192,6 @@ def a_block(number: int, block: base.Block, turn: guided.Turn, proof: Proof) -> 
         a_stop(number, block, turn, proof)
     elif kind == "pagina":
         a_page_that_waits(number, block, turn, proof)
-    elif kind == "numero":
-        a_number(number, block, turn, proof)
     else:
         raise ValueError(f"step {number}: {kind!r} is not a kind of the section")
 
@@ -287,20 +199,15 @@ def a_block(number: int, block: base.Block, turn: guided.Turn, proof: Proof) -> 
 def a_step(
     number: int, todo: Sequence[base.Block], proof: Proof, turn: guided.Turn | None = None
 ) -> None:
-    """The blocks of a step in order; a step with a ``numero`` is one try (decision 16)."""
+    """The blocks of a step in order."""
     report = proof.report
-    assert isinstance(report, Report)
     report.say()
     report.say(f"—— passo {number} ——")
     turn = guided.Turn() if turn is None else turn
-    report.lenient = any(block.kind == "numero" for block in todo)
     try:
         for block in todo:
             a_block(number, block, turn, proof)
-    except Skipped as why:
-        report.skipped(number, str(why))
     finally:
-        report.lenient = False
         if turn.task_id is not None:
             proof.ids[number] = turn.task_id
 
@@ -380,9 +287,6 @@ def main(argv: Sequence[str] | None = None, ask: base.Ask = input) -> int:
                 base.walk(report, todo, lambda number, its: a_step(number, its, proof))
             finally:
                 proof.api.close()
-                for copy in proof.copies:
-                    copy.unlink(missing_ok=True)
-                    copy.parent.rmdir()
         report.say()
         report.verdict()
         report.say(f"Il file: {out}")

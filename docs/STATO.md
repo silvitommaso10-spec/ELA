@@ -978,7 +978,11 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   tentativo solo —: in M13.9 quel passo poteva essere solo saltato, perché l'elemento del click compare dopo la
   scrittura, ed è questa la milestone che aspetta ogni elemento quando serve. ***Annotato il 2026-10-14***: la
   review della sua SPEC (decisione 21) **ne toglie i file**, che diventano M13.13; M13.10 porta la sequenza di
-  gesti, ciò che il sì ha nominato, la pagina che dura fra gli step e il login chiesto dal modello.
+  gesti, ciò che il sì ha nominato, la pagina che dura fra gli step e il login chiesto dal modello. ***Annotato il
+  2026-10-15***: dalla review della sua implementazione (decisioni 61 e 62), **WhatsApp Web esce dalla prova di
+  M13.10**: con il profilo di ELA la pagina non è andata oltre la barra di caricamento nella prima misura. Il fatto,
+  con il file della misura e i candidati della causa, è in ADR 0065 §5; **nessuna milestone finché la causa non è
+  nota**, e la decisione 23 di M13.9 resta valida per quella che lo riprenderà.
 - **M13.13 — i file dal browser** (§19, §18). **Registrata il 2026-10-14**, dalla review della SPEC di M13.10
   (decisione 21): uno scaricamento è giudicato come un `fs.write`, un caricamento come un `fs.read`, con la
   domanda che nomina il file. **Subito dopo M13.10, prima di M13.11.** **Condizione d'ingresso**: il sito per il
@@ -1087,7 +1091,8 @@ della SPEC di M14.3); M14.5 resta fuori dalla fila.
   nome di Tommaso chiede ogni volta; «cercare» è navigare, un `browser.read`. È lavoro agentico (5.7).
   **Dopo M14.2**, e non aspetta M13.9: le pagine pubbliche non vogliono il login, e WhatsApp Web, che lo
   vuole, passa nella prova a mano di M13.9. ***Annotato il 2026-10-10***: nella prova a mano di **M13.10**
-  (decisione 37 della review della SPEC di M13.9).
+  (decisione 37 della review della SPEC di M13.9). ***Annotato il 2026-10-15***: ne esce anche lì, finché la causa
+  della barra di caricamento ferma non è nota (ADR 0065 §5).
 - **M14.4 — il computer guidato dal modello** (§20). **Registrata il 2026-09-30** dalla review della
   registrazione: il meccanismo di M14.3 riusato sullo schermo, sotto la 5.7, sopra la capability di M13.5.
   **Subito dopo M13.5**, e se M13.5 non entra non entra nemmeno lei.
