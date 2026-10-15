@@ -18,16 +18,24 @@ che invia, che compare dopo quel carattere, che poi cancelli; la bolla di un mes
 l'indirizzo ``/send?phone=`` con il tuo numero apre quella chat. Ogni selettore si scrive dentro
 ciascuno dei posti dell'elemento (:data:`PLACES`) e poi senza posto, ed è contato sulla pagina:
 quanti elementi trova. **Se la pagina ha retto** senza service worker fino alla casella **lo dici
-tu**, a occhio: ciò che lo script non trova non lo dice. La prima misura, il 2026-10-14, cercava
-solo nel primo ``footer`` della pagina, e ha scritto «no» con la chat aperta.
+tu**, a occhio: ciò che lo script non trova non lo dice.
+
+**Il perché, quando la casella non compare** (decisione 63 della review dell'implementazione):
+ciò che il browser ha detto mentre la pagina caricava, **senza un testo** — le origini che il
+cancello di ELA ha rifiutato, solo origini; i target che il browser ha annunciato, con il tipo; i
+tipi degli errori della console. Se dici che la pagina non è arrivata alla casella, il file scrive
+il perché e la misura finisce lì: il resto vuole la chat. Nella prima misura, il 2026-10-14, la
+barra di caricamento è rimasta ferma e vuota per due ore, e nessuna chat è comparsa; lo script
+cercava solo nel primo ``footer`` della pagina, e del perché non diceva niente.
 
 **Che cosa non fa.** Non scrive niente nella pagina, non clicca, non preme un tasto, non invia
 niente: ogni gesto nella finestra è tuo. Il tuo numero lo chiede qui, senza mostrarlo, finché è un
 numero, lo usa per comporre un indirizzo, e **non lo scrive da nessuna parte**.
 
 **Il file**, ``~/Downloads/misura-m13.10-<data e ora>.txt``, va in chat: porta **solo selettori,
-conti, sì e no** — se la pagina ha retto senza service worker, a occhio; dove sta ogni elemento in
-cui si scrive; se ogni selettore trova un elemento solo. Nessun testo della pagina, nessun nome,
+conti, sì e no** — se la pagina ha retto senza service worker, a occhio; il perché, in origini e
+tipi; dove sta ogni elemento in cui si scrive; se ogni selettore trova un elemento solo. Nessun
+testo della pagina, nessun nome,
 nessun numero: ogni riga passa da un filtro (:func:`withheld`), e alla fine lo script rilegge il
 file e lo dice.
 
@@ -44,10 +52,12 @@ import re
 import sys
 import tempfile
 import time
+from collections import Counter
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
+from urllib.parse import urlsplit
 
 SITE: Final = "web.whatsapp.com"
 ORIGIN: Final = f"https://{SITE}"
@@ -65,6 +75,9 @@ SAFE_CLASS: Final = re.compile(r"^[a-z]+(?:-[a-z]+)+$")
 """Una classe che entra in un selettore: parole minuscole e trattini — ``message-out`` —, mai un
 nome generato, che cambia a ogni versione della pagina."""
 TAG: Final = re.compile(r"[a-z][a-z0-9-]*")
+KIND: Final = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,39}$")
+"""Un tipo che il browser dice — ``shared_worker``, ``TypeError``, ``network``: una parola."""
+SCHEME: Final = re.compile(r"[a-z][a-z0-9+.-]{0,19}")
 PHONE: Final = re.compile(r"^\+?[0-9]{6,15}$")
 DIGITS: Final = re.compile(r"[0-9]{6,}")
 """Sei cifre di fila in una riga del file: un numero, e la riga non si scrive."""
@@ -207,6 +220,111 @@ class Report:
         self.say(f"{word} — {what}")
 
 
+def origin_of(address: str) -> str:
+    """L'origine di un indirizzo, e niente del percorso né della domanda — ``https://web.whatsapp.com``,
+    ``blob:``, ``about:`` —; ``?`` per ciò che non è un indirizzo."""
+    try:
+        parts = urlsplit(address)
+        port = parts.port
+    except ValueError:
+        return "?"
+    if parts.hostname and parts.scheme in ("http", "https", "ws", "wss"):
+        host = f"[{parts.hostname}]" if ":" in parts.hostname else parts.hostname
+        return f"{parts.scheme}://{host}{f':{port}' if port else ''}"
+    return f"{parts.scheme}:" if SCHEME.fullmatch(parts.scheme) else "?"
+
+
+def kind_of(said: object) -> str:
+    """Un tipo detto dal browser, se è una parola sola; ``?`` per ogni altra cosa."""
+    return said if isinstance(said, str) and KIND.match(said) else "?"
+
+
+@dataclass
+class Seen:
+    """Ciò che il browser ha detto mentre la pagina caricava, **senza un testo** (decisione 63): le
+    origini che il cancello ha rifiutato — solo origini —, i target che il browser ha annunciato
+    con il tipo, e i tipi degli errori della console. Con la barra ferma, è ciò che dice la
+    causa."""
+
+    refused: Counter[str] = field(default_factory=Counter)
+    targets: Counter[tuple[str, str]] = field(default_factory=Counter)
+    errors: Counter[str] = field(default_factory=Counter)
+
+    def lines(self) -> list[str]:
+        said = [
+            f"    rifiutata dal cancello: {origin} — {number} richiest{'a' if number == 1 else 'e'}"
+            for origin, number in sorted(self.refused.items())
+        ] or ["    rifiutata dal cancello: nessuna richiesta"]
+        said += [
+            f"    annunciato dal browser: {kind} — {origin} — {number}"
+            for (kind, origin), number in sorted(self.targets.items())
+        ] or ["    annunciato dal browser: niente"]
+        said += [
+            f"    errore della console: {kind} — {number}"
+            for kind, number in sorted(self.errors.items())
+        ] or ["    errore della console: nessuno"]
+        return said
+
+
+def watching(gate: Any, seen: Seen) -> Callable[[], None]:
+    """Ascolta il cancello di ELA (ADR 0064 §2) **senza cambiare ciò che decide**: l'origine di ogni
+    richiesta che rifiuta — anche quando chi giudica solleva, ed è un rifiuto —, e ogni target che
+    il browser gli annuncia, con il tipo e l'origine. Si mette prima di aprire la pagina, perché il
+    cancello si fa dire dei target quando nasce; rende la funzione che lo rimette com'era."""
+    leaves, born = gate._leaves, gate._born
+
+    async def judged(self: Any, event: Mapping[str, Any]) -> Any:
+        address = str((event.get("request") or {}).get("url", ""))
+        try:
+            let_go = await leaves(self, event)
+        except Exception:
+            seen.refused[origin_of(address)] += 1
+            raise
+        if not let_go:
+            seen.refused[origin_of(address)] += 1
+        return let_go
+
+    def announced(self: Any, event: Mapping[str, Any]) -> None:
+        born(self, event)
+        told = event.get("targetInfo") or {}
+        seen.targets[(kind_of(told.get("type")), origin_of(str(told.get("url", ""))))] += 1
+
+    gate._leaves, gate._born = judged, announced
+
+    def undo() -> None:
+        gate._leaves, gate._born = leaves, born
+
+    return undo
+
+
+async def listening(page: Any, seen: Seen) -> Any:
+    """Ascolta gli errori della console della pagina per tipo, mai per testo: le eccezioni per la
+    loro classe, ``console.error``, le voci d'errore del registro del browser per la loro fonte.
+    Quando si comincia ad ascoltare il browser ripete quelli di prima (misurato il 2026-10-14), e la
+    pagina carica da quando è aperta. Rende la sessione, che vive quanto la pagina."""
+    session = await page.context.new_cdp_session(page)
+
+    def thrown(event: Mapping[str, Any]) -> None:
+        exception = (event.get("exceptionDetails") or {}).get("exception") or {}
+        seen.errors[f"un'eccezione {kind_of(exception.get('className'))}"] += 1
+
+    def called(event: Mapping[str, Any]) -> None:
+        if event.get("type") == "error":
+            seen.errors["console.error"] += 1
+
+    def logged(event: Mapping[str, Any]) -> None:
+        entry = event.get("entry") or {}
+        if entry.get("level") == "error":
+            seen.errors[f"il registro del browser: {kind_of(entry.get('source'))}"] += 1
+
+    session.on("Runtime.exceptionThrown", thrown)
+    session.on("Runtime.consoleAPICalled", called)
+    session.on("Log.entryAdded", logged)
+    await session.send("Runtime.enable")
+    await session.send("Log.enable")
+    return session
+
+
 def wait_for_you(ask: Callable[[str], str], what: str) -> None:
     ask(f"\n>>> {what}\n    Quando hai fatto, premi Invio qui. ")
 
@@ -273,8 +391,12 @@ def asked_number(read: Callable[[str], str]) -> str | None:
         print("    Non è un numero: solo cifre, con il + davanti se vuoi, senza spazi.", flush=True)
 
 
-async def measure(report: Report, ask: Callable[[str], str], page: Any) -> None:
-    """La misura, sulla pagina aperta: tre selettori e un indirizzo."""
+async def measure(
+    report: Report, ask: Callable[[str], str], page: Any, seen: Seen | None = None
+) -> None:
+    """La misura, sulla pagina aperta: il perché di ciò che hai visto, tre selettori e un
+    indirizzo."""
+    seen = Seen() if seen is None else seen
     wait_for_you(
         ask,
         "Nella finestra di Chrome for Testing: collega il telefono a mano\n"
@@ -293,6 +415,15 @@ async def measure(report: Report, ask: Callable[[str], str], page: Any) -> None:
         report.say(
             f"    il posto {place}: {number} element{'o' if number == 1 else 'i'} nella pagina"
         )
+    report.say("    il perché — ciò che il browser ha detto fino a qui, senza un testo:")
+    for line in seen.lines():
+        report.say(line)
+    if not held:
+        report.word(
+            "SALTATO",
+            "il resto della misura vuole la chat: la pagina non è arrivata alla casella",
+        )
+        return
 
     before = {c.key() for c in await described(page, "the element that sends")}
     wait_for_you(
@@ -390,6 +521,7 @@ async def measure(report: Report, ask: Callable[[str], str], page: Any) -> None:
 async def run(ask: Callable[[str], str] = input) -> int:
     from ela.composition.settings import AccountSettings
     from ela.infrastructure.machine.account import AccountChrome
+    from ela.infrastructure.machine.browser import _Gate
     from ela.testing.fakes import FakeStop
     from ela.tools.browser import boundary
 
@@ -430,13 +562,20 @@ async def run(ask: Callable[[str], str] = input) -> int:
         )
         return finish(report, out, 2)
     report.word("PASSATO", "il browser con i tuoi account è libero")
-    opened = await made.open(ADDRESS, boundary(frozenset({ORIGIN})), FakeStop())
+    seen = Seen()
+    undo = watching(_Gate, seen)
     try:
-        await measure(report, ask, made._pages[opened.page].page)
+        opened = await made.open(ADDRESS, boundary(frozenset({ORIGIN})), FakeStop())
+        try:
+            page = made._pages[opened.page].page
+            await listening(page, seen)
+            await measure(report, ask, page, seen)
+        finally:
+            await made.close(opened.page)
+            if made._watching is not None:
+                made._watching.cancel()
     finally:
-        await made.close(opened.page)
-        if made._watching is not None:
-            made._watching.cancel()
+        undo()
     free = await made.occupied() is None
     report.word(
         "PASSATO" if free else "FALLITO",

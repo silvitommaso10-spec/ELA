@@ -251,7 +251,7 @@ async def test_when_the_box_has_not_come_the_file_says_why_and_the_measure_ends_
     there."""
     monkeypatch.setattr(misura.getpass, "getpass", lambda prompt: "")
     asked: list[str] = []
-    said = answering({"casella del messaggio in basso": "n"})
+    said = answering({"casella del messaggio in basso": "n", "messaggio che hai mandato tu": "n"})
     seen = misura.Seen()
     seen.refused["https://static.example"] += 2
     seen.targets[("shared_worker", "https://web.example")] += 1
