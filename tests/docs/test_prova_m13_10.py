@@ -197,11 +197,34 @@ def test_the_script_stops_before_step_1_on_a_line_outside_the_vocabulary_of_its_
     todo = {
         2: [block(2, "atteso", "outcome finished")],
         4: [block(4, "aspetta", "browser.login WAITING_APPROVAL")],
+        7: [block(7, "numero", "NUMERO")],
     }
 
     wrong = module.outside_vocabulary(todo)
 
-    assert len(wrong) == 1 and "outcome finished" in wrong[0] and "2" in wrong[0]
+    assert len(wrong) == 2, wrong
+    assert "outcome finished" in wrong[0] and "passo 2" in wrong[0]
+    assert "'numero' is not a kind of the section" in wrong[1], "a kind with no reader is wrong"
+
+
+def test_main_reads_every_line_before_step_1_and_touches_nothing_when_one_is_wrong(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module = script()
+    guide_file = tmp_path / "GETTING_STARTED.md"
+    guide_file.write_text(
+        "## 29. La prova\n\n### 2. Uno\n\n<!-- prova: 2.atteso -->\n```\noutcome finished\n```\n"
+        "\n## Dove guardare dopo\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(module, "GUIDE", guide_file)
+    monkeypatch.setattr(
+        module, "preconditions", lambda report: pytest.fail("the world was asked for")
+    )
+    out = tmp_path / "out.txt"
+
+    assert module.main(["--out", str(out)]) == 1
+    assert "fuori dal vocabolario" in out.read_text(encoding="utf-8")
 
 
 def test_the_gestures_are_those_the_source_gives_the_session_of_step_4_in_the_catalogue() -> None:
@@ -219,6 +242,32 @@ def test_the_gestures_are_those_the_source_gives_the_session_of_step_4_in_the_ca
     assert capability == SESSION_AS_YOU.capability
     assert module.SESSION_GESTURES is SESSION_AS_YOU.gestures
     assert SESSION_AS_YOU.gestures.capabilities() <= catalogue
+
+
+@pytest.mark.parametrize(
+    ("rule", "failures"), [("SESSION", 0), ("APPROVAL_EVERY_USE", 1), (None, 1)]
+)
+def test_a_read_with_the_profile_asks_only_as_the_session_covers_it(
+    rule: str | None, failures: int
+) -> None:
+    """Found walking step 4: the read of a session with the profile asks — ``browser.read_as_you``
+    is ``MEDIUM`` — and the session covers it; a read the user was asked for is still a failure."""
+    module = script()
+    child = {
+        "id": "c-1",
+        "plan_author": {"by": "SESSION", "session": "s-1", "model": module.MODEL},
+        "steps": [
+            {
+                "required_capabilities": ["browser.read_as_you"],
+                "within": [HN],
+                "requires_authorization": True,
+            }
+        ],
+    }
+
+    found = module.guided.child_failures(child, "s-1", [HN], module.SESSION_GESTURES, rule)
+
+    assert len(found) == failures, found
 
 
 @pytest.mark.parametrize(
@@ -500,7 +549,7 @@ class World:
             def returncode(self) -> int:
                 return 0 if self.done is None else self.done.returncode
 
-            def communicate(self, timeout: float) -> tuple[str, str]:
+            def communicate(self, timeout: float | None = None) -> tuple[str, str]:
                 self.thread.join(timeout)
                 assert self.done is not None, "the run did not end"
                 return self.done.stdout, ""

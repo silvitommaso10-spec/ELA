@@ -76,7 +76,7 @@ from ela.cli.client import ApiRefusal  # noqa: E402
 from ela.cli.tasks import answered_words  # noqa: E402
 from ela.devices import LOCAL_USER  # noqa: E402
 from ela.permissions.guardian import Rule  # noqa: E402
-from ela.ports import GUIDED_DURATION, GUIDED_LOOKS  # noqa: E402
+from ela.ports import GUIDED_DURATION, GUIDED_LOOKS, SessionGestures  # noqa: E402
 from ela.providers.anthropic.models import HAIKU_5_5  # noqa: E402
 from ela.providers.anthropic.pricing import (  # noqa: E402
     CENTS_OF_A_MICRO_DOLLAR,
@@ -84,6 +84,7 @@ from ela.providers.anthropic.pricing import (  # noqa: E402
     PRICES,
     TIERS,
 )
+from ela.tools.guided import EMPTY_SESSION  # noqa: E402
 
 ROOT = base.ROOT
 GUIDE = base.GUIDE
@@ -114,9 +115,11 @@ MODEL: Final = HAIKU_5_5
 """The model of the route ``browsing``, the cheap profile (decision 27): every session goes
 there."""
 GUIDED: Final = "browser.guided"
-READ: Final = "browser.read"
-ACT: Final = "browser.act"
-GESTURES: Final = (READ, ACT)
+GESTURES: Final = EMPTY_SESSION.gestures
+"""What a gesture of the session of section 26 may ask for, **as the source gives it to that kind of
+session** — never a list written here: a list by hand was the vocabulary of every proof that walks
+a session, and the proof of M13.10 fell on a gesture it did not have (decision 69 of the review of
+M13.10's implementation). A proof of another kind of session hands its own."""
 SESSION_ROUTE: Final = "/sessions/{session}/v1/messages"
 """The route of a session's gateway, in the schema of the API: the Core runs the branch's code."""
 SITES: Final = ("www.youtube.com", "example.com", "httpbin.org")
@@ -314,9 +317,18 @@ def capability_of(child: Mapping[str, Any]) -> str | None:
     return str(named[0]) if len(named) == 1 else None
 
 
-def child_failures(child: Mapping[str, Any], session: str, sites: Sequence[str]) -> list[str]:
+def child_failures(
+    child: Mapping[str, Any],
+    session: str,
+    sites: Sequence[str],
+    gestures: SessionGestures = GESTURES,
+    rule: str | None = None,
+) -> list[str]:
     """What is wrong with a gesture's child: the author is the session — with its step and its
-    model —, its step is bounded by the session's sites, and a reading never asks."""
+    model —, its step is bounded by the session's sites, and **a reading never asks the user**:
+    the empty browser's read does not ask at all, and the read with the profile, which asks, is
+    covered by the session — its ``rule`` is ``SESSION`` (M13.9, ADR 0063; found walking step 4 of
+    section 29, decision 69 of the review of M13.10's implementation)."""
     where = f"il figlio {child.get('id')}"
     failures: list[str] = []
     author: Mapping[str, Any] = child.get("plan_author") or {}
@@ -327,14 +339,15 @@ def child_failures(child: Mapping[str, Any], session: str, sites: Sequence[str])
     ):
         failures.append(f"{where} ha l'autore {dict(author)}, non la sessione {session} su {MODEL}")
     capability = capability_of(child)
-    if capability not in GESTURES:
+    if capability not in gestures.capabilities():
         return [*failures, f"{where} non è un gesto: {capability!r}"]
     (step,) = child["steps"]
     if list(step.get("within") or []) != list(sites):
         failures.append(
             f"{where} ha il confine {step.get('within')}, non i siti della sessione {list(sites)}"
         )
-    if capability == READ and step.get("requires_authorization"):
+    covered = rule == Rule.SESSION.value
+    if capability == gestures.read and step.get("requires_authorization") and not covered:
         failures.append(f"{where} è una lettura che chiede")
     return failures
 
@@ -348,12 +361,13 @@ def inside(child: Mapping[str, Any], sites: Sequence[str]) -> bool:
     return within_scope(sites, (step.get("arguments") or {}).get("site"))
 
 
-def wanted(line: str) -> tuple[str, str, str | None]:
-    """A line of ``figli``: a capability, a state and, if named, the rule of the Guardian."""
+def wanted(line: str, gestures: SessionGestures = GESTURES) -> tuple[str, str, str | None]:
+    """A line of ``figli``: a gesture of the session, a state and, if named, the rule of the
+    Guardian."""
     words = line.split()
     if (
         len(words) not in (2, 3)
-        or words[0] not in GESTURES
+        or words[0] not in gestures.capabilities()
         or words[1] not in STATES
         or (len(words) == 3 and words[2] not in RULES)
     ):
@@ -361,10 +375,11 @@ def wanted(line: str) -> tuple[str, str, str | None]:
     return words[0], words[1], words[2] if len(words) == 3 else None
 
 
-def waited(line: str) -> str:
-    """A line of ``aspetta``: a gesture that asks, ``<capability> WAITING_APPROVAL``."""
+def waited(line: str, gestures: SessionGestures = GESTURES) -> str:
+    """A line of ``aspetta``: a gesture of the session that asks — ``<capability>
+    WAITING_APPROVAL``."""
     words = line.split()
-    if len(words) != 2 or words[0] not in GESTURES or words[1] != WAITING:
+    if len(words) != 2 or words[0] not in gestures.capabilities() or words[1] != WAITING:
         raise ValueError(f"{line!r} is not in the vocabulary of aspetta")
     return words[0]
 
@@ -384,10 +399,13 @@ def asked_for(capability: str, children: Sequence[Mapping[str, Any]]) -> bool:
 
 
 def unmatched(
-    line: str, children: Sequence[Mapping[str, Any]], rules: Mapping[str, str | None]
+    line: str,
+    children: Sequence[Mapping[str, Any]],
+    rules: Mapping[str, str | None],
+    gestures: SessionGestures = GESTURES,
 ) -> str | None:
     """Why no child is the one the line names, or ``None`` if one is."""
-    capability, state, rule = wanted(line)
+    capability, state, rule = wanted(line, gestures)
     mine = [child for child in children if capability_of(child) == capability]
     for child in mine:
         if child.get("state") == state and (rule is None or rules.get(str(child["id"])) == rule):
@@ -705,12 +723,14 @@ def session_over(proof: Proof, task_id: str | None) -> Mapping[str, Any] | None:
     return found
 
 
-def a_wait(number: int, block: base.Block, turn: Turn, proof: Proof) -> None:
+def a_wait(
+    number: int, block: base.Block, turn: Turn, proof: Proof, gestures: SessionGestures = GESTURES
+) -> None:
     """``aspetta``: no threshold of time (M6.3c, decision 7) — until the child asks, or until the
     session ends. A session over before the gesture is said as it ended: SKIPPED if it ended by
     itself or on a limit the yes allowed, FAILED with its code otherwise (decision 35)."""
     (line,) = block.lines
-    capability = waited(line)
+    capability = waited(line, gestures)
     while True:
         found = asking_child(proof.api, turn.task_id, capability)
         if found is not None:
@@ -783,7 +803,9 @@ def existing(api: base.Api, task_id: str) -> Mapping[str, Any] | None:
     return found
 
 
-def a_family(number: int, block: base.Block, turn: Turn, proof: Proof) -> None:
+def a_family(
+    number: int, block: base.Block, turn: Turn, proof: Proof, gestures: SessionGestures = GESTURES
+) -> None:
     """``figli``: the children of the session's gestures, read and checked one by one."""
     report = proof.report
     detail = proof.api.get(f"/tasks/{turn.task_id}")
@@ -813,7 +835,11 @@ def a_family(number: int, block: base.Block, turn: Turn, proof: Proof) -> None:
             f"{child.get('state')} {rules.get(str(child['id'])) or ''} {end}".rstrip()
         )
     planned = [child for child in children if child.get("steps")]
-    failures = [one for child in planned for one in child_failures(child, session, sites)]
+    failures = [
+        one
+        for child in planned
+        for one in child_failures(child, session, sites, gestures, rules.get(str(child["id"])))
+    ]
     matched = 0
     for line in block.lines:
         if line == INSIDE:
@@ -825,11 +851,11 @@ def a_family(number: int, block: base.Block, turn: Turn, proof: Proof) -> None:
             )
             matched += 1
             continue
-        capability = wanted(line)[0]
+        capability = wanted(line, gestures)[0]
         if not asked_for(capability, planned):
             report.skipped(number, f"nessun gesto {capability} fra i figli della sessione")
             continue
-        why = unmatched(line, planned, rules)
+        why = unmatched(line, planned, rules, gestures)
         if why is None:
             matched += 1
         else:

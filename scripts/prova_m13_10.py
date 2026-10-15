@@ -31,11 +31,12 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shlex
 import signal
 import sys
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Final
@@ -47,6 +48,9 @@ import prova_m13_9 as accounts  # noqa: E402 — the same
 import prova_m14_1 as spending  # noqa: E402 — the same
 import prova_m14_2 as planning  # noqa: E402 — the same
 import prova_m14_3 as guided  # noqa: E402 — the same
+
+from ela.executive.runner import RunOutcome  # noqa: E402
+from ela.tools.guided import SESSION_AS_YOU  # noqa: E402
 
 ROOT = base.ROOT
 GUIDE = base.GUIDE
@@ -88,10 +92,130 @@ STOP_REASON: Final = "il «ferma» della prova, mentre il gesto aspettava"
 SAID_NO: Final = accounts.SAID_NO
 CURRENCY: Final = guided.CURRENCY
 MODEL: Final = guided.MODEL
+SESSION_GESTURES: Final = SESSION_AS_YOU.gestures
+"""What a gesture of the session of step 4 may ask for — a read and an act with the profile, and
+the login —, **as the source gives it to that kind of session**: the vocabulary of ``aspetta`` and
+``figli`` here. Until the proof of 2026-10-15 it was the list of M14.3 — the empty browser's read
+and act —, and the proof fell at step 4 on ``browser.login WAITING_APPROVAL`` (decision 69)."""
+OUTCOME_WORDS: Final = frozenset(outcome.value for outcome in RunOutcome)
+PLACEHOLDER: Final = re.compile(r"<[^>\s][^>]*>")
 
 
 Report = accounts.Report
 Proof = accounts.Proof
+
+
+# ----------------------------------------------------------------------------------------
+# The vocabulary of every kind: what the script can read of a line (decision 69)
+# ----------------------------------------------------------------------------------------
+
+
+def a_command(line: str) -> str:
+    """A line the script runs: a command of ELA's, whose placeholders are all ones it fills."""
+    if not line.startswith("uv run ela "):
+        raise ValueError(f"{line!r} is not in the vocabulary of a command: `uv run ela …`")
+    unknown = sorted(set(PLACEHOLDER.findall(line)) - set(PLACEHOLDERS))
+    if unknown:
+        raise ValueError(f"{line!r} has placeholders the script does not fill: {unknown}")
+    return line
+
+
+ANSWER: Final = re.compile(
+    r"uv run ela task (approve <[^>]+> --approval <approval-id>|run <[^>]+>)"
+)
+
+
+def an_answer_line(line: str) -> str:
+    """A line of ``sì``: the yes to a question, or the run of the task that had it."""
+    if not ANSWER.fullmatch(a_command(line)):
+        raise ValueError(f"{line!r} is not in the vocabulary of sì: approve, or run")
+    return line
+
+
+def an_expected(line: str) -> str:
+    """A line of ``atteso`` and ``fine``: a row of what a command prints, two words — the name of
+    the row and its value —; an ``outcome`` is one :class:`RunOutcome` has."""
+    words = line.split()
+    if len(words) != 2 or (words[0] == "outcome" and words[1] not in OUTCOME_WORDS):
+        raise ValueError(f"{line!r} is not in the vocabulary of atteso: «row value»")
+    return line
+
+
+def a_question(line: str) -> str:
+    """A line of ``occhio``: a question for Tommaso's eye."""
+    if not line.strip().endswith("?"):
+        raise ValueError(f"{line!r} is not in the vocabulary of occhio: a question")
+    return line
+
+
+def a_sentence(line: str) -> str:
+    """A line of ``mano``: what Tommaso does himself, said."""
+    if not line.strip():
+        raise ValueError("an empty line is not in the vocabulary of mano")
+    return line
+
+
+def seconds(line: str) -> float:
+    """A line of ``ferma``: the seconds before the stop, inside the thirty of the step."""
+    try:
+        said = float(line)
+    except ValueError:
+        raise ValueError(f"{line!r} is not in the vocabulary of ferma: seconds") from None
+    if not 0 < said < 30:
+        raise ValueError(f"{line!r} is not inside the thirty seconds of the step")
+    return said
+
+
+def a_signal(line: str) -> str:
+    """A line of ``pagina``: the signal ELA is stopped with."""
+    if line not in SIGNALS:
+        raise ValueError(f"{line!r} is not in the vocabulary of pagina: {sorted(SIGNALS)}")
+    return line
+
+
+def a_wait_line(line: str) -> str:
+    return guided.waited(line, SESSION_GESTURES)
+
+
+def a_child(line: str) -> object:
+    return line if line == guided.INSIDE else guided.wanted(line, SESSION_GESTURES)
+
+
+READERS: Final[Mapping[str, Callable[[str], object]]] = {
+    "comando": a_command,
+    "atteso": an_expected,
+    "occhio": a_question,
+    "sì": an_answer_line,
+    "mano": a_sentence,
+    "schermo": a_command,
+    "assente": a_command,
+    "sfondo": a_command,
+    "aspetta": a_wait_line,
+    "fine": an_expected,
+    "figli": a_child,
+    "ferma": seconds,
+    "pagina": a_signal,
+}
+"""The reader of each kind: what the script reads of a line, and the guide's error when it cannot.
+``tests/docs/test_prova_m13_10.py`` reads every line of the section with these, and the script reads
+them all before step 1."""
+
+
+def outside_vocabulary(todo: Mapping[int, Sequence[base.Block]]) -> list[str]:
+    """Every line of the section a reader of its kind cannot read: said before step 1, so that the
+    proof never falls in the middle of a step on a line of the guide."""
+    wrong: list[str] = []
+    for number, blocks in todo.items():
+        for block in blocks:
+            reader = READERS.get(block.kind)
+            for line in block.lines:
+                try:
+                    if reader is None:
+                        raise ValueError(f"{block.kind!r} is not a kind of the section")
+                    reader(line)
+                except ValueError as error:
+                    wrong.append(f"passo {number}, {block.kind}: {error}")
+    return wrong
 
 
 def commands(lines: Sequence[str], turn: guided.Turn, proof: Proof) -> None:
@@ -183,11 +307,11 @@ def a_block(number: int, block: base.Block, turn: guided.Turn, proof: Proof) -> 
     elif kind == "sfondo":
         guided.a_background(number, block, turn, proof)
     elif kind == "aspetta":
-        guided.a_wait(number, block, turn, proof)
+        guided.a_wait(number, block, turn, proof, SESSION_GESTURES)
     elif kind == "fine":
         guided.an_end(number, block, turn, proof)
     elif kind == "figli":
-        guided.a_family(number, block, turn, proof)
+        guided.a_family(number, block, turn, proof, SESSION_GESTURES)
     elif kind == "ferma":
         a_stop(number, block, turn, proof)
     elif kind == "pagina":
@@ -280,7 +404,10 @@ def main(argv: Sequence[str] | None = None, ask: base.Ask = input) -> int:
         report.say(f"il file: {out}")
         report.say()
         report.say("—— passo 1 ——")
-        if preconditions(report):
+        wrong = outside_vocabulary(todo)
+        if wrong:
+            report.stop(1, f"righe della sezione fuori dal vocabolario del loro tipo: {wrong}")
+        elif preconditions(report):
             api = base.Api()
             proof = Proof(api, report, ask, spending.Ledger.of(api.get("/spend")), login=LOGIN_PLAN)
             try:

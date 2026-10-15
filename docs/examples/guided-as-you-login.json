@@ -1,6 +1,6 @@
 {
   "_nota": [
-    "La sezione 29 della guida, passo 3 (M13.10, ADR 0065 §4): il login da una frase. Il modello dice solo dove serve entrare; ELA legge la pagina, trova il solo modulo di accesso, chiede il sì nominando la voce del vault e scrive la password dal vault. Il modello non vede mai la password, la voce o il nome utente.",
+    "La sezione 29 della guida, passo 4 (M13.10, ADR 0065 §4): il login da una frase. Il modello dice solo dove serve entrare; ELA legge la pagina, trova il solo modulo di accesso, chiede il sì nominando la voce del vault e scrive la password dal vault. Il modello non vede mai la password, la voce o il nome utente.",
     "Un login conta due gesti fra i `looks`: la lettura della pagina e il login. news.ycombinator.com va dichiarato in ELA_BROWSER_SITES. Questa chiave è ignorata dall'API (ADR 0025 §8)."
   ],
   "goal": "entrare in news.ycombinator.com da una frase",
