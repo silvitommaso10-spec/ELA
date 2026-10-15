@@ -24,6 +24,7 @@ import asyncio
 import dataclasses
 import importlib.util
 import io
+import json
 import re
 import shlex
 import signal
@@ -41,7 +42,9 @@ from typer.testing import CliRunner
 
 from ela.cli import client as cli_client
 from ela.cli.app import app as ela_app
-from tests.api.guided import Script, guided
+from ela.ports import Secret
+from ela.testing.fakes import FakeAccountBrowser, FakeVault, FakeVaultEntry
+from tests.api.guided import SITES, Script, gesture, guided
 from tests.cli.support import LoopTransport, plain
 from tests.composition.support import (  # noqa: F401 — re-exported as a fixture
     API_TOKEN,
@@ -165,15 +168,85 @@ def test_the_sites_of_the_proof_are_the_ones_the_section_tells_the_user_to_decla
         assert f"`{site}`" in section(), site
 
 
-def test_the_lines_of_the_kinds_of_this_section_are_in_their_vocabularies() -> None:
+def test_every_line_of_every_block_of_the_section_is_in_the_vocabulary_of_its_kind() -> None:
+    """Decision 69 of the review of M13.10's implementation: the proof fell at step 4 on a line of
+    ``aspetta`` its script could not read — ``browser.login WAITING_APPROVAL``, outside the
+    vocabulary of M14.3 —, and no check had read that line against it. Every line, read from the
+    section, with the reader the script itself reads it with."""
     module = script()
-    for blocks in marked().values():
+    for number, blocks in marked().items():
         for one in blocks:
-            if one.kind == "ferma":
-                (seconds,) = one.lines
-                assert 0 < float(seconds) < 30, "inside the thirty seconds of the step"
-            if one.kind == "pagina":
-                assert one.lines and all(line in module.SIGNALS for line in one.lines)
+            for line in one.lines:
+                try:
+                    module.READERS[one.kind](line)
+                except ValueError as error:
+                    pytest.fail(f"step {number}, {one.kind}: {error}")
+
+
+def test_no_kind_the_section_uses_is_left_out_of_the_vocabularies() -> None:
+    used = {one.kind for blocks in marked().values() for one in blocks}
+
+    assert used <= set(script().READERS)
+    assert set(script().READERS) == set(script().KINDS)
+
+
+def test_the_script_stops_before_step_1_on_a_line_outside_the_vocabulary_of_its_kind() -> None:
+    """The proof that fell checked the line in the middle of step 4, after three steps and a yes:
+    now it reads every line before it begins."""
+    module = script()
+    todo = {
+        2: [block(2, "atteso", "outcome finished")],
+        4: [block(4, "aspetta", "browser.login WAITING_APPROVAL")],
+    }
+
+    wrong = module.outside_vocabulary(todo)
+
+    assert len(wrong) == 1 and "outcome finished" in wrong[0] and "2" in wrong[0]
+
+
+def test_the_gestures_are_those_the_source_gives_the_session_of_step_4_in_the_catalogue() -> None:
+    """The vocabulary takes the capabilities from what the source declares — the gestures of the
+    kind of session the plan of step 4 asks for —, not from a list written by hand: the next
+    gesture of that session does not make it false."""
+    from ela.permissions.capabilities import production_catalogue
+    from ela.tools.guided import SESSION_AS_YOU
+
+    module = script()
+    asked = json.loads(module.SESSION_PLAN.read_text(encoding="utf-8"))
+    ((capability,),) = [step["required_capabilities"] for step in asked["steps"]]
+    catalogue = {spec.id for spec in production_catalogue().specs()}
+
+    assert capability == SESSION_AS_YOU.capability
+    assert module.SESSION_GESTURES is SESSION_AS_YOU.gestures
+    assert SESSION_AS_YOU.gestures.capabilities() <= catalogue
+
+
+@pytest.mark.parametrize(
+    ("kind", "line"),
+    [
+        ("comando", "rm -rf docs"),
+        ("comando", "uv run ela task run <un id che lo script non riempie>"),
+        ("sì", "uv run ela task cancel <id>"),
+        ("atteso", "outcome finished"),
+        ("atteso", "outcome"),
+        ("fine", "outcome done"),
+        ("aspetta", "browser.read WAITING_APPROVAL"),
+        ("aspetta", "browser.guided_as_you WAITING_APPROVAL"),
+        ("aspetta", "browser.login COMPLETED"),
+        ("figli", "browser.act COMPLETED"),
+        ("figli", "browser.login DONE"),
+        ("occhio", "Una frase che non chiede niente."),
+        ("mano", ""),
+        ("ferma", "trenta"),
+        ("ferma", "45"),
+        ("pagina", "SIGKILL"),
+    ],
+)
+def test_a_line_outside_the_vocabulary_of_its_kind_is_the_guides_error(
+    kind: str, line: str
+) -> None:
+    with pytest.raises(ValueError):
+        script().READERS[kind](line)
 
 
 def test_the_file_is_in_downloads_with_the_name_of_the_milestone() -> None:
@@ -420,6 +493,13 @@ class World:
             def go(self) -> None:
                 self.done = world.run(line)
 
+            def poll(self) -> int | None:
+                return None if self.thread.is_alive() or self.done is None else self.returncode
+
+            @property
+            def returncode(self) -> int:
+                return 0 if self.done is None else self.done.returncode
+
             def communicate(self, timeout: float) -> tuple[str, str]:
                 self.thread.join(timeout)
                 assert self.done is not None, "the run did not end"
@@ -442,12 +522,31 @@ class Walked:
         return "\n".join(self.report.lines)
 
 
-async def walked(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, steps: set[int]) -> Walked:
+async def walked(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    steps: set[int],
+    *,
+    session: Script | None = None,
+    accounts: FakeAccountBrowser | None = None,
+    vault: FakeVault | None = None,
+    **declared: str,
+) -> Walked:
     """The steps of the section in ``steps``, as written in the guide, run by the script itself
-    against a real ELA with the browser of ``ela.testing``."""
+    against a real ELA with the browsers of ``ela.testing`` — and, for a step with the profile, the
+    model of ``session``, the browser of the profile and an open vault."""
     module = script()
     (tmp_path / "docs").symlink_to(ROOT / "docs", target_is_directory=True)
-    async with guided(monkeypatch, tmp_path, Script([])) as g:
+    async with guided(
+        monkeypatch,
+        tmp_path,
+        Script([]) if session is None else session,
+        accounts=accounts,
+        vault=vault,
+        **declared,
+    ) as g:
+        if vault is not None:
+            assert await g.ela.vault.open(Secret(vault.key)) is None
         loop = asyncio.get_running_loop()
         transport = LoopTransport(g.app, loop)
         monkeypatch.setattr(
@@ -505,3 +604,57 @@ async def test_steps_2_and_3_walk_against_a_real_ela_and_pass(
     assert walk.browser.fills[-1] == ("input[name=custname]", "ELA prova 7431")
     assert "button#non-esiste" in walk.browser.waited, "step 3's click waited for its element"
     assert any(line.startswith("uv run ela task cancel") for line in walk.world.ran)
+
+
+HN = "news.ycombinator.com"
+HN_ENTRY = FakeVaultEntry(
+    "33333333-4444-4555-8666-777777777777",
+    "SENTINEL-entry-of-the-proof",
+    (f"https://{HN}/",),
+    "-".join(("SENTINEL", "user")) + "@example.com",
+    "-".join(("SENTINEL", "word", "of", "the", "proof")),
+    "S…@example.com",
+)
+
+
+async def test_step_4_walks_against_a_real_ela_through_its_wait_its_yes_and_its_children(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Decision 69: the step the proof fell at, walked by the script itself as the guide writes it
+    — the reading that finds Tommaso still outside, the session, its yes, the run in the
+    background, the login it asks for (``aspetta``), the yes to that child, the end, the children
+    — against a real ELA with the browser of the profile, an open vault and a model that asks
+    for the login by the site alone."""
+    from ela.ports import Field
+    from ela.testing.fakes import FakePage
+    from tests.api.test_login_from_the_model import WRITTEN, program
+    from tests.tools.test_login_form import LOGIN, SIGN_UP
+
+    page = FakePage(
+        texts={None: "login | Hacker News"},
+        forms=(LOGIN, SIGN_UP),
+        fields={
+            WRITTEN["username_field"]: Field("text", "username", "post"),
+            WRITTEN["password_field"]: Field("password", "current-password", "post"),
+            WRITTEN["click"]: Field("submit", "", "post"),
+        },
+        counts_after_click={WRITTEN["password_field"]: 0},
+        landed=f"https://{HN}/news",
+        landed_status=200,
+    )
+    walk = await walked(
+        monkeypatch,
+        tmp_path,
+        {4},
+        session=Script([gesture("login", site=HN)]),
+        accounts=FakeAccountBrowser(page),
+        vault=FakeVault([HN_ENTRY]),
+        ELA_VAULT_PROGRAM=program(tmp_path),
+        ELA_BROWSER_SITES=json.dumps([*SITES, HN]),
+    )
+
+    assert walk.report.ok, walk.written
+    assert walk.report.failures == 0 and walk.report.stopped is None, walk.written
+    assert "il gesto browser.login chiede" in walk.written, walk.written
+    for secret in (HN_ENTRY.password, HN_ENTRY.username, HN_ENTRY.name):
+        assert secret not in walk.written
