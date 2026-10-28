@@ -14,8 +14,11 @@ repository, in ``.git/m13.10-reference/examples/``.
 
 **Steps 2 and 3 are walked by the script against a real ELA** — its routes, its command line, its
 Guardian, its database, its room of the pages —, with the browser of ``ela.testing``: what the
-guide says a command prints is what the command printed here. Steps 4 and 5 want a vault, a model
-and a real ELA to stop, and are walked block by block above, with the machine injected.
+guide says a command prints is what the command printed here. **So is step 4** (decisions 69 and
+71), with the browser of the profile, a model of the test's and the vault **closed**, as the
+introduction says — Tommaso opens it where a ``mano`` tells him to —; and **step 5 after it**, when
+a session ends without the login (decision 72), with ELA's stop and the processes of the machine
+injected.
 """
 
 from __future__ import annotations
@@ -640,6 +643,10 @@ class World:
         return InTheBackground()
 
 
+PASTE_THIS = "to open it, paste this line in your terminal:"
+"""What ``ela vault status`` prints right above the line to paste, which stands alone."""
+
+
 class Tommaso:
     """Tommaso at the terminal: a yes to every question, and at «Premi Invio» what his hands were
     asked for, said by the ``A TE`` line the script wrote just before. Told to open the vault with
@@ -658,8 +665,9 @@ class Tommaso:
 
     def open_the_vault(self) -> None:
         assert self.vault is not None, "a hand that opens a vault the walk does not have"
-        status = CliRunner().invoke(ela_app, ["vault", "status"])
-        (line,) = [one for one in plain(status.output).splitlines() if "unlock --raw |" in one]
+        printed = plain(CliRunner().invoke(ela_app, ["vault", "status"]).output).splitlines()
+        line = printed[printed.index(PASTE_THIS) + 1]
+        assert "unlock --raw |" in line, printed
         opened = CliRunner().invoke(ela_app, ["vault", "open"], input=self.vault.key + "\n")
         assert opened.exit_code == 0, opened.output
         self.pasted.append(line)

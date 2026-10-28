@@ -6735,8 +6735,10 @@ create`. Il 14 ottobre 2026 non ce n'era nessuna viva.
 vault c'è dal passo 6 della sezione 28 —; il vault chiuso, aperto al passo 4 con la riga di `ela vault status`; la chiave
 del modello e il tetto, come nella sezione 28. Lo script stampa **PASSATO**, **FALLITO**, **SALTATO** o **FERMATO** per
 ogni passo, e scrive tutto in `~/Downloads/prova-m13.10-<data>.txt`. I tipi dei blocchi sono quelli delle sezioni 26 e
-28, e due suoi: `ferma` è il «ferma» a tempo, dato dallo script mentre uno step aspetta; `pagina` ferma ELA mentre una
-pagina di un task aspetta fra due step, e guarda che non resti niente.
+28, e questi suoi: `ferma` è il «ferma» a tempo, dato dallo script mentre uno step aspetta; `pagina` ferma ELA mentre una
+pagina di un task aspetta fra due step, e guarda che non resti niente; `vault` guarda che il vault sia aperto dopo che
+l'hai aperto tu, e se non lo è ferma la prova — FERMATO — con la riga da incollare. **Una sessione che finisce senza il
+gesto che il passo aspetta** chiude quel passo con **SALTATO**: il resto del passo non si fa, e la prova va avanti.
 
 ### 1. Prima
 
@@ -6831,7 +6833,10 @@ error browser.stopped
 ### 4. Il login da una frase
 
 **Prima esci da Hacker News** nel browser di ELA: lo script lo guarda lui, con una lettura come te della pagina
-pubblica, e **se ci trova `logout` si ferma** — FERMATO — dicendo come uscire. Poi la frase: il modello chiede il login
+pubblica, e **se ci trova `logout` si ferma** — FERMATO — dicendo come uscire. **Poi apri il vault**, con la riga intera
+che `uv run ela vault status` stampa, incollata nel tuo terminale: lo script guarda che sia aperto, e se non lo è si
+ferma — FERMATO — con la riga da incollare. Con il vault chiuso il modello chiede il login, ELA lo rifiuta prima della
+domanda con `vault.locked`, e la sessione finisce senza il login. Poi la frase: il modello chiede il login
 con il solo sito; ELA legge la pagina, **trova il solo modulo di accesso** — non quello di registrazione, il cui campo si
 dichiara `new-password` —, e ti chiede il sì: **la domanda nomina la voce del vault e il nome utente mascherato**, e li
 leggi nel tuo terminale. Mentre ELA entra compare la finestra del suo browser: **finché c'è, non scrivere**. Un login
@@ -6872,6 +6877,16 @@ outcome completed
 <!-- prova: 4.assente -->
 ```
 uv run ela task results <id>
+```
+
+<!-- prova: 4.mano -->
+```
+Apri il vault: incolla nel tuo terminale la riga intera che stampa `uv run ela vault status`, e scrivi la password principale quando il programma del vault la chiede. Quella password non entra in ELA.
+```
+
+<!-- prova: 4.vault -->
+```
+unlocked
 ```
 
 <!-- prova: 4.comando -->

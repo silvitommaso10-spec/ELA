@@ -19,7 +19,14 @@ I tipi suoi, che la sezione spiega:
   il task con ``ela task cancel`` mentre lo step aspetta il suo elemento;
 * ``pagina``: ELA si ferma mentre una pagina del task aspetta fra due step — lo script guarda
   che lo stato del browser dica che quella pagina aspetta, manda a ELA il segnale del blocco, e
-  guarda che ELA esca e che **nessun processo del browser resti**.
+  guarda che ELA esca e che **nessun processo del browser resti**;
+* ``vault``: la precondizione della ``mano`` che lo precede — il vault nello stato del blocco,
+  chiesto a ELA —; se non lo è, la prova si ferma (FERMATO) con la riga da incollare, da sola
+  (decisione 71 della review dopo la prova caduta al passo 4).
+
+**Una sessione che finisce senza il gesto che il passo aspetta chiude il passo** con la riga che
+``aspetta`` stampa — SALTATO per una sessione finita da sé —, i blocchi che restano di quel passo
+non si fanno, e la prova va avanti al passo dopo (decisione 72).
 
 **WhatsApp non è in questa prova** (decisione 61 della review dell'implementazione di M13.10): con
 il profilo di ELA la pagina non è andata oltre la sua barra di caricamento nella prima misura (ADR
@@ -50,6 +57,7 @@ import prova_m14_2 as planning  # noqa: E402 — the same
 import prova_m14_3 as guided  # noqa: E402 — the same
 
 from ela.executive.runner import RunOutcome  # noqa: E402
+from ela.ports import VAULT_UNLOCKED  # noqa: E402
 from ela.tools.guided import SESSION_AS_YOU  # noqa: E402
 
 ROOT = base.ROOT
@@ -69,6 +77,7 @@ KINDS: Final = (
     "figli",
     "ferma",
     "pagina",
+    "vault",
 )
 ID = base.ID
 APPROVAL_ID: Final = guided.APPROVAL_ID
@@ -173,6 +182,14 @@ def a_signal(line: str) -> str:
     return line
 
 
+def an_open_vault(line: str) -> str:
+    """A line of ``vault``: the state the human step before it leaves the vault in — the open one,
+    as the source names it."""
+    if line != VAULT_UNLOCKED:
+        raise ValueError(f"{line!r} is not in the vocabulary of vault: {VAULT_UNLOCKED!r}")
+    return line
+
+
 def a_wait_line(line: str) -> str:
     return guided.waited(line, SESSION_GESTURES)
 
@@ -195,6 +212,7 @@ READERS: Final[Mapping[str, Callable[[str], object]]] = {
     "figli": a_child,
     "ferma": seconds,
     "pagina": a_signal,
+    "vault": an_open_vault,
 }
 """The reader of each kind: what the script reads of a line, and the guide's error when it cannot.
 ``tests/docs/test_prova_m13_10.py`` reads every line of the section with these, and the script reads
@@ -298,6 +316,29 @@ def a_page_that_waits(number: int, block: base.Block, turn: guided.Turn, proof: 
         report.passed(number, "ELA è uscita, e del browser non resta niente")
 
 
+def the_vault(number: int, block: base.Block, turn: guided.Turn, proof: Proof) -> None:
+    """``vault``: the precondition of the human step before it — the vault in the state of the
+    block, asked of ELA. Not met, the proof stops (FERMATO), with the line to paste **on a line of
+    its own**, to be copied whole; or, when ELA gives no line, with what ELA says to do. On
+    2026-10-15 nothing looked: the vault was closed, and the session of step 4 ended on
+    ``vault.locked`` (decision 71)."""
+    (wanted,) = block.lines
+    found = proof.api.get("/vault")
+    state = found.get("state")
+    if state == wanted:
+        proof.report.passed(number, "il vault è aperto")
+        return
+    line = found.get("opens_with")
+    if not line:
+        raise base.Stop(f"il vault è {state}, non aperto: {found.get('message')}")
+    proof.report.say("    la riga da incollare nel tuo terminale, intera:")
+    proof.report.say(str(line))
+    raise base.Stop(
+        f"il vault è {state}, non aperto: incolla nel tuo terminale la riga qui sopra, intera, "
+        "e rilancia la prova da capo"
+    )
+
+
 def a_block(number: int, block: base.Block, turn: guided.Turn, proof: Proof) -> None:
     kind = block.kind
     if kind == "comando":
@@ -316,6 +357,8 @@ def a_block(number: int, block: base.Block, turn: guided.Turn, proof: Proof) -> 
         a_stop(number, block, turn, proof)
     elif kind == "pagina":
         a_page_that_waits(number, block, turn, proof)
+    elif kind == "vault":
+        the_vault(number, block, turn, proof)
     else:
         raise ValueError(f"step {number}: {kind!r} is not a kind of the section")
 
@@ -323,7 +366,11 @@ def a_block(number: int, block: base.Block, turn: guided.Turn, proof: Proof) -> 
 def a_step(
     number: int, todo: Sequence[base.Block], proof: Proof, turn: guided.Turn | None = None
 ) -> None:
-    """The blocks of a step in order."""
+    """The blocks of a step in order. A session that ends without the gesture ``aspetta`` waits
+    for closes the step with the line ``aspetta`` printed — SALTATO, for one that ended by
+    itself —: the blocks left of the step have nothing to look at, and the proof goes on to the
+    next one. On 2026-10-15 ``Done`` went out of the step and out of the walk, and the file had no
+    verdict (decision 72)."""
     report = proof.report
     report.say()
     report.say(f"—— passo {number} ——")
@@ -331,6 +378,8 @@ def a_step(
     try:
         for block in todo:
             a_block(number, block, turn, proof)
+    except guided.Done:
+        return
     finally:
         if turn.task_id is not None:
             proof.ids[number] = turn.task_id
