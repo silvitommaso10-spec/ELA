@@ -42,7 +42,7 @@ from typer.testing import CliRunner
 
 from ela.cli import client as cli_client
 from ela.cli.app import app as ela_app
-from ela.ports import Secret
+from ela.ports import VAULT_LOCKED
 from ela.testing.fakes import FakeAccountBrowser, FakeVault, FakeVaultEntry
 from tests.api.guided import SITES, Script, gesture, guided
 from tests.cli.support import LoopTransport, plain
@@ -289,6 +289,8 @@ def test_a_read_with_the_profile_asks_only_as_the_session_covers_it(
         ("ferma", "trenta"),
         ("ferma", "45"),
         ("pagina", "SIGKILL"),
+        ("vault", "locked"),
+        ("vault", "aperto"),
     ],
 )
 def test_a_line_outside_the_vocabulary_of_its_kind_is_the_guides_error(
@@ -296,6 +298,38 @@ def test_a_line_outside_the_vocabulary_of_its_kind_is_the_guides_error(
 ) -> None:
     with pytest.raises(ValueError):
         script().READERS[kind](line)
+
+
+PROMISE = re.compile(r"il vault chiuso, aperto al passo (\d+) con la riga di `ela vault status`")
+"""What the introduction of the section promises of the vault."""
+
+
+def test_the_vault_the_introduction_says_is_opened_at_step_4_is_opened_there_by_a_block() -> None:
+    """Decision 71: the introduction promises the vault closed, «aperto al passo 4 con la riga di
+    `ela vault status`» — and on 2026-10-15 no block of step 4 kept it: the model asked for the
+    login, ELA answered ``vault.locked`` before the question, and the session ended without it. A
+    promise of the introduction that no block keeps is a list written by hand gone false. Now the
+    step has a ``mano`` that names the line, and right after it the script's ``vault``, before
+    the command of the session."""
+    module = script()
+    promised = PROMISE.search(section())
+    assert promised is not None, "the introduction says where the vault is opened"
+    blocks = marked()[int(promised.group(1))]
+    session = next(
+        index
+        for index, one in enumerate(blocks)
+        if one.kind == "comando" and module.SESSION_PLAN.name in one.body
+    )
+    hands = [
+        index
+        for index, one in enumerate(blocks)
+        if one.kind == "mano" and "`uv run ela vault status`" in one.body
+    ]
+
+    assert hands, f"no mano of step {promised.group(1)} opens the vault the introduction promises"
+    (hand,) = hands
+    assert blocks[hand + 1].kind == "vault", "the script looks right after the hand"
+    assert hand + 1 < session, "and before the session that needs it"
 
 
 def test_the_file_is_in_downloads_with_the_name_of_the_milestone() -> None:
@@ -437,6 +471,52 @@ def test_without_an_ela_that_listens_nobody_is_signalled(monkeypatch: pytest.Mon
     assert sent == [] and proof.report.failures == 1
 
 
+PASTE = (
+    "(cd /Users/you/ELA && /usr/local/bin/bw unlock --raw | "
+    "/Users/you/ELA/.venv/bin/ela vault open)"
+)
+"""A line ``GET /vault`` gives to paste: the vault's program into ELA's own command (ADR 0063)."""
+
+
+def test_an_open_vault_is_the_precondition_of_the_session_and_passes() -> None:
+    module = script()
+    proof = a_proof({"/vault": {"state": "unlocked", "opens_with": None, "message": ""}})
+
+    module.the_vault(4, block(4, "vault", "unlocked"), module.guided.Turn(), proof)
+
+    assert proof.report.failures == 0 and proof.report.stopped is None
+    assert "[4] PASSATO: il vault è aperto" in proof.report.lines
+
+
+def test_a_vault_still_locked_stops_the_proof_with_the_whole_line_to_paste() -> None:
+    """Decision 71: the human step has a precondition the script checks; not met, FERMATO — and
+    the line to paste is in the file **on a line of its own**, to be copied whole."""
+    module = script()
+    proof = a_proof(
+        {"/vault": {"state": "locked", "opens_with": PASTE, "message": "the vault is locked"}}
+    )
+
+    with pytest.raises(module.base.Stop) as stopped:
+        module.the_vault(4, block(4, "vault", "unlocked"), module.guided.Turn(), proof)
+
+    assert PASTE in proof.report.lines, "the line, alone"
+    assert "locked" in str(stopped.value) and "incolla" in str(stopped.value)
+    assert proof.report.passes == {}
+
+
+def test_a_vault_with_no_line_to_paste_stops_the_proof_with_what_ela_says_to_do() -> None:
+    """A vault nobody signed in to, or a locked one whose line ELA cannot compose: no line to
+    paste, and the proof stops with ELA's own sentence."""
+    module = script()
+    said = "nobody is signed in to the vault: run its login in your terminal"
+    proof = a_proof({"/vault": {"state": "unauthenticated", "opens_with": None, "message": said}})
+
+    with pytest.raises(module.base.Stop) as stopped:
+        module.the_vault(4, block(4, "vault", "unlocked"), module.guided.Turn(), proof)
+
+    assert said in str(stopped.value) and "unauthenticated" in str(stopped.value)
+
+
 class Background:
     """A run of a step in the background, which ends when it is told."""
 
@@ -560,11 +640,37 @@ class World:
         return InTheBackground()
 
 
+class Tommaso:
+    """Tommaso at the terminal: a yes to every question, and at «Premi Invio» what his hands were
+    asked for, said by the ``A TE`` line the script wrote just before. Told to open the vault with
+    the line ``ela vault status`` prints, he runs it in his own terminal and pastes that line —
+    the vault's program prints its key into ``ela vault open`` (decision 71)."""
+
+    def __init__(self, vault: FakeVault | None) -> None:
+        self.vault = vault
+        self.last_hand = ""
+        self.pasted: list[str] = []
+
+    def ask(self, question: str) -> str:
+        if "Premi Invio" in question and "`uv run ela vault status`" in self.last_hand:
+            self.open_the_vault()
+        return "s"
+
+    def open_the_vault(self) -> None:
+        assert self.vault is not None, "a hand that opens a vault the walk does not have"
+        status = CliRunner().invoke(ela_app, ["vault", "status"])
+        (line,) = [one for one in plain(status.output).splitlines() if "unlock --raw |" in one]
+        opened = CliRunner().invoke(ela_app, ["vault", "open"], input=self.vault.key + "\n")
+        assert opened.exit_code == 0, opened.output
+        self.pasted.append(line)
+
+
 @dataclasses.dataclass
 class Walked:
     report: Any
     world: World
     browser: Any
+    tommaso: Tommaso
 
     @property
     def written(self) -> str:
@@ -583,7 +689,9 @@ async def walked(
 ) -> Walked:
     """The steps of the section in ``steps``, as written in the guide, run by the script itself
     against a real ELA with the browsers of ``ela.testing`` — and, for a step with the profile, the
-    model of ``session``, the browser of the profile and an open vault."""
+    model of ``session``, the browser of the profile and a vault **closed**, as the introduction
+    of the section says: Tommaso opens it where a ``mano`` tells him to (decision 71). The walk
+    ends with the verdict, as ``main`` does."""
     module = script()
     (tmp_path / "docs").symlink_to(ROOT / "docs", target_is_directory=True)
     async with guided(
@@ -595,7 +703,8 @@ async def walked(
         **declared,
     ) as g:
         if vault is not None:
-            assert await g.ela.vault.open(Secret(vault.key)) is None
+            closed = await g.ela.vault.state()
+            assert closed.name == VAULT_LOCKED, "the walk starts with the vault closed"
         loop = asyncio.get_running_loop()
         transport = LoopTransport(g.app, loop)
         monkeypatch.setattr(
@@ -617,13 +726,22 @@ async def walked(
             SimpleNamespace(sleep=lambda seconds: time.sleep(0.5), monotonic=time.monotonic),
         )
         report = module.Report(io.StringIO())
+        tommaso = Tommaso(vault)
+        say = report.say
+
+        def said(text: str = "") -> None:
+            if "A TE:" in text:
+                tommaso.last_hand = text
+            say(text)
+
+        report.say = said
 
         def walk() -> None:
             api = module.base.Api()
             proof = module.Proof(
                 api,
                 report,
-                lambda question: "s",
+                tommaso.ask,
                 module.spending.Ledger.of(api.get("/spend")),
                 login=module.LOGIN_PLAN,
             )
@@ -634,10 +752,11 @@ async def walked(
                 )
             finally:
                 api.close()
+            report.verdict()
 
         await asyncio.wait_for(asyncio.to_thread(walk), 120)
         browser = g.browser
-    return Walked(report, world, browser)
+    return Walked(report, world, browser, tommaso)
 
 
 async def test_steps_2_and_3_walk_against_a_real_ela_and_pass(
@@ -666,44 +785,100 @@ HN_ENTRY = FakeVaultEntry(
 )
 
 
-async def test_step_4_walks_against_a_real_ela_through_its_wait_its_yes_and_its_children(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Decision 69: the step the proof fell at, walked by the script itself as the guide writes it
-    — the reading that finds Tommaso still outside, the session, its yes, the run in the
-    background, the login it asks for (``aspetta``), the yes to that child, the end, the children
-    — against a real ELA with the browser of the profile, an open vault and a model that asks
-    for the login by the site alone."""
+def hacker_news() -> FakeAccountBrowser:
+    """The browser of the profile on the login page of Hacker News: two forms, the login's and the
+    sign-up's, and a login that lands on the news."""
     from ela.ports import Field
     from ela.testing.fakes import FakePage
-    from tests.api.test_login_from_the_model import WRITTEN, program
+    from tests.api.test_login_from_the_model import WRITTEN
     from tests.tools.test_login_form import LOGIN, SIGN_UP
 
-    page = FakePage(
-        texts={None: "login | Hacker News"},
-        forms=(LOGIN, SIGN_UP),
-        fields={
-            WRITTEN["username_field"]: Field("text", "username", "post"),
-            WRITTEN["password_field"]: Field("password", "current-password", "post"),
-            WRITTEN["click"]: Field("submit", "", "post"),
-        },
-        counts_after_click={WRITTEN["password_field"]: 0},
-        landed=f"https://{HN}/news",
-        landed_status=200,
+    return FakeAccountBrowser(
+        FakePage(
+            texts={None: "login | Hacker News"},
+            forms=(LOGIN, SIGN_UP),
+            fields={
+                WRITTEN["username_field"]: Field("text", "username", "post"),
+                WRITTEN["password_field"]: Field("password", "current-password", "post"),
+                WRITTEN["click"]: Field("submit", "", "post"),
+            },
+            counts_after_click={WRITTEN["password_field"]: 0},
+            landed=f"https://{HN}/news",
+            landed_status=200,
+        )
     )
+
+
+def with_the_vault(tmp_path: Path) -> dict[str, Any]:
+    """What a walk of step 4 declares and holds: the vault's program, the sites with Hacker News,
+    and the vault with the entry of the proof — **closed**, as the introduction says."""
+    from tests.api.test_login_from_the_model import program
+
+    return {
+        "accounts": hacker_news(),
+        "vault": FakeVault([HN_ENTRY], state=VAULT_LOCKED),
+        "ELA_VAULT_PROGRAM": program(tmp_path),
+        "ELA_BROWSER_SITES": json.dumps([*SITES, HN]),
+    }
+
+
+async def test_step_4_walks_from_a_closed_vault_through_its_wait_its_yes_and_its_children(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Decisions 69 and 71: the step the proof fell at, walked by the script itself as the guide
+    writes it — the reading that finds Tommaso still outside, **the vault opened by his hand and
+    looked at by the script**, the session, its yes, the run in the background, the login it asks
+    for (``aspetta``), the yes to that child, the end, the children — against a real ELA with the
+    browser of the profile and a model that asks for the login by the site alone.
+
+    The walk starts with the vault **closed**, as the introduction of the section says. On
+    2026-10-15 no block of step 4 opened it: the model asked for the login, ELA answered
+    ``vault.locked`` before the question, and the session ended without the login. A promise of
+    the introduction that no block keeps is a list written by hand gone false — without the
+    ``mano`` that opens the vault, this walk does not reach the login."""
     walk = await walked(
         monkeypatch,
         tmp_path,
         {4},
         session=Script([gesture("login", site=HN)]),
-        accounts=FakeAccountBrowser(page),
-        vault=FakeVault([HN_ENTRY]),
-        ELA_VAULT_PROGRAM=program(tmp_path),
-        ELA_BROWSER_SITES=json.dumps([*SITES, HN]),
+        **with_the_vault(tmp_path),
     )
 
+    assert walk.tommaso.pasted, "no block of step 4 told Tommaso to open the vault: " + walk.written
+    assert "il gesto browser.login chiede" in walk.written, walk.written
     assert walk.report.ok, walk.written
     assert walk.report.failures == 0 and walk.report.stopped is None, walk.written
-    assert "il gesto browser.login chiede" in walk.written, walk.written
+    assert walk.written.index("[4] PASSATO: il vault è aperto") < walk.written.index(
+        "entrare in Hacker News da una frase"
+    ), "the script looks at the vault before the session"
     for secret in (HN_ENTRY.password, HN_ENTRY.username, HN_ENTRY.name):
         assert secret not in walk.written
+
+
+async def test_a_session_that_ends_without_the_login_skips_the_rest_of_step_4_and_goes_on(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ela_that_stops: list[Any]
+) -> None:
+    """Decision 72: on 2026-10-15 the session ended SUCCEEDED with no login that asks, and the
+    script fell on ``raise Done`` — out of step 4, out of the walk, with no verdict in the file.
+    A session that ends without the gesture the step waits for closes the step with the line the
+    script prints already — SALTATO, for a session that ended by itself —; the blocks left of
+    that step are not done — no yes to a child, no children, no eye —, and the proof goes on:
+    step 5 runs, and the verdict is written."""
+    walk = await walked(
+        monkeypatch,
+        tmp_path,
+        {4, 5},
+        session=Script([], answer="Non sono entrato."),
+        **with_the_vault(tmp_path),
+    )
+    step_4 = walk.written.split("—— passo 4 ——", 1)[1].split("—— passo 5 ——", 1)[0]
+    step_5 = walk.written.split("—— passo 5 ——", 1)[1]
+
+    assert (
+        "[4] SALTATO: la sessione è finita SUCCEEDED, senza un browser.login che chiede" in step_4
+    ), walk.written
+    assert walk.report.skipped_steps == [4], walk.written
+    assert "<id del figlio>" not in step_4 and "GUARDATO" not in step_4, "the rest is not done"
+    assert walk.report.failures == 0, walk.written
+    assert "[5] PASSATO: ELA è uscita, e del browser non resta niente" in step_5, walk.written
+    assert walk.report.lines[-1] == "La prova non è passata: il passo 4 SALTATO.", walk.written
