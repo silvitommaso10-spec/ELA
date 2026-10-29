@@ -138,6 +138,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.9` | Implementata | Il browser con i tuoi account: un Chrome di ELA che dura, e le password che restano in Bitwarden |
 | 13 — Il permesso prima dell'azione | `M13.9b` | Proposta | La pagina d'errore del browser non è un altro sito |
 | 13 — Il permesso prima dell'azione | `M13.10` | Implementata | Più passi e i file: una sessione del browser fra gli step, una sequenza di gesti, e i file che entrano ed escono |
+| 13 — Il permesso prima dell'azione | `M13.10b` | Proposta | La domanda a occhio del login, nella prova di M13.10, chiede ciò che non mostra |
 | 13 — Il permesso prima dell'azione | `M13.11` | Proposta | Il browser sul PC: le capacità di M13.9 e M13.10 sul nodo Windows, e il verdetto che torna in busta |
 | 13 — Il permesso prima dell'azione | `M13.12` | Implementata | Le policy di §59: una policy che Tommaso si crea rende autonoma un'azione `MEDIUM`, a partire da `browser.guided` |
 | 13 — Il permesso prima dell'azione | `M13.13` | Proposta | I file dal browser: uno scaricamento è un `fs.write`, un caricamento un `fs.read` |
@@ -168,7 +169,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **65** | `docs/adr/NNNN-*.md` |
-| Milestone | **92, di cui 75 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **93, di cui 75 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **71** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **15** | `pyproject.toml` |
 | Port | **36** | i `Protocol` di `src/ela/ports.py` |
@@ -242,6 +243,8 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
   pagina d'errore del browser non è un altro sito), che si fa sul branch di M13.13 prima del suo codice.
   ***Annotato il 2026-10-29***: **M13.10 è fatta**: la prova a mano è passata sul Mac a `4490e15`, e
   [ADR 0065](adr/0065-browser-steps.md) è Accettata, per decisione di Tommaso di quel giorno (decisione 76 di M13.10).
+  Dalla stessa review (decisione 77) è registrata una riparazione dello script di quella prova, **M13.10b** (la
+  domanda a occhio del login chiede ciò che non mostra), fuori dalla fila.
   L'ordine e le condizioni stanno nella voce 5.11, e la fila che attraversa le fasi nella 5.10.
 - **Fase 12 — i nodi. È chiusa** (2026-09-20, con M12.5). ELA ha smesso di essere un processo su
   una macchina e di essere usabile solo davanti a quella macchina: un'identità provabile per un
@@ -661,7 +664,9 @@ della sua registrazione. Dopo M13.4, in quest'ordine:
    (decisione 57): **M13.9b** — la pagina d'errore del browser non è un altro sito — sta **sul branch di M13.13,
    prima del suo codice**, come M13.4b sul branch di M13.9, e non entra nella testa del merge di M13.10;
    ***annotato il 2026-10-29***: **M13.10 è fatta**, con la prova a mano passata a `4490e15`, e ADR 0065 è Accettata
-   per decisione di Tommaso (decisione 76 di M13.10): il merge lo fa Tommaso;
+   per decisione di Tommaso (decisione 76 di M13.10): il merge lo fa Tommaso; **M13.10b** — la domanda a occhio del
+   login, nella prova di M13.10, chiede ciò che non mostra — è registrata **fuori dalla fila** (decisione 77), e si
+   ripara prima che un altro script della prova parta da `scripts/prova_m13_10.py`;
 7. **M13.5**, con la condizione d'ingresso invariata: se il grant TCC non tiene, apre la milestone
    dell'eseguibile firmato (5.11);
 8. **M14.4**, il computer guidato dal modello, subito dopo M13.5;
@@ -999,6 +1004,13 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   un sito che non risponde al login — il browser mostra la sua pagina d'errore, `chrome-error://chromewebdata/` —
   è raccontato `browser.left_site`, una diagnosi falsa; verificato con il finto. **Sul branch di M13.13, prima del
   suo codice**; non entra nella testa del merge di M13.10 ([`milestones/M13.9b.md`](milestones/M13.9b.md)).
+- **M13.10b — la domanda a occhio del login, nella prova di M13.10, chiede ciò che non mostra** (§63). **Registrata il
+  2026-10-29** dalla review dopo la prova passata di M13.10 (decisione 77): la domanda `4.occhio` della sezione 29
+  chiedeva della risposta del modello «nel file», e né il file né lo schermo la portavano; un blocco `schermo` con i
+  risultati della sessione prima della domanda, la domanda senza ciò che l'occhio non vede, un test dei documenti che
+  deriva la regola, e il test che ELA non scrive mai nel vault, nominato o scritto. **Fuori dalla fila**: si ripara
+  prima che un altro script della prova parta da `scripts/prova_m13_10.py`; non entra nella testa del merge di M13.10
+  ([`milestones/M13.10b.md`](milestones/M13.10b.md)).
 - **M13.11 — il browser sul PC** (§19, §56). **Registrata il 2026-09-30**: le capacità di M13.9 e M13.10
   sul nodo Windows, con il verifier sul nodo e il verdetto in busta (ADR 0048 §7); rivede la decisione 1
   di M13.4. **Condizione d'ingresso: una misura sul PC** di che cosa lo Smart App Control lascia partire
