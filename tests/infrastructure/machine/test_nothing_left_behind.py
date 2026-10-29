@@ -30,7 +30,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.browser_leftovers import scratch
+from tests.browser_leftovers import collected, running, scratch
 from tests.infrastructure.machine import test_browser as shell
 
 LINUX = Path("/proc").is_dir()
@@ -162,19 +162,57 @@ def test_a_child_of_the_worker_that_ended_is_named_once_and_then_collected(
         os.waitpid(ended.pid, os.WNOHANG)
 
 
+def test_a_child_that_ends_a_moment_later_is_collected_once_it_has_ended() -> None:
+    """A child just killed may take a moment to end: it is looked at again, within a bound, and
+    collected when it has ended — not given up at the first look."""
+    child = subprocess.Popen(["/bin/sleep", "0.3"])
+    try:
+        collected([child.pid])
+        with pytest.raises(ChildProcessError):
+            os.waitpid(child.pid, os.WNOHANG)
+    finally:
+        child.kill()  # a no-op once it is collected
+        child.wait()
+
+
+def test_a_process_that_is_not_a_child_of_the_worker_is_left_alone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``waitpid`` reaches only the worker's own children: for this process's parent the kernel
+    answers ``ECHILD``, and it is asked once and then left alone. Counted for that pid only: other
+    threads of the worker may be waiting for children of their own."""
+    asked: list[int] = []
+    real = os.waitpid
+
+    def counted(pid: int, options: int) -> tuple[int, int]:
+        asked.append(pid)
+        return real(pid, options)
+
+    monkeypatch.setattr(os, "waitpid", counted)
+    collected([os.getppid()])
+
+    assert asked.count(os.getppid()) == 1
+    assert running(os.getppid())
+
+
 def test_what_runs_before_a_test_begins_is_named_whole_with_the_test_before_and_swept() -> None:
-    """What the fixture does before every test of the real browser, on a process of its own."""
+    """What the fixture does before every test of the real browser, on a process of its own: a
+    child of the worker, so swept **and collected** — its status is the fixture's, and ``child``
+    cannot read it any more (decision 86 (b)); that it was killed, and not ended by itself, is that
+    a ``sleep`` of a minute is gone."""
     child = subprocess.Popen(["/bin/sleep", "61"])
     folder = scratch()
     try:
         said = shell.found_before(folder, "tests/x.py::test_the_one_before")
-        swept = child.poll() if child.poll() is not None else child.wait(timeout=10)
+        still = running(child.pid)
+        with pytest.raises(ChildProcessError):
+            os.waitpid(child.pid, os.WNOHANG)
     finally:
         child.kill()  # a test that fails leaves nothing either: a no-op once it is collected
         child.wait()
         shutil.rmtree(folder, ignore_errors=True)
 
-    assert swept != 0
+    assert not still
     assert f"{child.pid} (" in said
     assert "/bin/sleep 61" in said
     assert "left by tests/x.py::test_the_one_before" in said

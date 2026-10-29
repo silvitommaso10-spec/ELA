@@ -97,7 +97,7 @@ from ela.tools.verifiers import (
     BrowserActVerifier,
     BrowserReadVerifier,
 )
-from tests.browser_leftovers import left, scratch, sweep
+from tests.browser_leftovers import RAN_LAST, collected, left, scratch, sweep
 
 INSTALL = "uv run playwright install --only-shell chromium"
 SYSTEM = platform.system()
@@ -291,13 +291,16 @@ def left_before(
     return f"a process of a test was running before this test began — left by {who}: {named}"
 
 
-def found_before(folder: Path, previous: str) -> str:
-    """What this worker still runs before a test begins — named first, then swept —, or ``""``."""
+def found_before(folder: Path, previous: str | None = None) -> str:
+    """What this worker still runs before a test begins — named first, then swept, then what of it
+    is the worker's own child collected —, or ``""``. ``previous`` is the test the worker ran last,
+    of any module (:data:`tests.browser_leftovers.RAN_LAST`, decision 86 (a))."""
     before = started()
     if not before:
         return ""
-    found = left_before(before, previous)
+    found = left_before(before, RAN_LAST[0] if previous is None else previous)
     sweep(folder, also=tuple(pid for pid, _ in before))
+    collected([pid for pid, _ in before])
     return found
 
 
@@ -308,14 +311,8 @@ async def settled_after(closings: set[asyncio.Task[Any]]) -> None:
         await asyncio.wait(closings, timeout=2)
 
 
-PREVIOUS: list[str] = [""]
-"""The test that ran last on this worker: who a process found before a test began was left by."""
-
-
 @pytest.fixture(autouse=True)
-async def nothing_left_behind(
-    monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
-) -> AsyncIterator[None]:
+async def nothing_left_behind(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[None]:
     """A browser a test leaves that nobody holds is not left to the next test — nor to the loop,
     which at its end cancels every task and then waits for ever for a call of Playwright's that
     was in flight (measured, 2026-10-10: ``asyncio.run`` does not return). Killed here, by pid:
@@ -333,15 +330,16 @@ async def nothing_left_behind(
 
     **And a process found before the test begins is named** (decision 56 (a) of the review of
     M13.10): whole, with the test that ran before on this worker — on ubuntu a dozen tests found
-    one named «Google Chrome f» and nobody could say whose."""
+    one named «Google Chrome f» and nobody could say whose. **The test before is the last one the
+    worker ran, of any module, and a child of the worker that has ended is collected once named**
+    (decision 86): one test fails, not the eighty-six of 2026-10-29."""
     folder = scratch()
-    found = found_before(folder, PREVIOUS[0])
+    found = found_before(folder)
     if found:
         shutil.rmtree(folder, ignore_errors=True)
         pytest.fail(found)
     monkeypatch.setenv("TMPDIR", str(folder))
     yield
-    PREVIOUS[0] = request.node.nodeid
     mine = [pid for pid, _ in started()]
     sweep(folder, also=tuple(mine))
     others = asyncio.all_tasks() - {asyncio.current_task()}

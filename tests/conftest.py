@@ -18,6 +18,8 @@ import httpx
 import httpx2
 import pytest
 
+from tests.browser_leftovers import RAN_LAST
+
 NO_NETWORK = "a test tried to open a network connection"
 
 
@@ -29,3 +31,12 @@ def _no_network(monkeypatch: pytest.MonkeyPatch) -> None:
     for library in (httpx, httpx2):
         monkeypatch.setattr(library.AsyncHTTPTransport, "handle_async_request", refuse)
         monkeypatch.setattr(library.HTTPTransport, "handle_request", refuse)
+
+
+def pytest_runtest_logfinish(nodeid: str, location: tuple[str, int | None, str]) -> None:
+    """Every test, as it ends, is the one its worker ran last — of any module, and whether or not
+    it reached a teardown —: what the fixture of the real browser names a process it finds before
+    a test with (decision 86 (a) of the review of M13.10). Before, only the tests that ask for that
+    fixture counted, and only once torn down: on ubuntu, on 2026-10-29, eighty-six tests were told
+    «no test ran before it on this worker», and it was false every time."""
+    RAN_LAST[0] = nodeid

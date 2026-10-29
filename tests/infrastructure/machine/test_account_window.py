@@ -24,7 +24,7 @@ import stat
 import subprocess
 import sys
 import threading
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -109,17 +109,29 @@ class Window:
 
 
 @pytest.fixture
-def window(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Window]:
+async def window(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[Window]:
     """The program where the binary would be — and, when the test is over, nothing of what it
-    started: a test that fails leaves no process either (decision 71)."""
+    started: a test that fails leaves no process either (decision 71).
+
+    **An ``async`` fixture on purpose** (decision 85 of the review of M13.10): it is torn down
+    inside the loop of the test, and what it started and ends is **waited for by that loop**. A
+    plain one ended it by pid once the loop had closed, and no loop learnt of its end — eight tests
+    of this file, measured on the Mac on 2026-10-29. On Linux the loop is what collects a child
+    (asyncio's ``PidfdChildWatcher``, read in the source of Python 3.12, not measured there), and
+    on ubuntu, that same day, a worker kept a process that had ended named «Google Chrome f» — the
+    first fifteen characters of this program's name — before eighty-six tests of the real browser.
+    What the program started for itself (``child``) is not this worker's child, and is ended by pid
+    as before."""
     registry = tmp_path / "registry"
     monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(registry))
     made = Window(registry)
     start = asyncio.create_subprocess_exec
+    processes: list[asyncio.subprocess.Process] = []
 
     async def counted(*arguments: Any, **options: Any) -> Any:
         process = await start(*arguments, **options)
         made.started.append(process.pid)
+        processes.append(process)
         return process
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", counted)
@@ -129,6 +141,8 @@ def window(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Window]:
         for pid in (*made.started, *(one.get("child") or 0 for one in made.launched())):
             if pid and running(pid):
                 os.kill(pid, signal.SIGKILL)
+        for process in processes:
+            await asyncio.wait_for(process.wait(), PATIENCE)
 
 
 class Kept:
@@ -195,7 +209,8 @@ def seen_ended() -> Iterator[list[asyncio.subprocess.Process]]:
     """The processes a test hands over, looked at **after** ``window`` is torn down — asked before
     it, so torn down after it —: whether the loop of the test learnt of their end (decision 85 of
     the review of M13.10). One whose end no loop learnt is one nobody may have collected: on Linux
-    the watcher of the children is the loop's, and a loop that has closed collects nothing."""
+    the watcher of the children is the loop's (read in the source of Python 3.12), and a loop that
+    has closed collects nothing."""
     processes: list[asyncio.subprocess.Process] = []
     yield processes
     unseen = [process.pid for process in processes if process.returncode is None]
