@@ -39,7 +39,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar, Final
 
-from ela.domain import CapabilityId, CommandOutput, ErrorMetadata, JsonMapping, JsonValue
+from ela.domain import (
+    CapabilityId,
+    CommandOutput,
+    ErrorMetadata,
+    JsonMapping,
+    JsonValue,
+    TaskId,
+)
 from ela.ports import (
     Captured,
     Clock,
@@ -249,7 +256,7 @@ class TerminalRunTool(Tool):
         self._root = resolve_workspace(terminal.root)
         self._launcher = launcher
 
-    async def prospect(self, arguments: JsonMapping) -> Prospect:
+    async def prospect(self, arguments: JsonMapping, task: TaskId | None = None) -> Prospect:
         """What this command would meet now, and what the question names (dec. 5, 12)."""
         looked = await self._look(arguments)
         if isinstance(looked, Outcome):

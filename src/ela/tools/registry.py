@@ -37,6 +37,7 @@ from ela.ports import (
     ScreenCapturePort,
     SpeechPort,
     StopPoint,
+    TaskPages,
     TextRecognitionPort,
     ToolPort,
     VerifierPort,
@@ -313,6 +314,7 @@ def production_tools(
     accounts: AccountBrowser,
     vault: VaultDoor,
     not_now: NotNow,
+    pages: TaskPages,
 ) -> ToolRegistry:
     """What the composition root builds: v0.1's three, plus what the phases after it added.
 
@@ -324,6 +326,10 @@ def production_tools(
     ``not_now`` is the one question the tools that look at the screen or listen are handed
     (M13.9, ADR 0063 §7): mandatory, like the browser — whoever builds this registry says when
     ELA must not look, and a registry built without an answer would look always.
+
+    ``pages`` is the room of the pages a task keeps between two of its steps (M13.10, ADR 0065
+    §3): mandatory, and the same room for the five tools of the two browsers — one page per task,
+    whichever browser it is on.
     """
     return ToolRegistry(
         (
@@ -349,8 +355,8 @@ def production_tools(
             TerminalRunTool(terminal, launcher, clock, ids),
             # The browser (M13.4): the declared sites and their origins, and one browser of ELA's
             # own, empty for every page. Not in :func:`node_tools`: it does not travel (form A).
-            BrowserReadTool(browsing, browser, clock, ids),
-            BrowserActTool(browsing, browser, clock, ids),
+            BrowserReadTool(browsing, browser, clock, ids, pages=pages),
+            BrowserActTool(browsing, browser, clock, ids, pages=pages),
             # The browser guided by a model (M14.3, ADR 0060): the room of the sessions, where
             # every gesture becomes a child task, and a session of Claude Code with no tools of its
             # own. The same router and providers as ``model.complete``: one route for the model.
@@ -360,9 +366,9 @@ def production_tools(
             # these ``accounts`` — never the other way: no tool of the empty browser can open the
             # folder of the profile, and a test of the composition holds it both ways. The login
             # is the one tool that holds the door of the vault.
-            AccountReadTool(browsing, accounts, clock, ids),
-            AccountActTool(browsing, accounts, clock, ids),
-            LoginTool(browsing, accounts, vault, clock, ids),
+            AccountReadTool(browsing, accounts, clock, ids, pages=pages),
+            AccountActTool(browsing, accounts, clock, ids, pages=pages),
+            LoginTool(browsing, accounts, vault, clock, ids, pages=pages),
             # The same session, with the profile (M13.9): the same room, the same gateway, and its
             # gestures are the two tools above — never the empty browser's.
             BrowserGuidedTool(

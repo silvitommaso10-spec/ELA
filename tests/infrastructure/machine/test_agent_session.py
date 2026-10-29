@@ -20,6 +20,7 @@ import sys
 import uuid
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -36,12 +37,12 @@ from ela.infrastructure.machine.agent import (
     LAUNCHER,
     PID,
     SDK_NAMES,
-    TOOLS,
     ClaudeAgentSession,
     _changed,
     bundled_binary,
     closed_environment,
     launcher_text,
+    named_tools,
 )
 from ela.ports import (
     GUIDED_FOLDER_CHANGED,
@@ -49,8 +50,16 @@ from ela.ports import (
     SessionHandle,
     SessionHost,
     SessionPlan,
+    SessionTool,
 )
-from ela.tools.guided import ACT_DESCRIPTION, READ_DESCRIPTION
+from ela.tools.guided import (
+    ACT_DESCRIPTION,
+    ACT_SCHEMA,
+    READ_DESCRIPTION,
+    SESSION_AS_YOU,
+)
+from ela.tools.guided import ACT_TOOL as ACT
+from ela.tools.guided import READ_TOOL as READ
 from tests.tools.test_terminal_limits import fired, skip_problems
 
 SENTINEL = "ELA_SENTINEL_OF_M14_3"
@@ -62,8 +71,7 @@ def plan(gateway: str = "http://127.0.0.1:1", seconds: int = 120) -> SessionPlan
         session=StepId(uuid.uuid4()),
         goal="Leggi example.com e dimmi il titolo.",
         instructions="You guide a web browser. Use the tools read and act.",
-        read_description=READ_DESCRIPTION,
-        act_description=ACT_DESCRIPTION,
+        tools=(READ, ACT),
         model="claude-haiku-5-5",
         max_tokens=8192,
         gateway=gateway,
@@ -243,7 +251,6 @@ def test_the_tools_tell_the_model_the_grammar_of_a_selector() -> None:
     ``Submit order`` as selectors, and ELA, as ADR 0052 §8 wants, made no gesture. The model could
     not do better: the text of a page carries no attributes, and nobody told it the grammar. Who
     chooses writes; who gives the tool says the grammar."""
-    from ela.infrastructure.machine.agent import ACT_SCHEMA
     from ela.tools.browser import SELECTOR_GRAMMAR
 
     assert SELECTOR_GRAMMAR in ACT_DESCRIPTION
@@ -254,8 +261,24 @@ def test_the_tools_tell_the_model_the_grammar_of_a_selector() -> None:
         assert ACT_SCHEMA["properties"][name].get("description"), name
 
 
+TOOLS = named_tools((READ, ACT))
+
+
 def test_the_two_tools_are_ela_s() -> None:
     assert frozenset({"mcp__ela__read", "mcp__ela__act"}) == TOOLS
+
+
+async def test_the_names_of_the_tools_are_computed_from_the_plan_s_tools() -> None:
+    """M13.10, ADR 0065 §4 (measure (f) of its SPEC): the set the budget holds every call to is
+    the plan's own tools, named as Claude Code names them — three with the profile."""
+    session = ClaudeAgentSession(Path("/nonexistent"), binary=Path("/bin/true"))
+
+    assert await session.tools(SESSION_AS_YOU.tools) == {
+        "mcp__ela__read",
+        "mcp__ela__act",
+        "mcp__ela__login",
+    }
+    assert await session.tools((READ, ACT)) == TOOLS
 
 
 def _host(
@@ -373,14 +396,14 @@ async def a_fake_model() -> AsyncIterator[tuple[str, list[dict[str, Any]]]]:
 
 
 async def a_dry_session(
-    tmp_path: Path, reading: Any = None
+    tmp_path: Path, reading: Any = None, tools: tuple[SessionTool, ...] | None = None
 ) -> tuple[Any, list[tuple[str, ...]], list[tuple[str, JsonMapping]], list[dict[str, Any]], Path]:
     """One session of the real binary on the fake model, to its end."""
     session = ClaudeAgentSession(tmp_path / "sessions")
     seen: list[tuple[str, ...]] = []
     gestures: list[tuple[str, JsonMapping]] = []
     async with a_fake_model() as (url, calls):
-        planned = plan(url)
+        planned = plan(url) if tools is None else replace(plan(url), tools=tools)
 
         async def read_the_process() -> None:
             if reading is not None:
@@ -409,6 +432,23 @@ async def test_the_real_binary_starts_with_the_two_tools_makes_a_gesture_and_end
     assert seen and set(seen[0]) == set(TOOLS)
     assert [name for name, _ in gestures] == ["read"]
     assert calls and all(set(call["tools"]) == set(TOOLS) for call in calls)
+    assert not folder.exists()
+
+
+@pytest.mark.skipif(not RUNNABLE, reason=NO_BINARY)
+async def test_a_session_with_the_profile_offers_three_tools_and_the_real_binary_lists_them(
+    tmp_path: Path,
+) -> None:
+    """Criterion 21 (measure (f) of M13.10's SPEC): the session with the profile offers three
+    tools, the one without two, and what the binary lists at its start and sends with every call
+    is the set computed from the plan's tools."""
+    three = SESSION_AS_YOU.tools
+
+    end, seen, _, calls, folder = await a_dry_session(tmp_path, tools=three)
+
+    assert end.subtype == "success", end
+    assert seen and set(seen[0]) == named_tools(three) and len(seen[0]) == 3
+    assert calls and all(set(call["tools"]) == named_tools(three) for call in calls)
     assert not folder.exists()
 
 

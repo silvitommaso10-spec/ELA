@@ -177,20 +177,20 @@ async def test_a_browser_step_stopped_before_the_navigation_visits_nothing(
 async def test_a_browser_step_stopped_before_its_first_gesture_fills_nothing_and_closes_the_page(
     held: tuple[AsyncClient, Ela, FakeBrowser],
 ) -> None:
-    """The point of decision 2: the page is open, the elements are being looked at, and the stop
+    """The point of decision 2: the page is open, the first element is being awaited, and the stop
     arrives — no field is filled, no click is sent, and the page is closed (B-R10 of the
     re-read)."""
     client, ela, browser = held
     task_id = await asked_and_approved(client)
     reached, released = asyncio.Event(), asyncio.Event()
-    counting = browser.count
+    counting = browser.appeared
 
     async def held_count(page: str, selector: str) -> int:
         reached.set()
         await released.wait()
         return await counting(page, selector)
 
-    browser.count = held_count  # type: ignore[method-assign]
+    browser.appeared = held_count  # type: ignore[method-assign]
 
     _, answered = await stopped_while(client, task_id, reached, released)
 

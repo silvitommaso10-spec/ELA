@@ -24,6 +24,12 @@ ACCOUNT_PORTS: Final = frozenset(
 ADR 0060 and of the ADRs before it take away too."""
 assert ACCOUNT_PORTS, "ADR 0063 introduces ports"
 
+STEPS_ADR: Final = GUIDED_ADR.with_name("0065-browser-steps.md")
+STEPS_PORTS: Final = frozenset(documented_ports(STEPS_ADR.read_text(encoding="utf-8"), INTRODUCING))
+"""The ports ADR 0065 introduced (M13.10), read from its table in the same way: what the tests of
+the ADRs before it take away to keep counting the ports their ADR saw."""
+assert STEPS_PORTS, "ADR 0065 introduces ports"
+
 _ADDED: Final = re.compile(r"^\| `(browser\.\w+)` \| (?:LOW|MEDIUM|HIGH) \| ", re.MULTILINE)
 ACCOUNT_CAPABILITIES: Final = frozenset(
     _ADDED.findall(ACCOUNTS_ADR.read_text(encoding="utf-8").split("Capability aggiunte:", 1)[1])

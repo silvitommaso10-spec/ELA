@@ -2036,6 +2036,26 @@ VIOLATIONS: tuple[Case, ...] = (
         "from ela.ports import AuthorizationStore\n",
         "AuthorizationStore",
     ),
+    # --- named-reaches-the-tool-only (rule 71, M13.10) ---
+    Case(
+        # What a question named, written in the audit: the log that is never redacted.
+        "named-enters-an-audit-event",
+        "named-reaches-the-tool-only",
+        "executive/executor.py",
+        "from ela.domain import AuditEvent\n"
+        "NAMED = 'named'\n"
+        "def recorded(approval):\n"
+        "    return AuditEvent(payload={NAMED: approval.metadata[NAMED]})\n",
+        "NAMED",
+    ),
+    Case(
+        # And served by a route: a module of the API that reaches for it.
+        "named-is-served-by-a-route",
+        "named-reaches-the-tool-only",
+        "api/approvals.py",
+        "from ela.executive.executor import NAMED\n",
+        "NAMED",
+    ),
     # --- the-gate-looks-and-does-not-redo (rule 70, M13.4f) ---
     Case(
         # The gate of before: a route of Playwright's on the context, called for every request.

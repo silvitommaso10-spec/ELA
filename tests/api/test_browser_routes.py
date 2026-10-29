@@ -109,6 +109,7 @@ async def test_a_profile_nobody_holds_is_free_and_says_what_the_browser_says_of_
         "saved": 0,
         "profiles": 1,
         "sites": SITES,
+        "waiting": [],
     }
 
 
@@ -126,6 +127,7 @@ async def test_what_the_answer_may_carry_is_a_closed_set_of_fields(browsed: Brow
         "saved",
         "profiles",
         "sites",
+        "waiting",
     }
     assert str(browsed.ela.settings.persistence.db_url) not in json.dumps(said)
 
@@ -492,7 +494,7 @@ async def test_closing_does_not_end_a_step_of_ela_s(browsed: Browsed) -> None:
 
     assert answered.status_code == 409
     said = answered.json()["error"]["message"]
-    assert said.startswith("browser.profile_busy: ") and "ela task stop" in said
+    assert said.startswith("browser.profile_busy: ") and "ela task cancel" in said
     assert browsed.accounts.shuts == []
     assert await browsed.events(AuditEventType.BROWSER_CLOSE_ASKED) == []
 

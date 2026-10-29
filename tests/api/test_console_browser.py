@@ -21,7 +21,9 @@ import stat
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 from fastapi import FastAPI
@@ -30,15 +32,17 @@ from httpx import ASGITransport, AsyncClient
 from ela.api import create_app
 from ela.composition import Ela, Settings, build
 from ela.composition.system import own_command
-from ela.domain import ActorKind, AuditEvent, AuditEventType
+from ela.domain import ActorKind, AuditEvent, AuditEventType, TaskId
 from ela.ports import (
     PROFILE_PROCESS,
     PROFILE_STEP,
+    PROFILE_TASK,
     PROFILE_WINDOW,
     VAULT_LOCKED,
     BrowserFailed,
     ProfileUndeclared,
     Secret,
+    WaitingPage,
 )
 from ela.testing.fakes import FakeAccountBrowser, FakeBrowser, FakePower, FakeVault
 from tests.api.support import AUTHORIZED, BASE, outside_the_block
@@ -222,6 +226,30 @@ async def test_a_step_of_ela_s_offers_no_button_to_end_it(viewed: Viewed) -> Non
         page = await viewed.page(console)
 
     assert "step" in page and f'action="{CLOSE}"' not in page
+
+
+async def test_a_page_a_task_keeps_says_which_task_until_when_and_offers_no_button_to_end_it(
+    viewed: Viewed, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M13.10, ADR 0065 §3 (decision 26): the console says which task keeps a page between two
+    of its steps, until when, and the command that ends it — the task's stop, not the button
+    that ends the browser where a hand may be."""
+    task = TaskId(UUID(int=7))
+    until = datetime(2026, 10, 14, 18, 30, tzinfo=UTC)
+
+    async def waiting() -> tuple[WaitingPage, ...]:
+        return (WaitingPage(task=task, profile=True, until=until),)
+
+    monkeypatch.setattr(viewed.ela.pages, "waiting", waiting)
+    viewed.accounts.holder = PROFILE_TASK
+
+    async with viewed.console() as console:
+        page = await viewed.page(console)
+
+    assert ">task<" in page and "Una pagina aspetta" in page
+    assert f"il task {task}, sul browser con i tuoi account, fino a 2026-10-14T18:30" in page
+    assert f"ela task cancel {task}" in page
+    assert f'action="{CLOSE}"' not in page
 
 
 async def test_the_view_says_when_the_folder_holds_more_than_one_profile(viewed: Viewed) -> None:

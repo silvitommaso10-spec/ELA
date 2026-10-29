@@ -28,11 +28,22 @@ NOT_A_USE = {
     "keep": "hands the page to the verifier: it reads nothing and writes nothing",
     "close": "ends the page",
     "another": "says what the gate stopped of another page, and nothing of this one",
+    "hold": (
+        "hands the page to a task between two of its steps: it reads nothing and writes nothing"
+    ),
+    "where": (
+        "says where a page a task keeps is, for the question of the step that continues — the "
+        "address the adapter already knows, with no call, and nothing of the page"
+    ),
 }
 """The members that are given a page and do not use it, each with its reason."""
 
 ASKED_BEFORE_ONLY = {
     "left": "reads nothing of the page: it says what the gate refused, and nothing is thrown away",
+    "resume": (
+        "takes a page back with the boundary it is handed, asks that boundary where the page is, "
+        "and reads nothing of it: what it returns is said of a page inside, as an opening's"
+    ),
 }
 """The uses that ask the boundary before and not after, each with its reason."""
 
@@ -54,7 +65,13 @@ def uses(port: type) -> list[str]:
 
 def _arguments(member: Any) -> dict[str, object]:
     """Something to call ``member`` with, by the names of its parameters after the page."""
-    values: dict[str, object] = {"selector": "#x", "expect": "x", "seconds": 0.0}
+    values: dict[str, object] = {
+        "selector": "#x",
+        "expect": "x",
+        "seconds": 0.0,
+        # The boundary a page is taken back with (``resume``): one the page is outside of.
+        "allowed": lambda url: False,
+    }
     parameters = inspect.signature(member).parameters
     if "value" in parameters:
         wrapped = "Secret" in str(parameters["value"].annotation)

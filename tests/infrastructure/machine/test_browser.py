@@ -38,7 +38,7 @@ import signal
 import subprocess
 import sys
 import threading
-from collections.abc import AsyncIterator, Coroutine, Iterator
+from collections.abc import AsyncIterator, Callable, Coroutine, Iterator, Sequence
 from datetime import timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -77,11 +77,13 @@ from ela.ports import (
     SiteUnreachable,
     ToolStopped,
 )
-from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeStop
+from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeStop, FakeTaskPages
 from ela.tools.browser import (
+    ELEMENT_AMBIGUOUS,
     ELEMENT_MISSING,
     LEFT_SITE,
     SECRET_FIELD,
+    STOPPED,
     BrowserActTool,
     BrowserReadTool,
     Browsing,
@@ -95,7 +97,7 @@ from ela.tools.verifiers import (
     BrowserActVerifier,
     BrowserReadVerifier,
 )
-from tests.browser_leftovers import left, scratch, sweep
+from tests.browser_leftovers import RAN_LAST, collected, left, scratch, sweep
 
 INSTALL = "uv run playwright install --only-shell chromium"
 SYSTEM = platform.system()
@@ -252,6 +254,63 @@ def drivers() -> list[int]:
     )
 
 
+def command_line(pid: int) -> str:
+    """The whole command line of a process, as the system reads it — ``/proc/<pid>/cmdline`` on
+    Linux, ``ps`` elsewhere —, or ``(gone)``: what names a process the fifteen characters of its
+    name do not (decision 56 (a) of the review of M13.10). **A process that has ended and nobody
+    has collected keeps no command line** on Linux: it is named by its state and by its parent,
+    whose command line is the one that says who should have collected it."""
+    try:
+        said = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ")
+        line = said.decode(errors="replace").strip()
+    except OSError:  # a system without /proc, or a process that is gone
+        line = _ps(pid, "args=")
+    if line:
+        return line
+    kept = _ps(pid, "stat=,ppid=").split()
+    if len(kept) < 2:
+        return "(gone)"
+    state, parent = kept[0], int(kept[1])
+    return (
+        f"(no command line: state {state}, child of {parent}: {_ps(parent, 'args=') or '(gone)'})"
+    )
+
+
+def _ps(pid: int, fields: str) -> str:
+    return subprocess.run(
+        ["/bin/ps", "-ww", "-o", fields, "-p", str(pid)], capture_output=True, text=True
+    ).stdout.strip()
+
+
+def left_before(
+    found: Sequence[tuple[int, str]], previous: str, read: Callable[[int], str] = command_line
+) -> str:
+    """What a test found running before it began, named whole, with the test that left it."""
+    who = previous or "no test ran before it on this worker"
+    named = "; ".join(f"{pid} ({name}): {read(pid)}" for pid, name in found)
+    return f"a process of a test was running before this test began — left by {who}: {named}"
+
+
+def found_before(folder: Path, previous: str | None = None) -> str:
+    """What this worker still runs before a test begins — named first, then swept, then what of it
+    is the worker's own child collected —, or ``""``. ``previous`` is the test the worker ran last,
+    of any module (:data:`tests.browser_leftovers.RAN_LAST`, decision 86 (a))."""
+    before = started()
+    if not before:
+        return ""
+    found = left_before(before, RAN_LAST[0] if previous is None else previous)
+    sweep(folder, also=tuple(pid for pid, _ in before))
+    collected([pid for pid, _ in before])
+    return found
+
+
+async def settled_after(closings: set[asyncio.Task[Any]]) -> None:
+    """Give what is left of a test the loop before it is torn down, within a bound — and nothing
+    to wait for when nothing is left: an empty set is not an attempt to wait."""
+    if closings:
+        await asyncio.wait(closings, timeout=2)
+
+
 @pytest.fixture(autouse=True)
 async def nothing_left_behind(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[None]:
     """A browser a test leaves that nobody holds is not left to the next test — nor to the loop,
@@ -267,8 +326,18 @@ async def nothing_left_behind(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[
 
     **An ``async`` fixture on purpose**: it is torn down inside the loop, so before the loop
     itself — a plain one is torn down after it in every test that asks for no other fixture of the
-    loop's, which is where a red test hung instead of failing (the review of the repair)."""
+    loop's, which is where a red test hung instead of failing (the review of the repair).
+
+    **And a process found before the test begins is named** (decision 56 (a) of the review of
+    M13.10): whole, with the test that ran before on this worker — on ubuntu a dozen tests found
+    one named «Google Chrome f» and nobody could say whose. **The test before is the last one the
+    worker ran, of any module, and a child of the worker that has ended is collected once named**
+    (decision 86): one test fails, not the eighty-six of 2026-10-29."""
     folder = scratch()
+    found = found_before(folder)
+    if found:
+        shutil.rmtree(folder, ignore_errors=True)
+        pytest.fail(found)
     monkeypatch.setenv("TMPDIR", str(folder))
     yield
     mine = [pid for pid, _ in started()]
@@ -284,10 +353,11 @@ async def nothing_left_behind(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[
         # while a closing of the adapter's was still in flight — its processes dead already. The
         # calls that were in flight fail on a closed pipe: they are given the loop before it is
         # torn down, and what waits for ever — the task the stop wakes — is what the bound is for.
-        await asyncio.wait(others, timeout=2)
+        await settled_after(others)
     still = left(folder)
     shutil.rmtree(folder, ignore_errors=True)
-    assert not still, f"a test of the real browser left something on this machine: {still}"
+    whole = "; ".join(f"{pid}: {command_line(pid)}" for pid in still.processes)
+    assert not still, f"a test of the real browser left something on this machine: {still} {whole}"
 
 
 CLOSINGS_OF_THE_ADAPTER = frozenset({"_shut", "_dropped", "_stopped_once_started"})
@@ -349,9 +419,9 @@ async def test_a_page_is_read_and_the_verifier_reads_it_again(
     web = site(served, {"/": (200, {}, "<title>Prova</title><h1>Pagina di prova</h1>")})
     arguments = {"site": "sito0.example", "path": "/", "selector": "h1", "purpose": "x"}
 
-    result = await BrowserReadTool(browsing(web), browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_READ), arguments, FakeStop()
-    )
+    result = await BrowserReadTool(
+        browsing(web), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    ).execute(decision(BROWSER_READ), arguments, FakeStop())
     failures = await BrowserReadVerifier(browser, 5.0).verify(
         [BROWSER_TEXT_MATCHES], arguments, result
     )
@@ -383,9 +453,9 @@ async def test_a_click_that_worked_is_verified_by_the_page(
         "purpose": "x",
     }
 
-    result = await BrowserActTool(browsing(web), browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_ACT), arguments, FakeStop()
-    )
+    result = await BrowserActTool(
+        browsing(web), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    ).execute(decision(BROWSER_ACT), arguments, FakeStop())
     failures = await BrowserActVerifier(browser, 5.0).verify(
         [BROWSER_EXPECT_VISIBLE], arguments, result
     )
@@ -412,9 +482,9 @@ async def test_a_click_that_did_nothing_is_not_a_click_that_worked(
         "purpose": "x",
     }
 
-    result = await BrowserActTool(browsing(web), browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_ACT), arguments, FakeStop()
-    )
+    result = await BrowserActTool(
+        browsing(web), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    ).execute(decision(BROWSER_ACT), arguments, FakeStop())
     (failure,) = await BrowserActVerifier(browser, 0.2).verify(
         [BROWSER_EXPECT_VISIBLE], arguments, result
     )
@@ -443,9 +513,9 @@ async def test_a_read_follows_a_redirect_on_the_same_site_and_reads_where_it_lan
     )
     arguments = {"site": "sito0.example", "path": "/", "selector": "h1", "purpose": "x"}
 
-    result = await BrowserReadTool(browsing(web), browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_READ), arguments, FakeStop()
-    )
+    result = await BrowserReadTool(
+        browsing(web), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    ).execute(decision(BROWSER_READ), arguments, FakeStop())
     failures = await BrowserReadVerifier(browser, 5.0).verify(
         [BROWSER_TEXT_MATCHES], arguments, result
     )
@@ -465,9 +535,9 @@ async def test_a_read_follows_a_redirect_to_another_declared_site(
     web = site(served, {"/": (302, {"Location": other.origin + "/altro"}, "")})
     arguments = {"site": "sito0.example", "path": "/", "selector": "h1", "purpose": "x"}
 
-    result = await BrowserReadTool(browsing(web, other), browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_READ), arguments, FakeStop()
-    )
+    result = await BrowserReadTool(
+        browsing(web, other), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    ).execute(decision(BROWSER_READ), arguments, FakeStop())
     failures = await BrowserReadVerifier(browser, 5.0).verify(
         [BROWSER_TEXT_MATCHES], arguments, result
     )
@@ -492,9 +562,9 @@ async def test_an_action_follows_a_redirect_on_its_site_to_the_form(
         "purpose": "x",
     }
 
-    result = await BrowserActTool(browsing(web), browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_ACT), arguments, FakeStop()
-    )
+    result = await BrowserActTool(
+        browsing(web), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    ).execute(decision(BROWSER_ACT), arguments, FakeStop())
     failures = await BrowserActVerifier(browser, 5.0).verify(
         [BROWSER_EXPECT_VISIBLE], arguments, result
     )
@@ -527,9 +597,9 @@ async def test_a_form_answered_with_a_303_is_followed_to_its_page(
         "purpose": "x",
     }
 
-    result = await BrowserActTool(browsing(web), browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_ACT), arguments, FakeStop()
-    )
+    result = await BrowserActTool(
+        browsing(web), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    ).execute(decision(BROWSER_ACT), arguments, FakeStop())
     failures = await BrowserActVerifier(browser, 5.0).verify(
         [BROWSER_EXPECT_VISIBLE], arguments, result
     )
@@ -583,9 +653,9 @@ async def test_a_form_that_sends_to_another_site_is_not_sent(
         "purpose": "x",
     }
 
-    result = await BrowserActTool(names, browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_ACT), arguments, FakeStop()
-    )
+    result = await BrowserActTool(
+        names, browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    ).execute(decision(BROWSER_ACT), arguments, FakeStop())
 
     assert result.error is not None and result.error.code == LEFT_SITE
     assert other.requests == []
@@ -597,38 +667,202 @@ async def test_a_form_that_sends_to_another_site_is_not_sent(
 
 
 @pytest.mark.parametrize(
-    ("page", "code"),
+    "page",
     [
-        ('<input id="nome"><button id="invia">Invia</button>', ELEMENT_MISSING),
-        ('<input id="nome" type="password"><button id="altro">Invia</button>', SECRET_FIELD),
-        (
-            '<input id="nome" autocomplete="cc-number"><button id="altro">Invia</button>',
-            SECRET_FIELD,
-        ),
+        '<input id="nome" type="password"><button id="altro">Invia</button>',
+        '<input id="nome" autocomplete="cc-number"><button id="altro">Invia</button>',
     ],
 )
-async def test_nothing_is_touched_when_the_page_is_not_the_plan_s(
-    browser: PlaywrightBrowser, served: list[Site], page: str, code: str
+async def test_a_field_that_declares_itself_secret_is_not_touched(
+    browser: PlaywrightBrowser, served: list[Site], page: str
 ) -> None:
-    """The wrong element **last**, after the field: a check made element by element would fill the
-    field before finding out, and the page would report it."""
+    """The first gesture would fill a field that declares itself secret: refused before it, and
+    the page reports nothing."""
     web = site(served, {"/": (200, {}, page + REPORTS)})
     arguments = {
         "site": "sito0.example",
         "path": "/",
         "fill": [["#nome", "ELA"]],
-        "click": "#manca" if code == ELEMENT_MISSING else "#altro",
+        "click": "#altro",
         "expect_text": "ok",
         "purpose": "x",
     }
 
-    result = await BrowserActTool(browsing(web), browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_ACT), arguments, FakeStop()
-    )
+    result = await BrowserActTool(
+        browsing(web), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    ).execute(decision(BROWSER_ACT), arguments, FakeStop())
 
-    assert result.error is not None and result.error.code == code
+    assert result.error is not None and result.error.code == SECRET_FIELD
     assert web.events == []
     assert [line for line in web.requests if line.startswith("POST")] == []
+
+
+class Deadlines:
+    """The module of the tools' ``asyncio``, with every deadline a tool opens kept: what lets a
+    test end the time of a step **at the moment it chooses** — the precondition built by an event,
+    not by a number of seconds a slow runner may spend before the wait begins (the CI of
+    2026-10-14 on macOS: one second was gone in the launch)."""
+
+    def __init__(self) -> None:
+        self.opened: list[asyncio.Timeout] = []
+
+    def timeout(self, delay: float | None) -> asyncio.Timeout:
+        made = asyncio.timeout(delay)
+        self.opened.append(made)
+        return made
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(asyncio, name)
+
+
+async def test_a_button_that_is_not_there_is_awaited_and_the_field_before_it_is_filled(
+    browser: PlaywrightBrowser, served: list[Site], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M13.10, ADR 0065 (decision 45 of its review): the wrong element **last**, after the field —
+    each gesture awaits its own element, so the field is filled, and the button is awaited **with
+    no time of its own**: still waiting a moment after its wait began, and ended by the time of the
+    step when that runs out. The page reports the fill; nothing is sent."""
+    from ela.tools import browser as tools
+
+    web = site(
+        served, {"/": (200, {}, '<input id="nome"><button id="invia">Invia</button>' + REPORTS)}
+    )
+    arguments = {
+        "site": "sito0.example",
+        "path": "/",
+        "fill": [["#nome", "ELA"]],
+        "click": "#manca",
+        "expect_text": "ok",
+        "purpose": "x",
+    }
+    deadlines = Deadlines()
+    monkeypatch.setattr(tools, "asyncio", deadlines)
+    waiting = browser.appeared
+    still_waiting: list[bool] = []
+
+    async def appeared(page: str, selector: str) -> int:
+        if selector == "#manca":
+            loop = asyncio.get_running_loop()
+
+            def runs_out() -> None:
+                still_waiting.append(True)
+                deadlines.opened[-1].reschedule(loop.time())
+
+            loop.call_later(0.3, runs_out)
+        return await waiting(page, selector)
+
+    monkeypatch.setattr(browser, "appeared", appeared)
+
+    result = await BrowserActTool(
+        browsing(web), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    ).execute(decision(BROWSER_ACT), arguments, FakeStop())
+
+    assert still_waiting == [True], "the wait did not end by itself before the step's time did"
+    assert result.error is not None and result.error.code == ELEMENT_MISSING
+    assert result.output == {"gestures": 1, "stopped_at": 2}
+    assert result.error.message.endswith("within the 30 s of the step; 1 gesture was made")
+    assert "input" in web.events and "click" not in web.events
+    assert [line for line in web.requests if line.startswith("POST")] == []
+
+
+APPEARS = """
+<input id="nome"><span id="slot"></span>
+<script>
+document.querySelector('#nome').addEventListener('input', () => setTimeout(() => {
+  const b = document.createElement('button'); b.id = 'invia'; b.textContent = 'Invia';
+  document.querySelector('#slot').append(b);
+}, 0), {once: true});
+</script>
+"""
+
+
+async def test_an_element_that_appears_after_a_gesture_is_awaited_and_used(
+    browser: PlaywrightBrowser, served: list[Site]
+) -> None:
+    """The button comes only once the field is written — the fact of WhatsApp Web's send button
+    that M13.10 inherited: awaited as an event, it is clicked."""
+    web = site(served, {"/": (200, {}, APPEARS + REPORTS)})
+    arguments = {
+        "site": "sito0.example",
+        "path": "/",
+        "fill": [["#nome", "ELA"]],
+        "click": "#invia",
+        "expect_text": "ok",
+        "purpose": "x",
+    }
+
+    result = await BrowserActTool(
+        browsing(web), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    ).execute(decision(BROWSER_ACT), arguments, FakeStop())
+    # The page tells of the click with a beacon, which leaves on its own time: waited for as the
+    # event it is, before the page is closed (the CI of 2026-10-14 on ubuntu closed it first).
+    async with asyncio.timeout(20):
+        while "click" not in web.events:
+            await asyncio.sleep(0.02)
+    await browser.close(str(result.output["page"]))
+
+    assert result.status is ExecutionStatus.SUCCEEDED, result.error
+    assert result.output["gestures"] == 2
+    assert web.events.count("click") == 1
+
+
+async def test_two_elements_the_first_hidden_are_ambiguous_at_once(
+    browser: PlaywrightBrowser, served: list[Site]
+) -> None:
+    """«One alone»: the engine's strict wait sees two, the first of them hidden — the answer is
+    the ambiguity, at once, and not the end of the step's time (measure (g) of M13.10's SPEC)."""
+    page = (
+        '<input id="nome"><button class="x" style="display:none">a</button>'
+        '<button class="x">b</button>'
+    )
+    web = site(served, {"/": (200, {}, page + REPORTS)})
+    arguments = {
+        "site": "sito0.example",
+        "path": "/",
+        "fill": [["#nome", "ELA"]],
+        "click": ".x",
+        "expect_text": "ok",
+        "purpose": "x",
+    }
+
+    result = await BrowserActTool(
+        browsing(web), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    ).execute(decision(BROWSER_ACT), arguments, FakeStop())
+
+    assert result.error is not None and result.error.code == ELEMENT_AMBIGUOUS
+    assert "gesture 2 of 2 names 2 elements" in result.error.message
+    assert result.output["gestures"] == 1 and "click" not in web.events
+
+
+async def test_a_stop_while_an_element_is_awaited_ends_the_step_and_the_page_answers_after(
+    browser: PlaywrightBrowser, served: list[Site]
+) -> None:
+    """The engine's wait, cancelled by the stop: the step ends with the gesture made, and the
+    page closes with nothing left behind (the fixture of this file asserts it)."""
+    web = site(served, {"/": (200, {}, '<input id="nome">' + REPORTS)})
+    arguments = {
+        "site": "sito0.example",
+        "path": "/",
+        "fill": [["#nome", "ELA"]],
+        "click": "#mai",
+        "expect_text": "ok",
+        "purpose": "x",
+    }
+    stop = FakeStop()
+    running = asyncio.create_task(
+        BrowserActTool(
+            browsing(web), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+        ).execute(decision(BROWSER_ACT), arguments, stop)
+    )
+    async with asyncio.timeout(20):
+        while "input" not in web.events:
+            await asyncio.sleep(0.02)
+
+    stop.event.set()
+    result = await running
+
+    assert result.error is not None and result.error.code == STOPPED
+    assert result.output == {"status": 200, "gestures": 1, "stopped_at": 2}
 
 
 # ----------------------------------------------------------------------------------------
@@ -962,7 +1196,7 @@ async def test_a_tool_cancelled_after_the_opening_leaves_no_process_when_the_can
         await filling(page, selector, value)
 
     browser.fill = in_flight  # type: ignore[method-assign]
-    tool = BrowserActTool(browsing(web), browser, CLOCK, FakeIdGenerator())
+    tool = BrowserActTool(browsing(web), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages())
     running = asyncio.create_task(tool.execute(decision(BROWSER_ACT), arguments, FakeStop()))
     await reached.wait()
     assert descendants(), "a driver and a browser run while the fill waits"

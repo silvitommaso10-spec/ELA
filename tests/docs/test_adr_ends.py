@@ -18,7 +18,7 @@ from ela.cli.tasks import ROLE_WORDS as CLI_ROLE_WORDS
 from ela.cli.tasks import WHY_HEADERS
 from tests.architecture.rules import END_KEY, END_MODULES
 from tests.contracts.protocols import port_protocols
-from tests.docs.guided_ports import ACCOUNT_PORTS, GUIDED_PORTS
+from tests.docs.guided_ports import ACCOUNT_PORTS, GUIDED_PORTS, STEPS_PORTS
 from tests.docs.test_adr_cli import coded_commands, commands_after_0061
 from tests.docs.test_adr_composition import coded_routes, routes_after_0059
 from tests.docs.test_adr_placement import _rules_up_to
@@ -66,7 +66,13 @@ def test_the_conseguenze_count_the_rules_the_contracts_the_ports_the_routes_and_
     assert len(contracts) == 15
     assert "**trenta**" in text
     assert (
-        len(tuple(p for p in port_protocols() if p.__name__ not in GUIDED_PORTS | ACCOUNT_PORTS))
+        len(
+            tuple(
+                p
+                for p in port_protocols()
+                if p.__name__ not in GUIDED_PORTS | ACCOUNT_PORTS | STEPS_PORTS
+            )
+        )
         == 30
     )
     assert "**cinquantuno**" in text

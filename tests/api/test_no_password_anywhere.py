@@ -232,6 +232,25 @@ async def test_the_password_is_in_no_place_and_each_reader_reads_its_place(
     assert USERNAME not in held, f"the whole username is in «{place}»"
 
 
+async def test_the_entry_the_question_named_is_in_the_database_and_in_no_place_a_reader_sees(
+    places: tuple[Places, FakeAccountBrowser],
+) -> None:
+    """ADR 0065 §2: since M13.10 the yes carries the entry its question named, in the row of the
+    approval — the disk holds the id of an entry for as long as the row. The database is where it
+    is, and it is in none of the other places: no surface shows it (ADR 0063 §9), and rule 71
+    keeps it out of the audit. The log reader reads every logger at DEBUG, and at that level the
+    database's driver copies the parameters of each write into its lines: those lines are the
+    database again, at a level ELA never turns on — nothing in ``src/`` sets a level below the
+    default's WARNING but the server's own INFO."""
+    held = places[0].all()
+    logged = [line for line in held["log"].splitlines() if ENTRY.id in line]
+
+    assert ENTRY.id in held["database"], "the yes carried no entry: nothing below is proved"
+    assert [place for place in sorted(held) if ENTRY.id in held[place]] == ["database", "log"]
+    assert logged, "the driver's lines were not read: the log reader proves nothing about them"
+    assert all(line.startswith("DEBUG    aiosqlite:") for line in logged), logged
+
+
 def test_the_places_are_the_seven_of_the_criterion() -> None:
     """A closed world: a place added to the criterion is a reader and a control added here."""
     assert set(CONTROLS) == {"plan", "database", "audit", "question", "result", "log", "model"}

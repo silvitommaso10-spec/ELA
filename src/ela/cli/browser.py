@@ -72,8 +72,17 @@ def _status(payload: dict[str, Any]) -> str:
         # One profile is the browser's own first, and nothing to be told.
         said.append(("profiles in the folder", f"{profiles} — {ONLY_ONE_IS_ELA_S}"))
     said.append(("sites", ", ".join(payload["sites"]) or None))
+    # The pages tasks keep between two of their steps (M13.10, ADR 0065 §3): which task, on
+    # which browser, until when, and the command that ends it.
+    said.extend(("waiting", _waiting(one)) for one in payload.get("waiting") or ())
     rows = fields(said)
     return f"{rows}\n{payload['message']}" if payload["message"] else rows
+
+
+def _waiting(page: dict[str, Any]) -> str:
+    which = "with your accounts" if page["profile"] else "empty"
+    until = page["until"] or "the end of the task"
+    return f"a page of task {page['task']}, on the {which} browser, until {until} — {page['stop']}"
 
 
 @app.command("status")

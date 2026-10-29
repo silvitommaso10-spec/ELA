@@ -23,6 +23,7 @@ from ela.domain import (
     DecisionId,
     ExecutionResult,
     ExecutionStatus,
+    JsonMapping,
     PermissionDecision,
     PermissionOutcome,
     RiskLevel,
@@ -31,9 +32,11 @@ from ela.permissions import (
     BROWSER_ACT_AS_YOU,
     BROWSER_LOGIN,
     BROWSER_READ_AS_YOU,
+    EXPECT_MAX_LENGTH,
     production_catalogue,
 )
 from ela.ports import (
+    BROWSER_LOGIN_FORM_GONE,
     HELD,
     PROFILE_PROCESS,
     PROFILE_STEP,
@@ -48,7 +51,9 @@ from ela.ports import (
     ProfileBusy,
     ProfileUndeclared,
     ProfileUnsafe,
+    Prospect,
     Secret,
+    TaskStop,
     ToolStopped,
     VaultTimeout,
 )
@@ -59,6 +64,7 @@ from ela.testing.fakes import (
     FakeIdGenerator,
     FakePage,
     FakeStop,
+    FakeTaskPages,
     FakeVault,
     FakeVaultEntry,
 )
@@ -66,10 +72,12 @@ from ela.tools.account import (
     ACCOUNT_CODES,
     ACTS_AS_YOU,
     BROWSER_SECOND_FACTOR,
-    ENTRY_FORGOTTEN,
+    ENTRY_NOT_NAMED,
     FIELD_CHANGED,
     LOGIN_FORM_GET,
+    LOGIN_FORM_STILL_THERE,
     LOGS_IN,
+    NAMED_ENTRY,
     NO_WINDOW,
     NOT_A_PASSWORD_FIELD,
     PROFILE_BUSY,
@@ -83,18 +91,20 @@ from ela.tools.account import (
     LoginTool,
     LoginVerifier,
 )
-from ela.tools.base import ARGUMENTS_INVALID
+from ela.tools.base import ARGUMENTS_INVALID, Tool
 from ela.tools.browser import (
     ACTS,
     ELEMENT_AMBIGUOUS,
     ELEMENT_MISSING,
     FAILED,
     FIRST_GESTURE,
+    HTTP_STATUS,
     LEFT_SITE,
     NOT_INSTALLED,
     OPENS,
     SECRET_FIELD,
     STOPPED,
+    STOPPED_AT,
     UNSUPPORTED_SYSTEM,
     BrowserReadTool,
     Browsing,
@@ -193,14 +203,27 @@ async def door(vault: FakeVault | None, folder: Path | None, *, opened: bool = T
 async def login(
     browser: FakeAccountBrowser, vault: FakeVault | None, folder: Path | None, **options: Any
 ) -> LoginTool:
-    return LoginTool(SITES, browser, await door(vault, folder, **options), CLOCK, FakeIdGenerator())
+    return LoginTool(
+        SITES,
+        browser,
+        await door(vault, folder, **options),
+        CLOCK,
+        FakeIdGenerator(),
+        pages=FakeTaskPages(),
+    )
 
 
 def tools(browser: FakeAccountBrowser, vault_door: VaultDoor) -> dict[str, Any]:
     return {
-        BROWSER_READ_AS_YOU: AccountReadTool(SITES, browser, CLOCK, FakeIdGenerator()),
-        BROWSER_ACT_AS_YOU: AccountActTool(SITES, browser, CLOCK, FakeIdGenerator()),
-        BROWSER_LOGIN: LoginTool(SITES, browser, vault_door, CLOCK, FakeIdGenerator()),
+        BROWSER_READ_AS_YOU: AccountReadTool(
+            SITES, browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+        ),
+        BROWSER_ACT_AS_YOU: AccountActTool(
+            SITES, browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+        ),
+        BROWSER_LOGIN: LoginTool(
+            SITES, browser, vault_door, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+        ),
     }
 
 
@@ -220,7 +243,8 @@ def test_what_the_three_tools_declare() -> None:
         assert tool.relocatable is False, "the browser does not travel, and neither does a login"
         assert tool.error_codes >= ACCOUNT_CODES
     assert AccountReadTool.audit_numbers == {"status", "shown", "total"}
-    assert AccountActTool.audit_numbers == LoginTool.audit_numbers == {"status", "gestures"}
+    assert AccountActTool.audit_numbers == {"status", "gestures", STOPPED_AT}
+    assert LoginTool.audit_numbers == {"status", "gestures"}
     assert SECRET_FIELD not in AccountReadTool.error_codes
     assert SECRET_FIELD in AccountActTool.error_codes and SECRET_FIELD in LoginTool.error_codes
     assert VAULT_CODES - {KEY_REFUSED} <= LoginTool.error_codes
@@ -355,9 +379,15 @@ async def test_a_browser_that_does_not_answer_in_time_is_a_refusal_and_not_a_wai
     browser.occupied = never  # type: ignore[method-assign]
     quick = Browsing(sites=SITES.sites, timeout_seconds=0)
     made = {
-        BROWSER_READ_AS_YOU: AccountReadTool(quick, browser, CLOCK, FakeIdGenerator()),
-        BROWSER_ACT_AS_YOU: AccountActTool(quick, browser, CLOCK, FakeIdGenerator()),
-        BROWSER_LOGIN: LoginTool(quick, browser, await door(None, None), CLOCK, FakeIdGenerator()),
+        BROWSER_READ_AS_YOU: AccountReadTool(
+            quick, browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+        ),
+        BROWSER_ACT_AS_YOU: AccountActTool(
+            quick, browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+        ),
+        BROWSER_LOGIN: LoginTool(
+            quick, browser, await door(None, None), CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+        ),
     }
 
     refusal = (await made[capability].prospect(CALLS[capability])).refusal
@@ -390,7 +420,7 @@ async def test_what_the_opening_itself_refuses_is_named_and_nothing_was_started(
     browser = FakeAccountBrowser(page())
     vault = FakeVault([MARIO])
     tool = tools(browser, await door(vault, tmp_path))[capability]
-    await tool.prospect(CALLS[capability])
+    await questioned(tool, CALLS[capability])
     browser.raising["open"] = failure
 
     result = await tool.execute(decision(capability), CALLS[capability], FakeStop())
@@ -413,10 +443,10 @@ async def test_a_read_with_the_profile_does_not_leave_the_site_it_names() -> Non
     named the first."""
     accounts, empty = FakeAccountBrowser(), FakeBrowser()
 
-    await AccountReadTool(SITES, accounts, CLOCK, FakeIdGenerator()).execute(
+    await AccountReadTool(SITES, accounts, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()).execute(
         decision(BROWSER_READ_AS_YOU), READ, FakeStop()
     )
-    await BrowserReadTool(SITES, empty, CLOCK, FakeIdGenerator()).execute(
+    await BrowserReadTool(SITES, empty, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()).execute(
         decision("browser.read"), READ, FakeStop()
     )
 
@@ -430,9 +460,9 @@ async def test_a_read_with_the_profile_does_not_leave_the_site_it_names() -> Non
 async def test_a_redirect_to_another_declared_site_is_left_site_and_reads_nothing() -> None:
     browser = FakeAccountBrowser(FakePage(left="https://altro.example/accedi?next=x"))
 
-    result = await AccountReadTool(SITES, browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_READ_AS_YOU), READ, FakeStop()
-    )
+    result = await AccountReadTool(
+        SITES, browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    ).execute(decision(BROWSER_READ_AS_YOU), READ, FakeStop())
 
     assert result.error is not None and result.error.code == LEFT_SITE
     assert "https://altro.example," in result.error.message
@@ -461,9 +491,9 @@ async def test_an_action_with_the_profile_refuses_a_secret_field_like_the_empty_
         FakePage(fields={"#testo": Field("password", "current-password", "post")})
     )
 
-    result = await AccountActTool(SITES, browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_ACT_AS_YOU), ACT, FakeStop()
-    )
+    result = await AccountActTool(
+        SITES, browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    ).execute(decision(BROWSER_ACT_AS_YOU), ACT, FakeStop())
 
     assert result.error is not None and result.error.code == SECRET_FIELD
     assert browser.fills == [] and browser.secrets == []
@@ -480,7 +510,7 @@ async def test_an_action_with_the_profile_refuses_a_secret_field_like_the_empty_
         ({"username_field": ""}, "username_field"),
         ({WORD_FIELD: "xpath=//input"}, WORD_FIELD),
         ({"click": ">> x"}, "click"),
-        ({"expect_text": ""}, "expect_text"),
+        ({"expect_text": "x" * (EXPECT_MAX_LENGTH + 1)}, "expect_text"),
         ({"entry": ""}, "entry"),
         ({"entry": "x" * 65}, "entry"),
         ({"entry": 7}, "entry"),
@@ -621,8 +651,9 @@ async def test_the_question_of_a_login_names_the_entry_and_never_a_value(tmp_pat
         "types its password into #word",
         "clicks #go",
     ), "which entry is a fact of its own, and the gestures name the fields"
-    shown = repr(prospect)
+    shown = repr(visit)
     assert TYPED not in shown and USERNAME not in shown and MARIO.id not in shown
+    assert prospect.named == {NAMED_ENTRY: MARIO.id}, "the id goes with the yes, never shown"
     assert browser.opened == []
     assert [call.split(":")[0] for call in vault.calls] == ["find"], (
         "before the yes: the listing for the site, and nothing that takes a value"
@@ -644,9 +675,35 @@ async def test_an_entry_the_plan_names_is_the_one_the_question_names(tmp_path: P
 # ----------------------------------------------------------------------------------------
 
 
-async def asked(tool: LoginTool, arguments: dict[str, object] = LOGIN) -> None:
-    prospect = await tool.prospect(arguments)
+async def asked(tool: LoginTool, arguments: dict[str, object] = LOGIN) -> JsonMapping:
+    """The question of a login, and — what the executor does with the yes (M13.10, ADR 0065) —
+    what it named handed back to every ``execute`` of ``tool`` that does not say otherwise."""
+    prospect = await questioned(tool, arguments)
     assert prospect.refusal is None, prospect.refusal
+    return prospect.named or {}
+
+
+async def questioned(tool: Tool, arguments: JsonMapping) -> Prospect:
+    """The question of any of the three tools, composed as the executor composes it — and what it
+    named, when it named something, handed back with the yes to every ``execute`` of ``tool``."""
+    prospect = await tool.prospect(arguments)
+    if prospect.named is not None:
+        _handed(tool, prospect.named)
+    return prospect
+
+
+def _handed(tool: Tool, named: JsonMapping) -> None:
+    answered = tool.execute
+
+    async def execute(
+        decision_: PermissionDecision,
+        arguments_: JsonMapping,
+        stop: TaskStop,
+        named_: JsonMapping | None = None,
+    ) -> ExecutionResult:
+        return await answered(decision_, arguments_, stop, named if named_ is None else named_)
+
+    tool.execute = execute  # type: ignore[method-assign]
 
 
 async def test_after_the_yes_the_entry_is_read_once_and_typed_through_the_browser_alone(
@@ -823,53 +880,59 @@ async def test_the_entry_typed_is_the_one_the_question_named_and_not_the_one_the
     assert browser.secrets == []
 
 
-async def test_a_login_ela_no_longer_remembers_the_question_of_types_nothing(
+async def test_the_question_names_the_entry_for_the_yes_and_no_surface_shows_it(
     tmp_path: Path,
 ) -> None:
-    """ELA was started again between the question and the yes: the tool that receives the yes
-    never asked, and does not look the entry up again — what it would find is what the vault
-    holds now, not what the question named. The plan that names its entry is not concerned."""
+    """M13.10, ADR 0065: what the yes will cover is handed back with it — the id of the entry —,
+    in a field of its own, beside the facts the question shows, which never carry that id."""
+    tool = await login(FakeAccountBrowser(page()), FakeVault([MARIO]), tmp_path)
+
+    prospect = await tool.prospect(LOGIN)
+
+    assert prospect.named == {NAMED_ENTRY: MARIO.id}
+    assert prospect.visit is not None and MARIO.id not in repr(prospect.visit)
+
+
+async def test_a_yes_to_a_question_that_named_no_entry_types_nothing(tmp_path: Path) -> None:
+    """Decision 38 of the review of M13.10: the tool does not look the entry up again — what it
+    would find is what the vault holds now, not what the question named. The plan that names its
+    entry is not concerned."""
     vault = FakeVault([MARIO, ANNA])
     browser = FakeAccountBrowser(page())
-    restarted = await login(browser, vault, tmp_path)
+    tool = await login(browser, vault, tmp_path)
 
-    result = await restarted.execute(decision(BROWSER_LOGIN), LOGIN, FakeStop())
+    result = await tool.execute(decision(BROWSER_LOGIN), LOGIN, FakeStop())
 
-    assert result.error is not None and result.error.code == ENTRY_FORGOTTEN
+    assert result.error is not None and result.error.code == ENTRY_NOT_NAMED
     assert "ask again" in result.error.message
-    assert vault.calls == [] and browser.secrets == []
+    assert result.error.message.endswith("the yes was spent, and nothing was typed")
+    assert vault.calls == [] and browser.secrets == [] and browser.opened == []
 
-    named = await restarted.execute(
-        decision(BROWSER_LOGIN), {**LOGIN, "entry": ANNA.id}, FakeStop()
-    )
+    named = await tool.execute(decision(BROWSER_LOGIN), {**LOGIN, "entry": ANNA.id}, FakeStop())
 
     assert named.status is ExecutionStatus.SUCCEEDED, named.error
     assert browser.secrets == [("#user", "anna@example.com"), ("#word", "another word")]
 
 
-async def test_the_tool_remembers_a_bounded_number_of_questions(tmp_path: Path) -> None:
-    """The oldest question goes first — and a question asked again is the newest again."""
-    from ela.tools import account
-
+async def test_one_tool_asks_and_another_types_the_entry_the_question_named(
+    tmp_path: Path,
+) -> None:
+    """No tool remembers anything between the question and the yes (criterion 10 of M13.10): the
+    one that asked and the one that runs are two — a restart between them — and the entry typed
+    is the one the question named, though the vault now holds another one for the site too."""
     vault = FakeVault([MARIO])
     browser = FakeAccountBrowser(page())
-    tool = await login(browser, vault, tmp_path)
+    asking = await login(FakeAccountBrowser(page()), vault, tmp_path)
+    running = await login(browser, vault, tmp_path)
+    named = (await asking.prospect(LOGIN)).named
+    vault.entries = [ANNA, MARIO]
+    vault.calls.clear()
 
-    def call(number: int) -> dict[str, object]:
-        return {**LOGIN, "purpose": f"la prova {number}"}
+    result = await running.execute(decision(BROWSER_LOGIN), LOGIN, FakeStop(), named)
 
-    for number in range(account.REMEMBERED):
-        await asked(tool, call(number))
-    await asked(tool, call(0))
-    for number in range(account.REMEMBERED, account.REMEMBERED + 3):
-        await asked(tool, call(number))
-
-    assert len(tool._found) == account.REMEMBERED
-    forgotten = await tool.execute(decision(BROWSER_LOGIN), call(1), FakeStop())
-    assert forgotten.error is not None and forgotten.error.code == ENTRY_FORGOTTEN
-    await browser.close("page-1")
-    again = await tool.execute(decision(BROWSER_LOGIN), call(0), FakeStop())
-    assert again.status is ExecutionStatus.SUCCEEDED, again.error
+    assert result.status is ExecutionStatus.SUCCEEDED, result.error
+    assert vault.calls == [f"take:{MARIO.id}"]
+    assert browser.secrets[0] == ("#user", USERNAME)
 
 
 async def test_a_task_stopped_by_the_time_the_page_is_checked_takes_no_password(
@@ -953,45 +1016,39 @@ async def test_the_point_of_a_login_is_after_the_vault_has_answered(tmp_path: Pa
     assert typed == 0, "and nothing is typed yet"
 
 
-async def test_two_questions_for_the_same_call_that_named_different_entries_type_neither(
+async def test_two_questions_for_the_same_call_each_have_the_entry_they_named(
     tmp_path: Path,
 ) -> None:
-    """One tool serves every task, and what it remembers of a question is keyed by the call. The
-    same plan asked twice, with the vault changed in between: the second question named another
-    entry and took the place of the first — and a yes to the first typed the second's password
-    (re-read of 2026-10-11, defect 3). A yes covers the entry its question named: when ELA cannot
-    tell which that was, it types none, and the next question starts clean."""
+    """The same plan asked twice, with the vault changed in between: until M13.10 the tool kept
+    one memory per call, and could not tell which question a yes answered (re-read of 2026-10-11,
+    defect 3). Now each yes comes back with what its own question named (ADR 0065)."""
     vault = FakeVault([MARIO])
     browser = FakeAccountBrowser(page())
     tool = await login(browser, vault, tmp_path)
-    await asked(tool)  # the first question names Mario's entry
-    vault.entries = [ANNA]
-    second = await tool.prospect(LOGIN)  # the same call, asked again: it names Anna's
-    vault.calls.clear()
+    first = (await tool.prospect(LOGIN)).named
+    vault.entries = [ANNA, MARIO]
+    second = (await tool.prospect({**LOGIN, "entry": ANNA.id})).named
 
-    first_yes = await tool.execute(decision(BROWSER_LOGIN), LOGIN, FakeStop())
-    second_yes = await tool.execute(decision(BROWSER_LOGIN), LOGIN, FakeStop())
-    await asked(tool)
-    after_asking_again = await tool.execute(decision(BROWSER_LOGIN), LOGIN, FakeStop())
+    to_the_first = await tool.execute(decision(BROWSER_LOGIN), LOGIN, FakeStop(), first)
+    await browser.close("page-1")
+    to_the_second = await tool.execute(decision(BROWSER_LOGIN), LOGIN, FakeStop(), second)
 
-    assert second.visit is not None and second.visit.entry == ANNA.name
-    for refused in (first_yes, second_yes):
-        assert refused.error is not None and refused.error.code == ENTRY_FORGOTTEN
-    assert "different entries" in str(first_yes.error and first_yes.error.message)
-    assert not any(call.startswith("take") for call in vault.calls[:-1]), "nothing was read"
-    assert after_asking_again.status is ExecutionStatus.SUCCEEDED, after_asking_again.error
-    assert [typed for _, typed in browser.secrets] == [ANNA.username, ANNA.password]
+    assert first == {NAMED_ENTRY: MARIO.id} and second == {NAMED_ENTRY: ANNA.id}
+    assert to_the_first.status is to_the_second.status is ExecutionStatus.SUCCEEDED
+    assert [typed for _, typed in browser.secrets] == [
+        MARIO.username,
+        MARIO.password,
+        ANNA.username,
+        ANNA.password,
+    ]
 
 
-async def test_the_same_question_asked_again_with_the_same_entry_keeps_its_memory(
-    tmp_path: Path,
-) -> None:
+async def test_the_same_question_asked_twice_names_the_same_entry(tmp_path: Path) -> None:
     vault = FakeVault([MARIO])
     browser = FakeAccountBrowser(page())
     tool = await login(browser, vault, tmp_path)
-    await asked(tool)
-    await asked(tool)
 
+    assert await asked(tool) == await asked(tool) == {NAMED_ENTRY: MARIO.id}
     result = await tool.execute(decision(BROWSER_LOGIN), LOGIN, FakeStop())
 
     assert result.status is ExecutionStatus.SUCCEEDED, result.error
@@ -1091,7 +1148,9 @@ async def test_a_browser_that_fails_while_it_types_names_the_failure_and_not_the
 
 
 async def test_a_read_with_a_selector_that_is_not_one_is_refused_like_the_empty_browser_s() -> None:
-    tool = AccountReadTool(SITES, FakeAccountBrowser(), CLOCK, FakeIdGenerator())
+    tool = AccountReadTool(
+        SITES, FakeAccountBrowser(), CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    )
 
     refusal = (await tool.prospect({**READ, "selector": "xpath=//h1"})).refusal
 
@@ -1143,7 +1202,8 @@ def test_what_the_three_verifiers_declare() -> None:
 
     assert AccountReadVerifier.conditions == BrowserReadVerifier.conditions
     assert AccountActVerifier.conditions == BrowserActVerifier.conditions
-    assert LoginVerifier.conditions == {BROWSER_EXPECT_VISIBLE}
+    assert LoginVerifier.conditions == {BROWSER_EXPECT_VISIBLE, BROWSER_LOGIN_FORM_GONE}
+    assert {LOGIN_FORM_STILL_THERE, HTTP_STATUS} <= LoginVerifier.failure_codes
     assert BROWSER_SECOND_FACTOR in LoginVerifier.failure_codes
     assert BROWSER_SECOND_FACTOR not in AccountActVerifier.failure_codes
     assert {BROWSER_EXPECT_MISSING, BROWSER_PAGE_GONE} <= LoginVerifier.failure_codes
@@ -1447,6 +1507,7 @@ async def test_a_login_still_at_work_after_it_was_sent_says_so_and_is_not_asked_
         await door(FakeVault([MARIO]), tmp_path),
         CLOCK,
         FakeIdGenerator(),
+        pages=FakeTaskPages(),
     )
     await asked(tool)
 
@@ -1470,16 +1531,16 @@ async def test_a_login_still_at_work_before_it_was_sent_does_not_say_it_was_sent
 
     class SlowToSay(FakeAccountBrowser):
         async def field(self, page: str, selector: str) -> Field:
-            await asyncio.Event().wait()
-            raise AssertionError("never reached")
+            raise TimeoutError  # the tool's deadline, arriving while the form is looked at
 
     browser = SlowToSay(page())
     tool = LoginTool(
-        Browsing(sites=("posta.example",), timeout_seconds=0),
+        Browsing(sites=("posta.example",)),
         browser,
         await door(FakeVault([MARIO]), tmp_path),
         CLOCK,
         FakeIdGenerator(),
+        pages=FakeTaskPages(),
     )
     await asked(tool)
 
@@ -1511,6 +1572,7 @@ async def test_a_login_whose_time_ran_out_inside_the_click_does_not_say_two_gest
         await door(FakeVault([MARIO]), tmp_path),
         CLOCK,
         FakeIdGenerator(),
+        pages=FakeTaskPages(),
     )
     await asked(tool)
 
@@ -1540,7 +1602,7 @@ async def test_a_login_opens_its_page_with_a_window_and_the_other_two_as_the_swi
     vault = FakeVault([MARIO])
     browser = FakeAccountBrowser(page())
     tool = tools(browser, await door(vault, tmp_path))[capability]
-    assert (await tool.prospect(CALLS[capability])).refusal is None
+    assert (await questioned(tool, CALLS[capability])).refusal is None
 
     result = await tool.execute(decision(capability), CALLS[capability], FakeStop())
 
@@ -1641,7 +1703,9 @@ async def test_whether_a_window_can_be_had_is_asked_within_the_time_of_the_tool(
     vault = FakeVault([MARIO])
     browser = NeverSays(page())
     sites = Browsing(sites=SITES.sites, timeout_seconds=0)
-    tool = LoginTool(sites, browser, await door(vault, tmp_path), CLOCK, FakeIdGenerator())
+    tool = LoginTool(
+        sites, browser, await door(vault, tmp_path), CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    )
 
     # The guard is the test's, and never the one that fires: a tool that waited for ever would
     # be a red here, and not a suite that hangs (found by the re-read of 2026-10-13).
@@ -1772,6 +1836,7 @@ async def test_a_login_whose_time_ran_out_while_the_fields_were_read_again_did_n
         await door(FakeVault([MARIO]), tmp_path),
         CLOCK,
         FakeIdGenerator(),
+        pages=FakeTaskPages(),
     )
     await asked(tool)
 

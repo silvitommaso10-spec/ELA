@@ -158,7 +158,9 @@ def test_a_login_has_no_argument_that_could_carry_a_value() -> None:
         "entry",
     }
     assert schema["additionalProperties"] is False
-    assert set(schema["required"]) == set(schema["properties"]) - {"entry"}
+    # ``expect_text`` optional since M13.10 (ADR 0065 §4, decision 31): without it the verifier
+    # looks for the form to be gone.
+    assert set(schema["required"]) == set(schema["properties"]) - {"entry", "expect_text"}
     assert schema["properties"]["entry"]["maxLength"] == ENTRY_MAX_LENGTH == 64
 
 

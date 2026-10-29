@@ -72,6 +72,7 @@ cambia, si scrive un nuovo ADR che sostituisce il precedente.
 | [0062](0062-policies.md) | Le policy di §59: una riga che Tommaso scrive, con i suoi confini e una fine, rende autonoma un'azione `MEDIUM` senza abbassarne il livello | Accettata |
 | [0063](0063-browser-with-your-accounts.md) | Il browser con i tuoi account: un Chrome di ELA che dura, le password che restano in Bitwarden, e una sessione che copre le sue letture | Accettata |
 | [0064](0064-browser-boundary.md) | Il confine del browser: guardare, non rifare | Accettata |
+| [0065](0065-browser-steps.md) | Il browser a più passi: ogni elemento aspettato, ciò che il sì ha nominato, la pagina che dura fra gli step, il login chiesto dal modello | Accettata |
 
 ## Template
 

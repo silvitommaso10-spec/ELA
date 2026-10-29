@@ -75,6 +75,7 @@ def a_room() -> SessionRoom:
         spending=SpendingGate(results, None),
         gateway=FakeModelGateway(),
         running=set(),
+        audit=FakeAuditLog(),
     )
 
 
@@ -135,6 +136,7 @@ def guided_world(
         spending=SpendingGate(results, Decimal("30")),
         gateway=gateway,
         running=set(),
+        audit=FakeAuditLog(),
     )
     provider = FakeModelProvider(FakeClock(), FakeIdGenerator(), worst=worst)
     router, providers = routing_for(provider)

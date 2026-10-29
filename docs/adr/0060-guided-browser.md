@@ -10,6 +10,7 @@
   costruire (`docs/milestones/M14.3.md`, «Il primo giro», «Il secondo giro», «Il terzo giro»).
   **Riletta da ADR 0062 (M13.12)** il 2026-10-09: «un sì copre una sessione» (§1) si legge «un sì, o una policy di Tommaso, copre una sessione».
   **Riletta da ADR 0063 (M13.9)** il 2026-10-11: §1, una seconda capability di sessione, `browser.guided_as_you`, che nomina un sito solo; §4, la capability e i gesti di una sessione sono un dato; §8, le risposte di §57 per ciò che una sessione con il profilo manda; §9, il terzo fatto e il vincolo del GET valgono per il browser vuoto; e l'alternativa scartata, un grant della sessione, torna come una copertura che non è un grant (ADR 0063 §1 e §6).
+  **Rivista da ADR 0065 (M13.10)** il 2026-10-14: §1, ciò che chiamava «`browser.session`» non è una capability (ADR 0065 §3); §2, §4 e §5, gli strumenti di una sessione sono un dato, tre con il profilo, e un login sono due figli e due gesti; §8, ciò che il modello legge di un login è una lista chiusa della stanza (ADR 0065 §4).
 - **Data:** 2026-10-09
 - **Riferimenti spec:** §13, §19, §24, §25, §27, §30, §32, §33, §39, §57, §59, §62, §63
 - **Milestone:** M14.3

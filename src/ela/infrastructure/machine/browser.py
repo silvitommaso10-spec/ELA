@@ -66,6 +66,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 import os
 import re
 import shutil
@@ -185,6 +186,7 @@ def registry_folder(name: str, environment: Mapping[str, str], system: str) -> P
 
 
 _T = TypeVar("_T")
+_LOG = logging.getLogger(__name__)
 
 
 @dataclass
@@ -207,6 +209,9 @@ class _Open:
     last is the page's own, and ``None`` for one that never came (M13.9, decision 106)."""
     kept: asyncio.Task[None] | None = None
     looking: bool = False
+    held: bool = False
+    """Held by a task between two of its steps (M13.10, ADR 0065 §3): the look does not close it,
+    and no deadline of this adapter's does — whoever holds it closes it."""
     tasks: set[asyncio.Task[None]] = field(default_factory=set)
 
 
@@ -576,6 +581,26 @@ class PlaywrightBrowser:
     async def count(self, page: str, selector: str) -> int:
         return await self._on(page, lambda opened: opened.page.locator(selector).count())
 
+    async def appeared(self, page: str, selector: str) -> int:
+        """The engine's own wait, **strict**, on the selector itself (M13.10, measures (a) and (g)
+        of its SPEC): it ends when the selector finds one visible element, and raises at once when
+        it finds several — then the count says how many. It looks at the page at intervals of its
+        own, up to half a second: an element is seen at most about half a second after it is
+        there. No timeout here: the tool's time is the one."""
+
+        async def wait(opened: _Open) -> int:
+            element = opened.page.locator(selector)
+            try:
+                await element.wait_for(state="visible", timeout=0)
+            except PlaywrightError:
+                found = await element.count()
+                if found > 1:
+                    return found
+                raise
+            return await element.count()
+
+        return await self._on(page, wait)
+
     async def field(self, page: str, selector: str) -> Field:
         async def read(opened: _Open) -> Field:
             element = opened.page.locator(selector)
@@ -632,7 +657,45 @@ class PlaywrightBrowser:
                 page, lambda found: self._looked(found, selector, expect, seconds)
             )
         finally:
-            await self.close(page)
+            opened.looking = False
+            if not opened.held:
+                await self.close(page)
+
+    async def hold(self, page: str) -> None:
+        """The page is a task's between two of its steps (M13.10, ADR 0065 §3): the deadline a
+        :meth:`keep` started stops, and the look will not close it."""
+        opened = self._pages.get(page)
+        if opened is None:
+            return
+        opened.held = True
+        if opened.kept is not None:
+            opened.kept.cancel()
+            opened.kept = None
+
+    async def resume(self, page: str, allowed: Callable[[str], bool]) -> Opened:
+        """A held page, taken back with the boundary of the step that continues — in the gate,
+        which judges every request of the browser from now on, and in every use after —, and
+        asked where it is (measure (g) of M13.10's SPEC: a navigation toward the new site leaves,
+        one toward the old does not). What the gate refused while nobody used the page is handed
+        over once, as :attr:`Opened.waited`, and is not the step's: :meth:`left` starts again."""
+        opened = self._page(page)
+        opened.held = False
+        opened.allowed = allowed
+        opened.gate.rebound(allowed)
+        waited = opened.refused[-1] if opened.refused else None
+        del opened.refused[:]
+        self._within(opened)
+        return Opened(
+            page=page,
+            status=opened.documents[-1] if opened.documents else None,
+            address=_where(opened.page),
+            left=None,
+            waited=waited,
+        )
+
+    async def where(self, page: str) -> str | None:
+        opened = self._pages.get(page)
+        return None if opened is None else _where(opened.page)
 
     async def close(self, page: str) -> None:
         opened = self._pages.pop(page, None)
@@ -741,6 +804,11 @@ class _Gate:
         session.on("Fetch.requestPaused", self._told)
         session.on("Target.targetCreated", self._born)
 
+    def rebound(self, allowed: Callable[[str], bool]) -> None:
+        """Judge from now on with ``allowed``: the boundary of the step that continues on this
+        page (M13.10, ADR 0065 §3). The requests already judged were judged with the old one."""
+        self._allowed = allowed
+
     async def on(self) -> None:
         """Ask to be told of every page that is opened, and of every request."""
         await self._session.send("Target.setDiscoverTargets", {"discover": True})
@@ -780,10 +848,22 @@ class _Gate:
         if not leaves:
             answer["errorReason"] = REFUSED
         # A request that is gone by now — its page closed, its frame gone elsewhere — cannot be
-        # answered, and has not left: the browser says so, and that is not a failure.
-        with contextlib.suppress(PlaywrightError):
+        # answered, and has not left: the browser says so, and that is not a failure. Nor is a
+        # driver that died meanwhile — the browser closed at the end of a step, of a task, at
+        # ELA's stop —, which Playwright says with a plain ``Exception``, not one of its own
+        # (found by ``make check`` of M13.10): **an answer not written is a request that stays
+        # paused, and a paused request never leaves**. Quietly, not silently (decision 53 of the
+        # review of M13.10's implementation): a line says the type and the answer, never the
+        # address. A cancellation is not an ``Exception``, and goes on as what it is.
+        try:
             await self._session.send(
                 "Fetch.continueRequest" if leaves else "Fetch.failRequest", answer
+            )
+        except Exception as error:  # noqa: BLE001 — not written is not let go: said, and safe
+            _LOG.warning(
+                "an answer of the gate could not be written (%s): the request was to be %s",
+                type(error).__name__,
+                "let go" if leaves else "refused",
             )
 
     async def _leaves(self, event: Mapping[str, Any]) -> bool:
@@ -876,9 +956,12 @@ def _answered(documents: list[int | None], response: Response, page: Page) -> No
 async def _look(opened: _Open, selector: str | None, expect: str | None, seconds: float) -> Glanced:
     """What the verifier asked about, on the page as it is now."""
     text: str | None = None
+    found: int | None = None
     if selector is not None or expect is None:
         element = opened.page.locator(selector or "body")
-        if await element.count() == 1:
+        counted = await element.count()
+        found = counted if selector is not None else None
+        if counted == 1:
             text = await element.inner_text()
     shown: bool | None = None
     if expect is not None:
@@ -894,6 +977,8 @@ async def _look(opened: _Open, selector: str | None, expect: str | None, seconds
         shown=shown,
         left=opened.refused[-1] if opened.refused else None,
         another=opened.gate.another,
+        found=found,
+        status=opened.documents[-1] if opened.documents else None,
     )
 
 

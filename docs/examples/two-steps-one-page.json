@@ -1,0 +1,65 @@
+{
+  "_nota": [
+    "La sezione 29 della guida, passo 1 (M13.10, ADR 0065 §3): due step dello stesso task sulla stessa pagina. Il primo riempie tre campi del modulo di httpbin.org e lo invia; il secondo non apre niente — ha `continues` e non ha `path` — e legge la pagina che il primo ha lasciato, aspettando l'elemento che porta il nome scritto dal primo.",
+    "Ogni step è giudicato dalla sua capability: il primo chiede il sì, il secondo è una lettura LOW e non chiede niente. Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "compilare il modulo di httpbin.org e leggere ciò che il sito ha ricevuto, sulla stessa pagina",
+  "steps": [
+    {
+      "id": "c0de1a28-0000-4b00-8a00-000000001002",
+      "goal": "riempire il modulo e inviarlo",
+      "required_capabilities": [
+        "browser.act"
+      ],
+      "arguments": {
+        "site": "httpbin.org",
+        "path": "/forms/post",
+        "fill": [
+          [
+            "input[name=custname]",
+            "ELA prova 7431"
+          ],
+          [
+            "input[name=custtel]",
+            "0000"
+          ],
+          [
+            "textarea[name=comments]",
+            "due passi, una pagina"
+          ]
+        ],
+        "click": "form button",
+        "expect_text": "ELA prova 7431",
+        "purpose": "la prova a mano di più passi (M13.10)"
+      },
+      "risk": "HIGH",
+      "expected_result": "la pagina dopo l'invio mostra ciò che il sito ha ricevuto",
+      "success_conditions": [
+        "browser.expect_visible"
+      ],
+      "requires_authorization": true
+    },
+    {
+      "id": "c0de1a28-0000-4b00-8a00-000000001003",
+      "goal": "leggere, sulla stessa pagina, il nome che il primo step ha scritto",
+      "required_capabilities": [
+        "browser.read"
+      ],
+      "arguments": {
+        "site": "httpbin.org",
+        "continues": true,
+        "selector": "pre:has-text(\"ELA prova 7431\")",
+        "purpose": "la prova a mano di più passi (M13.10)"
+      },
+      "risk": "LOW",
+      "expected_result": "il testo che il sito ha ricevuto, con il nome",
+      "success_conditions": [
+        "browser.text_matches"
+      ],
+      "requires_authorization": false,
+      "dependencies": [
+        "c0de1a28-0000-4b00-8a00-000000001002"
+      ]
+    }
+  ]
+}

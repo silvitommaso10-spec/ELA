@@ -60,7 +60,7 @@ from ela.infrastructure.machine.account import AccountChrome
 from ela.infrastructure.machine.browser import PlaywrightBrowser, _descendants, _listed
 from ela.permissions import BROWSER_ACT, BROWSER_READ
 from ela.ports import BrowserFailed, BrowserStopped, Secret, SiteUnreachable
-from ela.testing.fakes import FakeIdGenerator, FakeStop
+from ela.testing.fakes import FakeIdGenerator, FakeStop, FakeTaskPages
 from ela.tools.browser import (
     FAILED,
     LEFT_SITE,
@@ -768,6 +768,7 @@ async def test_a_read_of_a_page_that_opens_another_by_itself_succeeds_and_says_s
         browser,
         CLOCK,
         FakeIdGenerator(),
+        pages=FakeTaskPages(),
     )
     arguments = {"site": "sito.example", "path": "/", "selector": "h1", "purpose": "x"}
 
@@ -810,6 +811,7 @@ async def test_a_click_that_opens_another_page_is_said_by_the_step_and_by_its_ve
         browser,
         CLOCK,
         FakeIdGenerator(),
+        pages=FakeTaskPages(),
     )
     arguments = {"site": "sito.example", "path": "/", "fill": [], "click": "#go"}
     arguments = {**arguments, "expect_text": "Grazie", "purpose": "x"}
@@ -1100,6 +1102,7 @@ async def test_a_session_that_never_answers_ends_the_step_in_its_time_and_leaves
         browser,
         CLOCK,
         FakeIdGenerator(),
+        pages=FakeTaskPages(),
     )
 
     async with asyncio.timeout(60):
@@ -1142,6 +1145,7 @@ async def test_a_judge_that_raises_lets_nothing_leave_and_the_step_says_the_brow
         browser,
         CLOCK,
         FakeIdGenerator(),
+        pages=FakeTaskPages(),
     )
     tool._gestures = lambda arguments, site, address: _raising(  # type: ignore[method-assign]
         BrowserActTool._gestures(tool, arguments, site, address), allowed
@@ -1300,18 +1304,21 @@ class Changing:
 
 USES: dict[str, Callable[[Any, str], Awaitable[Any]]] = {
     "count": lambda b, p: b.count(p, "#f"),
+    "appeared": lambda b, p: b.appeared(p, "#f"),
     "field": lambda b, p: b.field(p, "#f"),
     "fill": lambda b, p: b.fill(p, "#f", "x"),
     "click": lambda b, p: b.click(p, "#go"),
     "text": lambda b, p: b.text(p, None),
     "title": lambda b, p: b.title(p),
     "left": lambda b, p: b.left(p),
+    # Taken back with a boundary of its own, which the page is outside of (M13.10).
+    "resume": lambda b, p: b.resume(p, lambda url: False),
     "glance": lambda b, p: b.glance(p, selector=None, expect="x", seconds=1),
 }
 USED = shell.REPORTS + '<title>t</title><input id="f"><button id="go">go</button><p>x</p>'
 
 
-OF_THE_PROFILE_ALONE = {"fill_secret", "landed", "holds"}
+OF_THE_PROFILE_ALONE = {"fill_secret", "landed", "holds", "forms"}
 """The uses of a page only the browser of the profile has: walked in a test of their own."""
 
 
@@ -1424,10 +1431,13 @@ async def test_a_secret_is_not_typed_and_a_landing_is_not_told_on_a_page_outside
         await made.landed(opened.page)
     with pytest.raises(LeftSite) as compared:
         await made.holds(opened.page, "#f", Secret("-".join(("a", "word", "of", "the", "test"))))
+    with pytest.raises(LeftSite) as forms:
+        await made.forms(opened.page)
     await made.close(opened.page)
 
     assert typed.value.made is False and told.value.made is False, "before the use, not after"
     assert compared.value.made is False, "a field is not read again there either"
+    assert forms.value.made is False, "nor the forms of the page (M13.10)"
     assert web.events == []
 
 
@@ -1456,7 +1466,11 @@ async def test_a_secret_typed_on_a_page_that_ends_elsewhere_meanwhile_is_said_as
     allowed.closed, allowed.closes_at = False, allowed.asked + 2
     with pytest.raises(LeftSite) as compared:
         await made.holds(opened.page, "#f", Secret("-".join(("a", "word", "of", "the", "test"))))
+    allowed.closed, allowed.closes_at = False, allowed.asked + 2
+    with pytest.raises(LeftSite) as forms:
+        await made.forms(opened.page)
 
+    assert forms.value.made is True, "what was read of the forms is thrown away (M13.10)"
     assert typed.value.made is True
     assert told.value.made is True, "and where it landed, read before it was elsewhere, is not said"
     assert compared.value.made is True, "nor whether the field held what was typed"
@@ -1484,16 +1498,16 @@ async def test_a_tool_on_a_page_that_is_elsewhere_reads_nothing_and_says_where_b
         "purpose": "x",
     }
 
-    read = await BrowserReadTool(browsing, browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_READ), reading, FakeStop()
-    )
-    act = await BrowserActTool(browsing, browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_ACT), acting, FakeStop()
-    )
+    read = await BrowserReadTool(
+        browsing, browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    ).execute(decision(BROWSER_READ), reading, FakeStop())
+    act = await BrowserActTool(
+        browsing, browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    ).execute(decision(BROWSER_ACT), acting, FakeStop())
 
-    missing = await BrowserReadTool(browsing, browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_READ), {**reading, "path": "/missing"}, FakeStop()
-    )
+    missing = await BrowserReadTool(
+        browsing, browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+    ).execute(decision(BROWSER_READ), {**reading, "path": "/missing"}, FakeStop())
 
     for result in (read, act, missing):
         assert result.error is not None and result.error.code == LEFT_SITE

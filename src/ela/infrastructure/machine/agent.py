@@ -36,7 +36,7 @@ import os
 import shlex
 import shutil
 import signal
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
@@ -51,7 +51,7 @@ from claude_agent_sdk import (
     tool,
 )
 
-from ela.domain import ErrorMetadata, JsonMapping, Reservation, StepId
+from ela.domain import ErrorMetadata, Reservation, StepId
 from ela.ports import (
     GUIDED_FOLDER_CHANGED,
     GUIDED_NOT_INSTALLED,
@@ -59,29 +59,28 @@ from ela.ports import (
     SessionHandle,
     SessionHost,
     SessionPlan,
+    SessionTool,
 )
 
 __all__ = [
-    "ACT_SCHEMA",
     "CLOSED_PATH",
     "GRACE_SECONDS",
     "LANGUAGE",
     "LAUNCHER",
     "PID",
-    "READ_SCHEMA",
     "RESULT_CHARS",
     "SDK_NAMES",
     "SERVER",
-    "TOOLS",
     "ClaudeAgentSession",
     "bundled_binary",
     "closed_environment",
     "launcher_text",
+    "named_tools",
 ]
 
 SERVER: Final = "ela"
-TOOLS: Final = frozenset({f"mcp__{SERVER}__read", f"mcp__{SERVER}__act"})
-"""The two tools every session offers its model, by the names Claude Code gives them."""
+"""The name of ELA's server of tools inside a session: Claude Code names each of its tools
+``mcp__<server>__<tool>``."""
 
 LAUNCHER: Final = "launch"
 """The file ELA writes in a session's folder before the launch: the only one the folder holds then.
@@ -115,42 +114,6 @@ SDK_NAMES: Final = (
 )
 """The variables the SDK sets for ``claude`` itself (``subprocess_cli.py`` at 0.2.165), which the
 launcher passes on by name."""
-
-SITE_SAID: Final = "one of the sites, a host name"
-PATH_SAID: Final = 'what follows the site, starting with "/"'
-
-READ_SCHEMA: Final[dict[str, Any]] = {
-    "type": "object",
-    "properties": {
-        "site": {"type": "string", "description": SITE_SAID},
-        "path": {"type": "string", "description": PATH_SAID},
-        "selector": {
-            "type": "string",
-            "description": "optional: the one element to read, a selector as the tool says",
-        },
-    },
-    "required": ["site", "path"],
-    "additionalProperties": False,
-}
-ACT_SCHEMA: Final[dict[str, Any]] = {
-    "type": "object",
-    "properties": {
-        "site": {"type": "string", "description": SITE_SAID},
-        "path": {"type": "string", "description": PATH_SAID},
-        "fill": {
-            "type": "array",
-            "description": "pairs [selector, value], filled in order",
-            "items": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 2},
-        },
-        "click": {"type": "string", "description": "the selector of the one element to click"},
-        "expect_text": {
-            "type": "string",
-            "description": "the text the page must show after the click",
-        },
-    },
-    "required": ["site", "path", "fill", "click", "expect_text"],
-    "additionalProperties": False,
-}
 
 
 def bundled_binary() -> Path:
@@ -230,9 +193,8 @@ class ClaudeAgentSession:
         self._grace = grace
         self._running: dict[StepId, _Session] = {}
 
-    @property
-    def tools(self) -> frozenset[str]:
-        return TOOLS
+    async def tools(self, offered: Sequence[SessionTool]) -> frozenset[str]:
+        return named_tools(offered)
 
     async def ready(self) -> ErrorMetadata | None:
         if not os.access(self._binary, os.X_OK):
@@ -426,22 +388,21 @@ def _options(
 ) -> ClaudeAgentOptions:
     notes = ToolAnnotations(maxResultSizeChars=RESULT_CHARS)
 
-    async def gesture(name: str, arguments: JsonMapping) -> dict[str, Any]:
-        text = await host.gesture(name, arguments)
-        return {"content": [{"type": "text", "text": text}]}
+    def offered(one: SessionTool) -> Any:
+        """One tool of the plan, offered as it is written there: its name, its words, its
+        schema — and every call of it a gesture of ELA's (M13.10: the tools are data)."""
 
-    @tool("read", plan.read_description, READ_SCHEMA, annotations=notes)
-    async def read(arguments: dict[str, Any]) -> dict[str, Any]:
-        return await gesture("read", arguments)
+        async def gesture(arguments: dict[str, Any]) -> dict[str, Any]:
+            text = await host.gesture(one.name, arguments)
+            return {"content": [{"type": "text", "text": text}]}
 
-    @tool("act", plan.act_description, ACT_SCHEMA, annotations=notes)
-    async def act(arguments: dict[str, Any]) -> dict[str, Any]:
-        return await gesture("act", arguments)
+        return tool(one.name, one.description, dict(one.schema), annotations=notes)(gesture)
 
+    tools = [offered(one) for one in plan.tools]
     return ClaudeAgentOptions(
-        mcp_servers={SERVER: create_sdk_mcp_server(name=SERVER, version="1", tools=[read, act])},
+        mcp_servers={SERVER: create_sdk_mcp_server(name=SERVER, version="1", tools=tools)},
         tools=[],
-        allowed_tools=sorted(TOOLS),
+        allowed_tools=sorted(named_tools(plan.tools)),
         permission_mode="dontAsk",
         system_prompt=plan.instructions,
         model=plan.model,
@@ -458,6 +419,12 @@ def _options(
             "disable-slash-commands": None,
         },
     )
+
+
+def named_tools(offered: Sequence[SessionTool]) -> frozenset[str]:
+    """The names Claude Code gives the tools ``offered``, in ELA's server: what the session's
+    start must list, and nothing else."""
+    return frozenset(f"mcp__{SERVER}__{one.name}" for one in offered)
 
 
 def _changed(folder: Path, fingerprint: str) -> str | None:

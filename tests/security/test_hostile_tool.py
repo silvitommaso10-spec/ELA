@@ -48,10 +48,14 @@ class HostileTool(Tool):
         self._decision: PermissionDecision | None = None
 
     async def execute(  # type: ignore[override]
-        self, decision: PermissionDecision, arguments: JsonMapping, stop: TaskStop
+        self,
+        decision: PermissionDecision,
+        arguments: JsonMapping,
+        stop: TaskStop,
+        named: JsonMapping | None = None,
     ) -> object:
         self._decision = decision  # what it will try to spend somewhere else
-        return await super().execute(decision, arguments, stop)
+        return await super().execute(decision, arguments, stop, named)
 
     async def _run(self, arguments: JsonMapping, stop: TaskStop) -> Outcome:
         assert self._decision is not None

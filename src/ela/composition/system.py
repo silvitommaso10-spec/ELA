@@ -47,6 +47,7 @@ from ela.infrastructure.machine import (
 from ela.ports import (
     PROFILE_PROCESS,
     PROFILE_STEP,
+    PROFILE_TASK,
     PROFILE_WINDOW,
     AccountBrowser,
     BrowserError,
@@ -270,9 +271,11 @@ SIGNING_IN: Final = {
 own window, and a browser the folder's lock names that this ELA did not start — a window left by
 an ELA that was killed is the same window, and the lock is all that is left to name it. A step of
 ELA's own is not here: nobody is typing a password into a page ELA drives."""
-NO_HAND: Final = frozenset({PROFILE_STEP})
+NO_HAND: Final = frozenset({PROFILE_STEP, PROFILE_TASK})
 """The holders that let ELA look and listen — said by name, so that a holder the port comes to
-answer with and nobody wrote a sentence for is a doubt, and not «nobody» (fail-safe)."""
+answer with and nobody wrote a sentence for is a doubt, and not «nobody» (fail-safe). A page a task
+keeps between two of its steps is ELA's own page with nobody typing into it (M13.10, decision 27
+of the review of its SPEC: decision 148 of M13.9 stands, and the perception is not refused)."""
 
 
 def a_session_of_the_screen(probe: PerceptionProbe) -> Callable[[], Awaitable[bool]]:

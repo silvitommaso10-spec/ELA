@@ -758,6 +758,14 @@ PROFILE_READERS = frozenset(
 #: command the gate sends, with more in it: that is held by the test that compares what a site
 #: receives through the gate with what the browser alone sends.
 REDOING_CALLS = frozenset({"route", "unroute", "route_from_har", "fetch", "fulfill", "detach"})
+#: Rule 71 (M13.10, ADR 0065): what a question named for its tool — the second bag beside an
+#: approval, kept under the executor's constant :data:`NAMED_CONSTANT` — goes to the tool with the
+#: yes, and **nowhere else**: no module names it inside the building of an :data:`AUDIT_EVENT`
+#: (the audit is the log that is never redacted, and for a login the bag holds the id of an entry of
+#: the vault, which no surface shows), and no module of :data:`API_DIR` names it at all (no route
+#: serves it). **Anchored to the constant and not to the word**: ``named`` is a function of
+#: ``ela.ports`` and a method of ``SessionGestures``, and a rule on the word would find them.
+NAMED_CONSTANT = "NAMED"
 COMMANDS_NEVER_SENT = frozenset(
     {"Fetch.disable", "Fetch.fulfillRequest", "Fetch.continueResponse", "Target.detachFromTarget"}
 )
@@ -1898,6 +1906,42 @@ def check_the_gate_looks_and_does_not_redo(pkg_root: Path) -> list[Violation]:
                     if command in node.value
                 )
     return found
+
+
+def check_named_reaches_the_tool_only(pkg_root: Path) -> list[Violation]:
+    """Rule 71: what a question named reaches the tool with the yes, and nothing else (M13.10).
+
+    Reported: an ``AuditEvent(...)`` call that names the constant :data:`NAMED_CONSTANT` — as a
+    name or an attribute — anywhere inside it, once per call; and the constant anywhere at all in a
+    module of :data:`API_DIR`, imported names included. The executor writes it and reads it;
+    nobody else names it.
+    """
+    rule = "named-reaches-the-tool-only"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        served = path.relative_to(pkg_root).parts[0] == API_DIR
+        for node in ast.walk(tree):
+            if served and _names_the_named_bag(node):
+                found.append(Violation(rule, name, NAMED_CONSTANT, getattr(node, "lineno", 0)))
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == AUDIT_EVENT
+            ):
+                inside = [inner for inner in ast.walk(node) if _names_the_named_bag(inner)]
+                if inside:
+                    found.append(Violation(rule, name, NAMED_CONSTANT, node.lineno))
+    return found
+
+
+def _names_the_named_bag(node: ast.AST) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id == NAMED_CONSTANT
+    if isinstance(node, ast.Attribute):
+        return node.attr == NAMED_CONSTANT
+    return isinstance(node, ast.alias) and node.name == NAMED_CONSTANT
 
 
 def _on_the_store(call: ast.Call, method: str) -> bool:
@@ -4044,6 +4088,7 @@ RULES: dict[str, Rule] = {
     "a-secret-is-opened-only-by-an-adapter": check_a_secret_is_opened_only_by_an_adapter,
     "the-profile-s-folder-is-its-adapter-s": check_the_profile_s_folder_is_its_adapter_s,
     "the-gate-looks-and-does-not-redo": check_the_gate_looks_and_does_not_redo,
+    "named-reaches-the-tool-only": check_named_reaches_the_tool_only,
 }
 
 
@@ -4553,6 +4598,17 @@ CONSTANTS: tuple[Constant, ...] = (
     Constant("a-policy-is-born-at-its-route", "TOOLS_DIR", DETECTOR),
     Constant(
         "a-policy-is-born-at-its-route",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # named-reaches-the-tool-only (rule 71, M13.10)
+    Constant("named-reaches-the-tool-only", "NAMED_CONSTANT", DETECTOR),
+    Constant("named-reaches-the-tool-only", "AUDIT_EVENT", DETECTOR),
+    Constant("named-reaches-the-tool-only", "API_DIR", DETECTOR),
+    Constant(
+        "named-reaches-the-tool-only",
         "ROOT_PACKAGE",
         SUBJECT,
         why=INEVITABLE,

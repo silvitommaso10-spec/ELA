@@ -31,6 +31,7 @@ from ela.domain import (
     PermissionDecision,
     PermissionOutcome,
     ProviderUsage,
+    TaskId,
     WorstCase,
 )
 from ela.ports import Clock, IdGenerator, NotAllowedError, Prospect, StopPoint, TaskStop
@@ -158,15 +159,20 @@ class Tool(ABC):
         return self._name
 
     async def execute(
-        self, decision: PermissionDecision, arguments: JsonMapping, stop: TaskStop
+        self,
+        decision: PermissionDecision,
+        arguments: JsonMapping,
+        stop: TaskStop,
+        named: JsonMapping | None = None,
     ) -> ExecutionResult:
         """Check the decision, act, and answer with a result whose status says how it went.
 
         ``stop`` reaches :meth:`_run`; a :class:`~ela.ports.ToolStopped` it raises at the tool's
-        point leaves here as it is, because the tool did not act (M6.3c)."""
+        point leaves here as it is, because the tool did not act (M6.3c). ``named`` reaches
+        :meth:`_decided` (M13.10, ADR 0065): what the question of this call named, with the yes."""
         started = self._clock.now()
         check_decision(decision, self._capability_id, started)
-        outcome = await self._decided(decision, arguments, stop)
+        outcome = await self._decided(decision, arguments, stop, {} if named is None else named)
         finished = self._clock.now()
         error = (
             None
@@ -192,7 +198,7 @@ class Tool(ABC):
             duration_ms=max(0, int((finished - started).total_seconds() * 1000)),
         )
 
-    async def prospect(self, arguments: JsonMapping) -> Prospect:
+    async def prospect(self, arguments: JsonMapping, task: TaskId | None = None) -> Prospect:
         """Nothing to show and nothing to refuse, unless a tool works on a path (dec. G).
 
         The default is empty and not an abstract method, unlike :attr:`idempotent`: silence here
@@ -217,14 +223,20 @@ class Tool(ABC):
         return None
 
     async def _decided(
-        self, decision: PermissionDecision, arguments: JsonMapping, stop: TaskStop
+        self,
+        decision: PermissionDecision,
+        arguments: JsonMapping,
+        stop: TaskStop,
+        named: JsonMapping,
     ) -> Outcome:
-        """The hook with the decision (M14.3, ADR 0060): the task and the step the call is for.
+        """The hook with the decision (M14.3, ADR 0060): the task and the step the call is for —
+        and, since M13.10, what the question of the call named (ADR 0065).
 
-        Every tool acts on its arguments alone, and this hands them to :meth:`_run`. The one that
-        needs more is ``browser.guided``, whose gestures are child tasks of the task of its step:
-        it reads the two ids from the decision it was handed, the one source of them a tool has —
-        never an argument, which a plan writes."""
+        Every tool acts on its arguments alone, and this hands them to :meth:`_run`. The ones that
+        need more are ``browser.guided``, whose gestures are child tasks of the task of its step —
+        it reads the two ids from the decision it was handed, the one source of them a tool has,
+        never an argument, which a plan writes —, and ``browser.login``, which types the entry the
+        question named and not one it would find again."""
         return await self._run(arguments, stop)
 
     @abstractmethod
@@ -271,7 +283,7 @@ class Perceiving(Tool):
         super().__init__(capability_id, clock, ids, name=name)
         self._not_now = not_now
 
-    async def prospect(self, arguments: JsonMapping) -> Prospect:
+    async def prospect(self, arguments: JsonMapping, task: TaskId | None = None) -> Prospect:
         """«It would start», unless this is a moment in which ELA must not: nothing else is
         looked at here — the permission and the store are the run's, as they were."""
         refused = await self._withheld()

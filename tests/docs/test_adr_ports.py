@@ -52,6 +52,7 @@ EXTENDING_ADRS: tuple[Source, ...] = (
     (ADR_DIR / "0054-stopped-midway.md", EXTENDING),
     (ADR_DIR / "0057-spending-cap.md", EXTENDING),
     (ADR_DIR / "0064-browser-boundary.md", EXTENDING),
+    (ADR_DIR / "0065-browser-steps.md", EXTENDING),
 )
 LATER_EXTENDING_ADRS: tuple[Source, ...] = ((ADR_DIR / "0062-policies.md", EXTENDING),)
 """The extensions of a port **after** a replacement shrank it (M13.12): ADR 0062 adds ``revoke``
@@ -80,6 +81,7 @@ INTRODUCING_ADRS: tuple[Source, ...] = (
     (ADR_DIR / "0054-stopped-midway.md", INTRODUCING),
     (ADR_DIR / "0060-guided-browser.md", INTRODUCING),
     (ADR_DIR / "0063-browser-with-your-accounts.md", INTRODUCING),
+    (ADR_DIR / "0065-browser-steps.md", INTRODUCING),
 )
 """ADRs that add whole ports (ADR 0013 §10, ADR 0014 §1, ADR 0015 §1): a port introduced must
 not exist already."""
@@ -111,6 +113,7 @@ INTRODUCED_PORTS = frozenset(
         "AgentSession",
         "Vault",
         "AccountBrowser",
+        "TaskPages",
     }
 )
 ROW = re.compile(r"^\| `(\w+)` \| ([^|]+) \| (sync|async) \| (.+) \|$")

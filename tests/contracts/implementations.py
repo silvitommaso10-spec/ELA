@@ -26,6 +26,7 @@ from ela.composition import SystemClock, UuidGenerator
 from ela.devices import DeviceRegistry, LocalHeartbeat, period_of
 from ela.domain import Actor, ActorKind, CapabilityId, RiskLevel
 from ela.executive import StopOfTask
+from ela.executive.pages import PageRoom
 from ela.executive.sessions import SessionRoom
 from ela.executive.spending import SpendingGate
 from ela.infrastructure.machine import (
@@ -87,6 +88,7 @@ from ela.ports import (
     ProviderRegistryPort,
     ScreenCapturePort,
     SpeechPort,
+    TaskPages,
     TaskRepository,
     TaskStop,
     TextRecognitionPort,
@@ -134,6 +136,7 @@ from ela.testing.fakes import (
     FakeScreenCapture,
     FakeSpeech,
     FakeStop,
+    FakeTaskPages,
     FakeTaskRepository,
     FakeTextRecognition,
     FakeTool,
@@ -571,6 +574,18 @@ def _heartbeat() -> LocalHeartbeat:
     )
 
 
+def _pages() -> PageRoom:
+    """The room of the pages a task keeps between two of its steps (M13.10), over fakes."""
+    return PageRoom(
+        repository=FakeTaskRepository(),
+        approvals=FakeApprovalStore(),
+        authorizations=FakeAuthorizationStore(),
+        ends=lambda task: asyncio.Event(),
+        stopping=asyncio.Event(),
+        clock=FakeClock(),
+    )
+
+
 def _room() -> SessionRoom:
     """The room of the guided sessions (M14.3), over the fakes of every store it reads."""
     repository, audit, results = FakeTaskRepository(), FakeAuditLog(), FakeExecutionResultStore()
@@ -591,6 +606,7 @@ def _room() -> SessionRoom:
         spending=SpendingGate(results, None),
         gateway=FakeModelGateway(),
         running=set(),
+        audit=audit,
     )
 
 
@@ -734,6 +750,10 @@ IMPLEMENTATIONS: dict[type, tuple[Implementation, ...]] = {
         Implementation("AnthropicGateway(no key)", lambda: AnthropicGateway(None, timeout=1.0)),
     ),
     Gestures: (Implementation("SessionRoom", _room),),
+    TaskPages: (
+        Implementation("FakeTaskPages", FakeTaskPages),
+        Implementation("PageRoom", _pages),
+    ),
     AgentSession: (
         Implementation("FakeAgentSession", FakeAgentSession),
         Implementation("ClaudeAgentSession", _agent_session),

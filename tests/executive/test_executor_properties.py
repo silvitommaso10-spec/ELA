@@ -75,7 +75,7 @@ class ToolBehaviour(Enum):
 
 
 class _RaisingTool(FakeTool):
-    async def execute(self, decision: Any, arguments: Any, stop: Any) -> Any:
+    async def execute(self, decision: Any, arguments: Any, stop: Any, named: Any = None) -> Any:
         raise RuntimeError("boom")
 
 

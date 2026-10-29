@@ -2,7 +2,8 @@
 
 What the ADR says it adds is in the code, by the names it gives; the rule it adds is the
 seventieth, and no other; the ADRs it revises say so on their «Stato:» line, and no other does;
-and the pin on **today's** totals is here, taken over from ADR 0063.
+and the totals as this ADR saw them — the pin on **today's** moved to ADR 0065
+(``test_adr_steps.py``).
 """
 
 from __future__ import annotations
@@ -34,6 +35,8 @@ from ela.tools.verifiers import (
 from tests.architecture.rules import COMMANDS_NEVER_SENT, REDOING_CALLS, RULES
 from tests.contracts.protocols import members, port_protocols
 from tests.docs.boundary_additions import added_codes, added_members
+from tests.docs.guided_ports import STEPS_PORTS
+from tests.docs.steps_additions import added_members as steps_members
 from tests.docs.test_adr_accounts import PASSED_ON, THE_PROOF
 from tests.docs.test_adr_browser import codes
 from tests.docs.test_adr_cli import coded_commands
@@ -69,7 +72,10 @@ def test_the_member_and_the_names_it_adds_to_the_port_are_the_port_s() -> None:
     text = adr_text()
     row = next(line for line in adr_0052().splitlines() if line.startswith("| `Browser` |"))
 
-    assert added_members() == {"Browser": frozenset(members(Browser)) - codes(row.split("|")[4])}
+    later = steps_members()["Browser"]  # what ADR 0065 (M13.10) added after this one
+    assert added_members() == {
+        "Browser": frozenset(members(Browser)) - codes(row.split("|")[4]) - later
+    }
     assert added_members()["Browser"] == {"another"} <= members(AccountBrowser)
     assert f"`{LeftSite.__name__}`" in text and f"`{AnotherPage.__name__}`" in text
     assert "another" in Glanced.__dataclass_fields__
@@ -119,7 +125,7 @@ def test_the_address_of_the_check_is_the_one_the_adapter_asks_for() -> None:
 
 
 # ----------------------------------------------------------------------------------------
-# The rule it adds, and the totals of today
+# The rule it adds, and the totals as it saw them
 # ----------------------------------------------------------------------------------------
 
 
@@ -131,19 +137,25 @@ def test_the_rule_it_adds_is_the_seventieth_and_says_what_it_forbids() -> None:
         assert f"`{command}`" in conseguenze(), f"the rule of the ADR does not name {command}"
 
 
-def test_the_conseguenze_count_the_totals_of_today() -> None:
-    """The pin on today's totals, taken over from ADR 0063: it moves to the ADR that changes
-    them."""
+def test_the_conseguenze_count_the_totals_as_this_adr_saw_them() -> None:
+    """The totals of the day ADR 0064 was written. The pin on **today's** totals moved to the ADR
+    that changed them — ADR 0065, ``test_adr_steps.py`` —, as it had moved here from ADR 0063:
+    the rules are counted up to this ADR's, and no later. *The other totals are the same today as
+    then*; the day a later ADR changes one of them, its line here takes the form of
+    ``test_adr_policies.py``: what there was up to this ADR."""
     text = conseguenze()
     contracts = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"][
         "importlinter"
     ]["contracts"]
 
     assert "**settanta**" in text
-    assert len(RULES) == 70
-    assert set(RULES) - set(_rules_up_to(69)) == {THE_RULE}
+    assert len(_rules_up_to(70)) == 70 <= len(RULES)
+    assert set(_rules_up_to(70)) - set(_rules_up_to(69)) == {THE_RULE}
     assert "**quindici**" in text and len(contracts) == 15
-    assert "**trentacinque**" in text and len(tuple(port_protocols())) == 35
+    assert (
+        "**trentacinque**" in text
+        and len(tuple(p for p in port_protocols() if p.__name__ not in STEPS_PORTS)) == 35
+    )
     assert "**settantadue**" in text and len(coded_routes()) == 72
     assert "**trentanove**" in text and len(coded_commands()) == 39
     assert "**diciotto**" in text and len(production_catalogue().specs()) == 18

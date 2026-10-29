@@ -263,7 +263,15 @@ async def test_a_call_before_the_start_was_checked_waits_and_is_refused(
         _, step, opened = await a_session(g)
         assert isinstance(opened, OpenedSession)
         plan_like = type(
-            "Plan", (), {"model": HAIKU_5_5, "max_tokens": 8192, "instructions": "", "goal": ""}
+            "Plan",
+            (),
+            {
+                "model": HAIKU_5_5,
+                "max_tokens": 8192,
+                "instructions": "",
+                "goal": "",
+                "tools": EMPTY_SESSION.tools,
+            },
         )()
         body = __import__("json").dumps(body_of(plan_like)).encode()  # type: ignore[arg-type]
         relayed = await g.ela.sessions.relay(step, body, None)

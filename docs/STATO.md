@@ -136,9 +136,12 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.7` | Proposta | Il terminale su un nodo: il Job Object, e `argv` che su Windows diventa una stringa |
 | 13 — Il permesso prima dell'azione | `M13.8` | Proposta | Un file che vive su una macchina: quale disco, e chi lo dice |
 | 13 — Il permesso prima dell'azione | `M13.9` | Implementata | Il browser con i tuoi account: un Chrome di ELA che dura, e le password che restano in Bitwarden |
-| 13 — Il permesso prima dell'azione | `M13.10` | Proposta | Più passi e i file: una sessione del browser fra gli step, una sequenza di gesti, e i file che entrano ed escono |
+| 13 — Il permesso prima dell'azione | `M13.9b` | Proposta | La pagina d'errore del browser non è un altro sito |
+| 13 — Il permesso prima dell'azione | `M13.10` | Implementata | Più passi e i file: una sessione del browser fra gli step, una sequenza di gesti, e i file che entrano ed escono |
+| 13 — Il permesso prima dell'azione | `M13.10b` | Proposta | La domanda a occhio del login, nella prova di M13.10, chiede ciò che non mostra |
 | 13 — Il permesso prima dell'azione | `M13.11` | Proposta | Il browser sul PC: le capacità di M13.9 e M13.10 sul nodo Windows, e il verdetto che torna in busta |
 | 13 — Il permesso prima dell'azione | `M13.12` | Implementata | Le policy di §59: una policy che Tommaso si crea rende autonoma un'azione `MEDIUM`, a partire da `browser.guided` |
+| 13 — Il permesso prima dell'azione | `M13.13` | Proposta | I file dal browser: uno scaricamento è un `fs.write`, un caricamento un `fs.read` |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.1` | Implementata | Il tetto di spesa: la chiave di ELA, e un limite che ELA fa rispettare |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.1b` | Implementata | La docstring del tetto dice il secondo tetto giusto: il limite dell'organizzazione |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.2` | Implementata | Il Planner: ELA scrive i piani da sola |
@@ -165,11 +168,11 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **64** | `docs/adr/NNNN-*.md` |
-| Milestone | **90, di cui 74 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
-| Regole di architettura | **70** | `RULES` in `tests/architecture/` |
+| ADR scritti | **65** | `docs/adr/NNNN-*.md` |
+| Milestone | **93, di cui 75 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Regole di architettura | **71** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **15** | `pyproject.toml` |
-| Port | **35** | i `Protocol` di `src/ela/ports.py` |
+| Port | **36** | i `Protocol` di `src/ela/ports.py` |
 | Capability di produzione | **18** | `production_catalogue()` |
 | Rotte dell'API | **72** | i `router` di `ela.api` |
 | Comandi della CLI | **39** | l'albero Typer di `ela.cli` |
@@ -234,6 +237,14 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
   [ADR 0062](adr/0062-policies.md) è Accettata. ***Annotato il 2026-10-13***: **M13.9 è fatta**, con le sue riparazioni
   sullo stesso branch — M13.4b, M13.4c, M13.4e e M13.4f —: la prova a mano è passata sul Mac a `6d3c470`, e
   [ADR 0063](adr/0063-browser-with-your-accounts.md) e [ADR 0064](adr/0064-browser-boundary.md) sono Accettate.
+  ***Annotato il 2026-10-14***: dalla review della SPEC di M13.10 (decisione 21) è registrata **M13.13** — i file
+  dal browser: uno scaricamento come un `fs.write`, un caricamento come un `fs.read` —, il pezzo dei file che esce
+  da M13.10; e, dalla review della sua implementazione (decisione 57), una riparazione di M13.9, **M13.9b** (la
+  pagina d'errore del browser non è un altro sito), che si fa sul branch di M13.13 prima del suo codice.
+  ***Annotato il 2026-10-29***: **M13.10 è fatta**: la prova a mano è passata sul Mac a `4490e15`, e
+  [ADR 0065](adr/0065-browser-steps.md) è Accettata, per decisione di Tommaso di quel giorno (decisione 76 di M13.10).
+  Dalla stessa review (decisione 77) è registrata una riparazione dello script di quella prova, **M13.10b** (la
+  domanda a occhio del login chiede ciò che non mostra), fuori dalla fila.
   L'ordine e le condizioni stanno nella voce 5.11, e la fila che attraversa le fasi nella 5.10.
 - **Fase 12 — i nodi. È chiusa** (2026-09-20, con M12.5). ELA ha smesso di essere un processo su
   una macchina e di essere usabile solo davanti a quella macchina: un'identità provabile per un
@@ -647,6 +658,15 @@ della sua registrazione. Dopo M13.4, in quest'ordine:
    sezione 25, punto 2 — il giro conforme del costo (decisione 161), fatto, e la risposta alla domanda 165;
    ***annotato la notte dello stesso giorno***: decisa (c) — **il merge si fa**, e lo sforamento di M13.9, il
    12,65 % contro una soglia del 10 %, è un debito datato a carico di M9.5 (ADR 0063 §12; la sezione 6, qui sotto);
+   ***annotato il 2026-10-14***, dalla review della SPEC di M13.10 (decisione 21): **i file escono da M13.10 e
+   diventano M13.13**, registrata lo stesso giorno, che sta **subito dopo M13.10 e prima di M13.11** — l'ordine è
+   M13.10, M13.13, M13.11; ***annotato il 2026-10-14***, più tardi, dalla review dell'implementazione di M13.10
+   (decisione 57): **M13.9b** — la pagina d'errore del browser non è un altro sito — sta **sul branch di M13.13,
+   prima del suo codice**, come M13.4b sul branch di M13.9, e non entra nella testa del merge di M13.10;
+   ***annotato il 2026-10-29***: **M13.10 è fatta**, con la prova a mano passata a `4490e15`, e ADR 0065 è Accettata
+   per decisione di Tommaso (decisione 76 di M13.10): il merge lo fa Tommaso; **M13.10b** — la domanda a occhio del
+   login, nella prova di M13.10, chiede ciò che non mostra — è registrata **fuori dalla fila** (decisione 77), e si
+   ripara prima che un altro script della prova parta da `scripts/prova_m13_10.py`;
 7. **M13.5**, con la condizione d'ingresso invariata: se il grant TCC non tiene, apre la milestone
    dell'eseguibile firmato (5.11);
 8. **M14.4**, il computer guidato dal modello, subito dopo M13.5;
@@ -965,11 +985,36 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   domanda che nomina il file. **Dopo M13.9.** ***Annotato il 2026-10-10***: **riceve WhatsApp Web nella sua prova a
   mano**, dalla review della SPEC di M13.9 (decisione 37) — sul numero di Tommaso, un messaggio a se stesso, un
   tentativo solo —: in M13.9 quel passo poteva essere solo saltato, perché l'elemento del click compare dopo la
-  scrittura, ed è questa la milestone che aspetta ogni elemento quando serve.
+  scrittura, ed è questa la milestone che aspetta ogni elemento quando serve. ***Annotato il 2026-10-14***: la
+  review della sua SPEC (decisione 21) **ne toglie i file**, che diventano M13.13; M13.10 porta la sequenza di
+  gesti, ciò che il sì ha nominato, la pagina che dura fra gli step e il login chiesto dal modello. ***Annotato il
+  2026-10-15***: dalla review della sua implementazione (decisioni 61 e 62), **WhatsApp Web esce dalla prova di
+  M13.10**: con il profilo di ELA la pagina non è andata oltre la barra di caricamento nella prima misura. Il fatto,
+  con il file della misura e i candidati della causa, è in ADR 0065 §5; **nessuna milestone finché la causa non è
+  nota**, e la decisione 23 di M13.9 resta valida per quella che lo riprenderà. ***Annotato il 2026-10-29***:
+  **fatta**, con la prova a mano passata sul Mac a `4490e15`, e ADR 0065 è Accettata per decisione di Tommaso di quel
+  giorno (decisione 76): la domanda a occhio del login chiedeva della risposta del modello senza mostrarla, e ciò che
+  proteggeva la macchina l'aveva verificato nella stessa prova.
+- **M13.13 — i file dal browser** (§19, §18). **Registrata il 2026-10-14**, dalla review della SPEC di M13.10
+  (decisione 21): uno scaricamento è giudicato come un `fs.write`, un caricamento come un `fs.read`, con la
+  domanda che nomina il file. **Subito dopo M13.10, prima di M13.11.** **Condizione d'ingresso**: il sito per il
+  caricamento, che Tommaso sceglie fra candidati guardati senza entrare.
+- **M13.9b — la pagina d'errore del browser non è un altro sito** (§19, §33; ADR 0064 §4). **Registrata il
+  2026-10-14** dalla review dell'implementazione di M13.10 (decisione 57): con il confine dell'origine del sito,
+  un sito che non risponde al login — il browser mostra la sua pagina d'errore, `chrome-error://chromewebdata/` —
+  è raccontato `browser.left_site`, una diagnosi falsa; verificato con il finto. **Sul branch di M13.13, prima del
+  suo codice**; non entra nella testa del merge di M13.10 ([`milestones/M13.9b.md`](milestones/M13.9b.md)).
+- **M13.10b — la domanda a occhio del login, nella prova di M13.10, chiede ciò che non mostra** (§63). **Registrata il
+  2026-10-29** dalla review dopo la prova passata di M13.10 (decisione 77): la domanda `4.occhio` della sezione 29
+  chiedeva della risposta del modello «nel file», e né il file né lo schermo la portavano; un blocco `schermo` con i
+  risultati della sessione prima della domanda, la domanda senza ciò che l'occhio non vede, un test dei documenti che
+  deriva la regola, e il test che ELA non scrive mai nel vault, nominato o scritto. **Fuori dalla fila**: si ripara
+  prima che un altro script della prova parta da `scripts/prova_m13_10.py`; non entra nella testa del merge di M13.10
+  ([`milestones/M13.10b.md`](milestones/M13.10b.md)).
 - **M13.11 — il browser sul PC** (§19, §56). **Registrata il 2026-09-30**: le capacità di M13.9 e M13.10
   sul nodo Windows, con il verifier sul nodo e il verdetto in busta (ADR 0048 §7); rivede la decisione 1
   di M13.4. **Condizione d'ingresso: una misura sul PC** di che cosa lo Smart App Control lascia partire
-  e della CLI di Bitwarden. **Dopo M13.10.**
+  e della CLI di Bitwarden. **Dopo M13.10.** ***Annotato il 2026-10-14***: dopo M13.13.
 
 **Che cosa la Fase 13 non porta.**
 
@@ -1065,7 +1110,8 @@ della SPEC di M14.3); M14.5 resta fuori dalla fila.
   nome di Tommaso chiede ogni volta; «cercare» è navigare, un `browser.read`. È lavoro agentico (5.7).
   **Dopo M14.2**, e non aspetta M13.9: le pagine pubbliche non vogliono il login, e WhatsApp Web, che lo
   vuole, passa nella prova a mano di M13.9. ***Annotato il 2026-10-10***: nella prova a mano di **M13.10**
-  (decisione 37 della review della SPEC di M13.9).
+  (decisione 37 della review della SPEC di M13.9). ***Annotato il 2026-10-15***: ne esce anche lì, finché la causa
+  della barra di caricamento ferma non è nota (ADR 0065 §5).
 - **M14.4 — il computer guidato dal modello** (§20). **Registrata il 2026-09-30** dalla review della
   registrazione: il meccanismo di M14.3 riusato sullo schermo, sotto la 5.7, sopra la capability di M13.5.
   **Subito dopo M13.5**, e se M13.5 non entra non entra nemmeno lei.
@@ -1127,6 +1173,7 @@ pagato da chi doveva.
 | ADR 0048 §9 — il terminale su un nodo, ridichiarato | 2026-09-25 | di M13.7 | **aperto** |
 | ADR 0048 §10 — il residuo di Linux del terminale, ridichiarato | 2026-09-25 | di M13.7 | **aperto** |
 | ADR 0063 §12 — il costo dei test di M13.9, sopra la soglia di ADR 0052 §16 | 2026-10-13 | di M9.5, la milestone sulla disciplina della suite | **aperto** |
+| ADR 0065 §6 — un processo del browser lasciato su ubuntu da un test non identificato | 2026-10-14 | di M13.13, la milestone dei file dal browser | **aperto** |
 | ADR 0035 §7 — i numeri in coda a `CONSTANTS` non contano più niente | 2026-09-09 | della milestone sulla disciplina della suite | saldato da ADR 0036 §10 |
 | ADR 0036 §12 — `PROVIDER_CALLED` non lo scrive nessuno | 2026-09-10 | di chi aggiungerà il prossimo `AuditEventType` | saldato da ADR 0037 §14 |
 | ADR 0044 §8 — il battito di `local`, e la prima vista che l'ha reso visibile | 2026-09-20 | della Fase 13 | saldato da ADR 0048 §2 |

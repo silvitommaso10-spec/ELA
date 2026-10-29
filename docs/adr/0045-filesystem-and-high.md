@@ -5,6 +5,7 @@
   **ADR 0059 §9** (M13.1e): §12-bis, «le altre superfici sono di M13.1e» (come ADR 0055 §6 l'aveva riletto) — fatto: ogni lettore di `docs/outcomes.txt` che mostra un task finito ne mostra il perché, o dice perché no.
   **Riletta da ADR 0062 (M13.12)** il 2026-10-09: il predicato in un posto solo di §3 è `asks_at_every_use` per la riga e `shortfall` per una policy.
   **Riletta da ADR 0063 (M13.9)** il 2026-10-11: §3: una riga che chiede a meno di un'autorizzazione ha un terzo modo di essere coperta, che non è un grant — la copertura di sessione (ADR 0063 §1).
+  **Rivista da ADR 0065 (M13.10)** il 2026-10-14: §6-bis, «non serve un secondo canale per far viaggiare il fatto approvato»: per ciò che la domanda nomina e il piano non porta serve, ed è `named` (ADR 0065 §2); §4, `prospect` riceve il task, facoltativo (ADR 0065 §3).
 - **Data:** 2026-09-21
 - **Riferimenti spec:** §18, §23, §27, §28, §29, §33, §37, §57, §59, §63
 - **Milestone:** M13.1

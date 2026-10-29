@@ -1,0 +1,65 @@
+{
+  "_nota": [
+    "La sezione 29 della guida, passo 5 (M13.10, ADR 0065 §3): il piano del passo 2, con il secondo step che chiede il suo sì — una lettura che uno step chiede di approvare (decisione E di M4). Fra i due step la pagina del primo aspetta la risposta: è il momento in cui il passo ferma ELA, e guarda che non resti niente.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "compilare il modulo di httpbin.org e fermarsi prima di leggere, con la pagina che aspetta",
+  "steps": [
+    {
+      "id": "c0de1a28-0000-4b00-8a00-000000001010",
+      "goal": "riempire il modulo e inviarlo",
+      "required_capabilities": [
+        "browser.act"
+      ],
+      "arguments": {
+        "site": "httpbin.org",
+        "path": "/forms/post",
+        "fill": [
+          [
+            "input[name=custname]",
+            "ELA prova 7431"
+          ],
+          [
+            "input[name=custtel]",
+            "0000"
+          ],
+          [
+            "textarea[name=comments]",
+            "due passi, una pagina"
+          ]
+        ],
+        "click": "form button",
+        "expect_text": "ELA prova 7431",
+        "purpose": "la prova a mano di più passi (M13.10)"
+      },
+      "risk": "HIGH",
+      "expected_result": "la pagina dopo l'invio mostra ciò che il sito ha ricevuto",
+      "success_conditions": [
+        "browser.expect_visible"
+      ],
+      "requires_authorization": true
+    },
+    {
+      "id": "c0de1a28-0000-4b00-8a00-000000001011",
+      "goal": "leggere la pagina che il primo step ha lasciato, dopo un sì",
+      "required_capabilities": [
+        "browser.read"
+      ],
+      "arguments": {
+        "site": "httpbin.org",
+        "continues": true,
+        "selector": "pre:has-text(\"ELA prova 7431\")",
+        "purpose": "la prova a mano di più passi (M13.10)"
+      },
+      "risk": "LOW",
+      "expected_result": "il testo che il sito ha ricevuto, con il nome",
+      "success_conditions": [
+        "browser.text_matches"
+      ],
+      "requires_authorization": true,
+      "dependencies": [
+        "c0de1a28-0000-4b00-8a00-000000001010"
+      ]
+    }
+  ]
+}

@@ -56,6 +56,7 @@ from ela.domain import (
     TaskId,
 )
 from ela.executive import Assignments, Executor, TaskRunner
+from ela.executive.pages import PageRoom
 from ela.executive.planner import Planner
 from ela.executive.sessions import SessionRoom
 from ela.executive.spending import SpendingGate
@@ -283,6 +284,9 @@ class Ela:
     sessions: SessionRoom
     """The room of the guided sessions (M14.3, ADR 0060): every gesture a child task, each
     session's budget and token — what the gateway's route reads, and the cancel route stops."""
+    pages: PageRoom
+    """The room of the pages a task keeps between two of its steps (M13.10, ADR 0065 §3): what
+    the five tools of the two browsers leave and take, and what ``GET /browser`` says waits."""
     agents: AgentSession
     """The sessions of Claude Code themselves (M14.3, ADR 0060): on ``Ela`` for the reason
     ``speech_dir`` is — the start-up sweep lives in the ``lifespan``, and ``ela.api`` reaches this
@@ -481,6 +485,7 @@ class Ela:
 
         try:
             try:
+                await self.pages.stopped()
                 await self.vault.stopped()
             finally:
                 names = await _settled((self.browser, self.accounts), grace)
@@ -973,8 +978,20 @@ async def build(
             spending=spending,
             gateway=anthropic_gateway(settings=settings.anthropic),
             running=running,
+            audit=audit,
         )
         agents = ClaudeAgentSession(sessions_dir_beside(settings.captures.capture_dir))
+        # The room of the pages a task keeps between two of its steps (M13.10, ADR 0065 §3):
+        # before the tools, which are handed it, and receiving nothing after — it hears a task end
+        # from the engine's stop of that task, and ELA's own from the stop of ELA.
+        pages = PageRoom(
+            repository=repository,
+            approvals=approvals,
+            authorizations=authorizations,
+            ends=engine.stop_signal,
+            stopping=stopping,
+            clock=clock,
+        )
         tools = production_tools(
             root=root,
             clock=clock,
@@ -1005,6 +1022,7 @@ async def build(
             accounts=accounts,
             vault=door,
             not_now=while_the_user_signs_in(accounts),
+            pages=pages,
         )
         verifiers = production_verifiers(
             root=root,
@@ -1179,6 +1197,7 @@ async def build(
         runner=runner,
         running=running,
         sessions=sessions,
+        pages=pages,
         agents=agents,
         planner=planner,
         assignments=assignments,

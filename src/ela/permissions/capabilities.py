@@ -50,7 +50,7 @@ from ela.permissions.errors import (
     RiskNotAllowedError,
 )
 from ela.permissions.rows import no_policy_for, no_session_covers, no_session_of
-from ela.ports import AlreadyExistsError
+from ela.ports import CONTINUES, AlreadyExistsError
 
 __all__ = [
     "CORE_ECHO",
@@ -535,6 +535,12 @@ EXPECT_MAX_LENGTH: Final = 256
 FILLS_MAX: Final = 20
 """The limits of a browser call, **decisions and not measures** (M13.4 form H): enough for a contact
 form and an address with its query, and a ceiling to what a question makes somebody read."""
+CONTINUES_SCHEMA: Final[dict[str, JsonValue]] = {"type": "boolean", "const": True}
+"""``continues`` (M13.10, ADR 0065 §3): ``true`` or absent — a step that continues on the page the
+step right before it left says so, and nothing else does."""
+OPENS_OR_CONTINUES: Final[list[JsonValue]] = [{"required": ["path"]}, {"required": [CONTINUES]}]
+"""Exactly one of ``path`` and ``continues`` (decision 29 of the review of M13.10's SPEC): a step of
+the browser opens a page, or continues on the one its task keeps — never both, never neither."""
 ENTRY_MAX_LENGTH: Final = 64
 """How long the id of an entry of the vault may be, in ``browser.login``: an id of Bitwarden's is
 thirty-six characters — a decision with room, not a measure of every vault."""
@@ -1133,8 +1139,10 @@ def browser_read(sites: Sequence[str] = UNDECLARED_SITES) -> CapabilitySpec:
                     "minLength": 1,
                     "maxLength": SELECTOR_MAX_LENGTH,
                 },
+                CONTINUES: CONTINUES_SCHEMA,
             },
-            "required": ["site", "path", "purpose"],
+            "required": ["site", "purpose"],
+            "oneOf": OPENS_OR_CONTINUES,
             "additionalProperties": False,
         },
         scope=tuple(sites),
@@ -1191,8 +1199,10 @@ def browser_act(sites: Sequence[str] = UNDECLARED_SITES) -> CapabilitySpec:
                     "maxLength": EXPECT_MAX_LENGTH,
                 },
                 "purpose": {"type": "string", "minLength": 1},
+                CONTINUES: CONTINUES_SCHEMA,
             },
-            "required": ["site", "path", "fill", "click", "expect_text", "purpose"],
+            "required": ["site", "fill", "click", "expect_text", "purpose"],
+            "oneOf": OPENS_OR_CONTINUES,
             "additionalProperties": False,
         },
         scope=tuple(sites),
@@ -1274,7 +1284,8 @@ def browser_login(sites: Sequence[str] = UNDECLARED_SITES) -> CapabilitySpec:
     site's.
 
     The username and the password in the same page: a login in more pages is a sequence, and is
-    not this capability.
+    not this capability. ``expect_text`` is **optional** since M13.10 (ADR 0065 §4, decision 31 of
+    the review of its SPEC): without it the verifier looks for the form to be gone.
     """
     selector: dict[str, JsonValue] = {
         "type": "string",
@@ -1312,7 +1323,6 @@ def browser_login(sites: Sequence[str] = UNDECLARED_SITES) -> CapabilitySpec:
                 "username_field",
                 "password_field",
                 "click",
-                "expect_text",
                 "purpose",
             ],
             "additionalProperties": False,

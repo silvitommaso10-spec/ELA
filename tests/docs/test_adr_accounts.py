@@ -34,6 +34,9 @@ from ela.tools.base import Perceiving
 from ela.tools.guided import SESSION_AS_YOU, BrowserGuidedTool, BrowserGuidedVerifier
 from tests.architecture.rules import RULES
 from tests.contracts.protocols import members, port_protocols
+from tests.docs.guided_ports import STEPS_PORTS
+from tests.docs.steps_additions import added_members as steps_members
+from tests.docs.steps_additions import rewritten_rows, rewritten_verifier_rows
 from tests.docs.test_adr_browser import CODE, TOOL_ROW, VERIFIER_ROW, codes
 from tests.docs.test_adr_cli import coded_commands
 from tests.docs.test_adr_composition import coded_routes
@@ -72,7 +75,10 @@ def test_the_conseguenze_count_the_totals_as_this_adr_saw_them() -> None:
         "the-profile-s-folder-is-its-adapter-s",
     }
     assert "**quindici**" in text and len(contracts) == 15
-    assert "**trentacinque**" in text and len(tuple(port_protocols())) == 35
+    assert (
+        "**trentacinque**" in text
+        and len(tuple(p for p in port_protocols() if p.__name__ not in STEPS_PORTS)) == 35
+    )
     assert "**settantadue**" in text and len(coded_routes()) == 72
     assert "**trentanove**" in text.split("i port diventano", 1)[1].split("le rotte", 1)[1]
     assert len(coded_commands()) == 39
@@ -103,6 +109,8 @@ def test_the_tool_rows_are_the_running_tools() -> None:
     }
 
     assert set(rows) == set(running)
+    # Where ADR 0065 (M13.10) wrote a row again, that row wins: an accepted ADR is not rewritten.
+    rows |= {capability: row for capability, row in rewritten_rows().items() if capability in rows}
     for capability, tool in running.items():
         _, class_name, name, idempotent, errors, numbers = rows[capability]
         assert class_name == tool.__name__
@@ -126,6 +134,8 @@ def test_the_verifier_rows_are_the_running_verifiers() -> None:
     )
 
     assert set(rows) == {verifier.capability_id for verifier in running}
+    # Where ADR 0065 (M13.10) wrote a row again, that row wins: an accepted ADR is not rewritten.
+    rows |= rewritten_verifier_rows()
     for verifier in running:
         _, class_name, name, conditions, failures = rows[verifier.capability_id]
         assert class_name == type(verifier).__name__
@@ -137,18 +147,25 @@ def test_the_verifier_rows_are_the_running_verifiers() -> None:
 
 
 def test_the_port_row_is_the_running_port() -> None:
+    """This ADR's row, and what ADR 0065 (M13.10) added to it."""
     line = next(line for line in adr_text().splitlines() if line.startswith("| `AccountBrowser` |"))
+    here, later = frozenset(CODE.findall(line.split("|")[4])), steps_members()["AccountBrowser"]
 
-    assert frozenset(CODE.findall(line.split("|")[4])) == frozenset(members(AccountBrowser))
+    assert not here & later
+    assert here | later == frozenset(members(AccountBrowser))
 
 
 def test_a_tool_row_that_forgets_a_code_is_found() -> None:
     """The negative case of the comparison above: one code less in a row is one code less read."""
     row = next(line for line in adr_text().splitlines() if TOOL_ROW.match(line))
-    match = TOOL_ROW.match(row.replace("`browser.profile_busy`, ", "", 1))
+    whole, match = (
+        TOOL_ROW.match(row),
+        TOOL_ROW.match(row.replace("`browser.profile_busy`, ", "", 1)),
+    )
 
-    assert match is not None
-    assert codes(match.group(5)) == AccountReadTool.error_codes - {"browser.profile_busy"}
+    assert whole is not None and match is not None
+    assert "browser.profile_busy" in codes(whole.group(5)) <= AccountReadTool.error_codes
+    assert codes(match.group(5)) == codes(whole.group(5)) - {"browser.profile_busy"}
 
 
 # ----------------------------------------------------------------------------------------

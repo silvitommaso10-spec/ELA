@@ -113,6 +113,8 @@ __all__ = [
     "AuthorizationRevokedError",
     "AuthorizationStore",
     "AuthorizingGuardianPort",
+    "BROWSER_EXPECT_VISIBLE",
+    "BROWSER_LOGIN_FORM_GONE",
     "Bell",
     "Browser",
     "BrowserError",
@@ -120,6 +122,7 @@ __all__ = [
     "BrowserNotInstalled",
     "BrowserStopped",
     "BrowserUnsupported",
+    "CONTINUES",
     "CallRequest",
     "CapabilityRegistryPort",
     "Captured",
@@ -137,6 +140,7 @@ __all__ = [
     "EnrollmentStore",
     "ExecutionResultStore",
     "Field",
+    "FormField",
     "Forwarded",
     "GUIDED_CACHE",
     "GUIDED_CAP_BELOW_ONE_CALL",
@@ -177,6 +181,10 @@ __all__ = [
     "LISTEN_TRANSCRIPTION_FAILED",
     "LISTEN_TRANSCRIPTION_UNAVAILABLE",
     "LISTEN_UNSUPPORTED",
+    "LOGIN_FORM",
+    "LOGIN_FORM_AMBIGUOUS",
+    "LOGIN_FORM_NOT_FOUND",
+    "LOGIN_TOOL",
     "Landed",
     "LeftSite",
     "ListeningPort",
@@ -186,6 +194,7 @@ __all__ = [
     "ModelRouterPort",
     "NAVIGATION",
     "NOT_HELD",
+    "NO_LOGIN_FORM",
     "NoWindow",
     "NotAllowedError",
     "NotFoundError",
@@ -193,6 +202,7 @@ __all__ = [
     "OpenedSession",
     "PROFILE_PROCESS",
     "PROFILE_STEP",
+    "PROFILE_TASK",
     "PROFILE_WINDOW",
     "PROVIDER_AUTHENTICATION_ERROR",
     "PROVIDER_BAD_REQUEST",
@@ -210,6 +220,7 @@ __all__ = [
     "PROVIDER_UNKNOWN_MODEL_HINT",
     "PROVIDER_UNREACHABLE",
     "PROVIDER_UNSUPPORTED_PARAMETER",
+    "PageForm",
     "PageGone",
     "PerceptionProbe",
     "PermissionGuardianPort",
@@ -252,10 +263,12 @@ __all__ = [
     "SessionHost",
     "SessionPlan",
     "SessionTally",
+    "SessionTool",
     "SiteUnreachable",
     "SpeechPort",
     "StopPoint",
     "Target",
+    "TaskPages",
     "TaskRepository",
     "TaskStop",
     "TextRecognitionPort",
@@ -279,6 +292,7 @@ __all__ = [
     "VerifierPort",
     "VerifierRegistryPort",
     "Visit",
+    "WaitingPage",
     "WireCode",
     "audited_numbers",
     "check_answer",
@@ -1529,6 +1543,12 @@ class Prospect:
     guided: Guided | None = None
     """What a guided session of the browser would be, when the call is one (M14.3, ADR 0060);
     ``None`` otherwise."""
+    named: JsonMapping | None = None
+    """**What the tool found composing the question, and must use after the yes** (M13.10,
+    ADR 0065): for a login, the id of the entry of the vault the question named. The executor
+    keeps it beside the approval, never shows it, never writes it in the audit, and hands it back
+    to :meth:`ToolPort.execute` with the yes — so the yes stays bound to what the user read, across
+    a restart too, and no tool remembers anything between the question and the yes."""
 
 
 def audited_numbers(declared: frozenset[str], output: JsonMapping) -> dict[str, JsonValue]:
@@ -1669,8 +1689,13 @@ class ToolPort(Protocol):
         its own into a log that is never redacted, built narrow (ADR 0047).
         """
 
-    async def prospect(self, arguments: JsonMapping) -> Prospect:
+    async def prospect(self, arguments: JsonMapping, task: TaskId | None = None) -> Prospect:
         """What this call would meet now: what to show, and whether to ask at all.
+
+        ``task`` is the task the call is a step of, when the asker knows it (M13.10, ADR 0065 §3;
+        decision 25 of the review of its SPEC): a step that continues on a page asks whether
+        **its** task has one. The route of the policies does not pass it, and a tool that does
+        not continue does not read it.
 
         Read-only and **not an execution**: it is how a question learns the facts it must name
         before anybody answers it, and how the executor learns that there is nothing to ask
@@ -1717,12 +1742,19 @@ class ToolPort(Protocol):
         """
 
     async def execute(
-        self, decision: PermissionDecision, arguments: JsonMapping, stop: TaskStop
+        self,
+        decision: PermissionDecision,
+        arguments: JsonMapping,
+        stop: TaskStop,
+        named: JsonMapping | None = None,
     ) -> ExecutionResult:
         """Run the capability under ``decision``; :class:`NotAllowedError` if it does not allow.
 
         ``stop`` is the stop of the task (M6.3c): the tool calls :meth:`TaskStop.listen` at its
-        point, and :class:`ToolStopped` leaves the call there, before any effect."""
+        point, and :class:`ToolStopped` leaves the call there, before any effect. ``named`` is
+        what :attr:`Prospect.named` said when the question of this call was composed, handed back
+        by the executor from the approval that gave the grant (M13.10, ADR 0065) — ``None`` when
+        no question was asked, and on a node, where it never travels."""
 
 
 @runtime_checkable
@@ -2776,6 +2808,9 @@ class LeftSite(BrowserError):
 
 PROFILE_STEP: Final = "step"
 """The profile is held by a page of ELA's own: a step that is running."""
+PROFILE_TASK: Final = "task"
+"""The profile is held by a page a task of ELA's keeps **between two of its steps** (M13.10, ADR
+0065 §3): no step is running on it, nobody is typing into it, and the stop of that task ends it."""
 PROFILE_WINDOW: Final = "window"
 """The profile is held by the window ELA opened for the user to sign in by hand."""
 PROFILE_PROCESS: Final = "process"
@@ -2807,8 +2842,8 @@ class ProfileUnsafe(BrowserError):
 
 class ProfileBusy(BrowserError):
     """A process already holds the profile, and ELA does not launch a second one on a folder it
-    found held: ``by`` is one of :data:`PROFILE_STEP`, :data:`PROFILE_WINDOW` and
-    :data:`PROFILE_PROCESS`. Retryable: what holds it ends."""
+    found held: ``by`` is one of :data:`PROFILE_STEP`, :data:`PROFILE_TASK`,
+    :data:`PROFILE_WINDOW` and :data:`PROFILE_PROCESS`. Retryable: what holds it ends."""
 
     def __init__(self, by: str) -> None:
         super().__init__(f"the profile of ELA's browser is held ({by})")
@@ -2824,12 +2859,18 @@ class Opened:
     ``left`` the address of a navigation of the main frame that the boundary refused — the request
     was never sent —, ``None`` when there was none. An address and not an origin: what an origin is,
     the tool says, once (``ela.tools.browser.origin_of``).
+
+    ``waited`` is what only a page taken back with :meth:`Browser.resume` has (M13.10, ADR 0065
+    §3): the address of the last navigation the boundary refused **while the page waited between
+    two steps** of its task — nobody's step, and so nobody's failure —, ``None`` when nothing was
+    refused meanwhile and for a page just opened.
     """
 
     page: str
     status: int | None
     address: str
     left: str | None
+    waited: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -2884,6 +2925,12 @@ class Glanced:
     left: str | None
     second_factor: bool | None = None
     another: AnotherPage | None = None
+    found: int | None = None
+    """How many elements the selector finds on the page now — ``None`` when no selector was
+    asked (M13.10, ADR 0065 §4): what tells a login form that is gone from one that is still there,
+    where ``text`` says ``None`` for zero **and** for two."""
+    status: int | None = None
+    """The status of the document the page is on now, ``None`` when none came back (M13.10)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -2947,8 +2994,8 @@ class Browser(Protocol):
     * **every use of a page asks** ``allowed`` **where the page is**, before the use and once it
       is made, and raises :class:`LeftSite` when the page is not inside: nothing is read,
       written or looked at there, and what was read on a page that ended elsewhere meanwhile is
-      thrown away. All the members that are given a page, but :meth:`keep`, :meth:`close` and
-      :meth:`another`;
+      thrown away. All the members that are given a page, but :meth:`keep`, :meth:`close`,
+      :meth:`another`, :meth:`hold` and :meth:`where`;
     * ELA works on **one page**. Of a page that one opens **no document leaves** — not its
       navigation, not a link, not a form, not a frame written in it —, nothing of it is read,
       and :meth:`another` says it was opened. What the first page has loaded in an empty page it
@@ -2963,6 +3010,10 @@ class Browser(Protocol):
       by its opening (M13.4c);
     * a page kept with :meth:`keep` waits for :meth:`glance`, and an implementation closes it
       itself if nobody looks before its deadline;
+    * a page held with :meth:`hold` waits for :meth:`resume` or :meth:`close`, **and nothing of
+      the implementation's own closes it** — not the verifier's look, not a deadline —: whoever
+      holds it closes it (M13.10, ADR 0065 §3). Its browser, its cookies and whatever the page does
+      by itself last until then;
     * when :meth:`close` returns, the kernel knows no process of that page's browser any more.
     """
 
@@ -2985,6 +3036,13 @@ class Browser(Protocol):
 
     async def count(self, page: str, selector: str) -> int:
         """How many elements ``selector`` finds on the page."""
+
+    async def appeared(self, page: str, selector: str) -> int:
+        """Wait until ``selector`` finds **one visible element** on the page, and answer how many
+        elements it finds then (M13.10, ADR 0065): ``1``, or more than one when the engine finds
+        several — which it says at once, also when one of them is hidden. **No deadline of its
+        own**: the time of the tool is the one, and a wait that is cancelled leaves the page
+        usable. Never ``0``: an element that is not there is waited for."""
 
     async def field(self, page: str, selector: str) -> Field:
         """What the one element ``selector`` finds declares of itself."""
@@ -3019,11 +3077,39 @@ class Browser(Protocol):
     async def glance(
         self, page: str, *, selector: str | None, expect: str | None, seconds: float
     ) -> Glanced:
-        """The verifier's one look, and the page is released with it.
+        """The verifier's one look, and the page is released with it — **unless it is held**
+        (:meth:`hold`): a held page is looked at and stays.
 
         The text under ``selector`` when one is asked (or of the page, when ``selector`` is ``None``
         and ``expect`` is too), and whether ``expect`` appeared within ``seconds``.
         """
+
+    async def hold(self, page: str) -> None:
+        """Hand the page over to a task, **between two of its steps** (M13.10, ADR 0065 §3): it
+        stays open until :meth:`resume` or :meth:`close`. The verifier's :meth:`glance` looks at it
+        and does not close it, and a deadline :meth:`keep` started does not run any more.
+
+        Never raises: a page that is not there any more is found gone by the step that continues.
+        """
+
+    async def resume(self, page: str, allowed: Callable[[str], bool]) -> Opened:
+        """Take back a page held with :meth:`hold`, **with the boundary of the step that
+        continues** in the place of the one it was opened with — in what judges the browser's
+        requests and in every use of the page after —, and ask that boundary where the page is.
+
+        What it returns is the page as it is now: where its main frame is, the status of the
+        document it is on, and :attr:`Opened.waited`; :attr:`Opened.left` is ``None``, and what
+        :meth:`left` says from here on is the step's own. The page is not held any more.
+
+        :raises LeftSite: the page is outside the new boundary — nothing of it is said.
+        :raises PageGone, BrowserStopped, BrowserFailed:
+        """
+
+    async def where(self, page: str) -> str | None:
+        """Where a page is now: the address of its main frame as the implementation knows it, with
+        no call to the browser — ``None`` for a page that is not there any more. **Not a use of
+        the page**: nothing of it is read but where it is, which the question of a step that
+        continues names without its query (M13.10, ADR 0065 §3). Never raises."""
 
     async def close(self, page: str) -> None:
         """Close the page and its browser; nothing of it runs when this returns. Idempotent, and
@@ -3046,6 +3132,30 @@ class NoWindow(BrowserError):
     """A page was asked **with a window**, and this ELA cannot be given one — the system did not
     say that its process is inside a session of the screen. Nothing was launched: a page asked
     with a window is never opened without (M13.9, decision 143 of the review of 2026-10-13)."""
+
+
+@dataclass(frozen=True, slots=True)
+class FormField:
+    """One element of a form, **as it declares itself** (M13.10, ADR 0065 §4): its tag and its
+    type, its name and its ``autocomplete`` — lower-cased, empty when absent — and whether it is
+    visible. Never its value, never a label, never a text: what a login form is, the tool
+    decides from these alone."""
+
+    tag: str
+    type: str
+    name: str
+    autocomplete: str
+    visible: bool
+
+
+@dataclass(frozen=True, slots=True)
+class PageForm:
+    """A form of a page that holds a field of type ``password``, its ``input`` and ``button``
+    elements in the order of the document (M13.10). ``in_a_form`` is ``False`` for the password
+    fields of the page that are in no form, gathered as one."""
+
+    fields: tuple[FormField, ...]
+    in_a_form: bool = True
 
 
 @runtime_checkable
@@ -3109,6 +3219,11 @@ class AccountBrowser(Browser, Protocol):
         the status of that document. An event of the page — its document parsed —, with no time
         of its own: the tool's deadline is around it, as around every other call."""
 
+    async def forms(self, page: str) -> tuple[PageForm, ...]:
+        """The forms of the page that hold a field of type ``password``, each element as it
+        declares itself (M13.10, ADR 0065 §4) — what the read with the profile finds a login form
+        in. A use of the page like any other: the boundary is asked before and after."""
+
     async def occupied(self) -> str | None:
         """Who holds the profile now — :data:`PROFILE_STEP`, :data:`PROFILE_WINDOW`,
         :data:`PROFILE_PROCESS` —, or ``None`` when it is free. Derived at every call, never
@@ -3142,8 +3257,10 @@ class AccountBrowser(Browser, Protocol):
         never with its group, and only if the system still says that process is that browser.
 
         :raises ProfileBusy: ``by`` :data:`PROFILE_STEP` — a page ELA drives ends with its step,
-            or with the stop of its task —, or :data:`PROFILE_PROCESS`: what holds the folder is
-            not ELA's browser, or could not be told, and ELA signals nothing it cannot name.
+            or with the stop of its task —, :data:`PROFILE_TASK` — a page a task keeps between two
+            of its steps ends with the task, or with the stop of it —, or :data:`PROFILE_PROCESS`:
+            what holds the folder is not ELA's browser, or could not be told, and ELA signals
+            nothing it cannot name.
         :raises ProfileUndeclared, ProfileUnsafe, BrowserUnsupported, BrowserStopped,
             BrowserFailed:
         """
@@ -3284,6 +3401,87 @@ class ModelGateway(Protocol):
         usage that says it was not sent."""
 
 
+BROWSER_EXPECT_VISIBLE: Final = "browser.expect_visible"
+"""The text the plan expects **appears** on the page after the click, within the tool's time — a
+condition of the verifiers of the browser, here since M13.10 because the room of the sessions
+chooses it for a login (ADR 0065 §4)."""
+BROWSER_LOGIN_FORM_GONE: Final = "browser.login_form_gone"
+"""The condition of a login with no text to wait for (M13.10, ADR 0065 §4; decision 31 of the
+review of its SPEC): **what the verifier looks at**, and not «signed in» — the page on the site of
+the step, no element left for the selector of its password field, and the document's status below
+400. ADR 0063 §5: an error's status without the field is a page of error or of refusal, not a
+login."""
+LOGIN_FORM: Final = "login_form"
+"""The key of the result of a read with the profile that found **the one login form** of its page
+(M13.10, ADR 0065 §4; decision 43 (ii) of the review of its SPEC): the three selectors a
+``browser.login`` would fill and click — ``username_field``, ``password_field``, ``click`` —,
+written from the fact the form was chosen by. Never in the audit, never shown to a model."""
+NO_LOGIN_FORM: Final = "no_login_form"
+"""The key of the result of a read with the profile whose page has no login form ELA can name: its
+code, :data:`LOGIN_FORM_NOT_FOUND` or :data:`LOGIN_FORM_AMBIGUOUS`."""
+LOGIN_FORM_NOT_FOUND: Final = "browser.login_form_not_found"
+"""The page has no password field a login would fill, or its form lacks a field for the name or an
+element that sends."""
+LOGIN_FORM_AMBIGUOUS: Final = "browser.login_form_ambiguous"
+"""The page has more than one: which one would be a guess."""
+CONTINUES: Final = "continues"
+"""The argument of a step of the browser that **continues on the page the step right before it
+left**, instead of opening one (M13.10, ADR 0065 §3): ``true``, and exactly one of it and
+``path``. Read by the tools that continue and by the room that keeps the page."""
+
+
+@dataclass(frozen=True, slots=True)
+class WaitingPage:
+    """A page a task keeps between two of its steps, as :meth:`TaskPages.waiting` says it (M13.10,
+    ADR 0065 §3): **which task**, whether it is on the browser with the user's accounts
+    (``profile``) or on the empty one, and **until when** — the end of what the task waits for: the
+    question of its next step until it is answered, then the grant of the yes until the step runs.
+    ``None`` when the task waits for nothing that ends: the page lasts until the task ends, and the
+    stop of the task is what ends it."""
+
+    task: TaskId
+    profile: bool
+    until: datetime | None
+
+
+@runtime_checkable
+class TaskPages(Protocol):
+    """Where the page a step of a task leaves waits for the step that continues on it (M13.10, ADR
+    0065 §3).
+
+    **One page per task, and two tasks never have the same page**: the key is the task. A step
+    leaves its page only when the step right after it in the plan continues; the page is handed to
+    that step, on the same browser, and to no other. **Whoever holds a page closes it**: the room,
+    when the task ends, when the same task opens another page, when what the task waits for is
+    over, and when ELA stops (the browser's own stop closes every page). Not a capability: no row
+    of the catalogue, no risk, no rule of the Guardian — every step is judged by its own.
+    """
+
+    async def leave(
+        self, task: TaskId, step: StepId, page: str, browser: Browser, *, profile: bool
+    ) -> bool:
+        """Offered the page ``step`` of ``task`` leaves once it succeeded: **kept** — held on
+        ``browser`` (:meth:`Browser.hold`), and ``True`` — when the step right after it in the plan
+        continues; ``False`` otherwise, and the page is the step's to hand to its verifier as
+        before. A page the task kept already is closed first."""
+
+    async def take(self, task: TaskId, browser: Browser) -> str | None:
+        """The page ``task`` keeps, handed to the step that continues on it — and not kept any
+        more. ``None`` when the task keeps none, or keeps one on the other browser, which is then
+        closed: a step continues only on the page of its own browser."""
+
+    async def where(self, task: TaskId, browser: Browser) -> str | None:
+        """Where the page ``task`` keeps on ``browser`` is now (:meth:`Browser.where`), for the
+        question of the step that continues; ``None`` when it keeps none there. Nothing changes."""
+
+    async def release(self, task: TaskId) -> None:
+        """The same task opens another page: the one it keeps, if any, is closed first."""
+
+    async def waiting(self) -> tuple[WaitingPage, ...]:
+        """Every page kept now, with its task and until when: what ``ela browser status`` and the
+        console say, and what a step of another task is refused with."""
+
+
 @dataclass(frozen=True, slots=True)
 class OpenedSession:
     """A guided session the room of ELA opened for a step (M14.3, ADR 0060): its id, the token the
@@ -3324,20 +3522,42 @@ class SessionTally:
 
 @dataclass(frozen=True, slots=True)
 class SessionGestures:
-    """Which capability each of the two tools of a guided session asks for (M13.9, ADR 0063).
+    """Which capability each of the tools of a guided session asks for (M13.9, ADR 0063).
 
     A fact of the capability of the session, handed to the room when the session opens: the
     session on the empty browser reads with ``browser.read`` and acts with ``browser.act``; the
-    one with the profile, with their two of the profile. Until M13.9 the pair was a constant in
-    two modules, which was true while there was one kind of session."""
+    one with the profile, with their two of the profile — **and signs in with** ``browser.login``
+    (M13.10, ADR 0065 §4), which the empty one does not: ``login`` is ``None`` there. Until M13.9
+    the pair was a constant in two modules, which was true while there was one kind of session."""
 
     read: CapabilityId
     act: CapabilityId
+    login: CapabilityId | None = None
 
     def named(self, tool: str) -> CapabilityId | None:
-        """The capability the session's tool ``tool`` asks for, or ``None``: the model's two
-        tools are called ``read`` and ``act``, whatever the session."""
-        return {"read": self.read, "act": self.act}.get(tool)
+        """The capability the session's tool ``tool`` asks for, or ``None``: the model's tools are
+        called ``read``, ``act`` and — in a session that has it — ``login``."""
+        return {"read": self.read, "act": self.act, LOGIN_TOOL: self.login}.get(tool)
+
+    def capabilities(self) -> frozenset[CapabilityId]:
+        """Every capability a gesture of this session may ask for."""
+        return frozenset({self.read, self.act} | ({self.login} if self.login else set()))
+
+
+LOGIN_TOOL: Final = "login"
+"""The name of the tool of a session that signs in (M13.10, ADR 0065 §4)."""
+
+
+@dataclass(frozen=True, slots=True)
+class SessionTool:
+    """One tool a guided session offers its model, **as a datum** (M13.10, ADR 0065 §4; measure
+    (f) of its SPEC): its name, what the model is told of it, and the schema of its arguments.
+    The session's plan carries them, the adapter offers them, and the set the budget holds every
+    call to is computed from them — never a second list."""
+
+    name: str
+    description: str
+    schema: JsonMapping
 
 
 @runtime_checkable
@@ -3394,15 +3614,15 @@ class Gestures(Protocol):
 @dataclass(frozen=True, slots=True)
 class SessionPlan:
     """What a guided session is launched with, all of it written by ELA (M14.3, ADR 0060): the
-    sentence, ELA's instructions and what the two tools are — the grammar of a selector among it
-    (decision 44 of the review of the second round) —, the model and ``max_tokens`` the gateway
-    holds it to, the address of the gateway and the token, and how long it may last."""
+    sentence, ELA's instructions and **its tools** — each with what it is, the grammar of a
+    selector among it (decision 44 of the review of the second round), and its schema, as data
+    since M13.10 —, the model and ``max_tokens`` the gateway holds it to, the address of the
+    gateway and the token, and how long it may last."""
 
     session: StepId
     goal: str
     instructions: str
-    read_description: str
-    act_description: str
+    tools: tuple[SessionTool, ...]
     model: str
     max_tokens: int
     gateway: str
@@ -3452,10 +3672,11 @@ class AgentSession(Protocol):
     its environment is closed, and its only way to a model is ELA's gateway, with a token.
     """
 
-    @property
-    def tools(self) -> frozenset[str]:
-        """The names of the two tools every session offers its model: the budget holds every call
-        to exactly these."""
+    async def tools(self, offered: Sequence[SessionTool]) -> frozenset[str]:
+        """The names the session gives the tools ``offered`` — the tools of its plan —, as the
+        session names them: the budget holds every call to exactly these (M13.10: computed from
+        the plan's tools, two or three, never a list of its own). ``async`` as the port is: a
+        port has one mode (ADR 0005 §1)."""
 
     async def ready(self) -> ErrorMetadata | None:
         """Whether a session could be launched now: the binary there, the folder preparable."""

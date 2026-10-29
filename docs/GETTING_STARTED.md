@@ -3021,15 +3021,17 @@ In un task nuovo, `browser-act-missing.json`: il sì, poi di nuovo `run`.
 
 ```
 outcome        failed
-reason         fail: EXECUTING -> FAILED (browser.element_missing: gesture 2 of 2 names no element on the page of httpbin.org; no gesture was made)
+reason         fail: EXECUTING -> FAILED (browser.element_missing: gesture 2 of 2 names no visible element on the page of httpbin.org within the 30 s of the step; 1 gesture was made)
 state          FAILED
 steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000006
 stopped step   —
 ```
 
-**Che cosa si deve vedere**: la frase dice che nessun gesto è stato fatto — il controllo di ogni
-elemento viene prima del primo gesto, e sulla pagina non lo vedi, perché ELA l'ha chiusa —, e il sì è
-speso: la domanda è nata prima che ELA aprisse la pagina, e questo è il suo prezzo.
+**Che cosa si deve vedere**: dopo trenta secondi, la frase dice che **un gesto è stato fatto** — il nome è
+scritto nel campo, e il bottone che non c'è è stato aspettato fino allo scadere del tempo dello step: da
+M13.10 ogni gesto aspetta il suo elemento quando serve (ADR 0065), e i gesti prima di uno che manca sono
+fatti —; sulla pagina non lo vedi, perché ELA l'ha chiusa. Il sì è speso: la domanda è nata prima che ELA
+aprisse la pagina, e questo è il suo prezzo.
 
 ### 6. Il «ferma» a metà corsa, com'è oggi
 
@@ -5001,7 +5003,8 @@ answered by <nome di chi ha risposto> (phone)
 ### 5. Un fallimento dopo un sì
 
 `docs/examples/browser-act-missing-here.json`: un clic su `#non-esiste`, che sulla pagina di `example.com` non c'è. La
-domanda è `HIGH`; dopo il sì la pagina si apre, e prima del primo gesto ELA vede che il bottone non c'è.
+domanda è `HIGH`; dopo il sì la pagina si apre, e ELA aspetta il bottone fino allo scadere dei trenta secondi dello
+step (da M13.10 ogni gesto aspetta il suo elemento: ADR 0065): non c'è, e niente è cliccato.
 
 <!-- prova: 5.comando -->
 ```
@@ -5028,7 +5031,7 @@ uv run ela task run <id>
 <!-- prova: 5.atteso -->
 ```
 outcome failed
-reason fail: EXECUTING -> FAILED (browser.element_missing: gesture 1 of 1 names no element on the page of example.com; no gesture was made)
+reason fail: EXECUTING -> FAILED (browser.element_missing: gesture 1 of 1 names no visible element on the page of example.com within the 30 s of the step; no gesture was made)
 ```
 
 <!-- prova: 5.fine -->
@@ -5447,8 +5450,9 @@ task che chiede, e il modulo parte. `httpbin.org` rimanda indietro ciò che rice
 **Il modello non vede gli attributi della pagina**: `read` gli dà il testo visibile, che non porta il nome di un campo, il
 suo tipo o la sua etichetta. Gli strumenti gli dicono la grammatica di un selettore — CSS come lo legge Playwright,
 `input[name="custname"]`, `button:has-text("Submit order")`, uno che nomini esattamente un elemento —, e la frase nomina il
-campo e il bottone: i selettori li costruisce da lì. Se non ci riesce, ELA controlla ogni elemento prima del primo gesto e
-non agisce — il figlio finisce `FAILED` con `browser.element_missing` —: è successo al secondo giro, il 2026-10-09, quando
+campo e il bottone: i selettori li costruisce da lì. Se non ci riesce, ELA controllava ogni elemento prima del primo gesto
+e non agiva — il figlio finiva `FAILED` con `browser.element_missing` — (***da M13.10*** ogni gesto aspetta il suo elemento
+entro il tempo del tool, e i gesti prima di uno che manca sono fatti: ADR 0065): è successo al secondo giro, il 2026-10-09, quando
 gli strumenti non dicevano la grammatica e il modello ha scritto `custname` e `Submit order`. Una lettura che restituisca i
 campi di un modulo è un limite dichiarato di M14.3, che si riapre con i numeri del terzo giro.
 
@@ -6706,6 +6710,280 @@ uv run ela task approve <id> --approval <approval-id>
 ```
 SIGINT
 ```
+
+## 29. Più passi, una pagina, e il login da una frase: la prova a mano di M13.10
+
+> **Scritta con l'implementazione il 14 ottobre 2026** (`milestones/M13.10.md`, decisioni 34, 35, 46 e 47 della review),
+> e `tests/docs/test_prova_m13_10.py` tiene lo script allineato a questa sezione. La si fa **sul Mac, senza il PC**, sul
+> branch di M13.10, con lo script `scripts/prova_m13_10.py`. **WhatsApp non è in questa prova** (decisione 61 della
+> review dell'implementazione): con il profilo di ELA la pagina non è andata oltre la sua barra di caricamento nella
+> prima misura, e il fatto, con i candidati della causa, è in [ADR 0065](adr/0065-browser-steps.md) §5; con lui escono il
+> riavvio e la finestra che il suo passo voleva. **Fatta da Tommaso il 2026-10-29 sul branch**, a `4490e15`, sul Mac:
+> passata, 33 PASSATI al primo giro, nessun FALLITO, nessun no, nessun SALTATO (`~/Downloads/prova-m13.10-20261029-082557.txt`);
+> [ADR 0065](adr/0065-browser-steps.md) è Accettata, per decisione di Tommaso (decisione 76), e com'è andata è in
+> `milestones/M13.10.md`, «La prova a mano, il 2026-10-29 — passata».
+
+Da M13.10 un lavoro nel browser può avere **più passi**: ogni gesto **aspetta il suo elemento**, così un campo o un
+pulsante che compare dopo un gesto non ferma più la sequenza; **la pagina di uno step può essere quella del successivo**,
+dentro lo stesso task — lo step dopo ha `continues` al posto di `path`, e non apre niente —; e **il modello di una sessione
+con il tuo profilo può chiedere un login** dicendo solo il sito: ELA trova il modulo, ti chiede il sì nominando la voce
+del vault, e il modello non vede mai la password, la voce o il nome utente.
+
+**Una riga per le policy di §59**: le policy di `browser.guided_as_you` nate prima di M13.10 **smettono di coprire** —
+lo schema della lettura con il profilo ha un argomento in più, `continues` —, e si ricreano una volta con `ela policy
+create`. Il 14 ottobre 2026 non ce n'era nessuna viva.
+
+**Che cosa serve**: in `ELA_BROWSER_SITES` anche `news.ycombinator.com` — la voce del tuo account di Hacker News nel
+vault c'è dal passo 6 della sezione 28 —; il vault chiuso, aperto al passo 4 con la riga di `ela vault status`; la chiave
+del modello e il tetto, come nella sezione 28. Lo script stampa **PASSATO**, **FALLITO**, **SALTATO** o **FERMATO** per
+ogni passo, e scrive tutto in `~/Downloads/prova-m13.10-<data>.txt`. I tipi dei blocchi sono quelli delle sezioni 26 e
+28, e questi suoi: `ferma` è il «ferma» a tempo, dato dallo script mentre uno step aspetta; `pagina` ferma ELA mentre una
+pagina di un task aspetta fra due step, e guarda che non resti niente; `vault` guarda che il vault sia aperto dopo che
+l'hai aperto tu, e se non lo è ferma la prova — FERMATO — con la riga da incollare. **Una sessione che finisce senza il
+gesto che il passo aspetta** chiude quel passo con **SALTATO**: il resto del passo non si fa, e la prova va avanti.
+
+### 1. Prima
+
+Lo script controlla, e stampa **PASSATO** per ciascuno: il Mac è sull'ultimo commit del branch, con l'albero pulito; ELA
+risponde e gira dal codice del branch; i siti della prova sono dichiarati; il profilo è dichiarato e libero; il vault è
+dichiarato; la rotta della sessione, la chiave e ciò che il mese ha libero per la sessione del passo 4. **Se qualcosa
+manca, la prova si ferma lì** — **FERMATO** —, con ciò che manca.
+
+### 2. Due step, una pagina
+
+Il modulo di `httpbin.org`: il primo step lo riempie e lo invia, il secondo **non apre niente** e legge la pagina che il
+primo ha lasciato, aspettando l'elemento con il nome che il primo ha scritto. **Il sito riceve una sola richiesta della
+pagina del modulo.**
+
+<!-- prova: 2.comando -->
+```
+uv run ela task create --json "due passi su una pagina"
+uv run ela task plan <id> --file docs/examples/two-steps-one-page.json
+uv run ela task run <id>
+```
+
+<!-- prova: 2.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 2.sì -->
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+<!-- prova: 2.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 2.atteso -->
+```
+outcome completed
+```
+
+<!-- prova: 2.schermo -->
+```
+uv run ela task results <id>
+```
+
+<!-- prova: 2.occhio -->
+```
+Qui sopra, sullo schermo: il secondo risultato, di browser.read, porta «ELA prova 7431» letto dalla pagina che il primo step aveva lasciato, e il suo indirizzo è httpbin.org/post?
+```
+
+### 3. Il «ferma» dentro l'attesa
+
+Un campo e un pulsante che **non c'è**: il campo si riempie, e il gesto dopo aspetta il suo elemento fino ai trenta
+secondi dello step. Prima, lo script ferma il task: lo step finisce `browser.stopped`, **un gesto fatto**, e il risultato
+dice `stopped_at 2`, il primo gesto non fatto.
+
+<!-- prova: 3.comando -->
+```
+uv run ela task create --json "fermare un gesto che aspetta"
+uv run ela task plan <id> --file docs/examples/act-stop-while-waiting.json
+uv run ela task run <id>
+```
+
+<!-- prova: 3.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 3.sì -->
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+<!-- prova: 3.ferma -->
+```
+5
+```
+
+<!-- prova: 3.comando -->
+```
+uv run ela task results <id>
+```
+
+<!-- prova: 3.atteso -->
+```
+gestures 1
+stopped_at 2
+error browser.stopped
+```
+
+### 4. Il login da una frase
+
+**Prima esci da Hacker News** nel browser di ELA: lo script lo guarda lui, con una lettura come te della pagina
+pubblica, e **se ci trova `logout` si ferma** — FERMATO — dicendo come uscire. **Poi apri il vault**, con la riga intera
+che `uv run ela vault status` stampa, incollata nel tuo terminale: lo script guarda che sia aperto, e se non lo è si
+ferma — FERMATO — con la riga da incollare. Con il vault chiuso il modello chiede il login, ELA lo rifiuta prima della
+domanda con `vault.locked`, e la sessione finisce senza il login. Poi la frase: il modello chiede il login
+con il solo sito; ELA legge la pagina, **trova il solo modulo di accesso** — non quello di registrazione, il cui campo si
+dichiara `new-password` —, e ti chiede il sì: **la domanda nomina la voce del vault e il nome utente mascherato**, e li
+leggi nel tuo terminale. Mentre ELA entra compare la finestra del suo browser: **finché c'è, non scrivere**. Un login
+conta **due gesti** della sessione: la lettura della pagina, e il login.
+
+<!-- prova: 4.mano -->
+```
+Esci da Hacker News nel browser di ELA: `uv run ela browser open news.ycombinator.com` nel tuo terminale, «logout» nella pagina se c'è, poi Cmd-Q — non il pulsante rosso.
+```
+
+<!-- prova: 4.comando -->
+```
+uv run ela task create --json "guardare che in quel sito non sono ancora dentro"
+uv run ela task plan <id> --file docs/examples/read-as-you-news-ycombinator.json
+uv run ela task run <id>
+```
+
+<!-- prova: 4.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 4.sì -->
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+<!-- prova: 4.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 4.atteso -->
+```
+outcome completed
+```
+
+<!-- prova: 4.assente -->
+```
+uv run ela task results <id>
+```
+
+<!-- prova: 4.mano -->
+```
+Apri il vault: incolla nel tuo terminale la riga intera che stampa `uv run ela vault status`, e scrivi la password principale quando il programma del vault la chiede. Quella password non entra in ELA.
+```
+
+<!-- prova: 4.vault -->
+```
+unlocked
+```
+
+<!-- prova: 4.comando -->
+```
+uv run ela task create --json "entrare in Hacker News da una frase"
+uv run ela task plan <id> --file docs/examples/guided-as-you-login.json
+uv run ela task run <id>
+```
+
+<!-- prova: 4.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 4.sì -->
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+<!-- prova: 4.sfondo -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 4.aspetta -->
+```
+browser.login WAITING_APPROVAL
+```
+
+<!-- prova: 4.sì -->
+```
+uv run ela task approve <id del figlio> --approval <approval-id>
+uv run ela task run <id del figlio>
+```
+
+<!-- prova: 4.atteso -->
+```
+outcome completed
+```
+
+<!-- prova: 4.fine -->
+```
+outcome completed
+```
+
+<!-- prova: 4.figli -->
+```
+browser.read_as_you COMPLETED
+browser.login COMPLETED
+```
+
+<!-- prova: 4.occhio -->
+```
+La risposta del modello, nel file, dice che in alto a destra la pagina mostra il link per uscire, e nel tuo vault non è cambiato niente?
+```
+
+### 5. ELA si ferma con una pagina che aspetta
+
+Il piano del passo 2 con **una domanda fra i due step**: dopo il primo, la sua pagina aspetta il tuo sì per il
+secondo, e mentre aspetta **ELA si ferma**. Lo script guarda che lo stato del browser dica che una pagina di questo task
+aspetta, ferma ELA, e poi che **non resti niente**: nessun processo del browser.
+
+<!-- prova: 5.comando -->
+```
+uv run ela task create --json "fermare ELA con una pagina che aspetta"
+uv run ela task plan <id> --file docs/examples/two-steps-a-question-between.json
+uv run ela task run <id>
+```
+
+<!-- prova: 5.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 5.sì -->
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+<!-- prova: 5.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 5.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 5.pagina -->
+```
+SIGTERM
+```
+
+Dopo il passo 5 ELA è ferma, e la prova finisce lì: ELA si riavvia a mano, come sempre.
 
 ## Dove guardare dopo
 

@@ -1,0 +1,35 @@
+{
+  "_nota": [
+    "La sezione 29 della guida, passo 2 (M13.10, ADR 0065 §1): un gesto aspetta il suo elemento, e il «ferma» arriva mentre aspetta. Il campo si riempie; il pulsante non c'è sulla pagina, e il gesto lo aspetta fino al tempo dello step — prima, lo script ferma il task.",
+    "Il risultato atteso: browser.stopped, un gesto fatto, stopped_at 2. Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "riempire un campo e aspettare un pulsante che non c'è, finché il task non è fermato",
+  "steps": [
+    {
+      "id": "c0de1a28-0000-4b00-8a00-000000001004",
+      "goal": "riempire il nome e cliccare un pulsante che la pagina non ha",
+      "required_capabilities": [
+        "browser.act"
+      ],
+      "arguments": {
+        "site": "httpbin.org",
+        "path": "/forms/post",
+        "fill": [
+          [
+            "input[name=custname]",
+            "ELA prova 7431"
+          ]
+        ],
+        "click": "button#non-esiste",
+        "expect_text": "ELA prova 7431",
+        "purpose": "la prova a mano di più passi (M13.10)"
+      },
+      "risk": "HIGH",
+      "expected_result": "il task fermato mentre il secondo gesto aspetta il suo elemento",
+      "success_conditions": [
+        "browser.expect_visible"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}

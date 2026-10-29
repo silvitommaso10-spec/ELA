@@ -49,10 +49,13 @@ async def test_the_executor_says_a_tool_runs_here_from_its_start_to_its_stored_r
     stored = w.results.add
 
     async def watched(
-        decision: PermissionDecision, arguments: JsonMapping, stop: TaskStop
+        decision: PermissionDecision,
+        arguments: JsonMapping,
+        stop: TaskStop,
+        named: JsonMapping | None = None,
     ) -> ExecutionResult:
         seen.append(w.executor.running_here())
-        return await ran(decision, arguments, stop)
+        return await ran(decision, arguments, stop, named)
 
     async def storing(result: ExecutionResult) -> None:
         seen.append(w.executor.running_here())
@@ -73,7 +76,10 @@ async def test_a_tool_that_refuses_the_decision_occupies_nothing_after() -> None
     w = world()
 
     async def refusing(
-        decision: PermissionDecision, arguments: JsonMapping, stop: TaskStop
+        decision: PermissionDecision,
+        arguments: JsonMapping,
+        stop: TaskStop,
+        named: JsonMapping | None = None,
     ) -> ExecutionResult:
         raise NotAllowedError(ECHO.id, "the tool said no")
 
@@ -120,11 +126,14 @@ async def test_the_beat_says_busy_while_a_tool_runs_here_and_idle_after() -> Non
     ran = tool.execute
 
     async def watched(
-        decision: PermissionDecision, arguments: JsonMapping, stop: TaskStop
+        decision: PermissionDecision,
+        arguments: JsonMapping,
+        stop: TaskStop,
+        named: JsonMapping | None = None,
     ) -> ExecutionResult:
         await w.heartbeat.beat()
         seen.append(await local_status(w))
-        return await ran(decision, arguments, stop)
+        return await ran(decision, arguments, stop, named)
 
     tool.execute = watched  # type: ignore[method-assign]
     task, _ = await w.queued(ECHO.id)

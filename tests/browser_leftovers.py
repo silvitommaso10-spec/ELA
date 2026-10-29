@@ -27,6 +27,11 @@ hands over every pid that process said it had started.
 
 The folder is short on purpose, under ``/tmp``: a profile of Chrome holds a socket, and a long
 path does not fit in one.
+
+**And what a process found before a test is named with, and what is done with it once named**
+(decision 86 of the review of M13.10): :data:`RAN_LAST` is the test the worker ran last, of any
+module; :func:`collected` collects what of it is the worker's own child and has ended — which only
+the worker can do, and which on ubuntu nobody did for eighty-six tests.
 """
 
 from __future__ import annotations
@@ -40,13 +45,27 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-__all__ = ["PROFILE", "Left", "left", "named", "running", "scratch", "sweep"]
+__all__ = [
+    "PROFILE",
+    "RAN_LAST",
+    "Left",
+    "collected",
+    "left",
+    "named",
+    "running",
+    "scratch",
+    "sweep",
+]
 
 PS = "/bin/ps"
 PROFILE = "playwright_chromiumdev_profile-"
 """How Playwright names the folder of the profile it makes for a browser of one page."""
 GONE_SECONDS = 10.0
 LOOK_SECONDS = 0.02
+RAN_LAST: list[str] = [""]
+"""The test this worker ran last, of any module, written as each test ends by
+``tests/conftest.py``: who a process found before a test began was left by (decision 86 (a) of
+the review of M13.10). Empty before the first test of the worker."""
 
 
 def scratch() -> Path:
@@ -120,3 +139,26 @@ def sweep(folder: Path, also: tuple[int, ...] = ()) -> None:
             profile.unlink()  # the link, never what it points at
         else:
             shutil.rmtree(profile, ignore_errors=True)
+
+
+def collected(found: list[int]) -> None:
+    """Collect what of ``found`` is the worker's own child, once it has ended, with ``waitpid`` and
+    ``WNOHANG``: a process is its parent's to collect, and when the parent is the worker nobody
+    else will (decision 86 (b) of the review of M13.10). Found again before every test after, one
+    such process failed eighty-six tests on ubuntu, and hid the one that left it. **Only its own
+    children, and the kernel is what makes it so**: for any other pid ``waitpid`` answers
+    ``ECHILD``, and that pid is left alone. Within a bound: a child just killed may take a moment
+    to end."""
+    waiting = list(found)
+    deadline = time.monotonic() + GONE_SECONDS
+    while waiting:
+        for pid in list(waiting):
+            try:
+                ended, _ = os.waitpid(pid, os.WNOHANG)
+            except ChildProcessError:  # not the worker's child, or collected in between
+                ended = pid
+            if ended == pid:
+                waiting.remove(pid)
+        if not waiting or time.monotonic() > deadline:
+            return
+        time.sleep(LOOK_SECONDS)

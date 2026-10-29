@@ -17,7 +17,7 @@ from ela.executive.planner import PLANNER_CODES, PLANNING_OUTPUT_TOKENS
 from ela.providers.anthropic.models import MODELS, OPUS_5_5
 from ela.providers.anthropic.pricing import worst_cost
 from tests.contracts.protocols import port_protocols
-from tests.docs.guided_ports import ACCOUNT_PORTS, GUIDED_PORTS
+from tests.docs.guided_ports import ACCOUNT_PORTS, GUIDED_PORTS, STEPS_PORTS
 from tests.docs.test_adr_cli import coded_commands, commands_after_0061, documented_command_routes
 from tests.docs.test_adr_composition import coded_routes, routes_after_0057, routes_after_0059
 from tests.docs.test_adr_persistence import added_columns
@@ -79,7 +79,13 @@ def test_the_conseguenze_count_the_rules_the_contracts_the_ports_the_routes_and_
     assert len(contracts()) == 15
     assert "**trenta**" in text
     assert (
-        len(tuple(p for p in port_protocols() if p.__name__ not in GUIDED_PORTS | ACCOUNT_PORTS))
+        len(
+            tuple(
+                p
+                for p in port_protocols()
+                if p.__name__ not in GUIDED_PORTS | ACCOUNT_PORTS | STEPS_PORTS
+            )
+        )
         == 30
     )
     assert "**cinquantuno**" in text
