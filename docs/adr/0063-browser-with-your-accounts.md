@@ -738,6 +738,21 @@ la data che quella pagina mostra** (decisione 75):
 | **l'addestramento**: «By default, we will not use your inputs or outputs from our commercial products (e.g. Claude for Work, Anthropic API, Claude Gov, etc.) to train our models», salvo ciò che chi usa il servizio segnala espressamente o sceglie di lasciar usare | `privacy.claude.com/en/articles/7996868`, «Is my data used for model training?» | 18 agosto 2026 |
 | lo stesso, nei termini del contratto: «Anthropic may not train models on Customer Content from Services» | `anthropic.com/legal/commercial-terms`, sezione B | in vigore dal 17 giugno 2025 |
 
+***Riletta il 2026-10-29.*** Tommaso ha letto i tre articoli nel suo Chrome e ne ha mandato il testo al revisore, che
+l'ha confrontato con questa sezione. La tabella qui sopra resta com'era, con le date lette l'11 ottobre; quelle che le
+pagine mostrano il 29 ottobre sono queste:
+
+| La pagina | Le frasi della tabella | La data della tabella | La data che mostra il 2026-10-29 |
+|---|---|---|---|
+| `privacy.claude.com/en/articles/7996866` | le tre ci sono, parola per parola | 1 luglio 2026 | «July 1, 2026» |
+| `privacy.claude.com/en/articles/15425996` | ci sono | 5 settembre 2026 | nessuna data assoluta: solo «Updated over a week ago», e nel codice della pagina una data non c'è |
+| `privacy.claude.com/en/articles/7996868` | la frase sull'addestramento è identica | 18 agosto 2026 | «August 19, 2026» |
+
+Due date non sono più quelle della tabella, e **perché non è misurato**. I modelli che l'articolo dei modelli «covered»
+nomina il 29 ottobre sono Claude Mythos 5, Mythos 5.1, Fable 5 e Fable 5.1 («share the same underlying model»): nessuno è
+un modello delle rotte di ELA. **I termini del contratto non sono stati riletti**: restano citati, e non letti per intero.
+La scadenza della prossima rilettura, che sta con quella del listino (ADR 0061 §1), passa dal 2026-11-07 al 2026-11-28.
+
 **La frase sull'addestramento non sta più dove ADR 0060 §8 l'aveva letta**: sull'articolo della conservazione,
 oggi, non c'è nessuna frase sull'addestramento — tre letture, due dell'11 ottobre con uno strumento che
 riassume e una terza lo stesso giorno, che ha chiesto le frasi fra virgolette —; sta nelle due pagine delle
@@ -747,7 +762,8 @@ ultime due righe, ed è citata da lì. **ADR 0060 §8 si legge con questa tabell
 una pagina che cambia, e una copia a mano sarebbe sbagliata il giorno dopo. Ciò che ELA tiene è il modello
 della rotta nei termini di una policy, e **il test che lo tiene dice, nel messaggio con cui fallisce, che chi
 cambia il modello della rotta rilegge la policy del fornitore** per quel modello e la ridata qui. **La
-rilettura sta con quella del listino** (ADR 0061): una persona, entro il **2026-11-07**.
+rilettura sta con quella del listino** (ADR 0061): una persona, entro il **2026-11-28**. *Fino alla rilettura del
+2026-10-29, sotto la tabella, era il 2026-11-07.*
 
 *Come è stata letta*: con uno strumento che scarica la pagina e ne riporta le frasi che gli si chiedono, non
 con il testo intero davanti; le frasi fra virgolette sono quelle che lo strumento ha riportato. **Questo ADR
