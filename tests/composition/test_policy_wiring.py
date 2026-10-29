@@ -41,14 +41,6 @@ NAMED_HERE = "claude-haiku-5-5"
 model renamed in place would pass a comparison with the constant, and nobody would be told to
 read the policy again (the re-read of the round)."""
 
-REREAD = (
-    "the model of the route a guided session runs on is not the one this test names. Whoever "
-    "changes it re-reads the provider's policy for that model — how long it keeps what a "
-    "session sends, and who may read it — and dates it in ADR 0063 §6; then names the new model "
-    "here. The re-reading goes with the price list's (ADR 0061): a person, by 2026-11-07"
-)
-"""What the two tests below fail with (M13.9, decision 75)."""
-
 
 def due_by(pricelist: str) -> date:
     """The day the price list — and the provider's policy with it — is read again by: the date of
@@ -57,6 +49,21 @@ def due_by(pricelist: str) -> date:
     return price_list.documented_price_check(pricelist) + timedelta(
         days=price_list.MAX_PRICE_AGE_DAYS
     )
+
+
+def reread(due: date) -> str:
+    """What the two tests below fail with (M13.9, decision 75), naming the day it is due by."""
+    return (
+        "the model of the route a guided session runs on is not the one this test names. Whoever "
+        "changes it re-reads the provider's policy for that model — how long it keeps what a "
+        "session sends, and who may read it — and dates it in ADR 0063 §6; then names the new "
+        f"model here. The re-reading goes with the price list's (ADR 0061): a person, by {due}"
+    )
+
+
+REREAD = reread(due_by(price_list.pricelist_text()))
+"""The message, with the day derived from the price list as it is: written by hand until
+2026-10-29, it said a day the two ADRs kept in their dated notes after a re-reading had moved it."""
 
 
 def places(pricelist: str, accounts: str) -> dict[str, str]:
@@ -117,6 +124,7 @@ def test_a_day_the_adrs_do_not_derive_is_found(monkeypatch: pytest.MonkeyPatch) 
     accounts = "### 6. La sessione\nuna persona, entro il **2027-01-31**.\n### 7. Il resto\n"
 
     assert due_by(pricelist) == date(2027, 1, 31)
+    assert reread(due_by(pricelist)).endswith("a person, by 2027-01-31")
     assert due_problem(pricelist, accounts) is None
 
     in_section_1 = pricelist.replace("2027-01-31.\n### 2.", "2026-11-07.\n### 2.")
