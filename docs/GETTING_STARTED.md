@@ -6718,8 +6718,10 @@ SIGINT
 > branch di M13.10, con lo script `scripts/prova_m13_10.py`. **WhatsApp non è in questa prova** (decisione 61 della
 > review dell'implementazione): con il profilo di ELA la pagina non è andata oltre la sua barra di caricamento nella
 > prima misura, e il fatto, con i candidati della causa, è in [ADR 0065](adr/0065-browser-steps.md) §5; con lui escono il
-> riavvio e la finestra che il suo passo voleva. ADR 0065 resta Proposta finché questa prova non passa sull'ultimo commit
-> del branch.
+> riavvio e la finestra che il suo passo voleva. **Fatta da Tommaso il 2026-10-29 sul branch**, a `4490e15`, sul Mac:
+> passata, 33 PASSATI al primo giro, nessun FALLITO, nessun no, nessun SALTATO (`~/Downloads/prova-m13.10-20261029-082557.txt`);
+> [ADR 0065](adr/0065-browser-steps.md) è Accettata, per decisione di Tommaso (decisione 76), e com'è andata è in
+> `milestones/M13.10.md`, «La prova a mano, il 2026-10-29 — passata».
 
 Da M13.10 un lavoro nel browser può avere **più passi**: ogni gesto **aspetta il suo elemento**, così un campo o un
 pulsante che compare dopo un gesto non ferma più la sequenza; **la pagina di uno step può essere quella del successivo**,

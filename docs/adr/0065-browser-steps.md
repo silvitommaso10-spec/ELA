@@ -1,8 +1,17 @@
 # 0065. Il browser a più passi: ogni elemento aspettato, ciò che il sì ha nominato, la pagina che dura fra gli step, il login chiesto dal modello
 
-- **Stato:** Proposta il **2026-10-14**, con l'implementazione di M13.10, per diventare Accettata con un commit
-  suo quando la prova a mano — la sezione 29 di `docs/GETTING_STARTED.md` — sarà passata sull'ultimo commit del
-  branch (decisione 48 della review della SPEC di M13.10).
+- **Stato:** Accettata il **2026-10-29**, con un commit suo, **per decisione di Tommaso di quel giorno** (decisione
+  76 di `docs/milestones/M13.10.md`): la prova a mano della sezione 29 di `docs/GETTING_STARTED.md` è passata sul
+  Mac, sul branch e prima del merge, a `4490e15`, l'ultimo commit (`~/Downloads/prova-m13.10-20261029-082557.txt`:
+  33 PASSATI, tutti al primo giro, 0 FALLITI, nessun no, nessun SALTATO). **Scritto com'è**: la domanda `4.occhio`
+  chiedeva della «risposta del modello, nel file», e né il file né lo schermo l'hanno portata — `fine` stampa solo
+  l'uscita della corsa in sfondo, e prima della domanda non c'è un blocco `schermo`, che il passo 2 ha —; il sì vale
+  per la decisione di Tommaso, perché ciò che quella riga proteggeva la macchina l'ha verificato nella stessa prova:
+  il figlio `browser.login` COMPLETED con il suo verifier su «logout», la sessione COMPLETED con 4 figli dentro i
+  suoi siti. Proposta il **2026-10-14**, con l'implementazione di M13.10, per diventare Accettata con un commit suo
+  quando la prova fosse passata sull'ultimo commit del branch (decisione 48 della review della SPEC di M13.10).
+  *`4490e15` era l'ultimo commit del branch quando la prova è girata: i commit venuti dopo, questo compreso,
+  portano solo documenti.*
 - **Data:** 2026-10-14
 - **Riferimenti spec:** §19, §33, §57
 - **Milestone:** [M13.10](../milestones/M13.10.md)

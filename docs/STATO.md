@@ -137,7 +137,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.8` | Proposta | Un file che vive su una macchina: quale disco, e chi lo dice |
 | 13 — Il permesso prima dell'azione | `M13.9` | Implementata | Il browser con i tuoi account: un Chrome di ELA che dura, e le password che restano in Bitwarden |
 | 13 — Il permesso prima dell'azione | `M13.9b` | Proposta | La pagina d'errore del browser non è un altro sito |
-| 13 — Il permesso prima dell'azione | `M13.10` | Proposta | Più passi e i file: una sessione del browser fra gli step, una sequenza di gesti, e i file che entrano ed escono |
+| 13 — Il permesso prima dell'azione | `M13.10` | Implementata | Più passi e i file: una sessione del browser fra gli step, una sequenza di gesti, e i file che entrano ed escono |
 | 13 — Il permesso prima dell'azione | `M13.11` | Proposta | Il browser sul PC: le capacità di M13.9 e M13.10 sul nodo Windows, e il verdetto che torna in busta |
 | 13 — Il permesso prima dell'azione | `M13.12` | Implementata | Le policy di §59: una policy che Tommaso si crea rende autonoma un'azione `MEDIUM`, a partire da `browser.guided` |
 | 13 — Il permesso prima dell'azione | `M13.13` | Proposta | I file dal browser: uno scaricamento è un `fs.write`, un caricamento un `fs.read` |
@@ -168,7 +168,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **65** | `docs/adr/NNNN-*.md` |
-| Milestone | **92, di cui 74 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **92, di cui 75 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **71** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **15** | `pyproject.toml` |
 | Port | **36** | i `Protocol` di `src/ela/ports.py` |
@@ -240,6 +240,8 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
   dal browser: uno scaricamento come un `fs.write`, un caricamento come un `fs.read` —, il pezzo dei file che esce
   da M13.10; e, dalla review della sua implementazione (decisione 57), una riparazione di M13.9, **M13.9b** (la
   pagina d'errore del browser non è un altro sito), che si fa sul branch di M13.13 prima del suo codice.
+  ***Annotato il 2026-10-29***: **M13.10 è fatta**: la prova a mano è passata sul Mac a `4490e15`, e
+  [ADR 0065](adr/0065-browser-steps.md) è Accettata, per decisione di Tommaso di quel giorno (decisione 76 di M13.10).
   L'ordine e le condizioni stanno nella voce 5.11, e la fila che attraversa le fasi nella 5.10.
 - **Fase 12 — i nodi. È chiusa** (2026-09-20, con M12.5). ELA ha smesso di essere un processo su
   una macchina e di essere usabile solo davanti a quella macchina: un'identità provabile per un
@@ -658,6 +660,8 @@ della sua registrazione. Dopo M13.4, in quest'ordine:
    M13.10, M13.13, M13.11; ***annotato il 2026-10-14***, più tardi, dalla review dell'implementazione di M13.10
    (decisione 57): **M13.9b** — la pagina d'errore del browser non è un altro sito — sta **sul branch di M13.13,
    prima del suo codice**, come M13.4b sul branch di M13.9, e non entra nella testa del merge di M13.10;
+   ***annotato il 2026-10-29***: **M13.10 è fatta**, con la prova a mano passata a `4490e15`, e ADR 0065 è Accettata
+   per decisione di Tommaso (decisione 76 di M13.10): il merge lo fa Tommaso;
 7. **M13.5**, con la condizione d'ingresso invariata: se il grant TCC non tiene, apre la milestone
    dell'eseguibile firmato (5.11);
 8. **M14.4**, il computer guidato dal modello, subito dopo M13.5;
@@ -982,7 +986,10 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   2026-10-15***: dalla review della sua implementazione (decisioni 61 e 62), **WhatsApp Web esce dalla prova di
   M13.10**: con il profilo di ELA la pagina non è andata oltre la barra di caricamento nella prima misura. Il fatto,
   con il file della misura e i candidati della causa, è in ADR 0065 §5; **nessuna milestone finché la causa non è
-  nota**, e la decisione 23 di M13.9 resta valida per quella che lo riprenderà.
+  nota**, e la decisione 23 di M13.9 resta valida per quella che lo riprenderà. ***Annotato il 2026-10-29***:
+  **fatta**, con la prova a mano passata sul Mac a `4490e15`, e ADR 0065 è Accettata per decisione di Tommaso di quel
+  giorno (decisione 76): la domanda a occhio del login chiedeva della risposta del modello senza mostrarla, e ciò che
+  proteggeva la macchina l'aveva verificato nella stessa prova.
 - **M13.13 — i file dal browser** (§19, §18). **Registrata il 2026-10-14**, dalla review della SPEC di M13.10
   (decisione 21): uno scaricamento è giudicato come un `fs.write`, un caricamento come un `fs.read`, con la
   domanda che nomina il file. **Subito dopo M13.10, prima di M13.11.** **Condizione d'ingresso**: il sito per il
