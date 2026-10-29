@@ -11,7 +11,15 @@
   suoi siti. Proposta il **2026-10-14**, con l'implementazione di M13.10, per diventare Accettata con un commit suo
   quando la prova fosse passata sull'ultimo commit del branch (decisione 48 della review della SPEC di M13.10).
   *`4490e15` era l'ultimo commit del branch quando la prova è girata: i commit venuti dopo, questo compreso,
-  portano solo documenti.*
+  portano solo documenti.* ***Annotato il 2026-10-29, più tardi (decisione 87 di M13.10)***: non più solo
+  documenti. Dopo questo commit — `e2d105d` — sono venuti `fbaf94b` e `35ce5fa`, documenti; `4ef3506` e `95874bd`,
+  solo `tests/`: i test rossi delle decisioni 85 e 86 e la loro riparazione — il fixture `window` di
+  `tests/infrastructure/machine/test_account_window.py` aspetta dentro il ciclo del test ciò che ha finito, e
+  `nothing_left_behind` nomina il test prima di qualunque modulo e raccoglie un figlio del worker già finito —; e il
+  commit che porta questa nota, documenti. Niente di `src/` né di `scripts/`: ciò che la prova ha visto non cambia,
+  e la riga resta su `4490e15` (la decisione 58 (e) di M13.10, rivista apertamente in questo punto solo). **Il caso
+  di §6 si è mostrato a `35ce5fa`**, e la causa misurata sta in quel test; il pagamento del debito aspetta la
+  domanda 89 di M13.10, perché la forma che STATO legge vuole un ADR diverso da questo.
 - **Data:** 2026-10-14
 - **Riferimenti spec:** §19, §33, §57
 - **Milestone:** [M13.10](../milestones/M13.10.md)
