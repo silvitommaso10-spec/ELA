@@ -190,6 +190,40 @@ async def gone(pid: int) -> bool:
     return not running(pid)
 
 
+@pytest.fixture
+def seen_ended() -> Iterator[list[asyncio.subprocess.Process]]:
+    """The processes a test hands over, looked at **after** ``window`` is torn down — asked before
+    it, so torn down after it —: whether the loop of the test learnt of their end (decision 85 of
+    the review of M13.10). One whose end no loop learnt is one nobody may have collected: on Linux
+    the watcher of the children is the loop's, and a loop that has closed collects nothing."""
+    processes: list[asyncio.subprocess.Process] = []
+    yield processes
+    unseen = [process.pid for process in processes if process.returncode is None]
+    assert not unseen, f"the loop of the test never learnt of the end of {unseen}"
+
+
+# ----------------------------------------------------------------------------------------
+# What a test started, the loop of the test sees ended
+# ----------------------------------------------------------------------------------------
+
+
+async def test_what_a_test_started_and_nobody_waited_for_is_ended_and_seen_ended_by_its_loop(
+    seen_ended: list[asyncio.subprocess.Process], window: Window, tmp_path: Path
+) -> None:
+    """The CI of ubuntu, 2026-10-29: a process named «Google Chrome f» — the first fifteen
+    characters of the program of these tests —, ended, a child of the worker, found before
+    eighty-six tests of the real browser. Started by the test, as ``a_browser_ela_did_not_start``
+    starts it, and waited for by nobody: what ends it is the fixture, and its end reaches the loop
+    of the test before that loop closes."""
+    profile = tmp_path / "profile"
+    profile.mkdir(mode=0o700)
+    started = await asyncio.create_subprocess_exec(
+        str(window.binary), f"--user-data-dir={profile}", start_new_session=True
+    )
+    await window.launches(1)
+    seen_ended.append(started)
+
+
 # ----------------------------------------------------------------------------------------
 # What the window is started with, and what ELA keeps of it
 # ----------------------------------------------------------------------------------------

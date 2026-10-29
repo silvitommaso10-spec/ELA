@@ -9,6 +9,13 @@ with «Set of Tasks/Futures is empty»: an empty set is not something to wait fo
 So: nothing is waited for when there is nothing to wait for; and **a process found before a test
 begins is named whole** — its command line as the system reads it, ``/proc/<pid>/cmdline`` on
 Linux — **with the test that ran before on that worker**, which is the one that left it.
+
+On 2026-10-29 the case came back, on one worker: a process that had ended, a child of the worker,
+found before eighty-six tests, each told «no test ran before it on this worker». Both halves were
+the fixture's (decision 86 of the review after the proof): **the test before is the last test the
+worker ran, of any module** — recorded by ``tests/conftest.py`` as each test ends —; and **a child
+of the worker that has ended is named and then collected**, so that one test fails, not every
+test after it.
 """
 
 from __future__ import annotations
@@ -112,6 +119,47 @@ def test_on_linux_it_is_named_by_its_state_and_by_the_parent_that_should_collect
     assert said.startswith("(no command line: state ")
     assert f", child of {os.getpid()}: " in said
     assert "python" in said.lower()
+
+
+def test_the_test_before_is_the_last_one_the_worker_ran_whatever_its_module() -> None:
+    """Decision 86 (a) of the review of M13.10: the test that ran before on the worker is any test
+    of any module, as each one ends — not only one of those that ask for the fixture, and not only
+    one that reached its teardown. On ubuntu, on 2026-10-29, «no test ran before it on this worker»
+    was said eighty-six times, and was false every time."""
+    from tests import conftest
+
+    other = "tests/infrastructure/machine/test_account_window.py::test_of_another_module"
+    conftest.pytest_runtest_logfinish(other, (other.split("::")[0], 0, "test_of_another_module"))
+    child = subprocess.Popen(["/bin/sleep", "61"])
+    folder = scratch()
+    try:
+        said = shell.found_before(folder)
+    finally:
+        child.kill()
+        child.wait()
+        shutil.rmtree(folder, ignore_errors=True)
+
+    assert f"left by {other}: " in said
+
+
+def test_a_child_of_the_worker_that_ended_is_named_once_and_then_collected(
+    ended: subprocess.Popen[bytes],
+) -> None:
+    """Decision 86 (b): a process that ended and is the worker's own child is the worker's to
+    collect, and nobody else will. Found before a test, it is named — that test fails — and then
+    collected, with ``waitpid`` and ``WNOHANG``: the test after it does not find it again. On
+    ubuntu the same one failed eighty-six tests, and hid the one that left it."""
+    folder = scratch()
+    try:
+        first = shell.found_before(folder, "tests/x.py::test_the_one_before")
+        then = shell.found_before(folder, "tests/x.py::test_the_one_before")
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+
+    assert f"{ended.pid} (" in first
+    assert f"{ended.pid} (" not in then
+    with pytest.raises(ChildProcessError):
+        os.waitpid(ended.pid, os.WNOHANG)
 
 
 def test_what_runs_before_a_test_begins_is_named_whole_with_the_test_before_and_swept() -> None:
