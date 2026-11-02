@@ -53,12 +53,19 @@ branch; un branch di sola registrazione comincia con `docs-` e non porta codice.
 - Tutto ciò che gira in `make check` ha un test che ne dimostra il fallimento nel caso
   negativo.
 - **`make check` una volta, alla fine della milestone, prima del riepilogo; durante il lavoro solo
-  i test del pezzo che si tocca.** Si lancia in primo piano e si aspetta lì: non in background,
-  non sorvegliato da un monitor, non interrogato a intervalli — il polling costa più del lavoro che
-  sorveglia, e una volta è costato sei ore. **E si legge intero**: non si passa in una pipe che ne
-  taglia la coda — `| tail`, `| head`, un `grep` che tiene solo le righe attese —, perché il
-  riepilogo, i conteggi e l'esito stanno in fondo. Un giro perso perché l'esito è finito in una
-  pipe costa novanta secondi.
+  i test del pezzo che si tocca.** In primo piano se sta nel limite del comando, e si aspetta lì;
+  altrimenti in sfondo, con l'uscita intera in un file e una sola notifica alla fine. In nessuno dei
+  due modi è sorvegliato da un monitor o letto a intervalli — il polling costa più del lavoro che
+  sorveglia, e una volta è costato sei ore. **E si legge intero**, dallo schermo o dal file: non si
+  passa in una pipe che ne taglia la coda — `| tail`, `| head`, un `grep` che tiene solo le righe
+  attese —, perché il riepilogo, i conteggi e l'esito stanno in fondo. Un giro perso perché l'esito
+  è finito in una pipe costa novanta secondi. **Lo scopo è quello di prima**: un giro solo, alla fine,
+  aspettato e non sorvegliato, e letto per intero.
+  ***Rivista il 2026-11-02*** (decisione 1 di `docs-registrazioni-di-novembre`): diceva «si lancia in
+  primo piano e si aspetta lì: non in background». Sul Mac un comando in primo piano della sessione si
+  interrompe a dieci minuti, e il solo pytest di `make check` ne ha presi quasi dieci — 597,98 secondi —
+  nel giro di M13.10 del 2026-10-29 (`.git/m13.10-reference/review-79-88/make-check.txt`): la regola
+  com'era non si poteva rispettare.
   **Nella sessione cloud, che gira come root**, il gate `cov-critical` manca dei rami che solo un
   sistema che nega raggiunge: `make -k check`, il riepilogo elenca quelle righe, e le giudica la CI
   sul branch. La suite di `main` non si rifà per confronto, salvo per un rosso che non si sa spiegare.
