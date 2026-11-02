@@ -1138,8 +1138,12 @@ revisione di ADR 0011 con M13.1, il posto del verifier e i pesi con M13.3.
 ### 5.12 L'ordine della Fase 14, e perché comincia prima che la 13 sia chiusa
 
 La **Fase 14 è registrata** — M14.1 e M14.2 dal 2026-09-25, dalla review della SPEC di M13.3, M14.3 e
-M14.4 dal 2026-09-30 — e **non è cominciata**: nessuna sua milestone è uscita da `Proposta`, che è il criterio di
-§4.1. Non ha ancora un nome, e lo avrà dal changelog quando consegnerà la prima. ***Annotato il 2026-10-07***:
+M14.4 dal 2026-09-30 — e ~~**non è cominciata**: nessuna sua milestone è uscita da `Proposta`, che è il criterio di
+§4.1. Non ha ancora un nome, e lo avrà dal changelog quando consegnerà la prima.~~ **è cominciata il 2026-10-07**,
+quando M14.1 è arrivata su `main` fuori da `Proposta` (il merge `cc26a85`; sul suo branch era Implementata dal
+2026-10-06); il nome glielo dà il changelog (***corretto il 2026-11-02***, risposta 14 di
+`docs-registrazioni-di-novembre`, nella forma della sua risposta 9 per §4.1: la frase era falsa dal 2026-10-07, e
+nessun test se n'è accorto). ***Annotato il 2026-10-07***:
 M14.1 è fatta (5.9), e **M14.2 è implementata, fino alla prova a mano** ([ADR 0058](adr/0058-planner.md),
 Proposta finché la sezione 24 della guida non passa sul Mac). ***Annotato il 2026-10-08***: **la prova a mano di
 M14.2 è passata** sul Mac a `f2b67c0`, e ADR 0058 è Accettata: ELA scrive i piani. ***Annotato il 2026-10-09***:
