@@ -288,8 +288,13 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
 - **Fase 14 — il tetto, il Planner, e il modello che guarda e decide.** Registrata il 2026-09-25 con
   **M14.1** (il tetto di spesa, §30) e **M14.2** (il Planner, §13), dalla review della SPEC di M13.3; il
   2026-09-30 si sono aggiunte **M14.3** (il browser guidato dal modello, §19) e **M14.4** (il computer
-  guidato dal modello, §20). **Non è cominciata**: nessuna sua milestone è uscita da `Proposta`, e resta
-  nel blocco delle fasi future. Sono aperte tutte, e quando la fase comincia sta nella voce 5.12. *Questa
+  guidato dal modello, §20). ~~**Non è cominciata**: nessuna sua milestone è uscita da `Proposta`, e resta
+  nel blocco delle fasi future. Sono aperte tutte, e quando la fase comincia sta nella voce 5.12.~~ **È
+  cominciata il 2026-10-07**, quando M14.1 è arrivata su `main` fuori da `Proposta` (il merge `cc26a85`; sul
+  suo branch era Implementata dal 2026-10-06), ed è uscita dal blocco delle fasi future; il nome glielo dà il
+  changelog. Quali sue milestone sono fatte e quali aperte lo dice la tabella della §2, e l'ordine sta nella
+  voce 5.12 (***corretto il 2026-11-02***, risposta 9 di `docs-registrazioni-di-novembre`: la frase era falsa
+  dal 2026-10-07, e nessun test se n'è accorto — è il verbo di questa prosa, che qui sopra nessun test tiene). *Questa
   voce è del 2026-09-30*: dal 2026-09-25 la fase era registrata senza la voce che la regola qui sopra le
   dà. Da quel giorno la regola la tiene un test, `tests/docs/test_stato.py`: una fase che ha documenti e
   nessuna milestone fuori da `Proposta` ha la sua voce qui. **Solo quella** (Tommaso e il revisore,
@@ -1259,8 +1264,9 @@ suoi confini e una fine. È la forma che la 5.11 dà alle `MEDIUM` — «mai abb
   codice, l'audit, il `.env`: §65, «modificare arbitrariamente il proprio sistema di sicurezza». **Oggi lo garantisce il
   fatto che nessuna policy raggiunge una `HIGH`**: le due capability che una policy copre sono sessioni del browser, e la
   radice di ADR 0045 §5 tiene `fs.*` fuori dal database, dal `.env` e dall'albero sorgente. **Non lo garantisce niente per
-  `terminal.run`**, il cui scope sono i programmi e non i file, e la cui sola difesa è il sì a ogni uso. Il dettaglio è
-  in M13.14, nella sezione «(d)». Vale anche per M14.7, sul repository di ELA.
+  `terminal.run`**, il cui scope sono i programmi e non i file, e la cui sola difesa è il sì a ogni uso: **resta fuori
+  dalle policy** finché la SPEC di M13.14 non dimostra un confine che tenga il sistema di sicurezza fuori dalla sua
+  portata (risposta 8 del 2026-11-02). Il dettaglio è in M13.14, nella sezione «(d)». Vale anche per M14.7, sul repository di ELA.
 - **(e) Una policy su un'azione `HIGH` ha uno scope stretto** — un sito, un contatto, una cartella —, **dei tetti e una
   scadenza**, e l'anteprima nomina ciò che ELA farà senza chiedere. Le forme le decide la SPEC.
 
