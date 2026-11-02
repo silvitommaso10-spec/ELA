@@ -49,7 +49,11 @@ uv run python scripts/generate_stato.py
   solo se il caso peggiore sta dentro il tetto del mese, scritto nel `.env` del Core (5.9).
 - **Il ciclo di lavoro** è quello di `CLAUDE.md`: una milestone alla volta, SPEC → IMPLEMENTATION →
   TEST → REVIEW → COMMIT, su un branch di lavoro; il merge su `main` lo fa l'utente dopo revisione
-  esterna. `make check` in primo piano, una volta, alla fine della milestone, letto intero. Il
+  esterna. ~~`make check` in primo piano, una volta, alla fine della milestone, letto intero.~~ `make check`
+  una volta, alla fine della milestone, letto intero: in primo piano se sta nel limite del comando, altrimenti in
+  sfondo, con l'uscita intera in un file e una notifica sola alla fine (***rivisto il 2026-11-02***, la regola di
+  `CLAUDE.md`: un comando in primo piano della sessione si interrompe a dieci minuti, e il pytest di `make check` ne
+  ha presi quasi dieci). Il
   controllo Linux è la CI sul branch, verde prima del merge sui suoi **tre** job: `make check` su
   ubuntu e su macos, e — da M12.4 — la suite del nodo su `windows-latest`.
 
@@ -142,6 +146,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.11` | Proposta | Il browser sul PC: le capacità di M13.9 e M13.10 sul nodo Windows, e il verdetto che torna in busta |
 | 13 — Il permesso prima dell'azione | `M13.12` | Implementata | Le policy di §59: una policy che Tommaso si crea rende autonoma un'azione `MEDIUM`, a partire da `browser.guided` |
 | 13 — Il permesso prima dell'azione | `M13.13` | Proposta | I file dal browser: uno scaricamento è un `fs.write`, un caricamento un `fs.read` |
+| 13 — Il permesso prima dell'azione | `M13.14` | Proposta | Le policy di Tommaso arrivano alle azioni HIGH |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.1` | Implementata | Il tetto di spesa: la chiave di ELA, e un limite che ELA fa rispettare |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.1b` | Implementata | La docstring del tetto dice il secondo tetto giusto: il limite dell'organizzazione |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.2` | Implementata | Il Planner: ELA scrive i piani da sola |
@@ -149,6 +154,9 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.4` | Proposta | Il computer guidato dal modello: lo schermo, con il meccanismo di M14.3 |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.5` | Proposta | Il contesto nel Planner: che cosa ELA sa della giornata, nel prompt che scrive un piano |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.6` | Implementata | Haiku 5.5 nel listino: due fasce di prezzo, il caso peggiore che le conosce, e il profilo economico al modello nuovo |
+| 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.6b` | Proposta | Haiku 4.5 esce dal listino: il modello che nessun profilo nomina, e le due prove che poggiano solo su di lui |
+| 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.7` | Proposta | Il lavoro su un progetto: una sessione di Claude Code in un worktree, e il diff che si approva prima del branch |
+| 15 — *senza nome* | `M15.2` | Proposta | Le skill: un lavoro già riuscito, salvato con il suo verifier, da cui il Planner riparte |
 | 17 — Design | `M17.1` | Implementata | Il Design System: l'identità minima, e le regole che ogni superficie di ELA eredita |
 | 17 — Design | `M17.2` | Implementata | Il Command Center v1: un client dell'API, quattro viste, e la terza identità del registro |
 | 17 — Design | `M17.2b` | Implementata | Un esito finale sparisce dalle superfici che elencano i task |
@@ -169,7 +177,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **65** | `docs/adr/NNNN-*.md` |
-| Milestone | **93, di cui 75 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **97, di cui 75 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **71** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **15** | `pyproject.toml` |
 | Port | **36** | i `Protocol` di `src/ela/ports.py` |
@@ -245,6 +253,9 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
   [ADR 0065](adr/0065-browser-steps.md) è Accettata, per decisione di Tommaso di quel giorno (decisione 76 di M13.10).
   Dalla stessa review (decisione 77) è registrata una riparazione dello script di quella prova, **M13.10b** (la
   domanda a occhio del login chiede ciò che non mostra), fuori dalla fila.
+  ***Annotato il 2026-11-02***: registrata **M13.14** — le policy di Tommaso arrivano alle azioni `HIGH` —, dalla sua
+  decisione di quel giorno (5.14). Fino a lei la frase qui sopra sul livello `HIGH`, che nessuna policy raggiunge, resta
+  vera.
   L'ordine e le condizioni stanno nella voce 5.11, e la fila che attraversa le fasi nella 5.10.
 - **Fase 12 — i nodi. È chiusa** (2026-09-20, con M12.5). ELA ha smesso di essere un processo su
   una macchina e di essere usabile solo davanti a quella macchina: un'identità provabile per un
@@ -287,7 +298,9 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
 - **Fase 15 — la memoria e la proattività.** §21 (Memory Core) e §34 (Proactive Core), rimandate
   da ADR 0023, ADR 0025, ADR 0036 e da tre milestone: il richiamo periodico di `recover()`, il
   momento in cui ELA decide di parlare da sola, e il trascritto che oggi non sopravvive al task
-  perché un trascritto è memoria e la memoria è lì.
+  perché un trascritto è memoria e la memoria è lì. ***Annotato il 2026-11-02***: registrata **M15.2**, le skill — un
+  lavoro già riuscito, salvato con il suo verifier, da cui il Planner riparte —, dalla decisione di Tommaso del
+  2026-10-30; è la prima della fase nell'ordine (5.10), e M15.1 resta della wake word (5.6).
 - **Le fasi che restano non hanno ancora consegnato niente.** Il blocco qui sotto elenca le fasi
   che un documento del repository nomina e che **nessuna milestone ha ancora cominciato** — nessuna
   delle loro è uscita da `Proposta` —, e ciò che non compare non è dimenticato: è **non ancora
@@ -304,7 +317,7 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
 
 | Fase | Documenti che la nominano |
 |---|---|
-| 15 | 18 |
+| 15 | 19 |
 | 16 | 1 |
 
 <!-- fine del blocco generato: le fasi che un documento nomina -->
@@ -451,6 +464,12 @@ un'esecuzione dell'executor, con il Guardian»** — ogni gesto è un task figli
 non ha niente da decidere —; la **terza**, «ciò che si approva è ogni effetto, uno per uno». ***Annotato il
 2026-10-09***: **la prova a mano di M14.3 è passata** sul Mac a `f58a6cb`, e ADR 0060 è Accettata: cinque sessioni di
 Claude Code su Haiku 5.5, ogni gesto un task figlio deciso dal Guardian, il sì al gesto che invia chiesto ogni volta.
+
+***Annotato il 2026-11-02*** (decisione 4 di `docs-registrazioni-di-novembre`): **il coding ha la sua milestone, M14.7** —
+ELA lavora su un progetto di Tommaso con una sessione di Claude Code, in un worktree suo, e ciò che si approva è il diff,
+prima che tocchi il branch del progetto ([`milestones/M14.7.md`](milestones/M14.7.md)). Per il codice la terza condizione
+torna com'è scritta qui; il push chiede sempre, salvo una policy di M13.14 che lo copra (5.14), e il merge su `main` non lo
+fa mai ELA. La posizione è nella fila della 5.10, dopo M13.11 e prima di M13.5.
 
 ### 5.8 Come si paga una sessione
 
@@ -625,7 +644,8 @@ M13.4** (il revisore, 2026-09-28). **M6.3c è la prima dopo M13.4**, e porta anc
 che gira prima del suo punto di non ritorno (il revisore, 2026-09-29, decisione 11 della SPEC di M13.4).
 
 **La fila del 2026-09-30**, decisa da Tommaso e dal revisore, e completata lo stesso giorno dalla review
-della sua registrazione. Dopo M13.4, in quest'ordine:
+della sua registrazione (***annotato il 2026-11-02***: ciò che ne resta da fare è la fila del 2026-11-02, qui
+sotto). Dopo M13.4, in quest'ordine:
 
 1. **M6.3c**, con il «ferma» che arriva al tool prima del suo punto di non ritorno; **il suo primo
    commit paga il debito di ADR 0053 §2**, il runner della CI, entro il 2026-10-19;
@@ -674,6 +694,24 @@ della sua registrazione. Dopo M13.4, in quest'ordine:
 10. **la Fase 15**, nel suo ordine;
 11. **M17.3**, dopo la Fase 15 e dopo l'eseguibile firmato;
 12. **M17.4**, il redesign, alla fine.
+
+**La fila del 2026-11-02**, decisa da Tommaso e dal revisore sul branch `docs-registrazioni-di-novembre`, insieme alle
+decisioni 2–5. Prende il posto delle voci 6–10 della fila qui sopra per ciò che di loro resta da fare; le voci 11 e 12 non
+cambiano. In quest'ordine:
+
+1. **M13.13**, i file dal browser: **la prossima**, con M13.9b sul suo branch prima del suo codice;
+2. **M13.14**, le policy di Tommaso arrivano alle azioni `HIGH` (5.14);
+3. **M13.11**, il browser sul PC;
+4. **M14.7**, il lavoro su un progetto di Tommaso con una sessione di Claude Code (5.7);
+5. **M13.5**, con la condizione d'ingresso invariata (5.11);
+6. **M14.4**, il computer guidato dal modello, subito dopo M13.5;
+7. **M13.7 e M13.8**;
+8. **la Fase 15**, con **M15.2**, le skill, per prima;
+9. **M17.3**, dopo la Fase 15 e dopo l'eseguibile firmato;
+10. **M17.4**, il redesign, alla fine.
+
+**M14.6b** — Haiku 4.5 esce dal listino — sta **fuori dalla fila**, con una condizione: si fa prima della prossima
+rilettura del listino, entro il 2026-11-28 (5.12).
 
 **La Fase 14 comincia prima che la Fase 13 sia chiusa**, e le voci delle due fasi lo dicono, con la
 ragione (5.11 e 5.12). ***Annotato il 2026-10-02***: **M9.7** (ogni blocco della guida che mostra un'uscita della CLI
@@ -772,7 +810,8 @@ M13.1d → M13.9 → M13.10 → M13.11 → M13.5 → M13.7 → M13.8**; dopo M13
 **M13.1e**, registrata dalla review della SPEC di M13.1c, viene dopo M14.1 e M14.2 e prima di M14.3. ***Annotato il
 2026-10-08***: fatta, con la prova a mano passata. ***Annotato il 2026-10-09***: **M13.12**, le policy di §59, viene dopo
 M14.3 e prima di M13.9 — qui sotto, «Chi apre la milestone delle policy di §59». ***Annotato il 2026-10-10***: fatta, con
-la prova a mano passata.) La fila intera, con
+la prova a mano passata.) ***Annotato il 2026-11-02*** (la fila rivista, 5.10): ciò che resta della fase è **M13.13 →
+M13.14 → M13.11 → M13.5 → M13.7 → M13.8**, con M14.7 fra M13.11 e M13.5, e M14.4 fra M13.5 e M13.7. La fila intera, con
 M6.3c in testa, sta nella 5.10. M13.6 resta fuori dalla
 fila, con la sua condizione. **La Fase 14 comincia prima che la Fase 13 sia chiusa**, e la ragione è di
 Tommaso: **tutto ciò che vuole dal browser e dal computer control passa da un modello che guarda e
@@ -846,6 +885,7 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   su questo Mac** — il permesso di controllo è chiesto a un eseguibile di ELA, concesso a quello, e
   sopravvive a un riavvio. Se a fine fase non si ottiene, **resta `Proposta` e la fase si chiude
   senza di lei**. ***Il 2026-09-30*** la condizione d'ingresso non cambia, e il posto sì: dopo M13.11.
+  ***Annotato il 2026-11-02***: dopo M14.7, che viene dopo M13.11 (la fila della 5.10).
   **Il controllo di mouse e tastiera sul PC è una milestone a sé**, da registrare quando M13.5 è chiusa.
   E **M13.5 resta la capability** — mouse, tastiera, il Guardian, la verifica —, usabile con piani scritti
   a mano: il modello che guarda lo schermo e decide il gesto dopo è **M14.4**, subito dopo (5.12).
@@ -1014,7 +1054,13 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
 - **M13.11 — il browser sul PC** (§19, §56). **Registrata il 2026-09-30**: le capacità di M13.9 e M13.10
   sul nodo Windows, con il verifier sul nodo e il verdetto in busta (ADR 0048 §7); rivede la decisione 1
   di M13.4. **Condizione d'ingresso: una misura sul PC** di che cosa lo Smart App Control lascia partire
-  e della CLI di Bitwarden. **Dopo M13.10.** ***Annotato il 2026-10-14***: dopo M13.13.
+  e della CLI di Bitwarden. **Dopo M13.10.** ***Annotato il 2026-10-14***: dopo M13.13. ***Annotato il 2026-11-02***:
+  dopo M13.14, e prima di M14.7.
+- **M13.14 — le policy di Tommaso arrivano alle azioni `HIGH`** (§59, §29, §30, §65). **Registrata il 2026-11-02**,
+  dalla decisione di Tommaso di quel giorno (5.14): una policy che Tommaso crea può coprire un'azione `HIGH`, e dentro i
+  suoi confini ELA la fa senza chiedere; `CRITICAL` resta fuori, e nessuna policy copre un'azione che tocca il sistema di
+  sicurezza di ELA. Il suo ADR rivede ADR 0045 §3 e la riga di ADR 0062 §1 che rifiuta la dichiarazione su una `HIGH`.
+  **Dopo M13.13, prima di M13.11** ([`milestones/M13.14.md`](milestones/M13.14.md)).
 
 **Che cosa la Fase 13 non porta.**
 
@@ -1058,8 +1104,8 @@ firmato, non prima.**
 **«Senza chiedere» è l'obiettivo di Tommaso, non un livello di rischio**: il livello lo decide ogni SPEC
 con le sue ragioni — M14.2 riesamina `browser.read`, M13.9 dà a una lettura con il profilo almeno
 `MEDIUM`. **Un'azione `MEDIUM` diventa autonoma solo con una policy di §59 che Tommaso crea**, con uno
-scope — capability, sito, durata —, **mai abbassando il livello**; `HIGH` resta fuori dalle policy
-(ADR 0045 §3). Oggi nessun percorso di produzione crea una policy di §59: un grant nasce solo da un sì,
+scope — capability, sito, durata —, **mai abbassando il livello**; ~~`HIGH` resta fuori dalle policy
+(ADR 0045 §3).~~ (***rivisto il 2026-11-02***, qui sotto.) Oggi nessun percorso di produzione crea una policy di §59: un grant nasce solo da un sì,
 nell'executor. La regola è quella dell'eseguibile firmato: **la prima milestone della fila che ha bisogno
 di un'azione `MEDIUM` senza domanda apre, subito prima di sé, la milestone che costruisce quel
 percorso**, con il suo numero. Tommaso non vuole che ogni lettura chieda: vuole crearsi le policy.
@@ -1072,6 +1118,12 @@ livello si muove, e `HIGH` resta fuori. Le altre `MEDIUM` ricevono la dichiarazi
 il 2026-10-10***: **il percorso c'è** — M13.12 è fatta, con la prova a mano passata sul Mac a `3178ec3`, e
 [ADR 0062](adr/0062-policies.md) è Accettata: una policy di §59 la crea solo Tommaso, dalla rotta della creazione (la regola
 66).
+
+***Rivisto apertamente da Tommaso il 2026-11-02*** (5.14): dove questa voce diceva «`HIGH` resta fuori dalle policy (ADR
+0045 §3)», una policy che Tommaso crea **può coprire anche un'azione `HIGH`**, con uno scope stretto, dei tetti e una scadenza; `CRITICAL` resta
+fuori, e nessuna policy copre un'azione che tocca il sistema di sicurezza di ELA. **Il resto di questa voce resta**: il
+livello non si abbassa mai, e una policy la crea solo Tommaso. Fino a M13.14, che lo costruisce, il codice è quello di
+ADR 0062, e nessuna policy raggiunge una `HIGH`.
 
 *Perché nessun ADR:* è una scelta d'ordine e di perimetro — quale milestone, quando, che cosa
 eredita, che cosa resta fuori — e nessuna riga di codice la contiene. Le parti tecniche prendono il
@@ -1094,7 +1146,8 @@ Accettate.
 
 **L'ordine è M14.1 → M14.2 → M14.3 → M14.4**, con M14.4 più avanti nella fila, dopo M13.5; ognuna ha la
 sua ragione. ***Annotato il 2026-10-08***: **M14.6 viene prima di M14.3**, sullo stesso branch (decisione 27 della review
-della SPEC di M14.3); M14.5 resta fuori dalla fila.
+della SPEC di M14.3); M14.5 resta fuori dalla fila. ***Annotato il 2026-11-02*** (la fila rivista, 5.10): **M14.7** viene
+dopo M13.11 e prima di M13.5, quindi prima di M14.4; **M14.6b** sta fuori dalla fila, e si fa entro il 2026-11-28.
 
 - **M14.1 — il tetto di spesa** (§30). **La prima**, perché nessuna capability della fase che spende
   nasce prima del tetto (5.9).
@@ -1108,6 +1161,9 @@ della SPEC di M14.3); M14.5 resta fuori dalla fila.
   guarda la pagina e sceglie il gesto dopo. L'obiettivo di Tommaso è aprire, leggere, cercare e navigare
   senza chiedere, dove il livello lo permette o una sua policy di §59 lo copre (5.11); mandare qualcosa a
   nome di Tommaso chiede ogni volta; «cercare» è navigare, un `browser.read`. È lavoro agentico (5.7).
+  ***Rivisto apertamente da Tommaso il 2026-11-02*** (5.14): «mandare qualcosa a nome di Tommaso chiede ogni volta»
+  resta vero **salvo una sua policy che lo copra**, con uno scope stretto — un sito, un contatto —, dei tetti e una
+  scadenza. Lo costruisce M13.14; fino a lei, chiede ogni volta.
   **Dopo M14.2**, e non aspetta M13.9: le pagine pubbliche non vogliono il login, e WhatsApp Web, che lo
   vuole, passa nella prova a mano di M13.9. ***Annotato il 2026-10-10***: nella prova a mano di **M13.10**
   (decisione 37 della review della SPEC di M13.9). ***Annotato il 2026-10-15***: ne esce anche lì, finché la causa
@@ -1121,6 +1177,17 @@ della SPEC di M14.3); M14.5 resta fuori dalla fila.
   Haiku 4.5 resta nel listino senza profilo; i byte del corpo di una chiamata che spende entrano nell'audit accanto al suo
   usage. **Su questo branch di M14.3, prima del suo codice** — la misura di M14.3 ha scelto il profilo economico per il
   browser, e quel profilo è Haiku 5.5 —, con ADR 0061 e senza una prova a mano sua: la prova di M14.3 gira su Haiku 5.5.
+- **M14.7 — il lavoro su un progetto** (§24, §41). **Registrata il 2026-11-02** (decisione 4 di
+  `docs-registrazioni-di-novembre`): ELA lavora su un progetto di Tommaso con una sessione di Claude Code, in un worktree
+  suo; ciò che si approva è il diff, prima che tocchi il branch del progetto; il push chiede sempre, salvo una policy di
+  M13.14 che lo copra; il merge su `main` non lo fa mai ELA; chi paga lo decide la cartella (5.8); sul repository di ELA
+  stessa nessuna policy copre ciò che tocca il suo sistema di sicurezza (5.14). È lavoro agentico (5.7). **Dopo M13.11,
+  prima di M13.5** ([`milestones/M14.7.md`](milestones/M14.7.md)).
+- **M14.6b — Haiku 4.5 esce dal listino** (§25, §30). **Registrata il 2026-11-02** (decisione 5): nessun profilo lo
+  nomina da M14.6, dal 2026-11-01 il libro del mese non ha prenotazioni di ottobre, e la data di ritiro della sua pagina è
+  passata. **Fuori dalla fila**, con una condizione: si fa prima della prossima rilettura del listino, **entro il
+  2026-11-28** ([`milestones/M14.6b.md`](milestones/M14.6b.md)). Fino a lei, la riga di M14.6 qui sopra — Haiku 4.5 nel
+  listino senza profilo — resta vera.
 
 **La Fase 14 comincia prima che la Fase 13 sia chiusa** (Tommaso e il revisore, 2026-09-30): dopo M6.3c,
 M13.1c e M13.1d, e prima di M13.9. La fila intera sta nella 5.10, e la voce della Fase 13, la 5.11, lo
@@ -1134,7 +1201,8 @@ M13.8 — trovano il Planner e il browser guidato dal modello già fatti, e la 5
 piano continua ad attaccarsi a mano», vera fino a lì. La milestone delle policy di §59 la apre la prima
 che ne ha bisogno (5.11). **Una policy per contatto senza domanda** — a
 questo contatto ELA scrive senza chiedere — è una decisione futura di Tommaso, con un ADR che rivede
-ADR 0045 §3: non entra in M14.3.
+ADR 0045 §3: non entra in M14.3. ***Annotato il 2026-11-02***: **decisa** — Tommaso porta le sue policy alle azioni
+`HIGH` (5.14), e l'ADR che rivede ADR 0045 §3 è quello di M13.14.
 
 *Perché nessun ADR:* è una scelta d'ordine, e nessuna riga di codice la contiene. Le parti tecniche
 prendono il loro ADR con la milestone che le costruisce: il tetto con M14.1, che rivede apertamente
@@ -1156,6 +1224,48 @@ Lo porta a una frase M13.10 — il login chiesto dal modello dentro una sessione
 giorno.
 
 *Perché nessun ADR:* è una regola su quando una fase è chiusa, e nessuna riga di codice la contiene.
+
+### 5.14 Le policy di Tommaso arrivano alle azioni `HIGH`
+
+Decisione di Tommaso del 2026-11-02, con le sue parole: «se imposto una policy qualsiasi cosa chieda di fare la policy la
+può fare ELA senza autorizzazioni; solo io posso impostare policy e lei non può modificare le sue policy». La forma è del
+revisore, sul branch `docs-registrazioni-di-novembre` (decisione 2).
+
+**Una policy che Tommaso crea può coprire anche un'azione `HIGH`**: dentro i suoi confini ELA la fa senza chiedere. È una
+**revisione aperta** della decisione del 2026-09-30 — «mandare qualcosa a nome di Tommaso chiede ogni volta» (5.12, la voce
+di M14.3) e «`HIGH` resta fuori dalle policy (ADR 0045 §3)» (5.11, «Chi apre la milestone delle policy di §59») —, annotata
+in quei due posti. La costruisce **M13.14** ([`milestones/M13.14.md`](milestones/M13.14.md)), dopo M13.13 nella fila della
+5.10, e il suo ADR rivede ADR 0045 §3 — «`HIGH` è il livello che non raggiungono» — e la riga di ADR 0062 §1 che rifiuta
+la dichiarazione alla costruzione del catalogo — «no policy reaches a HIGH (ADR 0045 §3)». **Fino a lei il codice è quello
+di oggi**, e nessuna policy raggiunge una `HIGH`.
+
+*Perché:* Tommaso vuole decidere una volta, lui, che cosa ELA fa da sola, invece di rispondere ogni volta alla stessa
+domanda. §59 lo prevede — «Puoi modificare liberamente i file dentro questa cartella» è una policy su `fs.write`, che in
+ELA è `HIGH` —, e il livello non si abbassa: resta `HIGH`, e ciò che lo copre è una riga che Tommaso ha scritto, con i
+suoi confini e una fine. È la forma che la 5.11 dà alle `MEDIUM` — «mai abbassando il livello» —, un livello più su.
+
+*Che cosa ne discende* — la forma decisa dal revisore, che M13.14 ha fra i criteri che la sua SPEC non può togliere:
+
+- **(a) Una policy creata da Tommaso può coprire un'azione `HIGH`.**
+- **(b) `CRITICAL` resta fuori.** §30 vuole per un pagamento un'«autorizzazione esplicita», e dice che «Un semplice:
+  "Sì" fuori contesto non deve automaticamente autorizzare un pagamento critico»; §65 vuole ELA limitata
+  nell'«eseguire azioni finanziarie senza consenso». **Una policy è un sì dato prima del contesto.**
+- **(c) Solo Tommaso crea e revoca una policy**, dalla console o dalla CLI, e cambiarla vuol dire revocarla e crearne
+  un'altra; ELA non ne crea, non ne allarga e non ne revoca nessuna, e non può proporne una e approvarla da sé. **Oggi è
+  vero**: la regola 66 e le identità che arrivano alle rotte delle policy, con i test nominati in M13.14, nella sezione
+  «(c)». Ciò che manca — un test che dica che una policy non si cambia, le rotte provate per ogni identità, e la strada di un
+  programma che legge il gettone del Core — è fra i criteri di M13.14.
+- **(d) Nessuna policy copre un'azione che tocca il sistema di sicurezza di ELA** — le policy, il Guardian e il suo
+  codice, l'audit, il `.env`: §65, «modificare arbitrariamente il proprio sistema di sicurezza». **Oggi lo garantisce il
+  fatto che nessuna policy raggiunge una `HIGH`**: le due capability che una policy copre sono sessioni del browser, e la
+  radice di ADR 0045 §5 tiene `fs.*` fuori dal database, dal `.env` e dall'albero sorgente. **Non lo garantisce niente per
+  `terminal.run`**, il cui scope sono i programmi e non i file, e la cui sola difesa è il sì a ogni uso. Il dettaglio è
+  in M13.14, nella sezione «(d)». Vale anche per M14.7, sul repository di ELA.
+- **(e) Una policy su un'azione `HIGH` ha uno scope stretto** — un sito, un contatto, una cartella —, **dei tetti e una
+  scadenza**, e l'anteprima nomina ciò che ELA farà senza chiedere. Le forme le decide la SPEC.
+
+*Perché nessun ADR:* è una decisione di prodotto e di perimetro — fin dove arriva un sì dato prima — e nessuna riga di
+codice la contiene ancora. La parte tecnica prende l'ADR di M13.14, come le `MEDIUM` hanno preso ADR 0062 con M13.12.
 
 ## 6. I debiti datati
 
@@ -1194,9 +1304,11 @@ pagato da chi doveva.
 3. **Scrivi la SPEC** della milestone in `docs/milestones/<id>.md`, con che cosa entra, che cosa
    **non** entra, i criteri di accettazione e i test previsti. **Fermati e mostrala** prima di
    implementare.
-4. **Fai girare la suite**: durante il lavoro, i test del pezzo che tocchi; `make check` in primo
-   piano, una volta sola, alla fine della milestone, **letto intero** — sorvegliarlo costa più del
-   lavoro che sorveglia, e tagliargli la coda costa il giro. Il controllo Linux è la CI sul branch,
+4. **Fai girare la suite**: durante il lavoro, i test del pezzo che tocchi; `make check` ~~in primo
+   piano,~~ una volta sola, alla fine della milestone, **letto intero** — sorvegliarlo costa più del
+   lavoro che sorveglia, e tagliargli la coda costa il giro. In primo piano se sta nel limite del
+   comando; altrimenti in sfondo, con l'uscita intera in un file, una notifica sola alla fine e il file
+   letto intero (***rivisto il 2026-11-02***: la regola di `CLAUDE.md`). Il controllo Linux è la CI sul branch,
    che il merge vuole verde su entrambi i runner di `make check`, e da M12.4 c'è anche la suite del
    nodo su `windows-latest`; `make check-linux` serve a riprodurre qui una CI rossa su ubuntu,
    fingendo l'altra metà della matrice (i suoi limiti sono scritti in `tests/foreign_machine.py`).
