@@ -127,3 +127,17 @@ def test_without_a_vault_s_program_every_terminal_program_is_one_of_the_terminal
     monkeypatch.setenv(TERMINAL, json.dumps([entry(program)]))
 
     assert Settings.load().terminal.programs == (entry(program),)
+
+
+def test_a_program_that_is_not_there_written_through_a_link_is_the_same_by_where_it_leads(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Two spellings of one path that leads nowhere yet — one through a link to a folder —: no file
+    to compare, and the resolved path says they are one. Found by a mutant that compared names."""
+    real = tmp_path / "real"
+    real.mkdir()
+    (tmp_path / "through").symlink_to(real)
+
+    said = refused(monkeypatch, tmp_path, tmp_path / "through" / "bw", real / "bw")
+
+    assert PROGRAM in said and TERMINAL in said

@@ -60,6 +60,25 @@ le ascolta sulla sessione della pagina che il cancello tiene: un click che fa na
 tornare ha avviato una navigazione, e `landed` ne aspetta la fine; **un click che non ne fa nascere nessuna non aspetta
 niente**.
 
+### 3. Solo l'adapter del vault lancia il programma del vault (M13.9c)
+
+L'adapter del vault lancia il suo programma con una lista chiusa di comandi (ADR 0063 §2). Un programma del terminale è
+lanciato con gli argomenti di un piano (ADR 0047): **dichiarato anche lì, il programma del vault partirebbe con argomenti
+che la lista chiusa non conosce**, e niente lo escludeva (censimento del 2026-11-02). La risposta 18 della review delle
+SPEC lo dà a una riparazione sua, con la sua lettera.
+
+- **All'avvio**, una configurazione in cui il programma del vault è anche un programma del terminale **non avvia ELA**,
+  e la frase nomina `ELA_VAULT_PROGRAM` ed `ELA_TERMINAL_PROGRAMS` (`refuse_the_vault_program` in
+  `ela.composition.settings`). **Per identità e non per nome**: lo stesso percorso risolto — un link porta dove porta —,
+  o lo stesso file — lo stesso dispositivo e lo stesso inode, un suo secondo nome —. Un programma che non c'è si
+  confronta per il percorso.
+- **Regola di architettura 72** (`the-vault-s-program-is-its-adapter-s`): il campo `vault_program` lo nominano solo le
+  impostazioni, che lo dichiarano e lo controllano, e la composizione, che lo consegna **all'adapter del vault**, che
+  lo lancia, **e alla sua porta**, che ne fissa l'identità e non lancia niente — un tool non lancia processi (regola
+  32) —; a nessun altro. *Dove la review non diceva*: «solo l'adapter del vault riceve e lancia `ELA_VAULT_PROGRAM`» —
+  la porta lo riceve anche lei, da M13.9, per dire quale riga scrivere e per fissarne l'identità: la regola la nomina,
+  e la regola 32 tiene ogni lancio dove sta l'adapter.
+
 ### Ciò che questo ADR dichiara e non risolve
 
 1. **Il risultato di un gesto dice la pagina del browser se è già lì quando il tool guarda** (§1): un gesto non aspetta
@@ -67,6 +86,9 @@ niente**.
    d'errore arriva dopo il ritorno del click. Lo sguardo del verifier, che viene dopo, la trova.
 2. **Sul browser del profilo Chrome riprova da sé** un `GET` che è finito sulla sua pagina d'errore, un secondo dopo,
    senza un impegno nuovo (misura del 2026-11-03): il sito riceve la richiesta più volte.
+3. **Un'altra copia della CLI di Bitwarden, in un altro file, non si riconosce** (§3): l'identità è del file, non del
+   programma. E **che cosa farebbe un `bw` lanciato da `terminal.run`**, senza la chiave di sessione, **non è
+   verificato**: `bw` non si lancia.
 
 ## Conseguenze
 
@@ -88,4 +110,8 @@ Port estesi:
 | `AccountBrowser` | §19 | async | `unanswered` |
 
 `unanswered` è del §1.
-- **Il conto di oggi** resta quello di ADR 0065 fino ai pezzi che lo cambiano.
+- **Regola di architettura 72** (§3): il programma del vault arriva al suo adapter e alla sua porta, e a nient'altro.
+
+Con questo ADR le regole di architettura sono **settantadue** (la 72); i contratti di import-linter restano
+**quindici**, i port **trentasei**, le rotte dell'API **settantadue** e i comandi della CLI **trentanove**; le
+capability restano **diciotto**, le identità del middleware **sei**.

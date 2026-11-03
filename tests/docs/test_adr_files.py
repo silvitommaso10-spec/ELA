@@ -84,3 +84,32 @@ def test_what_m13_9b_put_in_the_port_is_the_port_s() -> None:
     text = adr_text()
     for named in ("`ela.ports.tried`", "`unanswered`", "`Page.getFrameTree`"):
         assert named in text, named
+
+
+def test_the_conseguenze_count_the_totals_of_today() -> None:
+    """The pin on today's totals, taken over from ADR 0065 (M13.9c adds the seventy-second rule):
+    it moves to the ADR that changes them."""
+    import tomllib
+
+    from ela.api.security import Kind
+    from ela.permissions import production_catalogue
+    from tests.architecture.rules import RULES
+    from tests.contracts.protocols import port_protocols
+    from tests.docs.test_adr_cli import coded_commands
+    from tests.docs.test_adr_composition import coded_routes
+    from tests.docs.test_adr_placement import _rules_up_to
+
+    text = adr_text().split("## Conseguenze", 1)[1]
+    contracts = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"][
+        "importlinter"
+    ]["contracts"]
+
+    assert "**settantadue**" in text and "**Regola di architettura 72**" in text
+    assert len(RULES) == 72
+    assert set(RULES) - set(_rules_up_to(71)) == {"the-vault-s-program-is-its-adapter-s"}
+    assert "**quindici**" in text and len(contracts) == 15
+    assert "**trentasei**" in text and len(tuple(port_protocols())) == 36
+    assert "**settantadue**" in text and len(coded_routes()) == 72
+    assert "**trentanove**" in text and len(coded_commands()) == 39
+    assert "**diciotto**" in text and len(production_catalogue().specs()) == 18
+    assert "**sei**" in text and len(Kind) == 6
