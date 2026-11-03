@@ -184,6 +184,64 @@ async def test_every_use_of_a_page_by_a_fake_asks_the_boundary_again_once_it_is_
     assert await unguarded_after(made, port) == []
 
 
+TRIED = "https://altro.example/x"
+"""The address a page of the browser's own stands for, outside the boundary of these walks."""
+
+
+async def unguarded_on_the_browser_s_page(made: Callable[[], Any], port: type) -> list[str]:
+    """The uses of a page that is **the browser's own page for an address outside its boundary**
+    (M13.9b, ADR 0066): each member that did not raise ``LeftSite`` **with the address the
+    browser tried** — a fake that asked the boundary about ``chrome-error://`` would let a tool's
+    test pass where the real browser says another site."""
+    from ela.ports import LeftSite
+
+    found: list[str] = []
+    for name in uses(port):
+        browser = made()
+        browser.page.unreachable = TRIED
+        opened = await browser.open(
+            "https://sito.example/", lambda url: url.startswith("https://sito.example/"), FakeStop()
+        )
+        await browser.keep(opened.page)
+        browser.moves[name] = "chrome-error://chromewebdata/"
+        try:
+            await getattr(browser, name)(opened.page, **_arguments(getattr(port, name)))
+        except LeftSite as elsewhere:
+            if elsewhere.address != TRIED:
+                found.append(f"{name}: asked about {elsewhere.address}")
+            continue
+        except Exception as error:  # noqa: BLE001 — said, as what the member did instead
+            found.append(f"{name}: {type(error).__name__}")
+            continue
+        found.append(name)
+    return found
+
+
+@pytest.mark.parametrize(
+    ("made", "port"), [(FakeBrowser, Browser), (FakeAccountBrowser, AccountBrowser)]
+)
+async def test_every_use_of_the_browser_s_page_by_a_fake_asks_about_the_address_tried(
+    made: Callable[[], Any], port: type
+) -> None:
+    assert await unguarded_on_the_browser_s_page(made, port) == []
+
+
+class AskingAboutTheBrowser_sPage(FakeBrowser):
+    """A fake that asks the boundary about where the browser's page is, not about the address
+    the browser tried."""
+
+    def _address(self) -> str:
+        if self._where is not None:
+            return self._where
+        return self.page.address or self.opened[-1]
+
+
+async def test_a_fake_that_asks_about_the_browser_s_page_is_found() -> None:
+    found = await unguarded_on_the_browser_s_page(AskingAboutTheBrowser_sPage, Browser)
+
+    assert "title: asked about chrome-error://chromewebdata/" in found
+
+
 class ForgetfulAfterwards(FakeBrowser):
     """A fake that asks where the page is before reading its title, and not after."""
 
