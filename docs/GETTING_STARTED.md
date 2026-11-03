@@ -6055,6 +6055,11 @@ prenotato com'era al passo 1
 > leggere. Da allora **lo script ti mette davanti ciò che devi guardare** (decisione 155), e **prima del login guarda
 > lui che in quel sito non sei già dentro** (decisione 151). La prova si rifà per intero. **Rifatta alle 18:16 dello
 > stesso giorno, sul commit che era allora l'ultimo: è passata** — è quella scritta qui sopra, «Fatta da Tommaso il 13 ottobre 2026».
+> ***Annotato il 2026-11-03*** (M13.10b, risposta 17 della review delle SPEC del branch `m13.13-i-file-dal-browser`):
+> **la sezione è cambiata dopo la prova del 2026-10-13, che non si rifà**. Nel passo 6, prima della prima domanda a
+> occhio, un blocco `voce` ti fa aprire la voce nell'app di Bitwarden — sullo schermo, mai nel file —; prima della
+> seconda, un blocco `schermo` ti mette davanti le domande di ELA (`uv run ela approvals`). [ADR
+> 0063](adr/0063-browser-with-your-accounts.md) resta Accettata su ciò che quella prova ha visto.
 
 Da M13.9 ELA ha **un secondo browser**: Chrome for Testing su una cartella tua, che **tiene i siti in cui sei entrato**.
 Non è il tuo Chrome, e il tuo profilo ELA non lo apre: in questo entri tu, una volta, **con le tue mani**, nella finestra
@@ -6376,6 +6381,11 @@ entra nel file. **Se c'è, la prova si ferma** e ti dice come uscire: `uv run el
 «logout» nella pagina, poi Cmd-Q — non il pulsante rosso, che lascia il browser acceso: in quel caso `uv run ela
 browser close`. *Un limite*: guarda il testo che la lettura ha portato; se era tagliato prima, vale per la parte letta.
 
+<!-- prova: 6.voce -->
+```
+Apri l'app di Bitwarden, cerca news.ycombinator.com e apri la voce del tuo account.
+```
+
 <!-- prova: 6.occhio -->
 ```
 Nel tuo vault c'è la voce del tuo account di news.ycombinator.com, con l'indirizzo https://news.ycombinator.com/login, l'hai aggiunta tu a mano, ed è la sola per quell'host (dopo l'importazione del passo 2 può essercene una seconda)?
@@ -6429,9 +6439,14 @@ uv run ela task plan <id> --file <il piano del login>
 browser.login
 ```
 
+<!-- prova: 6.schermo -->
+```
+uv run ela approvals
+```
+
 <!-- prova: 6.occhio -->
 ```
-In un altro Terminale, `uv run ela approvals`: la domanda nomina la voce giusta del tuo vault, il nome utente mascherato e il sito, e dice che compare una finestra? Dopo il tuo sì la finestra del browser di ELA compare per qualche secondo: finché c'è, non scrivere.
+Qui sopra, sullo schermo, `uv run ela approvals`: la domanda nomina la voce giusta del tuo vault, il nome utente mascherato e il sito, e dice che compare una finestra? Dopo il tuo sì la finestra del browser di ELA compare per qualche secondo: finché c'è, non scrivere.
 ```
 
 <!-- prova: 6.sì -->
@@ -6940,9 +6955,14 @@ browser.read_as_you COMPLETED
 browser.login COMPLETED
 ```
 
+<!-- prova: 4.schermo -->
+```
+uv run ela task results <id>
+```
+
 <!-- prova: 4.occhio -->
 ```
-La risposta del modello, nel file, dice che in alto a destra la pagina mostra il link per uscire, e nel tuo vault non è cambiato niente?
+Qui sopra, sullo schermo: la risposta del modello dice che in alto a destra la pagina mostra il link per uscire?
 ```
 
 ### 5. ELA si ferma con una pagina che aspetta

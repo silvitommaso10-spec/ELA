@@ -62,6 +62,20 @@ HEADING = "## 21. "
 MARKED = re.compile(r"<!-- prova: (\d+)\.(\w+) -->\n```[^\n]*\n(.*?)\n```", re.DOTALL)
 """A block of §21 the script reads: the marker on the line before its fence."""
 KINDS = ("comando", "guarda", "ferma", "atteso", "mano", "occhio", "richiede")
+LOOKS: Final[Mapping[str, str]] = {
+    "occhio": "una domanda all'occhio di Tommaso, su ciò che ha davanti",
+}
+"""The kinds of block that ask Tommaso's eye, each with its reason (M13.10b): before each of them,
+in its step, ``tests/docs/test_prova_eyes.py`` wants a block of a kind of :data:`SHOWS`."""
+SHOWS: Final[Mapping[str, str]] = {
+    "mano": (
+        "ti fa aprire la console o il telefono e premere «Ferma»: la conferma, e le righe dei "
+        "finiti, sono ciò che l'occhio chiede"
+    ),
+}
+"""The kinds of block that put in front of Tommaso what a question to his eye then asks, each with
+its reason (M13.10b) — not every kind that prints: what it puts in front is what an eye of this
+section asks about. A judgement, which no test sees: its reason is written for the review."""
 SIGNS = {
     "processo": "un processo nuovo la cui riga di comando contiene il modello",
     "risultato": "un risultato dello step con lo stato scritto, fra i risultati del task",
