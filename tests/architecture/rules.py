@@ -744,6 +744,19 @@ PROFILE_FIELD = "browser_profile_dir"
 PROFILE_READERS = frozenset(
     {Path(COMPOSITION_DIR) / "settings.py", Path(COMPOSITION_DIR) / "root.py"}
 )
+#: Rule 72 (M13.9c, ADR 0066 §3): the vault's program is launched by the vault's adapter alone,
+#: with its closed list of commands (ADR 0063 §2) — a program of the terminal is launched with the
+#: arguments of a plan, and the settings refuse a configuration that makes the vault's program one
+#: of the terminal's. The line that declares it is :data:`VAULT_FIELD`; it is named by the settings,
+#: which declare and check it, and by the composition root — :data:`VAULT_READERS` —, which hands it
+#: to :data:`VAULT_RECEIVERS` and to nothing else: the adapter, which launches it, and the vault's
+#: door, which fixes its identity and launches nothing (a tool launches no process: rule 32).
+VAULT_FIELD = "vault_program"
+VAULT_READERS = frozenset(
+    {Path(COMPOSITION_DIR) / "settings.py", Path(COMPOSITION_DIR) / "root.py"}
+)
+VAULT_ROOT = Path(COMPOSITION_DIR) / "root.py"
+VAULT_RECEIVERS = frozenset({"BitwardenVault", "fixed"})
 #: Rule 70 (M13.4f, ADR 0064): the gate of the browser **looks at** the requests the browser makes,
 #: and makes none in its place. Until M13.4f it was a route of Playwright's that fetched the
 #: document of the main frame itself and handed it to the page: the driver chose the cookies of
@@ -1875,6 +1888,79 @@ def _names_the_profile(node: ast.AST) -> bool:
     if isinstance(node, (ast.arg, ast.keyword)):
         return node.arg == PROFILE_FIELD
     return isinstance(node, ast.Constant) and node.value == PROFILE_FIELD
+
+
+def check_the_vault_s_program_is_its_adapter_s(pkg_root: Path) -> list[Violation]:
+    """Rule 72: the vault's program reaches its adapter, and its door, and nothing else (M13.9c).
+
+    Reported: :data:`VAULT_FIELD` as an attribute, a name, a parameter, a keyword or a string,
+    outside :data:`VAULT_READERS`; and in :data:`VAULT_ROOT`, a call that is handed the field — or a
+    name the root bound to it — and whose callee is not one of :data:`VAULT_RECEIVERS`. A heuristic
+    on a name, like rule 69: no other thing in ELA is called that.
+    """
+    rule = "the-vault-s-program-is-its-adapter-s"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        where = path.relative_to(pkg_root)
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        if where not in VAULT_READERS:
+            found.extend(
+                Violation(rule, name, VAULT_FIELD, getattr(node, "lineno", 0))
+                for node in ast.walk(tree)
+                if _names_the_vault_program(node)
+            )
+        elif where == VAULT_ROOT:
+            found.extend(_handed_elsewhere(rule, name, tree))
+    return found
+
+
+def _names_the_vault_program(node: ast.AST) -> bool:
+    if isinstance(node, ast.Attribute):
+        return node.attr == VAULT_FIELD
+    if isinstance(node, ast.Name):
+        return node.id == VAULT_FIELD
+    if isinstance(node, (ast.arg, ast.keyword)):
+        return node.arg == VAULT_FIELD
+    return isinstance(node, ast.Constant) and node.value == VAULT_FIELD
+
+
+def _handed_elsewhere(rule: str, module: str, tree: ast.AST) -> list[Violation]:
+    """The calls of the composition root that are handed the vault's program and are not one of
+    :data:`VAULT_RECEIVERS`."""
+    holders = {
+        target.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        and any(_names_the_vault_program(inner) for inner in ast.walk(node.value))
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+
+    def carries(value: ast.AST) -> bool:
+        return any(
+            _names_the_vault_program(inner) or (isinstance(inner, ast.Name) and inner.id in holders)
+            for inner in ast.walk(value)
+        )
+
+    found: list[Violation] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        handed = [*node.args, *(keyword.value for keyword in node.keywords)]
+        if not any(carries(value) for value in handed):
+            continue
+        callee = node.func
+        called = (
+            callee.id
+            if isinstance(callee, ast.Name)
+            else callee.attr
+            if isinstance(callee, ast.Attribute)
+            else ""
+        )
+        if called not in VAULT_RECEIVERS:
+            found.append(Violation(rule, module, called or VAULT_FIELD, node.lineno))
+    return found
 
 
 def check_the_gate_looks_and_does_not_redo(pkg_root: Path) -> list[Violation]:
@@ -4089,6 +4175,7 @@ RULES: dict[str, Rule] = {
     "the-profile-s-folder-is-its-adapter-s": check_the_profile_s_folder_is_its_adapter_s,
     "the-gate-looks-and-does-not-redo": check_the_gate_looks_and_does_not_redo,
     "named-reaches-the-tool-only": check_named_reaches_the_tool_only,
+    "the-vault-s-program-is-its-adapter-s": check_the_vault_s_program_is_its_adapter_s,
 }
 
 
@@ -4598,6 +4685,30 @@ CONSTANTS: tuple[Constant, ...] = (
     Constant("a-policy-is-born-at-its-route", "TOOLS_DIR", DETECTOR),
     Constant(
         "a-policy-is-born-at-its-route",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # the-vault-s-program-is-its-adapter-s (rule 72, M13.9c)
+    Constant("the-vault-s-program-is-its-adapter-s", "VAULT_FIELD", DETECTOR),
+    Constant("the-vault-s-program-is-its-adapter-s", "VAULT_ROOT", DETECTOR),
+    Constant(
+        "the-vault-s-program-is-its-adapter-s",
+        "VAULT_RECEIVERS",
+        EXEMPTION,
+        by=EACH,
+        adr="ADR 0066",
+    ),
+    Constant(
+        "the-vault-s-program-is-its-adapter-s",
+        "VAULT_READERS",
+        EXEMPTION,
+        by=EACH,
+        adr="ADR 0066",
+    ),
+    Constant(
+        "the-vault-s-program-is-its-adapter-s",
         "ROOT_PACKAGE",
         SUBJECT,
         why=INEVITABLE,

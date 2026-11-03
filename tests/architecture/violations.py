@@ -2126,6 +2126,26 @@ VIOLATIONS: tuple[Case, ...] = (
         "    await session.send('Target.detachFromTarget', {'sessionId': held})\n",
         "Target.detachFromTarget",
     ),
+    # --- the-vault-s-program-is-its-adapter-s (rule 72, M13.9c) ---
+    Case(
+        # A tool reading the vault's program off the settings: one step from launching it with
+        # arguments the closed list of the adapter does not know.
+        "a-tool-reads-the-vault-s-program",
+        "the-vault-s-program-is-its-adapter-s",
+        "tools/terminal.py",
+        "def program(settings):\n    return settings.accounts.vault_program\n",
+        "vault_program",
+    ),
+    Case(
+        # The composition handing it to something that is not the vault's adapter or its door.
+        "the-root-hands-the-vault-s-program-to-another",
+        "the-vault-s-program-is-its-adapter-s",
+        "composition/root.py",
+        "def built(settings, Terminal):\n"
+        "    declared = settings.accounts.vault_program\n"
+        "    return Terminal(declared)\n",
+        "Terminal",
+    ),
     # --- the-profile-s-folder-is-its-adapter-s (rule 69, M13.9) ---
     Case(
         # A route reading where the profile is, to answer with it — or to open it.
@@ -3153,6 +3173,17 @@ ALLOWED: tuple[Case, ...] = (
         "        session=session, task_id=live.task_id,\n"
         "        capability_id=live.capability, sites=live.sites,\n"
         "    )\n",
+        "",
+    ),
+    Case(
+        # Rule 72: the composition root hands the vault's program to its adapter and its door.
+        "the-root-hands-the-vault-s-program-to-its-adapter-and-door",
+        "the-vault-s-program-is-its-adapter-s",
+        "composition/root.py",
+        "async def built(settings, BitwardenVault, VaultDoor):\n"
+        "    declared = settings.accounts.vault_program\n"
+        "    vault = BitwardenVault(declared)\n"
+        "    return await VaultDoor.fixed(vault, declared)\n",
         "",
     ),
     Case(
