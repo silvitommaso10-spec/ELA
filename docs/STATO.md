@@ -141,6 +141,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.8` | Proposta | Un file che vive su una macchina: quale disco, e chi lo dice |
 | 13 — Il permesso prima dell'azione | `M13.9` | Implementata | Il browser con i tuoi account: un Chrome di ELA che dura, e le password che restano in Bitwarden |
 | 13 — Il permesso prima dell'azione | `M13.9b` | Proposta | La pagina d'errore del browser non è un altro sito |
+| 13 — Il permesso prima dell'azione | `M13.9c` | Proposta | Solo l'adapter del vault lancia il programma del vault |
 | 13 — Il permesso prima dell'azione | `M13.10` | Implementata | Più passi e i file: una sessione del browser fra gli step, una sequenza di gesti, e i file che entrano ed escono |
 | 13 — Il permesso prima dell'azione | `M13.10b` | Proposta | La domanda a occhio del login, nella prova di M13.10, chiede ciò che non mostra |
 | 13 — Il permesso prima dell'azione | `M13.11` | Proposta | Il browser sul PC: le capacità di M13.9 e M13.10 sul nodo Windows, e il verdetto che torna in busta |
@@ -177,7 +178,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **65** | `docs/adr/NNNN-*.md` |
-| Milestone | **97, di cui 75 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **98, di cui 75 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **71** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **15** | `pyproject.toml` |
 | Port | **36** | i `Protocol` di `src/ela/ports.py` |
@@ -704,7 +705,9 @@ sotto). Dopo M13.4, in quest'ordine:
 decisioni 2–5. Prende il posto delle voci 6–10 della fila qui sopra per ciò che di loro resta da fare; le voci 11 e 12 non
 cambiano. In quest'ordine:
 
-1. **M13.13**, i file dal browser: **la prossima**, con M13.9b sul suo branch prima del suo codice;
+1. **M13.13**, i file dal browser: **la prossima**, con M13.9b sul suo branch prima del suo codice
+   (***annotato il 2026-11-03***, risposta 18 della review delle SPEC del branch `m13.13-i-file-dal-browser`: sullo
+   stesso branch, nell'ordine, M13.9b, **M13.9c**, M13.10b, M13.13);
 2. **M13.14**, le policy di Tommaso arrivano alle azioni `HIGH` (5.14);
 3. **M13.11**, il browser sul PC;
 4. **M14.7**, il lavoro su un progetto di Tommaso con una sessione di Claude Code (5.7);
@@ -1049,6 +1052,12 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   un sito che non risponde al login — il browser mostra la sua pagina d'errore, `chrome-error://chromewebdata/` —
   è raccontato `browser.left_site`, una diagnosi falsa; verificato con il finto. **Sul branch di M13.13, prima del
   suo codice**; non entra nella testa del merge di M13.10 ([`milestones/M13.9b.md`](milestones/M13.9b.md)).
+- **M13.9c — solo l'adapter del vault lancia il programma del vault** (§33, §58, §65; ADR 0063 §2). **Registrata il
+  2026-11-03** dalla review delle SPEC del branch `m13.13-i-file-dal-browser` (risposta 18): la lista chiusa dei comandi
+  di Bitwarden è una difesa che `terminal.run` scavalca, se il programma del vault è dichiarato fra i programmi del
+  terminale. All'avvio una configurazione così non parte, per identità e non per nome, e una regola d'architettura dice
+  che solo l'adapter del vault riceve e lancia `ELA_VAULT_PROGRAM`. **Sul branch di M13.13, dopo M13.9b e prima di
+  M13.10b** ([`milestones/M13.9c.md`](milestones/M13.9c.md)).
 - **M13.10b — la domanda a occhio del login, nella prova di M13.10, chiede ciò che non mostra** (§63). **Registrata il
   2026-10-29** dalla review dopo la prova passata di M13.10 (decisione 77): la domanda `4.occhio` della sezione 29
   chiedeva della risposta del modello «nel file», e né il file né lo schermo la portavano; un blocco `schermo` con i
