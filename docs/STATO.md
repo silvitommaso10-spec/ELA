@@ -177,7 +177,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **65** | `docs/adr/NNNN-*.md` |
+| ADR scritti | **66** | `docs/adr/NNNN-*.md` |
 | Milestone | **98, di cui 75 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **71** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **15** | `pyproject.toml` |

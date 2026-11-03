@@ -35,6 +35,7 @@ from ela.tools.verifiers import (
 from tests.architecture.rules import COMMANDS_NEVER_SENT, REDOING_CALLS, RULES
 from tests.contracts.protocols import members, port_protocols
 from tests.docs.boundary_additions import added_codes, added_members
+from tests.docs.files_additions import added_members as files_members
 from tests.docs.guided_ports import STEPS_PORTS
 from tests.docs.steps_additions import added_members as steps_members
 from tests.docs.test_adr_accounts import PASSED_ON, THE_PROOF
@@ -72,7 +73,8 @@ def test_the_member_and_the_names_it_adds_to_the_port_are_the_port_s() -> None:
     text = adr_text()
     row = next(line for line in adr_0052().splitlines() if line.startswith("| `Browser` |"))
 
-    later = steps_members()["Browser"]  # what ADR 0065 (M13.10) added after this one
+    # What ADR 0065 (M13.10) and ADR 0066 (M13.13) added after this one.
+    later = steps_members()["Browser"] | files_members()["Browser"]
     assert added_members() == {
         "Browser": frozenset(members(Browser)) - codes(row.split("|")[4]) - later
     }

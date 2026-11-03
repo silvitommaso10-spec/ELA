@@ -19,6 +19,7 @@ from ela.tools.verifiers import BrowserActVerifier, BrowserReadVerifier
 from tests.architecture.rules import MACHINE_LIBRARIES
 from tests.contracts.protocols import members, port_protocols
 from tests.docs.boundary_additions import added_codes, added_members
+from tests.docs.files_additions import added_members as files_members
 from tests.docs.guided_ports import ACCOUNT_CAPABILITIES, ACCOUNT_PORTS, GUIDED_PORTS, STEPS_PORTS
 from tests.docs.steps_additions import added_members as steps_members
 from tests.docs.steps_additions import rewritten_rows
@@ -142,11 +143,11 @@ def test_the_verifier_rows_are_the_running_verifiers() -> None:
 
 
 def test_the_port_row_is_the_running_port() -> None:
-    """The members of this ADR's row, the one ADR 0064 (M13.4f) added after it, and the one ADR
-    0065 (M13.10) added after that."""
+    """The members of this ADR's row, the one ADR 0064 (M13.4f) added after it, and those ADR
+    0065 (M13.10) and ADR 0066 (M13.13) added after that."""
     line = next(line for line in adr_text().splitlines() if line.startswith("| `Browser` |"))
     here, later = frozenset(CODE.findall(line.split("|")[4])), added_members()["Browser"]
-    latest = steps_members()["Browser"]
+    latest = steps_members()["Browser"] | files_members()["Browser"]
 
     assert not here & later and not (here | later) & latest
     assert here | later | latest == frozenset(members(Browser))

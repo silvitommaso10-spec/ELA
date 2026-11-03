@@ -9,6 +9,7 @@
   del branch quando la prova è girata: i commit venuti dopo, questo compreso, portano solo documenti e i test dei
   documenti.*
   **Rivista da ADR 0065 (M13.10)** il 2026-10-14: §1, il confine di una pagina che continua è quello dello step che continua, non più solo quello consegnato all'apertura (ADR 0065 §3).
+  **Rivista da ADR 0066 (M13.13)** il 2026-11-03: §4, la pagina d'errore del browser è chiesta al confine per l'indirizzo che il browser ha provato a raggiungere; `about:blank` e `blob:` restano fuori (ADR 0066 §1).
 - **Data:** 2026-10-12
 - **Riferimenti spec:** §19, §33, §57
 - **Milestone:** M13.4f

@@ -162,7 +162,7 @@ async def test_a_login_the_site_does_not_answer_lands_where_it_was_asked_with_no
     await with_the_profile.fill(opened.page, "input[name=acct]", "someone")
 
     await clicked_onto_the_error_page(with_the_profile, opened.page, "input[type=submit]")
-    landed = await with_the_profile.landed(opened.page)
+    landed = await bounded(with_the_profile.landed(opened.page), "the end of a navigation")
 
     assert (landed.address, landed.status) == (web.origin + "/login", None)
     assert landed.unanswered == web.origin + "/login"
@@ -179,7 +179,7 @@ async def test_landed_waits_for_the_end_of_the_navigation_the_click_started(
     await with_the_profile.fill(opened.page, "input[name=acct]", "someone")
 
     await with_the_profile.click(opened.page, "input[type=submit]")
-    landed = await with_the_profile.landed(opened.page)
+    landed = await bounded(with_the_profile.landed(opened.page), "the end of a navigation")
 
     assert (landed.address, landed.status, landed.unanswered) == (
         web.origin + "/login",
@@ -195,15 +195,32 @@ async def test_landed_after_a_click_that_starts_no_navigation_waits_for_nothing(
     opened = await with_the_profile.open(web.origin + "/", only(web), FakeStop())
 
     await with_the_profile.click(opened.page, "#word")
-    landed = await bounds_wait(with_the_profile.landed(opened.page))
+    landed = await bounded(with_the_profile.landed(opened.page), "nothing, after no navigation")
 
     assert (landed.address, landed.status, landed.unanswered) == (web.origin + "/", 200, None)
 
 
-async def bounds_wait(awaited: Any) -> Any:
-    """A bound on a wait that must not wait: past it the test fails, saying so."""
+async def test_the_look_says_the_page_is_the_browser_s_and_for_which_address(
+    browser: Any, served: list[Any]
+) -> None:
+    """The verifier's look on the browser's own page, inside the boundary (answer 16): what it
+    read is the browser's, and it says so — found by a mutant that dropped it and lived."""
+    web = silent(served)
+    opened = await browser.open(web.origin + "/", only(web), FakeStop())
+    await clicked_onto_the_error_page(browser, opened.page, "#dead")
+
+    glanced = await browser.glance(opened.page, selector=None, expect=None, seconds=0)
+
+    assert glanced.unanswered == web.origin + "/dead"
+    assert glanced.status is None
+
+
+async def bounded(awaited: Any, what: str) -> Any:
+    """``landed`` with a bound: past it the test fails saying what ``landed`` waited for, instead
+    of holding the suite — found by a mutant whose end of navigation was never heard, which held
+    the run until it was interrupted. Never the measure of anything."""
     try:
         async with asyncio.timeout(bounds.LONG):
             return await awaited
     except TimeoutError:
-        pytest.fail("landed waited after a click that started no navigation")
+        pytest.fail(f"landed waited {bounds.LONG:g} s for {what}")

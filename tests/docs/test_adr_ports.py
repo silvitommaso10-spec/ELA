@@ -53,6 +53,7 @@ EXTENDING_ADRS: tuple[Source, ...] = (
     (ADR_DIR / "0057-spending-cap.md", EXTENDING),
     (ADR_DIR / "0064-browser-boundary.md", EXTENDING),
     (ADR_DIR / "0065-browser-steps.md", EXTENDING),
+    (ADR_DIR / "0066-browser-files.md", EXTENDING),
 )
 LATER_EXTENDING_ADRS: tuple[Source, ...] = ((ADR_DIR / "0062-policies.md", EXTENDING),)
 """The extensions of a port **after** a replacement shrank it (M13.12): ADR 0062 adds ``revoke``

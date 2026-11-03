@@ -1175,6 +1175,23 @@ class _PageVerifier(Verifier):
                 retryable=False,
             )
 
+    def _the_browser_s(self, condition: str, glanced: Glanced, code: str) -> ErrorMetadata | None:
+        """The failure of a look that found **the browser's own page** — the site did not answer
+        at the address asked (M13.9b, ADR 0066; answer 16 of the review of its SPEC) —, with the
+        code of the condition: the text on that page is the browser's, and nothing the step did can
+        be confirmed on it, whatever the text. ``None`` for a page that is not the browser's. Said
+        with the origin alone: a failure goes to the audit."""
+        if glanced.unanswered is None:
+            return None
+        return self._failure(
+            condition,
+            code,
+            f"the page is the browser's own: the site at {origin_of(glanced.unanswered)} did not "
+            "answer, and what the page shows is the browser's text, not the site's — nothing the "
+            "step did can be confirmed on it",
+            retryable=False,
+        )
+
     def _opened_another(
         self, condition: str, glanced: Glanced, gesture: str
     ) -> ErrorMetadata | None:
@@ -1252,6 +1269,9 @@ class BrowserReadVerifier(_PageVerifier):
         glanced = await self._glanced(condition, result, selector=selector, expect=None)
         if isinstance(glanced, ErrorMetadata):
             return glanced
+        browser_s = self._the_browser_s(condition, glanced, BROWSER_TEXT_MISMATCH)
+        if browser_s is not None:
+            return browser_s
         if glanced.text is None:
             return self._failure(
                 condition,
@@ -1316,6 +1336,9 @@ class BrowserActVerifier(_PageVerifier):
         glanced = await self._glanced(condition, result, selector=None, expect=expect)
         if isinstance(glanced, ErrorMetadata):
             return glanced
+        browser_s = self._the_browser_s(condition, glanced, BROWSER_EXPECT_MISSING)
+        if browser_s is not None:
+            return browser_s
         if glanced.shown:
             return None
         another = self._opened_another(condition, glanced, "click")

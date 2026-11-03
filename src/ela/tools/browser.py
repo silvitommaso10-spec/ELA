@@ -87,6 +87,7 @@ __all__ = [
     "ACTS",
     "ACTS_ON",
     "ANOTHER_PAGE",
+    "UNANSWERED",
     "ASKED_FOR_NOTHING",
     "BROWSER_ACT_TOOL_NAME",
     "BROWSER_CODES",
@@ -213,6 +214,13 @@ LEFT_WHILE_WAITING: Final = "left_while_waiting"
 the last navigation the boundary refused **while the page waited between two steps** — never the
 rest of the address. Absent when nothing was refused meanwhile. The step does not fail for it:
 nobody's step was running, as for :data:`ANOTHER_PAGE`."""
+UNANSWERED: Final = "unanswered"
+"""The key of a result whose page is **the browser's own page**: the site did not answer at the
+address asked, and the browser shows a page of its own (M13.9b, ADR 0066; answer 16 of the review
+of its SPEC). The place of that address — host and path, never the query (:func:`place_of`) —,
+inside the boundary: outside it the page is another site's, ``browser.left_site``. Absent for a
+page that answered. The step does not fail for it; the verifier, which finds the browser's page in
+its look, does."""
 STOPPED_AT: Final = "stopped_at"
 """The key of a result that says at which gesture a sequence stopped, counted from 1 (M13.10): the
 first gesture that was not made. Absent when every gesture was made."""
@@ -892,7 +900,7 @@ class BrowserActTool(_BrowserTool):
         {ARGUMENTS_INVALID, NO_PAGE_TO_CONTINUE, *BROWSER_CODES}
     )
     output_keys: ClassVar[frozenset[str]] = frozenset(
-        {"status", "gestures", STOPPED_AT, "page", ANOTHER_PAGE, LEFT_WHILE_WAITING}
+        {"status", "gestures", STOPPED_AT, "page", ANOTHER_PAGE, LEFT_WHILE_WAITING, UNANSWERED}
     )
     audit_numbers: ClassVar[frozenset[str]] = frozenset({"status", "gestures", STOPPED_AT})
     """The status of the page of the form, how many gestures were made, and — when the sequence did
@@ -1029,7 +1037,13 @@ class BrowserActTool(_BrowserTool):
                 LEFT_SITE,
                 self._left(site, origin_of(left)) + self._after(done),
             )
-        return Outcome({"status": opened.status, "gestures": done.made, "page": page})
+        made: dict[str, JsonValue] = {"status": opened.status, "gestures": done.made, "page": page}
+        # The browser's own page, inside the boundary (M13.9b): the site did not answer, and the
+        # result says where — the verifier, which looks at the page, fails on it.
+        unanswered = await self._browser.unanswered(page)
+        if unanswered is not None:
+            made[UNANSWERED] = place_of(unanswered)
+        return Outcome(made)
 
     def _partial(self, done: _Done) -> dict[str, JsonValue]:
         """How many gestures were made — and, of a sequence that did not reach its end, the number

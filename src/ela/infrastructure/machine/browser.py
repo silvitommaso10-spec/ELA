@@ -73,7 +73,7 @@ import shutil
 import signal
 import weakref
 from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Final, TypeVar
 from uuid import uuid4
@@ -108,6 +108,8 @@ from ela.ports import (
     PageGone,
     SiteUnreachable,
     TaskStop,
+    at_a_site,
+    tried,
 )
 
 __all__ = ["MISSING_EXECUTABLE", "PlaywrightBrowser", "registry_folder", "shell_folder"]
@@ -213,6 +215,14 @@ class _Open:
     """Held by a task between two of its steps (M13.10, ADR 0065 §3): the look does not close it,
     and no deadline of this adapter's does — whoever holds it closes it."""
     tasks: set[asyncio.Task[None]] = field(default_factory=set)
+    navigation: asyncio.Event | None = None
+    """The last navigation the main frame asked for (``Page.frameRequestedNavigation``), set when
+    the main frame stops loading (``Page.frameStoppedLoading``): measured on 2026-11-03 on the two
+    browsers, 60 navigations of 60, with the address already the last one (M13.9b)."""
+    clicked: asyncio.Event | None = None
+    """The navigation the last click started — asked for before the click returned, in 60 rounds
+    of 60 —, ``None`` for a click that started none: what :meth:`AccountChrome.landed` waits
+    for (answer 15 of the review of M13.9b's SPEC)."""
 
 
 class PlaywrightBrowser:
@@ -444,6 +454,7 @@ class PlaywrightBrowser:
             self._pages[token] = _Open(
                 playwright, browser, context, page, refused, gate, allowed, documents
             )
+            await self._navigations_of(self._pages[token])
             # The last instant before the site sees anything (M6.3c, ADR 0054 §3): a stopped task
             # leaves here with ToolStopped, and the page and its browser are closed below. **No
             # use of the page stands between the check of the gate and this navigation**
@@ -467,11 +478,11 @@ class PlaywrightBrowser:
             # The page that was opened is asked where it is, like every use of it after
             # (ADR 0064 §4): what this returns — its address, the status of its document — is
             # said of a page inside the boundary, or not said.
-            self._within(self._pages[token])
+            address, _ = await self._within(self._pages[token])
             return Opened(
                 page=token,
                 status=None if response is None else response.status,
-                address=page.url,
+                address=address,
                 left=refused[0] if refused else None,
             )
         except asyncio.CancelledError:
@@ -539,8 +550,11 @@ class PlaywrightBrowser:
     async def _looked(
         self, opened: _Open, selector: str | None, expect: str | None, seconds: float
     ) -> Glanced:
-        """The verifier's one look: what this browser says of a page."""
-        return await _look(opened, selector, expect, seconds)
+        """The verifier's one look: what this browser says of a page — and whether the page is
+        the browser's own, for an address the site did not answer at (M13.9b)."""
+        glanced = await _look(opened, selector, expect, seconds)
+        _, unanswered = await self._place(opened)
+        return replace(glanced, unanswered=unanswered)
 
     def _page(self, page: str) -> _Open:
         """The page, to be used. **Not once ELA is stopping** (M13.4c): a page the stop has not
@@ -552,30 +566,78 @@ class PlaywrightBrowser:
             raise PageGone("no page of ELA's has this identifier any more")
         return found
 
-    def _within(self, opened: _Open, *, made: bool = False) -> None:
+    async def _within(self, opened: _Open, *, made: bool = False) -> tuple[str, str | None]:
         """**The one predicate** (ADR 0064 §4): the boundary of the page, asked where the page is.
         Before a use, which then does not take place; and once it is made — ``made`` —, when what
         was read is thrown away. A gate whose judge raised has let nothing go, and says so here
         — **before a use, never after one**: a gesture whose own request the judge raised on was
         made, returns as made, and it is the next use that says the browser failed, with that
-        gesture counted."""
+        gesture counted.
+
+        **Where the page is, is where the browser tried to go** when the page is its own (M13.9b,
+        ADR 0066): :meth:`_place`. What it returns — the address asked about, and the address the
+        site did not answer at — is said of a page inside the boundary."""
         if opened.gate.broken and not made:
             raise BrowserFailed(UNJUDGED)
-        address = _where(opened.page)
+        address, unanswered = await self._place(opened)
         if not opened.allowed(address):
             raise LeftSite(address, made=made)
+        return address, unanswered
+
+    async def _place(self, opened: _Open) -> tuple[str, str | None]:
+        """Where the page is, as the boundary is asked about it, and the address the site did not
+        answer at — ``None`` for a page that is not the browser's own (M13.9b, ADR 0066).
+
+        A page of a site costs nothing more: its address as this adapter knows it. **A page at no
+        site** — the browser's own page, ``about:blank``, a ``blob:`` — costs one call: the main
+        frame as the browser says it now, and its ``unreachableUrl``, which only the browser's own
+        page carries (measured on 2026-11-02, :func:`~ela.ports.tried`). A browser that cannot say
+        is a browser that failed: **in doubt nothing of the page is told**."""
+        address = _where(opened.page)
+        if at_a_site(address):
+            return address, None
+        try:
+            tree = await opened.gate.frame_tree()
+        except Exception:  # noqa: BLE001 — whatever it was, where the page is was not said
+            if self._stopping.is_set():
+                raise BrowserStopped("ELA is stopping: the browser was closed") from None
+            raise BrowserFailed("the browser could not say where its page is") from None
+        unreachable = tree["frameTree"]["frame"].get("unreachableUrl") or None
+        placed = tried(address, unreachable)
+        return placed, (placed if placed != address else None)
+
+    async def _navigations_of(self, opened: _Open) -> None:
+        """Listen, on the session of the page the gate keeps, for the two words of the main frame
+        that tell a navigation (answer 15 of the review of M13.9b's SPEC; measured on
+        2026-11-03): its start, asked for, and its end, the main frame stopped loading — committed
+        or failed."""
+
+        def requested(event: Mapping[str, Any]) -> None:
+            if event.get("frameId") == opened.gate.main:
+                opened.navigation = asyncio.Event()
+
+        def stopped(event: Mapping[str, Any]) -> None:
+            if event.get("frameId") == opened.gate.main and opened.navigation is not None:
+                opened.navigation.set()
+
+        await opened.gate.listen(
+            {
+                "Page.frameRequestedNavigation": requested,
+                "Page.frameStoppedLoading": stopped,
+            }
+        )
 
     async def _on(self, page: str, action: Callable[[_Open], Awaitable[_T]]) -> _T:
         """A use of a page: the predicate, the use, the predicate again."""
         opened = self._page(page)
-        self._within(opened)
+        await self._within(opened)
         try:
             done = await action(opened)
         except PlaywrightError as error:
             if page not in self._pages and not self._stopping.is_set():
                 raise PageGone("the page was closed while ELA was using it") from None
             raise self._translated(error) from None
-        self._within(opened, made=True)
+        await self._within(opened, made=True)
         return done
 
     async def count(self, page: str, selector: str) -> int:
@@ -614,7 +676,15 @@ class PlaywrightBrowser:
         await self._on(page, lambda opened: opened.page.locator(selector).fill(value))
 
     async def click(self, page: str, selector: str) -> None:
-        await self._on(page, lambda opened: opened.page.locator(selector).click())
+        """The click, and **which navigation it started**: the one the main frame asked for
+        before the click returned — measured, 60 rounds of 60 —, or none (M13.9b)."""
+
+        async def clicked(opened: _Open) -> None:
+            opened.navigation = None
+            await opened.page.locator(selector).click()
+            opened.clicked = opened.navigation
+
+        await self._on(page, clicked)
 
     async def text(self, page: str, selector: str | None) -> str:
         return await self._on(
@@ -626,8 +696,15 @@ class PlaywrightBrowser:
 
     async def left(self, page: str) -> str | None:
         opened = self._page(page)
-        self._within(opened)
+        await self._within(opened)
         return opened.refused[-1] if opened.refused else None
+
+    async def unanswered(self, page: str) -> str | None:
+        """The address the site did not answer at, when the page is the browser's own (M13.9b):
+        the boundary asked before, and nothing of the page read."""
+        opened = self._page(page)
+        _, unanswered = await self._within(opened)
+        return unanswered
 
     async def another(self, page: str) -> AnotherPage | None:
         opened = self._pages.get(page)
@@ -684,18 +761,24 @@ class PlaywrightBrowser:
         opened.gate.rebound(allowed)
         waited = opened.refused[-1] if opened.refused else None
         del opened.refused[:]
-        self._within(opened)
+        address, _ = await self._within(opened)
         return Opened(
             page=page,
             status=opened.documents[-1] if opened.documents else None,
-            address=_where(opened.page),
+            address=address,
             left=None,
             waited=waited,
         )
 
     async def where(self, page: str) -> str | None:
         opened = self._pages.get(page)
-        return None if opened is None else _where(opened.page)
+        if opened is None:
+            return None
+        try:
+            address, _ = await self._place(opened)
+        except BrowserError:
+            return _where(opened.page)
+        return address
 
     async def close(self, page: str) -> None:
         opened = self._pages.pop(page, None)
@@ -808,6 +891,25 @@ class _Gate:
         """Judge from now on with ``allowed``: the boundary of the step that continues on this
         page (M13.10, ADR 0065 §3). The requests already judged were judged with the old one."""
         self._allowed = allowed
+
+    @property
+    def main(self) -> str:
+        """The id of the main frame of the page, as this gate knows it now."""
+        return self._main
+
+    async def frame_tree(self) -> Mapping[str, Any]:
+        """The frames of the page as the browser says them now, on the page's own session: where
+        the main frame is, and the address it tried when it shows the browser's own page (M13.9b).
+        A question, never a request of the page's."""
+        found: Mapping[str, Any] = await self._own.send("Page.getFrameTree")
+        return found
+
+    async def listen(self, handlers: Mapping[str, Callable[[Mapping[str, Any]], None]]) -> None:
+        """Hear ``handlers``' words of the page's own session (M13.9b): the words a navigation
+        of the main frame is told with. The session is the page's, and is never let go of."""
+        for name, handler in handlers.items():
+            self._own.on(name, handler)
+        await self._own.send("Page.enable")
 
     async def on(self) -> None:
         """Ask to be told of every page that is opened, and of every request."""

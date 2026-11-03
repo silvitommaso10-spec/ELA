@@ -33,13 +33,18 @@ NOT_A_USE = {
     ),
     "where": (
         "says where a page a task keeps is, for the question of the step that continues — the "
-        "address the adapter already knows, with no call, and nothing of the page"
+        "address the adapter already knows, with one call more only for a page at no site "
+        "(M13.9b), and nothing of the page"
     ),
 }
 """The members that are given a page and do not use it, each with its reason."""
 
 ASKED_BEFORE_ONLY = {
     "left": "reads nothing of the page: it says what the gate refused, and nothing is thrown away",
+    "unanswered": (
+        "says whether the page is the browser's own, for an address the site did not answer at "
+        "(M13.9b): where the page is, and nothing of it — nothing is read, nothing to throw away"
+    ),
     "resume": (
         "takes a page back with the boundary it is handed, asks that boundary where the page is, "
         "and reads nothing of it: what it returns is said of a page inside, as an opening's"

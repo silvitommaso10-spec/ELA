@@ -34,6 +34,7 @@ from ela.tools.base import Perceiving
 from ela.tools.guided import SESSION_AS_YOU, BrowserGuidedTool, BrowserGuidedVerifier
 from tests.architecture.rules import RULES
 from tests.contracts.protocols import members, port_protocols
+from tests.docs.files_additions import added_members as files_members
 from tests.docs.guided_ports import STEPS_PORTS
 from tests.docs.steps_additions import added_members as steps_members
 from tests.docs.steps_additions import rewritten_rows, rewritten_verifier_rows
@@ -147,9 +148,10 @@ def test_the_verifier_rows_are_the_running_verifiers() -> None:
 
 
 def test_the_port_row_is_the_running_port() -> None:
-    """This ADR's row, and what ADR 0065 (M13.10) added to it."""
+    """This ADR's row, and what ADR 0065 (M13.10) and ADR 0066 (M13.13) added to it."""
     line = next(line for line in adr_text().splitlines() if line.startswith("| `AccountBrowser` |"))
-    here, later = frozenset(CODE.findall(line.split("|")[4])), steps_members()["AccountBrowser"]
+    here = frozenset(CODE.findall(line.split("|")[4]))
+    later = steps_members()["AccountBrowser"] | files_members()["AccountBrowser"]
 
     assert not here & later
     assert here | later == frozenset(members(AccountBrowser))

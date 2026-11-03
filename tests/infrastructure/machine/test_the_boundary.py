@@ -1311,6 +1311,8 @@ USES: dict[str, Callable[[Any, str], Awaitable[Any]]] = {
     "text": lambda b, p: b.text(p, None),
     "title": lambda b, p: b.title(p),
     "left": lambda b, p: b.left(p),
+    # Whether the page is the browser's own, for an address the site did not answer at (M13.9b).
+    "unanswered": lambda b, p: b.unanswered(p),
     # Taken back with a boundary of its own, which the page is outside of (M13.10).
     "resume": lambda b, p: b.resume(p, lambda url: False),
     "glance": lambda b, p: b.glance(p, selector=None, expect="x", seconds=1),

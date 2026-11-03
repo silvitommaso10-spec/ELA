@@ -164,6 +164,7 @@ from ela.ports import (
     check_answer,
     check_limit,
     check_verifiable,
+    tried,
 )
 
 __all__ = [
@@ -1111,6 +1112,10 @@ class FakePage:
     forms: tuple[PageForm, ...] = ()
     """The forms that hold a password field, as the browser with the profile reads them
     (M13.10)."""
+    unreachable: str | None = None
+    """The address the browser tried to reach, when the page it shows — ``address``, or
+    ``landed`` once the click was made — is **its own page** for it (M13.9b, ADR 0066): what the
+    boundary is asked about, through :func:`~ela.ports.tried`, as the adapters do."""
 
 
 @dataclass
@@ -1310,11 +1315,23 @@ class FakeBrowser:
             raise LeftSite(address, made=made)
 
     def _address(self) -> str:
-        """Where the page of the script is now."""
+        """Where the page of the script is now, **as the boundary is asked about it**: where the
+        browser tried to go, when the page is its own (M13.9b) — :func:`~ela.ports.tried`, the
+        adapters' own function."""
+        return tried(self._shown(), self.page.unreachable)
+
+    def _shown(self) -> str:
+        """The address of the page the script shows now, the browser's own page included."""
         if self._where is not None:
             return self._where
         landed = self.page.landed if self._clicked else None
         return landed or self.page.address or self.opened[-1]
+
+    def _unanswered(self) -> str | None:
+        """The address the site did not answer at, when the page is the browser's own."""
+        shown = self._shown()
+        placed = tried(shown, self.page.unreachable)
+        return placed if placed != shown else None
 
     async def installed(self) -> bool:
         self._raise("installed")
@@ -1423,6 +1440,10 @@ class FakeBrowser:
         self._on(page, "left")
         return self.page.left_after_click if self._clicked else self.page.left
 
+    async def unanswered(self, page: str) -> str | None:
+        self._on(page, "unanswered")
+        return self._unanswered()
+
     async def another(self, page: str) -> AnotherPage | None:
         return self.page.another if page in self._open else None
 
@@ -1456,6 +1477,7 @@ class FakeBrowser:
             another=self.page.another,
             found=found,
             status=self.page.landed_status if self._clicked else self.page.status,
+            unanswered=self._unanswered(),
         )
 
     async def hold(self, page: str) -> None:
@@ -1624,7 +1646,9 @@ class FakeAccountBrowser(FakeBrowser):
         self._raise("landed")
         self.landings.append(page)
         self._done(page, "landed")
-        return Landed(address=self.page.landed or self.opened[-1], status=self.page.landed_status)
+        return Landed(
+            address=self._address(), status=self.page.landed_status, unanswered=self._unanswered()
+        )
 
     async def window(self, address: str | None) -> None:
         self._raise("window")
