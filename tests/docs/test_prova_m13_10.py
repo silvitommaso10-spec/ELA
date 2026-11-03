@@ -890,3 +890,44 @@ async def test_a_session_that_ends_without_the_login_skips_the_rest_of_step_4_an
     assert walk.report.failures == 0, walk.written
     assert "[5] PASSATO: ELA è uscita, e del browser non resta niente" in step_5, walk.written
     assert walk.report.lines[-1] == "La prova non è passata: il passo 4 SALTATO.", walk.written
+
+
+async def test_step_4_shows_the_results_of_the_session_on_the_screen_before_its_eye(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """M13.10b: the question to the eye of step 4 asked about «the model's answer, in the file»,
+    and neither the file nor the screen carried it. Now a ``schermo`` with the results of the
+    session's task comes before it — on the screen, and the file says so —, and the question does
+    not say «nel file» nor what only the machine knows of the vault."""
+    walk = await walked(
+        monkeypatch,
+        tmp_path,
+        {4},
+        session=Script([gesture("login", site=HN)]),
+        **with_the_vault(tmp_path),
+    )
+    screen = capsys.readouterr().out
+
+    shown = walk.written.find("$ uv run ela task results")
+    asked = walk.written.index("[4] GUARDATO")
+    assert 0 <= shown < asked, walk.written
+    assert "browser.guided_as_you" in screen
+    question = walk.written[asked:].splitlines()[0]
+    assert "nel file" not in question and "vault" not in question
+
+
+async def test_the_children_of_step_4_are_one_line_of_the_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Decision 80 of M13.10: the line of the children broke in the file of 2026-10-29, and the
+    second child stood alone, with no step before it."""
+    walk = await walked(
+        monkeypatch,
+        tmp_path,
+        {4},
+        session=Script([gesture("login", site=HN)]),
+        **with_the_vault(tmp_path),
+    )
+
+    line = next(one for one in walk.written.splitlines() if "figli, scritti dalla sessione" in one)
+    assert line.startswith("[4] PASSATO") and "browser.login COMPLETED" in line, walk.written
