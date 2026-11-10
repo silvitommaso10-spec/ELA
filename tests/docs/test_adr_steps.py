@@ -13,7 +13,6 @@ from pathlib import Path
 
 from ela.api.security import Kind
 from ela.executive import executor
-from ela.permissions import production_catalogue
 from ela.ports import (
     BROWSER_LOGIN_FORM_GONE,
     CONTINUES,
@@ -40,7 +39,7 @@ from ela.tools.browser import (
 from ela.tools.guided import LOOKS_OF_A_LOGIN, SENDS_AS_YOU, SESSION_AS_YOU
 from tests.architecture.rules import NAMED_CONSTANT, RULES
 from tests.contracts.protocols import port_protocols
-from tests.docs.guided_ports import STEPS_PORTS
+from tests.docs.guided_ports import STEPS_PORTS, before_the_files
 from tests.docs.test_adr_cli import coded_commands
 from tests.docs.test_adr_composition import coded_routes
 from tests.docs.test_adr_placement import _rules_up_to
@@ -279,5 +278,6 @@ def test_the_conseguenze_count_the_totals_as_this_adr_saw_them() -> None:
     assert {port.__name__ for port in port_protocols()} >= STEPS_PORTS == {"TaskPages"}
     assert "**settantadue**" in text and len(coded_routes()) == 72
     assert "**trentanove**" in text and len(coded_commands()) == 39
-    assert "**diciotto**" in text and len(production_catalogue().specs()) == 18
+    # Eighteen the day this ADR was written: ADR 0066 (M13.13) added the files from the browser.
+    assert "**diciotto**" in text and len(before_the_files()) == 18
     assert "**sei**" in text and len(Kind) == 6

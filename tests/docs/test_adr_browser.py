@@ -20,15 +20,22 @@ from tests.architecture.rules import MACHINE_LIBRARIES
 from tests.contracts.protocols import members, port_protocols
 from tests.docs.boundary_additions import added_codes, added_members
 from tests.docs.files_additions import added_members as files_members
-from tests.docs.guided_ports import ACCOUNT_CAPABILITIES, ACCOUNT_PORTS, GUIDED_PORTS, STEPS_PORTS
+from tests.docs.guided_ports import (
+    ACCOUNT_CAPABILITIES,
+    ACCOUNT_PORTS,
+    FILE_CAPABILITIES,
+    GUIDED_PORTS,
+    STEPS_PORTS,
+)
 from tests.docs.steps_additions import added_members as steps_members
 from tests.docs.steps_additions import rewritten_rows
 from tests.docs.test_adr_composition import coded_routes, routes_after_0056
 from tests.docs.test_adr_filesystem import verifiers_today
 from tests.docs.test_adr_placement import _rules_up_to
 
-AFTER_0052 = frozenset({"browser.guided"}) | ACCOUNT_CAPABILITIES
-"""What ADR 0060 added after this one, and ADR 0063 after that: each pinned by its own test."""
+AFTER_0052 = frozenset({"browser.guided"}) | ACCOUNT_CAPABILITIES | FILE_CAPABILITIES
+"""What ADR 0060 added after this one, ADR 0063 after that, and ADR 0066 after that: each pinned
+by its own test."""
 
 ROOT = Path(__file__).resolve().parents[2]
 ADR_PATH = ROOT / "docs" / "adr" / "0052-browser.md"

@@ -761,6 +761,21 @@ VAULT_READERS = frozenset(
 )
 VAULT_ROOT = Path(COMPOSITION_DIR) / "root.py"
 VAULT_RECEIVERS = frozenset({"BitwardenVault", "VaultDoor.fixed", "Programs.fixed"})
+#: Rule 73 (M13.13, ADR 0066): the files of a page, as far as a static test sees them. Under
+#: :data:`MACHINE_ADAPTER_DIR`, a call of :data:`FILE_GIVING_CALL` is handed **one payload of
+#: bytes** — a dictionary written there, with the key :data:`BYTES_KEY` — and never a path or a
+#: list of paths: a path given to the engine is a file the engine reads by itself, whatever ELA
+#: read when it asked. And :data:`DOOR_COMMAND` is sent **with the behaviour written beside it**,
+#: one of :data:`DOOR_BEHAVIOURS`: never ``allow``, which writes under the name the site chooses
+#: and overwrites in silence (measure (c) of M13.10), never ``default``, never a dictionary built
+#: elsewhere, which nobody reading the call can check. **What the rule cannot see**: that the
+#: folder is the one of the target, and that the door is closed again — held by the tests of the
+#: behaviour on the real browsers.
+FILE_GIVING_CALL = "set_input_files"
+BYTES_KEY = "buffer"
+DOOR_COMMAND = "Browser.setDownloadBehavior"
+DOOR_BEHAVIOUR_KEY = "behavior"
+DOOR_BEHAVIOURS = frozenset({"allowAndName", "deny"})
 #: Rule 70 (M13.4f, ADR 0064): the gate of the browser **looks at** the requests the browser makes,
 #: and makes none in its place. Until M13.4f it was a route of Playwright's that fetched the
 #: document of the main frame itself and handed it to the page: the driver chose the cookies of
@@ -2022,6 +2037,62 @@ def check_the_gate_looks_and_does_not_redo(pkg_root: Path) -> list[Violation]:
                     if command in node.value
                 )
     return found
+
+
+def check_a_file_is_given_as_bytes_and_a_download_is_named(pkg_root: Path) -> list[Violation]:
+    """Rule 73: a page is given bytes, and a download a name of the browser's (M13.13, ADR 0066).
+
+    Reported, under :data:`MACHINE_ADAPTER_DIR`: a call of :data:`FILE_GIVING_CALL` whose
+    arguments are not exactly one dictionary written there with the key :data:`BYTES_KEY`; and
+    every text that names :data:`DOOR_COMMAND` unless it is the first argument of a call whose
+    second is a dictionary written there, with :data:`DOOR_BEHAVIOUR_KEY` one of
+    :data:`DOOR_BEHAVIOURS` — a docstring too, as for rule 70: the command is named where it is
+    sent, with what it is sent with. A heuristic on two names, like rule 70.
+    """
+    rule = "a-file-is-given-as-bytes-and-a-download-is-named"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root / MACHINE_ADAPTER_DIR):
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        sent_well: set[int] = set()
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if isinstance(node.func, ast.Attribute) and node.func.attr == FILE_GIVING_CALL:
+                given = [*node.args, *(keyword.value for keyword in node.keywords)]
+                if len(given) != 1 or BYTES_KEY not in _written_keys(given[0]):
+                    found.append(Violation(rule, name, f".{FILE_GIVING_CALL}(", node.lineno))
+            if node.args and _is_the_text(node.args[0], DOOR_COMMAND):
+                said = _written_keys(node.args[1]) if len(node.args) == 2 else {}
+                behaviour = said.get(DOOR_BEHAVIOUR_KEY)
+                if isinstance(behaviour, ast.Constant) and behaviour.value in DOOR_BEHAVIOURS:
+                    sent_well.add(id(node.args[0]))
+        found.extend(
+            Violation(rule, name, DOOR_COMMAND, node.lineno)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and DOOR_COMMAND in node.value
+            and id(node) not in sent_well
+        )
+    return found
+
+
+def _is_the_text(node: ast.expr, text: str) -> bool:
+    return isinstance(node, ast.Constant) and node.value == text
+
+
+def _written_keys(node: ast.expr) -> dict[str, ast.expr]:
+    """The keys of a dictionary written where it is used, with their values; none for anything
+    else — a name, a call, a dictionary that unpacks another."""
+    if not isinstance(node, ast.Dict):
+        return {}
+    keys: dict[str, ast.expr] = {}
+    for key, value in zip(node.keys, node.values, strict=True):
+        if not isinstance(key, ast.Constant) or not isinstance(key.value, str):
+            return {}
+        keys[key.value] = value
+    return keys
 
 
 def check_named_reaches_the_tool_only(pkg_root: Path) -> list[Violation]:
@@ -4206,6 +4277,9 @@ RULES: dict[str, Rule] = {
     "the-gate-looks-and-does-not-redo": check_the_gate_looks_and_does_not_redo,
     "named-reaches-the-tool-only": check_named_reaches_the_tool_only,
     "the-vault-s-program-is-its-adapter-s": check_the_vault_s_program_is_its_adapter_s,
+    "a-file-is-given-as-bytes-and-a-download-is-named": (
+        check_a_file_is_given_as_bytes_and_a_download_is_named
+    ),
 }
 
 
@@ -4715,6 +4789,36 @@ CONSTANTS: tuple[Constant, ...] = (
     Constant("a-policy-is-born-at-its-route", "TOOLS_DIR", DETECTOR),
     Constant(
         "a-policy-is-born-at-its-route",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # a-file-is-given-as-bytes-and-a-download-is-named (rule 73, M13.13)
+    Constant("a-file-is-given-as-bytes-and-a-download-is-named", "MACHINE_ADAPTER_DIR", DETECTOR),
+    Constant("a-file-is-given-as-bytes-and-a-download-is-named", "FILE_GIVING_CALL", DETECTOR),
+    Constant("a-file-is-given-as-bytes-and-a-download-is-named", "DOOR_COMMAND", DETECTOR),
+    Constant(
+        "a-file-is-given-as-bytes-and-a-download-is-named",
+        "BYTES_KEY",
+        EXEMPTION,
+        adr="ADR 0066",
+    ),
+    Constant(
+        "a-file-is-given-as-bytes-and-a-download-is-named",
+        "DOOR_BEHAVIOUR_KEY",
+        EXEMPTION,
+        adr="ADR 0066",
+    ),
+    Constant(
+        "a-file-is-given-as-bytes-and-a-download-is-named",
+        "DOOR_BEHAVIOURS",
+        EXEMPTION,
+        by=EACH,
+        adr="ADR 0066",
+    ),
+    Constant(
+        "a-file-is-given-as-bytes-and-a-download-is-named",
         "ROOT_PACKAGE",
         SUBJECT,
         why=INEVITABLE,

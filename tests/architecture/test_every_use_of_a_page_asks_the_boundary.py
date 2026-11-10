@@ -16,12 +16,14 @@ The real adapters are walked with the real browsers
 from __future__ import annotations
 
 import inspect
+import tempfile
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import pytest
 
-from ela.ports import AccountBrowser, Browser, Secret
+from ela.ports import AccountBrowser, Browser, GivenFile, Secret
 from ela.testing.fakes import FakeAccountBrowser, FakeBrowser, FakeStop
 
 NOT_A_USE = {
@@ -35,6 +37,10 @@ NOT_A_USE = {
         "says where a page a task keeps is, for the question of the step that continues — the "
         "address the adapter already knows, with one call more only for a page at no site "
         "(M13.9b), and nothing of the page"
+    ),
+    "refused_download": (
+        "says what the door of the downloads refused — a download nobody's step asked for "
+        "(M13.13) —, and nothing of this page: the form of ``another``"
     ),
 }
 """The members that are given a page and do not use it, each with its reason."""
@@ -76,6 +82,11 @@ def _arguments(member: Any) -> dict[str, object]:
         "seconds": 0.0,
         # The boundary a page is taken back with (``resume``): one the page is outside of.
         "allowed": lambda url: False,
+        # What a file field is given, and what a download is handed (M13.13): the stop of its
+        # task, and a folder nobody makes — on a page outside its boundary nothing is written.
+        "file": GivenFile("a-file.txt", "text/plain", b"the bytes of this test"),
+        "stop": FakeStop(),
+        "into": str(Path(tempfile.gettempdir()) / "a-folder-no-walk-of-this-test-makes"),
     }
     parameters = inspect.signature(member).parameters
     if "value" in parameters:

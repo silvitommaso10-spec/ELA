@@ -20,7 +20,13 @@ from ela.tools.terminal import TerminalRunTool
 from ela.tools.verifiers import TerminalRunVerifier
 from tests.contracts.protocols import port_protocols
 from tests.docs.files_additions import rewritten_rows, rewritten_verifier_rows
-from tests.docs.guided_ports import ACCOUNT_CAPABILITIES, ACCOUNT_PORTS, GUIDED_PORTS, STEPS_PORTS
+from tests.docs.guided_ports import (
+    ACCOUNT_CAPABILITIES,
+    ACCOUNT_PORTS,
+    FILE_CAPABILITIES,
+    GUIDED_PORTS,
+    STEPS_PORTS,
+)
 from tests.docs.test_adr_composition import coded_routes, routes_after_0048
 from tests.docs.test_adr_filesystem import verifiers_today
 from tests.docs.test_adr_placement import _rules_up_to
@@ -54,8 +60,13 @@ def codes(cell: str) -> frozenset[str]:
 # ----------------------------------------------------------------------------------------
 
 
-AFTER_0047 = frozenset({"browser.read", "browser.act", "browser.guided"}) | ACCOUNT_CAPABILITIES
-"""What ADR 0052 added, and pins itself: this ADR keeps the totals it saw."""
+AFTER_0047 = (
+    frozenset({"browser.read", "browser.act", "browser.guided"})
+    | ACCOUNT_CAPABILITIES
+    | FILE_CAPABILITIES
+)
+"""What ADR 0052 added, and the ADRs after it, each pinning itself: this ADR keeps the totals it
+saw."""
 
 
 def test_the_capabilities_of_today_are_eleven_and_four_of_them_travel(tmp_path: Path) -> None:

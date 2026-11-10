@@ -31,11 +31,15 @@ from ela.domain import CapabilityId, ErrorMetadata, ExecutionResult, JsonMapping
 from ela.permissions import (
     BROWSER_ACT,
     BROWSER_ACT_AS_YOU,
+    BROWSER_DOWNLOAD,
+    BROWSER_DOWNLOAD_AS_YOU,
     BROWSER_GUIDED,
     BROWSER_GUIDED_AS_YOU,
     BROWSER_LOGIN,
     BROWSER_READ,
     BROWSER_READ_AS_YOU,
+    BROWSER_UPLOAD,
+    BROWSER_UPLOAD_AS_YOU,
 )
 from ela.testing.fakes import FakeAuditLog, FakeClock, FakeIdGenerator, FakeModelProvider, FakeStop
 from ela.tools import (
@@ -94,6 +98,10 @@ STAYS = frozenset(
         BROWSER_ACT_AS_YOU,
         BROWSER_LOGIN,
         BROWSER_GUIDED_AS_YOU,
+        BROWSER_DOWNLOAD,
+        BROWSER_DOWNLOAD_AS_YOU,
+        BROWSER_UPLOAD,
+        BROWSER_UPLOAD_AS_YOU,
     }
 )
 """ADR 0038 §14, as ADR 0045 extends it: the ones whose verifier reads the disk or the store of
@@ -104,7 +112,9 @@ verifier reads the identity of a program on the Core's disk — ``/usr/bin/git``
 a node — and a non-travel left implied is a permission nobody wrote. And the browser's two in
 M13.4 (form A): their verifier looks at a page that lives in a process of this machine, and no node
 carries it. And ``browser.guided`` in M14.3 (ADR 0060): its verifier reads the processes of the
-session, which runs on the Core."""
+session, which runs on the Core. And the files from the browser in M13.13 (ADR 0066): the verifier
+of a download reads the disk it was written to, and the one of an upload looks at the page that
+received the file — both of this machine."""
 NOTE = "notes/riunione.md"
 NOTE_ARGUMENTS = {"path": NOTE, "body": "# Riunione\n\nGiovedì alle dieci.\n"}
 

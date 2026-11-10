@@ -59,7 +59,7 @@ from ela.infrastructure.machine import browser as adapter
 from ela.infrastructure.machine.account import AccountChrome
 from ela.infrastructure.machine.browser import PlaywrightBrowser, _descendants, _listed
 from ela.permissions import BROWSER_ACT, BROWSER_READ
-from ela.ports import BrowserFailed, BrowserStopped, Secret, SiteUnreachable
+from ela.ports import BrowserFailed, BrowserStopped, GivenFile, Secret, SiteUnreachable
 from ela.testing.fakes import FakeIdGenerator, FakeStop, FakeTaskPages
 from ela.tools.browser import (
     FAILED,
@@ -1311,22 +1311,31 @@ class Changing:
         return not self.closed
 
 
-USES: dict[str, Callable[[Any, str], Awaitable[Any]]] = {
-    "count": lambda b, p: b.count(p, "#f"),
-    "appeared": lambda b, p: b.appeared(p, "#f"),
-    "field": lambda b, p: b.field(p, "#f"),
-    "fill": lambda b, p: b.fill(p, "#f", "x"),
-    "click": lambda b, p: b.click(p, "#go"),
-    "text": lambda b, p: b.text(p, None),
-    "title": lambda b, p: b.title(p),
-    "left": lambda b, p: b.left(p),
+USES: dict[str, Callable[[Any, str, Path], Awaitable[Any]]] = {
+    "count": lambda b, p, into: b.count(p, "#f"),
+    "appeared": lambda b, p, into: b.appeared(p, "#f"),
+    "field": lambda b, p, into: b.field(p, "#f"),
+    "fill": lambda b, p, into: b.fill(p, "#f", "x"),
+    "click": lambda b, p, into: b.click(p, "#go"),
+    "text": lambda b, p, into: b.text(p, None),
+    "title": lambda b, p, into: b.title(p),
+    "left": lambda b, p, into: b.left(p),
     # Whether the page is the browser's own, for an address the site did not answer at (M13.9b).
-    "unanswered": lambda b, p: b.unanswered(p),
+    "unanswered": lambda b, p, into: b.unanswered(p),
     # Taken back with a boundary of its own, which the page is outside of (M13.10).
-    "resume": lambda b, p: b.resume(p, lambda url: False),
-    "glance": lambda b, p: b.glance(p, selector=None, expect="x", seconds=1),
+    "resume": lambda b, p, into: b.resume(p, lambda url: False),
+    "glance": lambda b, p, into: b.glance(p, selector=None, expect="x", seconds=1),
+    # A file given by its bytes, and a click with the door of the downloads open on a folder of
+    # the test's (M13.13, ADR 0066): what was downloaded on a page that ended elsewhere meanwhile
+    # is thrown away, as what was read there is.
+    "give": lambda b, p, into: b.give(p, "#file", GivenFile("x.txt", "text/plain", b"x")),
+    "download": lambda b, p, into: b.download(p, "#dl", FakeStop(), str(into)),
 }
-USED = shell.REPORTS + '<title>t</title><input id="f"><button id="go">go</button><p>x</p>'
+USED = (
+    shell.REPORTS
+    + '<title>t</title><input id="f"><button id="go">go</button><p>x</p>'
+    + '<input id="file" type="file"><a id="dl" download="x.txt" href="data:text/plain,ciao">d</a>'
+)
 
 
 OF_THE_PROFILE_ALONE = {"fill_secret", "landed", "holds", "forms"}
@@ -1345,7 +1354,7 @@ def test_every_use_of_a_page_the_port_has_is_walked_here_on_the_real_browser() -
 
 @pytest.mark.parametrize("use", sorted(USES))
 async def test_no_use_of_a_page_that_is_not_inside_the_boundary_takes_place(
-    browser: Any, served: list[Site], use: str
+    browser: Any, served: list[Site], tmp_path: Path, use: str
 ) -> None:
     from ela.ports import LeftSite
 
@@ -1355,12 +1364,13 @@ async def test_no_use_of_a_page_that_is_not_inside_the_boundary_takes_place(
     allowed.closed = True
 
     with pytest.raises(LeftSite) as refused:
-        await USES[use](browser, opened.page)
+        await USES[use](browser, opened.page, tmp_path)
 
     assert refused.value.made is False, "found outside before the use, which did not take place"
     assert refused.value.address == web.origin + "/"
     assert web.origin not in str(refused.value), "the sentence of the error names no address"
     assert web.events == [], "nothing was typed and nothing was clicked"
+    assert list(tmp_path.iterdir()) == [], "and nothing was downloaded"
 
 
 ASKED_AFTER_TOO = sorted(set(USES) - set(ASKED_BEFORE_ONLY))
@@ -1370,7 +1380,7 @@ test of the fakes: there is nothing of theirs to throw away."""
 
 @pytest.mark.parametrize("use", ASKED_AFTER_TOO)
 async def test_what_was_read_on_a_page_that_ended_elsewhere_meanwhile_is_thrown_away(
-    browser: Any, served: list[Site], use: str
+    browser: Any, served: list[Site], tmp_path: Path, use: str
 ) -> None:
     """Decision 122. The boundary of this test admits the page when the use begins and not when
     it ends: what was read is in nobody's hands, a gesture is said as made — and a look
@@ -1383,11 +1393,12 @@ async def test_what_was_read_on_a_page_that_ended_elsewhere_meanwhile_is_thrown_
     allowed.closes_at = allowed.asked + 2
 
     with pytest.raises(LeftSite) as found:
-        await USES[use](browser, opened.page)
+        await USES[use](browser, opened.page, tmp_path)
 
     assert allowed.asked == allowed.closes_at, "asked once before the use, and once after it"
     assert found.value.made is True, "the use had been made when the page was found elsewhere"
     assert use != "glance" or opened.page not in browser._pages
+    assert list(tmp_path.iterdir()) == [], "what was downloaded there is thrown away too"
 
 
 AT_NO_SITE = {

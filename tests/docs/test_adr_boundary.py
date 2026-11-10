@@ -14,7 +14,6 @@ from pathlib import Path
 
 from ela.api.security import Kind
 from ela.infrastructure.machine import browser as adapter
-from ela.permissions import production_catalogue
 from ela.ports import AccountBrowser, AnotherPage, Browser, Glanced, LeftSite
 from ela.testing.fakes import FakeAccountBrowser, FakeBrowser
 from ela.tools.account import (
@@ -36,7 +35,7 @@ from tests.architecture.rules import COMMANDS_NEVER_SENT, REDOING_CALLS, RULES
 from tests.contracts.protocols import members, port_protocols
 from tests.docs.boundary_additions import added_codes, added_members
 from tests.docs.files_additions import added_members as files_members
-from tests.docs.guided_ports import STEPS_PORTS
+from tests.docs.guided_ports import STEPS_PORTS, before_the_files
 from tests.docs.steps_additions import added_members as steps_members
 from tests.docs.test_adr_accounts import PASSED_ON, THE_PROOF
 from tests.docs.test_adr_browser import codes
@@ -160,7 +159,8 @@ def test_the_conseguenze_count_the_totals_as_this_adr_saw_them() -> None:
     )
     assert "**settantadue**" in text and len(coded_routes()) == 72
     assert "**trentanove**" in text and len(coded_commands()) == 39
-    assert "**diciotto**" in text and len(production_catalogue().specs()) == 18
+    # Eighteen the day this ADR was written: ADR 0066 (M13.13) added the files from the browser.
+    assert "**diciotto**" in text and len(before_the_files()) == 18
     assert "**sei**" in text and len(Kind) == 6
 
 

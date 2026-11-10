@@ -21,28 +21,16 @@ site is the boundary of the tool, and one that is not declared is refused **befo
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import os
 import stat
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import pytest
-from ela.tools.browser_files import (
-    DOWNLOAD_NOT_STARTED,
-    FILE_CHANGED,
-    FILE_DOWNLOADED,
-    FILE_TOO_LARGE,
-    NOT_A_FILE_FIELD,
-    SITE_NOT_DECLARED,
-    UPLOAD_MAX_BYTES,
-    AccountDownloadTool,
-    AccountUploadTool,
-    BrowserDownloadTool,
-    BrowserUploadTool,
-    FileDownloadedVerifier,
-)
 
 from ela.domain import (
     DecisionId,
@@ -51,6 +39,8 @@ from ela.domain import (
     PermissionDecision,
     PermissionOutcome,
     RiskLevel,
+    StepId,
+    TaskId,
 )
 from ela.permissions import (
     BROWSER_DOWNLOAD,
@@ -59,7 +49,16 @@ from ela.permissions import (
     BROWSER_UPLOAD_AS_YOU,
     production_catalogue,
 )
-from ela.ports import DOWNLOAD_GESTURE, Downloaded, GivenFile
+from ela.ports import (
+    DOWNLOAD_GESTURE,
+    BrowserFailed,
+    BrowserNotInstalled,
+    BrowserStopped,
+    Downloaded,
+    GivenFile,
+    SiteUnreachable,
+    ToolStopped,
+)
 from ela.testing.fakes import (
     FakeAccountBrowser,
     FakeBrowser,
@@ -69,13 +68,47 @@ from ela.testing.fakes import (
     FakeStop,
     FakeTaskPages,
 )
+from ela.tools import browser_files
+from ela.tools.base import ARGUMENTS_INVALID
 from ela.tools.browser import (
     DOWNLOAD_REFUSED,
+    ELEMENT_AMBIGUOUS,
+    FAILED,
+    LEFT_SITE,
+    NOT_INSTALLED,
+    STOPPED,
+    TIMEOUT,
+    UNREACHABLE,
     BrowserActTool,
     Browsing,
 )
-from ela.tools.fs import NO_ROOT, OVERWRITE_MISMATCH
-from ela.tools.paths import PATH_IS_DIRECTORY, PATH_MISSING, PATH_OUTSIDE_ROOT, PATH_SYMLINK
+from ela.tools.browser_files import (
+    DOWNLOAD_NOT_STARTED,
+    FILE_CHANGED,
+    FILE_DOWNLOADED,
+    FILE_MISMATCH,
+    FILE_TOO_LARGE,
+    FILE_UNREADABLE,
+    NOT_A_FILE_FIELD,
+    SITE_NOT_DECLARED,
+    UPLOAD_MAX_BYTES,
+    AccountDownloadTool,
+    AccountFileDownloadedVerifier,
+    AccountUploadTool,
+    AccountUploadVerifier,
+    BrowserDownloadTool,
+    BrowserUploadTool,
+    FileDownloadedVerifier,
+    UploadVerifier,
+)
+from ela.tools.fs import IO_ERROR, NO_ROOT, OVERWRITE_MISMATCH, FsReadTool, FsWriteTool
+from ela.tools.paths import (
+    PATH_INVALID,
+    PATH_IS_DIRECTORY,
+    PATH_MISSING,
+    PATH_OUTSIDE_ROOT,
+    PATH_SYMLINK,
+)
 from tests.tools.test_verifiers import succeeded
 
 CLOCK = FakeClock()
@@ -170,22 +203,33 @@ async def test_a_site_that_is_not_declared_is_refused_before_the_question(tmp_pa
 
 
 @pytest.mark.parametrize(
-    ("file", "made", "code"),
+    ("file", "leads_to", "code"),
     [
-        ("../fuori.bin", None, PATH_OUTSIDE_ROOT),
+        ("../fuori.bin", None, PATH_INVALID),
         ("ELA/prova", None, PATH_IS_DIRECTORY),
-        ("ELA/link.bin", "link", PATH_SYMLINK),
+        ("ELA/link.bin", "ELA/prova/vero.bin", PATH_SYMLINK),
+        ("ELA/link.bin", "../elsewhere", PATH_OUTSIDE_ROOT),
     ],
 )
 async def test_a_download_refuses_what_fs_write_refuses(
-    tmp_path: Path, file: str, made: str | None, code: str
+    tmp_path: Path, file: str, leads_to: str | None, code: str
 ) -> None:
+    """**With the code ``fs.write`` gives**, asked of ``fs.write`` itself on the same disk: the
+    codes written here are what it answers, and the day it answers another this says so. *Three of
+    the codes the red test of 2026-11-03 expected were wrong*: a path with ``..`` is refused by
+    the grammar, and a link that leads outside the root is outside the root."""
     folder = root(tmp_path)
-    if made == "link":
-        (folder / "ELA" / "link.bin").symlink_to(tmp_path / "elsewhere")
+    if leads_to is not None:
+        (folder / "ELA" / "prova" / "vero.bin").write_bytes(b"c'era")
+        (folder / "ELA" / "link.bin").symlink_to(folder / leads_to)
+    as_a_write = await FsWriteTool(folder, CLOCK, FakeIdGenerator()).prospect(
+        {"path": file, "body": "", "overwrite": False}
+    )
+
     prospect = await download(FakeBrowser(), folder).prospect(with_(DOWNLOAD, file=file))
 
     assert prospect.refusal is not None and prospect.refusal.code == code
+    assert as_a_write.refusal is not None and as_a_write.refusal.code == code
 
 
 @pytest.mark.parametrize(("there", "overwrite"), [(True, False), (False, True)])
@@ -209,20 +253,33 @@ async def test_without_a_root_nothing_is_asked(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     ("make", "code"),
-    [("missing", PATH_MISSING), ("directory", PATH_IS_DIRECTORY), ("link", PATH_SYMLINK)],
+    [
+        ("missing", PATH_MISSING),
+        ("directory", PATH_IS_DIRECTORY),
+        ("link", PATH_SYMLINK),
+        ("link outside", PATH_OUTSIDE_ROOT),
+    ],
 )
 async def test_an_upload_refuses_what_fs_read_refuses(tmp_path: Path, make: str, code: str) -> None:
+    """With the code ``fs.read`` gives, asked of ``fs.read`` itself on the same disk."""
     folder = root(tmp_path)
     target = folder / "ELA" / "prova" / "da-caricare.txt"
     if make == "directory":
         target.mkdir()
     elif make == "link":
+        (folder / "ELA" / "vero.txt").write_bytes(BYTES)
+        target.symlink_to(folder / "ELA" / "vero.txt")
+    elif make == "link outside":
         (tmp_path / "vero.txt").write_bytes(BYTES)
         target.symlink_to(tmp_path / "vero.txt")
+    as_a_read = await FsReadTool(folder, CLOCK, FakeIdGenerator()).prospect(
+        {"path": UPLOAD["file"]}
+    )
 
     prospect = await upload(FakeBrowser(), folder).prospect(UPLOAD)
 
     assert prospect.refusal is not None and prospect.refusal.code == code
+    assert as_a_read.refusal is not None and as_a_read.refusal.code == code
 
 
 async def test_bytes_that_are_not_text_are_uploaded(tmp_path: Path) -> None:
@@ -237,17 +294,21 @@ async def test_bytes_that_are_not_text_are_uploaded(tmp_path: Path) -> None:
 
 
 async def test_a_file_over_the_limit_a_page_takes_is_refused_before_the_question(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Answer 20: Playwright gives a page at most 50 MiB as bytes, and a question is composed only
-    for what would succeed now. A sparse file: its size is asked of the disk, not read."""
+    for what would succeed now. A sparse file: **its size is asked of the disk, and not one byte of
+    it is read** — the reading of this test says who asked for it."""
     folder = root(tmp_path)
     with (folder / "ELA" / "prova" / "da-caricare.txt").open("wb") as big:
         big.truncate(UPLOAD_MAX_BYTES + 1)
+    read: list[Path] = []
+    monkeypatch.setattr(browser_files, "read_bytes", lambda target: read.append(target) or b"")
 
     prospect = await upload(FakeBrowser(), folder).prospect(UPLOAD)
 
     assert prospect.refusal is not None and prospect.refusal.code == FILE_TOO_LARGE
+    assert read == [], "a file over the limit was read to learn its size"
 
 
 # ----------------------------------------------------------------------------------------
@@ -318,16 +379,20 @@ async def test_an_upload_gives_the_page_the_bytes_and_the_name_first_and_then_cl
     assert str(folder) not in repr(browser.given), "the page never receives the path"
 
 
+@pytest.mark.parametrize(
+    "changed",
+    [BYTES + b"cambiato", BYTES[:-1] + bytes([BYTES[-1] ^ 1])],
+    ids=["longer", "the same size, one bit of it"],
+)
 async def test_a_file_changed_between_the_question_and_the_yes_does_not_leave(
-    tmp_path: Path,
+    tmp_path: Path, changed: bytes
 ) -> None:
+    """By its size **or** by its sha256: a file of the same length is another file."""
     folder = root(tmp_path)
     (folder / "ELA" / "prova" / "da-caricare.txt").write_bytes(BYTES)
     browser = FakeBrowser(FakePage(fields={"#fileinput": _file_field()}))
 
-    result = await asked_and_run(
-        upload(browser, folder), UPLOAD, BROWSER_UPLOAD, changed=BYTES + b"cambiato"
-    )
+    result = await asked_and_run(upload(browser, folder), UPLOAD, BROWSER_UPLOAD, changed=changed)
 
     assert result.error is not None and result.error.code == FILE_CHANGED
     assert browser.given == [] and browser.opened == [], "nothing was opened, nothing given"
@@ -363,7 +428,7 @@ async def test_a_stop_before_the_file_gives_nothing_and_counts_no_gesture(tmp_pa
     browser = FakeBrowser(FakePage(fields={"#fileinput": _file_field()}))
     tool = upload(browser, folder)
     prospect = await tool.prospect(UPLOAD)
-    from ela.ports import NAVIGATION, ToolStopped
+    from ela.ports import NAVIGATION
 
     stop = FakeStop(after=NAVIGATION)  # stopped right after the page opened, before the file
 
@@ -501,11 +566,11 @@ async def test_the_verifier_fails_on_a_file_that_is_not_there(tmp_path: Path) ->
     folder = root(tmp_path)
     said = {"file": "ELA/prova/scaricato.bin", "size": len(BYTES), "digest": digest(BYTES)}
 
-    failures = await FileDownloadedVerifier(folder).verify(
+    (failure,) = await FileDownloadedVerifier(folder).verify(
         [FILE_DOWNLOADED], DOWNLOAD, succeeded(BROWSER_DOWNLOAD, output=said)
     )
 
-    assert len(failures) == 1
+    assert failure.code == PATH_MISSING, "judged with the classification fs shares, then read"
 
 
 def _file_field() -> Any:
@@ -518,3 +583,617 @@ def _text_field() -> Any:
     from ela.ports import Field
 
     return Field("text", "")
+
+
+# ----------------------------------------------------------------------------------------
+# Every way a download can fall
+# ----------------------------------------------------------------------------------------
+
+TASK = TaskId(UUID("00000000-0000-4000-8000-00000000d0d0"))
+STEP = StepId(UUID("00000000-0000-4000-8000-00000000d0d1"))
+
+
+def of_a_task(capability: str) -> PermissionDecision:
+    return decision(capability).model_copy(update={"task_id": TASK, "step_id": STEP})
+
+
+@pytest.mark.parametrize(
+    "wrong",
+    [{"file": 7}, {"file": ""}, {"overwrite": "no"}, {"click": ">> x"}, {"continues": True}],
+    ids=[
+        "a file that is no text",
+        "no file",
+        "an overwrite that is no boolean",
+        "a click",
+        "continues",
+    ],
+)
+async def test_a_download_whose_shape_is_wrong_is_refused_before_the_question_and_after_the_yes(
+    tmp_path: Path, wrong: dict[str, Any]
+) -> None:
+    browser = FakeBrowser(FakePage(download=BYTES))
+    tool = download(browser, root(tmp_path))
+    arguments = with_(DOWNLOAD, **wrong)
+
+    prospect = await tool.prospect(arguments)
+    result = await tool.execute(decision(BROWSER_DOWNLOAD), arguments, FakeStop())
+
+    assert prospect.refusal is not None and prospect.refusal.code == ARGUMENTS_INVALID
+    assert result.error is not None and result.error.code == ARGUMENTS_INVALID
+    assert browser.opened == [] and browser.downloads == []
+
+
+async def test_a_file_that_appears_between_the_question_and_the_yes_is_not_replaced(
+    tmp_path: Path,
+) -> None:
+    """``overwrite`` is an assertion on the world after the yes too: nothing is opened."""
+    folder = root(tmp_path)
+    browser = FakeBrowser(FakePage(download=BYTES))
+    tool = download(browser, folder)
+    prospect = await tool.prospect(DOWNLOAD)
+    assert prospect.refusal is None
+    (folder / "ELA" / "prova" / "scaricato.bin").write_bytes(b"arrivato intanto")
+
+    result = await tool.execute(decision(BROWSER_DOWNLOAD), DOWNLOAD, FakeStop())
+
+    assert result.error is not None and result.error.code == OVERWRITE_MISMATCH
+    assert browser.opened == [] and browser.downloads == []
+    assert (folder / "ELA" / "prova" / "scaricato.bin").read_bytes() == b"arrivato intanto"
+
+
+async def test_a_download_closes_first_the_page_its_task_keeps(tmp_path: Path) -> None:
+    pages = FakeTaskPages()
+    tool = BrowserDownloadTool(
+        root(tmp_path),
+        SITES,
+        FakeBrowser(FakePage(download=BYTES)),
+        CLOCK,
+        FakeIdGenerator(),
+        pages=pages,
+    )
+
+    result = await tool.execute(of_a_task(BROWSER_DOWNLOAD), DOWNLOAD, FakeStop())
+
+    assert result.status is ExecutionStatus.SUCCEEDED, result.error
+    assert pages.released == [TASK]
+
+
+@pytest.mark.parametrize("click", [None, "a#file"], ids=["the address", "a click"])
+async def test_a_folder_that_cannot_be_made_ends_the_step_before_the_gesture(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, click: str | None
+) -> None:
+    folder = root(tmp_path)
+    browser = FakeBrowser(FakePage(download=BYTES))
+    tool = download(browser, folder)
+    arguments = with_(
+        DOWNLOAD, file="ELA/nuova/scaricato.bin", **({} if click is None else {"click": click})
+    )
+
+    def refuses(self: Path, *args: Any, **named: Any) -> None:
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(Path, "mkdir", refuses)
+    result = await tool.execute(decision(BROWSER_DOWNLOAD), arguments, FakeStop())
+
+    assert result.error is not None and result.error.code == IO_ERROR
+    assert "PermissionError" in result.error.message and result.output["gestures"] == 0
+    assert browser.downloads == []
+
+
+@pytest.mark.parametrize(
+    ("fell", "code"),
+    [
+        (BrowserFailed("the browser fell"), FAILED),
+        (BrowserStopped("ELA is stopping"), STOPPED),
+        (BrowserNotInstalled("not there"), NOT_INSTALLED),
+        (SiteUnreachable("ConnectionRefused"), UNREACHABLE),
+    ],
+)
+async def test_a_download_from_an_address_falls_in_the_ways_a_page_falls(
+    tmp_path: Path, fell: Exception, code: str
+) -> None:
+    folder = root(tmp_path)
+    browser = FakeBrowser(FakePage(download=BYTES))
+    browser.raising["downloaded_from"] = fell
+
+    result = await asked_and_run(download(browser, folder), DOWNLOAD, BROWSER_DOWNLOAD)
+
+    assert result.error is not None and result.error.code == code
+    assert os.listdir(folder / "ELA" / "prova") == []
+    if code in {FAILED, STOPPED}:
+        assert result.output["gestures"] == 1, "once the browser has the gesture it counts as made"
+        assert result.error.message.endswith("may have been made")
+
+
+async def test_a_download_whose_time_runs_out_says_so_and_counts_its_gesture(
+    tmp_path: Path,
+) -> None:
+    folder = root(tmp_path)
+    browser = FakeBrowser(FakePage(download=BYTES))
+    browser.stall("downloaded_from")
+    tool = BrowserDownloadTool(
+        folder,
+        Browsing(sites=SITES.sites, timeout_seconds=0),
+        browser,
+        CLOCK,
+        FakeIdGenerator(),
+        pages=FakeTaskPages(),
+    )
+
+    result = await tool.execute(decision(BROWSER_DOWNLOAD), DOWNLOAD, FakeStop())
+
+    assert result.error is not None and result.error.code == TIMEOUT
+    assert "had not ended after 0 s" in result.error.message
+    assert result.output["gestures"] in {0, 1}
+    assert os.listdir(folder / "ELA" / "prova") == []
+
+
+@pytest.mark.parametrize("click", [None, "a#file"], ids=["the address", "a click"])
+async def test_a_task_stopped_while_the_file_arrives_cancels_the_download(
+    tmp_path: Path, click: str | None
+) -> None:
+    """Criterion 5. The stop of the task is heard while the browser waits for the file: its call
+    is cancelled, the result is the tool's — stopped, the gesture counted — and nothing stays."""
+    folder = root(tmp_path)
+    browser = FakeBrowser(FakePage(download=BYTES))
+    reached, _ = browser.stall("downloaded_from" if click is None else "download")
+    arguments = DOWNLOAD if click is None else with_(DOWNLOAD, path="/links", click=click)
+    stop = FakeStop()
+
+    running = asyncio.ensure_future(
+        download(browser, folder).execute(decision(BROWSER_DOWNLOAD), arguments, stop)
+    )
+    await reached.wait()
+    stop.event.set()
+    result = await running
+
+    assert result.error is not None and result.error.code == STOPPED
+    assert "while the download from httpbin.org was arriving" in result.error.message
+    assert result.output["gestures"] == 1
+    assert ("status" in result.output) is (click is not None)
+    assert os.listdir(folder / "ELA" / "prova") == []
+
+
+async def test_a_download_that_ends_while_the_stop_is_heard_is_a_download_that_ended(
+    tmp_path: Path,
+) -> None:
+    """The call of the browser is cancelled when the task stops — and one that had ended by then
+    is not thrown away for it."""
+    tool = download(FakeBrowser(), root(tmp_path))
+    stop = FakeStop()
+    began = asyncio.Event()
+
+    async def ends_all_the_same() -> Downloaded:
+        began.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            return Downloaded("ended")
+        raise AssertionError("nobody stopped it")
+
+    waiting = asyncio.ensure_future(tool._unless_stopped(ends_all_the_same(), stop))  # noqa: SLF001
+    await began.wait()
+    stop.event.set()
+
+    assert await waiting == Downloaded("ended")
+
+
+async def test_a_click_awaited_when_the_task_stops_clicks_nothing(tmp_path: Path) -> None:
+    folder = root(tmp_path)
+    browser = FakeBrowser(FakePage(download=BYTES))
+    reached, _ = browser.stall("appeared")
+    stop = FakeStop()
+
+    running = asyncio.ensure_future(
+        download(browser, folder).execute(
+            decision(BROWSER_DOWNLOAD), with_(DOWNLOAD, path="/links", click="a#file"), stop
+        )
+    )
+    await reached.wait()
+    stop.event.set()
+    with pytest.raises(ToolStopped):
+        await running
+
+    assert browser.downloads == [] and stop.listened[-1] == DOWNLOAD_GESTURE
+    assert browser.closed == ["page-1"], "the page is closed: nothing is left open behind a stop"
+
+
+async def test_a_click_that_names_more_than_one_element_starts_nothing(tmp_path: Path) -> None:
+    folder = root(tmp_path)
+    browser = FakeBrowser(FakePage(download=BYTES, counts={"a.file": 2}))
+
+    result = await asked_and_run(
+        download(browser, folder), with_(DOWNLOAD, path="/links", click="a.file"), BROWSER_DOWNLOAD
+    )
+
+    assert result.error is not None and result.error.code == ELEMENT_AMBIGUOUS
+    assert result.output["gestures"] == 0 and browser.downloads == []
+    assert result.error.message.endswith("was not made")
+
+
+async def test_a_click_that_starts_no_download_says_the_status_of_its_page(tmp_path: Path) -> None:
+    folder = root(tmp_path)
+    browser = FakeBrowser(FakePage(download=None))
+
+    result = await asked_and_run(
+        download(browser, folder), with_(DOWNLOAD, path="/links", click="a#file"), BROWSER_DOWNLOAD
+    )
+
+    assert result.error is not None and result.error.code == DOWNLOAD_NOT_STARTED
+    assert result.output == {"status": 200, "gestures": 1}
+
+
+async def test_an_address_that_sends_the_browser_elsewhere_says_so_by_its_origin(
+    tmp_path: Path,
+) -> None:
+    folder = root(tmp_path)
+    browser = FakeBrowser(FakePage(download=BYTES, left="https://altro.example/file?k=1"))
+
+    result = await asked_and_run(download(browser, folder), DOWNLOAD, BROWSER_DOWNLOAD)
+
+    assert result.error is not None and result.error.code == LEFT_SITE
+    assert "https://altro.example" in result.error.message and "k=1" not in result.error.message
+    assert os.listdir(folder / "ELA" / "prova") == []
+
+
+class Leaving(FakeBrowser):
+    """A browser that leaves in the folder what the test says, under the name the test says."""
+
+    def __init__(self, name: str, *, made: str = "a file") -> None:
+        super().__init__(FakePage(download=BYTES))
+        self.name, self.made = name, made
+
+    def _downloaded(self, into: str) -> Downloaded:
+        if self.made == "a folder":
+            (Path(into) / self.name).mkdir()
+        elif self.made == "a file":
+            (Path(into) / self.name).write_bytes(BYTES)
+        return Downloaded(self.name)
+
+
+@pytest.mark.parametrize(
+    ("name", "made", "code"),
+    [
+        ("../fuori", "nothing", FAILED),
+        ("", "nothing", FAILED),
+        ("una-cartella", "a folder", FAILED),
+        ("mai-scritto", "nothing", IO_ERROR),
+    ],
+    ids=["a name outside the folder", "no name", "a folder", "nothing there"],
+)
+async def test_what_the_browser_says_it_left_is_not_believed(
+    tmp_path: Path, name: str, made: str, code: str
+) -> None:
+    """The name is the browser's word: it has to be a name, of a regular file that is there."""
+    folder = root(tmp_path)
+
+    result = await asked_and_run(
+        download(Leaving(name, made=made), folder), DOWNLOAD, BROWSER_DOWNLOAD
+    )
+
+    assert result.error is not None and result.error.code == code
+    assert not (folder / "ELA" / "prova" / "scaricato.bin").exists()
+    assert not (tmp_path / "fuori").exists()
+
+
+async def test_a_file_that_appears_while_the_download_arrives_is_not_replaced(
+    tmp_path: Path,
+) -> None:
+    """Created without replacing: the plan said nothing was there, and what arrived is removed."""
+    folder = root(tmp_path)
+    target = folder / "ELA" / "prova" / "scaricato.bin"
+    browser = FakeBrowser(FakePage(download=BYTES))
+    reached, released = browser.stall("downloaded_from")
+
+    running = asyncio.ensure_future(
+        asked_and_run(download(browser, folder), DOWNLOAD, BROWSER_DOWNLOAD)
+    )
+    await reached.wait()
+    target.write_bytes(b"arrivato intanto")
+    released.set()
+    result = await running
+
+    assert result.error is not None and result.error.code == OVERWRITE_MISMATCH
+    assert target.read_bytes() == b"arrivato intanto"
+    assert os.listdir(target.parent) == ["scaricato.bin"], "what was downloaded was removed"
+
+
+async def test_a_page_that_fails_before_the_click_counts_no_gesture(tmp_path: Path) -> None:
+    folder = root(tmp_path)
+    browser = FakeBrowser(FakePage(download=BYTES))
+    browser.raising["appeared"] = BrowserFailed("the page fell")
+
+    result = await asked_and_run(
+        download(browser, folder), with_(DOWNLOAD, path="/links", click="a#file"), BROWSER_DOWNLOAD
+    )
+
+    assert result.error is not None and result.error.code == FAILED
+    assert result.output["gestures"] == 0 and result.error.message.endswith("was not made")
+
+
+def test_the_root_of_the_two_is_the_declared_one_resolved(tmp_path: Path) -> None:
+    folder = root(tmp_path)
+
+    assert download(FakeBrowser(), folder).root == folder.resolve()
+    assert upload(FakeBrowser(), folder).root == folder.resolve()
+
+
+# ----------------------------------------------------------------------------------------
+# Every way an upload can fall
+# ----------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "wrong",
+    [
+        {"file": ""},
+        {"fill": "x"},
+        {"file_field": ">> x"},
+        {"click": ">> x"},
+        {"expect_text": ""},
+        {"continues": True},
+    ],
+    ids=["no file", "a fill", "a field", "a click", "no text", "continues"],
+)
+async def test_an_upload_whose_shape_is_wrong_is_refused_before_the_question_and_after_the_yes(
+    tmp_path: Path, wrong: dict[str, Any]
+) -> None:
+    folder = root(tmp_path)
+    (folder / "ELA" / "prova" / "da-caricare.txt").write_bytes(BYTES)
+    browser = FakeBrowser(FakePage(fields={"#fileinput": _file_field()}))
+    tool = upload(browser, folder)
+    arguments = with_(UPLOAD, **wrong)
+
+    prospect = await tool.prospect(arguments)
+    result = await tool.execute(decision(BROWSER_UPLOAD), arguments, FakeStop(), {})
+
+    assert prospect.refusal is not None and prospect.refusal.code == ARGUMENTS_INVALID
+    assert result.error is not None and result.error.code == ARGUMENTS_INVALID
+    assert browser.opened == [] and browser.given == []
+
+
+async def test_a_site_that_is_not_declared_gives_nothing_before_the_question_or_after_the_yes(
+    tmp_path: Path,
+) -> None:
+    folder = root(tmp_path)
+    (folder / "ELA" / "prova" / "da-caricare.txt").write_bytes(BYTES)
+    browser = FakeBrowser(FakePage(fields={"#fileinput": _file_field()}))
+    tool = upload(browser, folder)
+    arguments = with_(UPLOAD, site="altro.example")
+
+    prospect = await tool.prospect(arguments)
+    result = await tool.execute(decision(BROWSER_UPLOAD), arguments, FakeStop(), {})
+
+    assert prospect.refusal is not None and prospect.refusal.code == SITE_NOT_DECLARED
+    assert result.error is not None and result.error.code == SITE_NOT_DECLARED
+    assert browser.opened == [] and browser.given == []
+
+
+async def test_a_file_that_becomes_a_link_between_the_question_and_the_yes_is_not_read_through_it(
+    tmp_path: Path,
+) -> None:
+    """Criterion 7. The link leads to a file with **the same bytes**: read through it, the size
+    and the sha256 would be the ones the question named — and it is not read."""
+    folder = root(tmp_path)
+    target = folder / "ELA" / "prova" / "da-caricare.txt"
+    target.write_bytes(BYTES)
+    (folder / "ELA" / "lo-stesso.txt").write_bytes(BYTES)
+    browser = FakeBrowser(FakePage(fields={"#fileinput": _file_field()}))
+    tool = upload(browser, folder)
+    prospect = await tool.prospect(UPLOAD)
+    assert prospect.refusal is None
+    target.unlink()
+    target.symlink_to(folder / "ELA" / "lo-stesso.txt")
+
+    result = await tool.execute(decision(BROWSER_UPLOAD), UPLOAD, FakeStop(), prospect.named or {})
+
+    assert result.error is not None and result.error.code == PATH_SYMLINK
+    assert result.output == {"gestures": 0}
+    assert browser.opened == [] and browser.given == []
+
+
+async def test_a_file_that_cannot_be_read_is_not_a_question(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder = root(tmp_path)
+    (folder / "ELA" / "prova" / "da-caricare.txt").write_bytes(BYTES)
+
+    def refuses(target: Path) -> bytes:
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(browser_files, "read_bytes", refuses)
+    prospect = await upload(FakeBrowser(), folder).prospect(UPLOAD)
+
+    assert prospect.refusal is not None and prospect.refusal.code == IO_ERROR
+    assert "PermissionError" in prospect.refusal.message
+
+
+async def test_a_file_that_grew_past_the_limit_while_it_was_read_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The size is asked of the disk first, and what was read is counted too."""
+    folder = root(tmp_path)
+    (folder / "ELA" / "prova" / "da-caricare.txt").write_bytes(b"12345")
+    monkeypatch.setattr(browser_files, "UPLOAD_MAX_BYTES", 10)
+    monkeypatch.setattr(browser_files, "read_bytes", lambda target: b"x" * 11)
+
+    prospect = await upload(FakeBrowser(), folder).prospect(UPLOAD)
+
+    assert prospect.refusal is not None and prospect.refusal.code == FILE_TOO_LARGE
+
+
+async def test_a_field_awaited_when_the_task_stops_receives_nothing(tmp_path: Path) -> None:
+    folder = root(tmp_path)
+    (folder / "ELA" / "prova" / "da-caricare.txt").write_bytes(BYTES)
+    browser = FakeBrowser(FakePage(fields={"#fileinput": _file_field()}))
+    reached, _ = browser.stall("appeared")
+    tool = upload(browser, folder)
+    prospect = await tool.prospect(UPLOAD)
+    stop = FakeStop()
+
+    running = asyncio.ensure_future(
+        tool.execute(decision(BROWSER_UPLOAD), UPLOAD, stop, prospect.named or {})
+    )
+    await reached.wait()
+    stop.event.set()
+    with pytest.raises(ToolStopped):
+        await running
+
+    assert browser.given == [] and stop.listened[-1] == "the first gesture"
+
+
+async def test_a_field_that_names_more_than_one_element_receives_nothing(tmp_path: Path) -> None:
+    """Criterion 11: the field the yes named is one element."""
+    folder = root(tmp_path)
+    (folder / "ELA" / "prova" / "da-caricare.txt").write_bytes(BYTES)
+    browser = FakeBrowser(FakePage(fields={"#fileinput": _file_field()}, counts={"#fileinput": 2}))
+
+    result = await asked_and_run(upload(browser, folder), UPLOAD, BROWSER_UPLOAD)
+
+    assert result.error is not None and result.error.code == ELEMENT_AMBIGUOUS
+    assert browser.given == [] and result.output["gestures"] == 0
+
+
+async def test_an_upload_stopped_after_the_file_says_one_gesture_and_clicks_nothing(
+    tmp_path: Path,
+) -> None:
+    """Criterion 10: stopped after the file and before the click."""
+    folder = root(tmp_path)
+    (folder / "ELA" / "prova" / "da-caricare.txt").write_bytes(BYTES)
+    browser = FakeBrowser(FakePage(fields={"#fileinput": _file_field()}))
+    tool = upload(browser, folder)
+    prospect = await tool.prospect(UPLOAD)
+
+    result = await tool.execute(
+        decision(BROWSER_UPLOAD), UPLOAD, FakeStop(after="the first gesture"), prospect.named or {}
+    )
+
+    assert result.error is not None and result.error.code == STOPPED
+    assert result.output["gestures"] == 1 and result.output["stopped_at"] == 2
+    assert len(browser.given) == 1 and browser.clicks == []
+
+
+async def test_the_page_of_an_upload_goes_to_its_verifier_and_to_no_step_after_it(
+    tmp_path: Path,
+) -> None:
+    """The page that holds a file is nobody else's: kept for the look, never left to the room —
+    even for a step the room would let continue."""
+    folder = root(tmp_path)
+    (folder / "ELA" / "prova" / "da-caricare.txt").write_bytes(BYTES)
+    browser = FakeBrowser(FakePage(fields={"#fileinput": _file_field()}))
+    pages = FakeTaskPages(continued=[STEP])
+    tool = BrowserUploadTool(folder, SITES, browser, CLOCK, FakeIdGenerator(), pages=pages)
+    prospect = await tool.prospect(UPLOAD)
+
+    result = await tool.execute(of_a_task(BROWSER_UPLOAD), UPLOAD, FakeStop(), prospect.named or {})
+
+    assert result.status is ExecutionStatus.SUCCEEDED, result.error
+    assert pages.offered == [] and browser.kept == [str(result.output["page"])]
+    assert browser.holding_a_file == [str(result.output["page"])]
+
+
+# ----------------------------------------------------------------------------------------
+# The verifier, and what it does not trust
+# ----------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        {"size": len(BYTES), "digest": 7},
+        {"size": "41", "digest": "x"},
+        {"size": True, "digest": "x"},
+        {},
+    ],
+)
+async def test_the_verifier_asks_the_result_for_a_size_and_a_fingerprint(
+    tmp_path: Path, said: dict[str, Any]
+) -> None:
+    folder = root(tmp_path)
+    (folder / "ELA" / "prova" / "scaricato.bin").write_bytes(BYTES)
+
+    (failure,) = await FileDownloadedVerifier(folder).verify(
+        [FILE_DOWNLOADED], DOWNLOAD, succeeded(BROWSER_DOWNLOAD, output=said)
+    )
+
+    assert failure.code == "verification.arguments_invalid"
+
+
+async def test_the_verifier_says_a_file_it_cannot_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder = root(tmp_path)
+    (folder / "ELA" / "prova" / "scaricato.bin").write_bytes(BYTES)
+    said = {"size": len(BYTES), "digest": digest(BYTES)}
+
+    def refuses(target: Path) -> tuple[int, str]:
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(browser_files, "measured", refuses)
+    (failure,) = await FileDownloadedVerifier(folder).verify(
+        [FILE_DOWNLOADED], DOWNLOAD, succeeded(BROWSER_DOWNLOAD, output=said)
+    )
+
+    assert failure.code == FILE_UNREADABLE and failure.retryable
+
+
+async def test_the_verifier_says_a_file_of_the_same_size_and_another_content(
+    tmp_path: Path,
+) -> None:
+    folder = root(tmp_path)
+    (folder / "ELA" / "prova" / "scaricato.bin").write_bytes(BYTES[::-1])
+    said = {"size": len(BYTES), "digest": digest(BYTES)}
+
+    (failure,) = await FileDownloadedVerifier(folder).verify(
+        [FILE_DOWNLOADED], DOWNLOAD, succeeded(BROWSER_DOWNLOAD, output=said)
+    )
+
+    assert failure.code == FILE_MISMATCH and "of another content" in failure.message
+    assert digest(BYTES) not in failure.message and digest(BYTES[::-1]) not in failure.message
+    assert failure.details == {
+        "condition": FILE_DOWNLOADED,
+        "expected_bytes": len(BYTES),
+        "actual_bytes": len(BYTES),
+    }
+
+
+def test_the_two_with_the_profile_are_capabilities_of_their_own(tmp_path: Path) -> None:
+    folder = root(tmp_path)
+
+    assert AccountFileDownloadedVerifier(folder).capability_id == BROWSER_DOWNLOAD_AS_YOU
+    assert AccountUploadVerifier(FakeAccountBrowser(), 30.0).capability_id == BROWSER_UPLOAD_AS_YOU
+    assert UploadVerifier(FakeBrowser(), 30.0).capability_id == BROWSER_UPLOAD
+    assert download(FakeAccountBrowser(), folder, profile=True).profile
+    assert upload(FakeAccountBrowser(), folder, profile=True).profile
+
+
+def test_none_of_the_four_travels_and_none_continues(tmp_path: Path) -> None:
+    """Criterion 15: no node receives or verifies one of them, and none has ``continues``."""
+    from tests.docs.test_adr_travel import travelling
+    from tests.tools.test_registry import _production
+
+    tools, verifiers, _ = _production(tmp_path)
+    four = {BROWSER_DOWNLOAD, BROWSER_DOWNLOAD_AS_YOU, BROWSER_UPLOAD, BROWSER_UPLOAD_AS_YOU}
+
+    assert four <= {tool.capability_id for tool in tools.tools()}
+    assert not four & set(travelling(tools, verifiers))
+    for tool in tools.tools():
+        if tool.capability_id in four:
+            assert not tool.relocatable and not tool.idempotent
+            assert tool.continuing == ""  # type: ignore[attr-defined]
+
+
+def test_what_is_measured_is_a_regular_file_and_its_own_bytes(tmp_path: Path) -> None:
+    """The size and the sha256 a download's result and its verifier say are read from the file,
+    never through a link, and from nothing that is not a regular file."""
+    from ela.tools.fs import measured
+
+    whole = tmp_path / "whole.bin"
+    whole.write_bytes(BYTES * 5000)
+    (tmp_path / "link.bin").symlink_to(whole)
+
+    assert measured(whole) == (len(BYTES) * 5000, digest(BYTES * 5000))
+    with pytest.raises(OSError, match="regular|directory|denied"):
+        measured(tmp_path)
+    with pytest.raises(OSError):
+        measured(tmp_path / "link.bin")
