@@ -22,18 +22,25 @@ So the skip is put by **where a test takes that browser** (``tests/profile_brows
   Linux (found on 2026-11-10 by comparing the skips of two ``make check-linux``, line by line,
   before anything was pushed).
 
+**And the guard speaks only of a test that passed** (decision 34): one that fell before it built
+the browser has its own reason already, and a second error at the closing of the fixture would
+cover it. A failure is named once, by who caused it — so the report of the test's own phase is put
+on the test as it runs (the hook of ``tests/conftest.py``), and the fixture reads it.
+
 **On a system that has the browser nothing is skipped and nothing is caught**: there a
 ``BrowserUnsupported`` is a red.
 """
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from ela.infrastructure.machine.account import SUPPORTED
-from tests import profile_browser
+from tests import profile_browser, profile_browser_cases
 from tests.infrastructure.machine import test_account_browser as account
 from tests.infrastructure.machine import test_browser as shell
 from tests.infrastructure.machine import test_the_boundary as bounded
@@ -41,6 +48,17 @@ from tests.infrastructure.machine import test_what_the_gate_does_not_stop as gat
 
 nothing_left_behind = shell.nothing_left_behind
 profile = account.profile
+
+REPO = Path(__file__).resolve().parent.parent
+CASES = "tests/profile_browser_cases.py"
+
+
+def it_passed() -> bool:
+    return True
+
+
+def it_fell() -> bool:
+    return False
 
 
 def derived(node: pytest.Item) -> list[pytest.Mark]:
@@ -86,7 +104,7 @@ def test_a_test_that_took_the_fixture_and_never_built_the_browser_is_an_error() 
     """The other half. A test that takes the folder of a profile and never builds its browser
     carries a skip that is not its own: where the product has no such browser it would stop
     running, and only a count in a summary would change. So it is an error where it does run."""
-    taking = profile_browser.taken()
+    taking = profile_browser.taken(it_passed)
     next(taking)
 
     with pytest.raises(AssertionError, match="never built the browser of the profile"):
@@ -94,7 +112,7 @@ def test_a_test_that_took_the_fixture_and_never_built_the_browser_is_an_error() 
 
 
 def test_a_test_that_took_the_fixture_and_built_the_browser_ends_clean() -> None:
-    taking = profile_browser.taken()
+    taking = profile_browser.taken(it_passed)
     next(taking)
     profile_browser.built_through_the_fixture()
 
@@ -102,10 +120,52 @@ def test_a_test_that_took_the_fixture_and_built_the_browser_ends_clean() -> None
         next(taking)
 
 
+def test_the_guard_says_nothing_of_a_test_that_did_not_pass() -> None:
+    """Decision 34. It fell before it built the browser, and it has its reason: the closing of the
+    fixture adds no second error to it."""
+    taking = profile_browser.taken(it_fell)
+    next(taking)
+
+    with pytest.raises(StopIteration):
+        next(taking)
+
+
+def test_the_reports_of_a_test_are_put_on_it_as_it_runs(request: pytest.FixtureRequest) -> None:
+    """The standard hook: while the test runs its set-up is reported already, and its own phase
+    is not — which is what the fixture reads at its closing, when it is."""
+    reports = request.node.stash[profile_browser.REPORTS]
+
+    assert reports["setup"].passed and "call" not in reports
+    assert profile_browser.passed(request.node) is False, "not yet: it is running"
+
+
+@profile_browser.ON_A_MAC
+def test_a_test_that_falls_has_its_own_error_alone_and_one_that_passes_idle_the_guard_s() -> None:
+    """In a pytest of their own, with the hook and the fixture of this suite: where a test that
+    takes the fixture runs at all — elsewhere the three are skipped, which is the point of it."""
+    ran = subprocess.run(
+        [sys.executable, "-m", "pytest", CASES, "-p", "no:cacheprovider", "--no-cov", "-n0"],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=120,
+    )
+    said = ran.stdout
+    fell = f"{CASES}::test_falls_before_it_builds_the_browser"
+    idle = f"{CASES}::test_passes_and_never_builds_the_browser"
+
+    assert f"FAILED {fell} - RuntimeError: {profile_browser_cases.FELL}" in said, said
+    assert f"ERROR {fell}" not in said, "a second error covers the reason the test fell for"
+    assert f"ERROR {idle} - AssertionError: a test took the fixture" in said, said
+    assert "test_builds_the_browser_and_passes" not in said
+    assert "1 failed, 2 passed, 1 error in" in said, said
+
+
 @pytest.mark.parametrize("builds", [0, 1, 2])
 def test_after_a_test_that_took_the_fixture_the_browser_is_not_built_any_more(builds: int) -> None:
     """Whatever the test did: what it took ends with it."""
-    taking = profile_browser.taken()
+    taking = profile_browser.taken(it_passed)
     next(taking)
     for _ in range(builds):
         profile_browser.built_through_the_fixture()
