@@ -85,6 +85,9 @@ branch; un branch di sola registrazione comincia con `docs-` e non porta codice.
   — resta CPython su macOS, non dimostra che Linux funzioni, e non dice niente su tempi e
   installazione. Verde lì significa che la suite non sta ereditando la macchina; verde sul runner
   vero resta l'unica cosa che conta.
+  ***Dal 2026-11-10*** (decisione 35 di M13.13): i browser di questa macchina li trova da sé, e ciò
+  che resta diverso dal runner è nel docstring di `tests/foreign_machine.py`, con la data — i saltati
+  si confrontano lista per lista, file per file, mai nei totali.
 - **Un test afferma solo ciò di cui ha costruito le precondizioni.** Se gli serve una macchina
   vera, la dichiara con uno `skipif`, che compare nel riepilogo — un `if` dentro il test no
   (ADR 0031 §6). Una precondizione che non si può costruire dichiarando il sistema si costruisce

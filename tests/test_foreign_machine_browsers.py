@@ -61,9 +61,9 @@ def asked(program: str, *arguments: str, declared: str | None = None) -> object:
     if declared is not None:
         environment[VARIABLE] = declared
     ran = _run(program, arguments, environment)
-    said, failed = ran.stdout, ran.returncode != 0
+    said, problem = ran.stdout, ran.stderr[-2000:] if ran.returncode else ""
     del environment, ran
-    assert not failed, "the interpreter with the plugin in ended badly"
+    assert not problem, f"the interpreter with the plugin in ended badly:\n{problem}"
     return json.loads(said)
 
 
