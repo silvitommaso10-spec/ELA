@@ -66,6 +66,11 @@ branch; un branch di sola registrazione comincia con `docs-` e non porta codice.
   interrompe a dieci minuti, e il solo pytest di `make check` ne ha presi quasi dieci — 597,98 secondi —
   nel giro di M13.10 del 2026-10-29 (`.git/m13.10-reference/review-79-88/make-check.txt`): la regola
   com'era non si poteva rispettare.
+  ***Chiarita il 2026-11-10*** (decisione 36 di M13.13): **dopo una CI rossa, prima del push della
+  riparazione, `make check` una volta — e `make check-linux` se il rosso era di ubuntu — sulla punta
+  esatta da pushare.** Quella è la «fine» della riparazione. **E ogni giro di cui si usa l'esito si
+  legge intero**: un giro letto solo nell'esito non decide niente, e accanto a lui si scrive che non
+  è stato letto intero.
   **Nella sessione cloud, che gira come root**, il gate `cov-critical` manca dei rami che solo un
   sistema che nega raggiunge: `make -k check`, il riepilogo elenca quelle righe, e le giudica la CI
   sul branch. La suite di `main` non si rifà per confronto, salvo per un rosso che non si sa spiegare.
