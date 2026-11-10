@@ -76,6 +76,7 @@ from ela.tools.verifiers import (
     BROWSER_EXPECT_VISIBLE,
     BrowserActVerifier,
 )
+from tests import profile_browser
 from tests.architecture.test_every_use_of_a_page_asks_the_boundary import ASKED_BEFORE_ONLY
 from tests.browser_leftovers import running
 from tests.infrastructure.machine import test_account_browser as account
@@ -87,9 +88,9 @@ nothing_left_behind = shell.nothing_left_behind
 judged = shell.judged
 profile = account.profile
 
-ON_A_MAC = pytest.mark.skipif(
-    account.SYSTEM != "Darwin", reason="the browser with the profile is Chrome for Testing on a Mac"
-)
+ON_A_MAC = profile_browser.ON_A_MAC
+"""The one skip of the browser of the profile (``tests/profile_browser.py``): a test that takes
+that browser through its fixture is marked at collection, and needs not write this."""
 EMPTY, PROFILE = "the empty browser", "the browser of the profile"
 ENVIRONMENT = {"PATH": "/usr/bin:/bin", "HOME": str(Path.home()), "LANG": "C.UTF-8"}
 HTML = [("Content-Type", "text/html; charset=utf-8")]
@@ -117,9 +118,13 @@ def empty(stopping: asyncio.Event | None = None, **more: str) -> PlaywrightBrows
 
 
 @pytest.fixture(params=[EMPTY, pytest.param(PROFILE, marks=ON_A_MAC)])
-async def browser(request: pytest.FixtureRequest, profile: Path) -> AsyncIterator[Any]:
-    """Each of the two browsers, closed by ELA's own closing whatever the test did."""
-    made = empty() if request.param == EMPTY else account.chrome(profile)
+async def browser(request: pytest.FixtureRequest) -> AsyncIterator[Any]:
+    """Each of the two browsers, closed by ELA's own closing whatever the test did. **The folder
+    of the profile is taken only for the browser of the profile** — asked for by name, when the
+    parameter is that one —: a test of the empty browser does not take it, and is not skipped
+    where the product has no browser of the profile (decision 27 of the review after the red CI
+    of ``56c672c``)."""
+    made = empty() if request.param == EMPTY else account.chrome(request.getfixturevalue("profile"))
     if not await made.installed():
         pytest.fail("the browser this test launches is not installed on this machine")
     yield made

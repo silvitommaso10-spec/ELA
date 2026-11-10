@@ -12,12 +12,14 @@ speaks to the application in this process and opens no socket at all.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any, NoReturn
 
 import httpx
 import httpx2
 import pytest
 
+from tests import profile_browser
 from tests.browser_leftovers import RAN_LAST
 
 NO_NETWORK = "a test tried to open a network connection"
@@ -31,6 +33,26 @@ def _no_network(monkeypatch: pytest.MonkeyPatch) -> None:
     for library in (httpx, httpx2):
         monkeypatch.setattr(library.AsyncHTTPTransport, "handle_async_request", refuse)
         monkeypatch.setattr(library.HTTPTransport, "handle_request", refuse)
+
+
+@pytest.fixture(name=profile_browser.TAKEN)
+def _the_browser_of_the_profile() -> Iterator[None]:
+    """**Where a test takes the browser of the profile** (decision 27 of the review after the red CI
+    of ``56c672c``): the folder of a test's profile asks for this fixture, the collection marks
+    every test whose fixtures reach it with the skip of the systems the product does not have that
+    browser on, and the browser is built only while it is taken (``tests/profile_browser.py``)."""
+    taking = profile_browser.taking()
+    taking.append(True)
+    try:
+        yield
+    finally:
+        taking.pop()
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """The skip of a test that takes the browser of the profile, put where it takes it and never
+    written in the test: three tests of M13.9b forgot to copy it, and ubuntu was red."""
+    profile_browser.marked(items)
 
 
 def pytest_runtest_logfinish(nodeid: str, location: tuple[str, int | None, str]) -> None:
