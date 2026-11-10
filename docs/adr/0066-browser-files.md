@@ -67,17 +67,49 @@ lanciato con gli argomenti di un piano (ADR 0047): **dichiarato anche lì, il pr
 che la lista chiusa non conosce**, e niente lo escludeva (censimento del 2026-11-02). La risposta 18 della review delle
 SPEC lo dà a una riparazione sua, con la sua lettera.
 
+**Il controllo è in due punti, e non dicono la stessa cosa.**
+
 - **All'avvio**, una configurazione in cui il programma del vault è anche un programma del terminale **non avvia ELA**,
   e la frase nomina `ELA_VAULT_PROGRAM` ed `ELA_TERMINAL_PROGRAMS` (`refuse_the_vault_program` in
-  `ela.composition.settings`). **Per identità e non per nome**: lo stesso percorso risolto — un link porta dove porta —,
-  o lo stesso file — lo stesso dispositivo e lo stesso inode, un suo secondo nome —. Un programma che non c'è si
-  confronta per il percorso.
+  `ela.composition.settings`). È il rifiuto di una configurazione che oggi si vede sbagliata.
+- **Al lancio**, la tabella dei programmi del terminale — `ela.tools.programs.Programs`, a cui la composizione consegna
+  il programma del vault — chiede **ogni volta che un lancio si decide**, quando la domanda è composta e di nuovo
+  subito prima del lancio, se il programma, **risolto in quell'istante**, è il programma del vault: il comando è
+  rifiutato con `terminal.vault_program`, prima della domanda quando si può e comunque prima del lancio. Lo dice anche
+  il verifier, che legge la stessa tabella dopo la corsa.
+
+*Perché due* (decisione 28 della review dopo la CI rossa di `56c672c`): **il controllo dell'avvio è una credenza sul
+lancio, e una credenza non decide un'azione.** Un programma che all'avvio non c'è non si può confrontare per identità, e
+ciò a cui un percorso porta cambia dopo. Misurato il 2026-11-10 sul codice di prima: il programma del vault nato dopo
+l'avvio come secondo nome di un programma del terminale — che per la tabella non era cambiato: lo stesso file, lo
+stesso contenuto — **era lanciato**; un programma del terminale assente all'avvio che diventa un secondo nome del
+programma del vault era già rifiutato, come `terminal.program_changed`, ed è ora detto per ciò che è.
+
+**Per identità e non per nome**, nei due punti con la stessa funzione, `ela.tools.programs.same_program`: lo stesso
+percorso risolto — un link porta dove porta —, o lo stesso file — lo stesso dispositivo e lo stesso inode, un suo
+secondo nome —. Un programma che non c'è è lo stesso solo per il percorso risolto.
+
 - **Regola di architettura 72** (`the-vault-s-program-is-its-adapter-s`): il campo `vault_program` lo nominano solo le
   impostazioni, che lo dichiarano e lo controllano, e la composizione, che lo consegna **all'adapter del vault**, che
-  lo lancia, **e alla sua porta**, che ne fissa l'identità e non lancia niente — un tool non lancia processi (regola
-  32) —; a nessun altro. *Dove la review non diceva*: «solo l'adapter del vault riceve e lancia `ELA_VAULT_PROGRAM`» —
-  la porta lo riceve anche lei, da M13.9, per dire quale riga scrivere e per fissarne l'identità: la regola la nomina,
-  e la regola 32 tiene ogni lancio dove sta l'adapter.
+  lo lancia, **alla sua porta**, che ne fissa l'identità e non lancia niente — un tool non lancia processi (regola
+  32) —, **e alla tabella dei programmi del terminale, che lo riceve per rifiutarlo**; a nessun altro. *Dove la review
+  non diceva*: «solo l'adapter del vault riceve e lancia `ELA_VAULT_PROGRAM`» — lo *lancia* solo l'adapter; la porta
+  lo riceve da M13.9, e la tabella del terminale dalla decisione 28. La regola nomina i tre per classe e costruttore.
+
+Un ADR accettato non si riscrive: le righe del tool e del verifier di `terminal.run` in ADR 0047, che guadagnano il
+codice nuovo, si riscrivono qui **per intero**, e la riga riscritta vince (la forma di ADR 0065 §1).
+
+Righe dei tool, riscritte:
+
+| Capability | Tool | Nome | Idempotente | Codici d'errore | Numeri nell'audit |
+|---|---|---|---|---|---|
+| `terminal.run` | `TerminalRunTool` | `terminal-run` | no | `arguments.invalid`, `fs.no_root`, `path.invalid`, `path.missing`, `path.outside_root`, `path.symlink`, `path.unreachable`, `terminal.arguments_unpassable`, `terminal.cwd_not_a_folder`, `terminal.no_program`, `terminal.not_declared`, `terminal.not_started`, `terminal.program_changed`, `terminal.program_gone`, `terminal.stopped`, `terminal.timeout`, `terminal.vault_program` | `argument_count`, `exit_code`, `signal`, `stderr.shown`, `stderr.total`, `stdout.shown`, `stdout.total` |
+
+Righe dei verifier, riscritte:
+
+| Capability | Verifier | Nome | Condizioni | Codici di fallimento |
+|---|---|---|---|---|
+| `terminal.run` | `TerminalRunVerifier` | `terminal-run-verifier` | `terminal.exit_code_matches`, `terminal.output_whole`, `terminal.program_unchanged` | `terminal.exit_code_mismatch`, `terminal.no_program`, `terminal.not_declared`, `terminal.output_incomplete`, `terminal.program_changed`, `terminal.program_gone`, `terminal.vault_program` |
 
 ### Ciò che questo ADR dichiara e non risolve
 
@@ -96,6 +128,7 @@ SPEC lo dà a una riparazione sua, con la sua lettera.
 con la sezione di questo ADR a cui guardare.
 
 - **ADR 0063** §5 — `landed` aspetta la fine della navigazione che il click ha avviato, e la pagina d'errore del browser è detta all'indirizzo che il browser ha provato a raggiungere (§1, §2).
+- **ADR 0047** §9 — le righe del verifier e del tool di `terminal.run` guadagnano `terminal.vault_program`: riscritte per intero qui (§3).
 - **ADR 0064** §4 — la riga «nessun confine ammette un indirizzo che non è di un sito»: la pagina d'errore del browser è chiesta al confine per l'indirizzo che il browser ha provato a raggiungere; `about:blank` e `blob:` restano fuori (§1).
 
 Le altre conseguenze:

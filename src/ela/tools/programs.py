@@ -46,10 +46,12 @@ __all__ = [
     "PROGRAM_CHANGED",
     "PROGRAM_GONE",
     "PROGRAM_CODES",
+    "VAULT_PROGRAM",
     "Identity",
     "ProgramProblem",
     "Programs",
     "identity_of",
+    "same_program",
 ]
 
 NOT_DECLARED: Final = "terminal.not_declared"
@@ -63,8 +65,13 @@ content, or one that was not there then (dec. 4)."""
 PROGRAM_GONE: Final = "terminal.program_gone"
 """The program of the start-up is not there any more: nothing at the path, or a link that leads
 nowhere. Absent, not changed — there is nothing to compare (review of M13.2, decision 4)."""
+VAULT_PROGRAM: Final = "terminal.vault_program"
+"""The declared path leads, **now**, to the vault's program — the same resolved path, or the same
+file under a second name (M13.9c; decision 28 of the review after the red CI of ``56c672c``). Only
+the vault's adapter launches that program, with its closed list of commands (ADR 0063 §2); the
+terminal would launch it with the arguments of a plan."""
 PROGRAM_CODES: Final[frozenset[str]] = frozenset(
-    {NOT_DECLARED, NO_PROGRAM, PROGRAM_CHANGED, PROGRAM_GONE}
+    {NOT_DECLARED, NO_PROGRAM, PROGRAM_CHANGED, PROGRAM_GONE, VAULT_PROGRAM}
 )
 
 CHUNK: Final = 1 << 20
@@ -100,6 +107,26 @@ class ProgramProblem:
     message: str
 
 
+def same_program(one: str, other: str) -> bool:
+    """Whether two paths are **one program now** — by identity, never by name and never by
+    content (M13.9c, ADR 0066 §3): the same path once resolved — a link leads where it leads —, or
+    the same file, by device and inode — a second name of it. A copy in another file is another
+    program; a path nothing is at is nobody's file, and is the same program only as the same
+    resolved path.
+
+    **One definition for the two places that ask**: the start-up, which refuses a configuration
+    (``ela.composition.settings``), and the launch, which refuses a command
+    (:meth:`Programs.problem`) — two copies of «is this the vault's program» would be two answers
+    (ADR 0014 §2)."""
+    if os.path.realpath(one) == os.path.realpath(other):
+        return True
+    try:
+        first, second = os.stat(one), os.stat(other)
+    except OSError:  # one of the two is not there: there is no file to be the same
+        return False
+    return (first.st_dev, first.st_ino) == (second.st_dev, second.st_ino)
+
+
 def identity_of(entry: str) -> Identity:
     """What ``/entry`` leads to now: read from the disk, never from what a plan said."""
     resolved = os.path.realpath("/" + entry)
@@ -125,17 +152,25 @@ def _sha256(path: str) -> str:
 
 
 class Programs:
-    """The programs ``terminal.run`` may launch, each with the identity of the start-up."""
+    """The programs ``terminal.run`` may launch, each with the identity of the start-up.
 
-    __slots__ = ("_table",)
+    ``never`` is the one program the terminal never launches whatever was declared: the vault's
+    (M13.9c). **Asked every time a launch is decided, not believed from the start-up**: a program
+    that is not there when ELA starts cannot be compared by identity, and what a path leads to
+    changes after — measured on 2026-11-10: the vault's program born after the start as a second
+    name of a declared program was launched, because for this table nothing had changed."""
 
-    def __init__(self, table: Mapping[str, Identity]) -> None:
+    __slots__ = ("_never", "_table")
+
+    def __init__(self, table: Mapping[str, Identity], never: str | None = None) -> None:
         self._table: Mapping[str, Identity] = MappingProxyType(dict(table))
+        self._never = never
 
     @classmethod
-    def fixed(cls, entries: Iterable[str]) -> Programs:
-        """Resolve every entry **now**, once: the start-up of ELA, and nothing later."""
-        return cls({entry: identity_of(entry) for entry in entries})
+    def fixed(cls, entries: Iterable[str], never: str | None = None) -> Programs:
+        """Resolve every entry **now**, once: the start-up of ELA, and nothing later. ``never``
+        is only kept: what it leads to is asked at each launch."""
+        return cls({entry: identity_of(entry) for entry in entries}, never)
 
     def at_start(self, entry: str) -> Identity | None:
         """The identity fixed at start-up, or ``None`` for an entry nobody declared."""
@@ -149,6 +184,15 @@ class Programs:
             return ProgramProblem(
                 NOT_DECLARED,
                 f"{full!r} is not one of the programs declared in ELA_TERMINAL_PROGRAMS",
+            )
+        # The vault's program, asked first and by what the two paths lead to **now** (M13.9c):
+        # the more exact answer of the two, when the table would say «changed» as well.
+        if self._never is not None and same_program(full, self._never):
+            return ProgramProblem(
+                VAULT_PROGRAM,
+                f"{full!r} is the vault's program now (ELA_VAULT_PROGRAM): only the vault's own "
+                "adapter launches it, with its closed list of commands — ELA does not run it as "
+                "a command",
             )
         now = identity_of(entry)
         if now.runs is None and start.executable:

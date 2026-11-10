@@ -2146,6 +2146,18 @@ VIOLATIONS: tuple[Case, ...] = (
         "    return Terminal(declared)\n",
         "Terminal",
     ),
+    Case(
+        # A constructor that is called ``fixed`` too, and is neither the door's nor the table's:
+        # the receivers are named by their owner.
+        "the-root-hands-the-vault-s-program-to-another-fixed",
+        "the-vault-s-program-is-its-adapter-s",
+        "composition/root.py",
+        "def built(settings, Other):\n"
+        "    declared = settings.accounts.vault_program\n"
+        "    again = declared\n"
+        "    return Other.fixed(again)\n",
+        "Other.fixed",
+    ),
     # --- the-profile-s-folder-is-its-adapter-s (rule 69, M13.9) ---
     Case(
         # A route reading where the profile is, to answer with it — or to open it.
@@ -3184,6 +3196,20 @@ ALLOWED: tuple[Case, ...] = (
         "    declared = settings.accounts.vault_program\n"
         "    vault = BitwardenVault(declared)\n"
         "    return await VaultDoor.fixed(vault, declared)\n",
+        "",
+    ),
+    Case(
+        # Rule 72: and to the terminal's table, which refuses it at every launch — built in a
+        # thread, inside a lambda: the call that is handed the program is the table's own.
+        "the-root-tells-the-terminal-s-table-the-vault-s-program",
+        "the-vault-s-program-is-its-adapter-s",
+        "composition/root.py",
+        "import asyncio\n"
+        "async def built(settings, Programs):\n"
+        "    vault_s = settings.accounts.vault_program\n"
+        "    return await asyncio.to_thread(\n"
+        "        lambda: Programs.fixed(settings.terminal.programs, never=vault_s)\n"
+        "    )\n",
         "",
     ),
     Case(

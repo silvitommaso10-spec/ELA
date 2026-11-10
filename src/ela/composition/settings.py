@@ -69,6 +69,7 @@ from ela.routing import RoutingSettings
 from ela.tombstones import (
     refuse_retired,
 )
+from ela.tools.programs import same_program
 from ela.tools.settings import (
     CaptureSettings,
     ListenSettings,
@@ -896,28 +897,19 @@ def refuse_the_vault_program(program: str, terminal: Sequence[str]) -> None:
     a program of the terminal is launched with the arguments of a plan (ADR 0047) — declared in
     both, the closed list would be a defence the terminal steps around.
 
-    **By identity, not by name** (answer 18 of the review of M13.9c): an entry of the terminal is
-    the vault's program when its path, resolved, is the vault's, resolved — a link leads where it
-    leads —, or when it is the same file — the same device and the same inode: a second name. **A
-    copy in another file is another program**, and is not recognised: declared in ADR 0066. A
-    program that is not there is compared by its path alone. A ``ValueError`` whose sentence names
-    both variables: a check of the whole configuration, with no field to point at."""
-    vault = Path(program)
-    resolved = vault.resolve()
-    try:
-        status: os.stat_result | None = vault.stat()
-    except OSError:
-        status = None
+    **By identity, not by name** (answer 18 of the review of M13.9c):
+    :func:`~ela.tools.programs.same_program`, the comparison the launch makes too — the same
+    resolved path, or the same file under a second name; a copy in another file is another
+    program, and is not recognised (declared in ADR 0066).
+
+    **A check of the start-up, and so a belief about the launch** (decision 28 of the review after
+    the red CI of ``56c672c``): a program that is not there now cannot be compared by identity, and
+    what a path leads to changes after. This refuses the configuration somebody can see is wrong
+    today; what decides a launch is asked at the launch (``ela.tools.programs.Programs``). A
+    ``ValueError`` whose sentence names both variables: a check of the whole configuration, with
+    no field to point at."""
     for entry in terminal:
-        declared = Path("/") / entry
-        same = declared.resolve() == resolved
-        if not same and status is not None:
-            try:
-                other = declared.stat()
-            except OSError:
-                continue
-            same = (other.st_dev, other.st_ino) == (status.st_dev, status.st_ino)
-        if same:
+        if same_program("/" + entry, program):
             raise ValueError(
                 f"{VAULT_VARIABLE} ({program}) is also a program of {TERMINAL_VARIABLE} "
                 f"(/{entry}). The vault's program is launched by the vault's adapter alone, with "

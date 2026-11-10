@@ -104,9 +104,9 @@ async def test_the_programs_are_hashed_off_the_loop_at_start_up(
     """Review of M13.2, 5a, at the start: fixing the identities hashes every declared program."""
     threads: list[threading.Thread] = []
 
-    def fixed(cls: type[Programs], entries: object) -> Programs:
+    def fixed(cls: type[Programs], entries: object, never: str | None = None) -> Programs:
         threads.append(threading.current_thread())
-        return cls({one: Identity(runs=None, digest=None) for one in entries})  # type: ignore[attr-defined]
+        return cls({one: Identity(runs=None, digest=None) for one in entries}, never)  # type: ignore[attr-defined]
 
     monkeypatch.setattr(Programs, "fixed", classmethod(fixed))
     declare(monkeypatch, tmp_path, ELA_TERMINAL_PROGRAMS=json.dumps(["bin/echo"]))

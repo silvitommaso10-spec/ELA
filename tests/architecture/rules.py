@@ -749,14 +749,18 @@ PROFILE_READERS = frozenset(
 #: arguments of a plan, and the settings refuse a configuration that makes the vault's program one
 #: of the terminal's. The line that declares it is :data:`VAULT_FIELD`; it is named by the settings,
 #: which declare and check it, and by the composition root — :data:`VAULT_READERS` —, which hands it
-#: to :data:`VAULT_RECEIVERS` and to nothing else: the adapter, which launches it, and the vault's
-#: door, which fixes its identity and launches nothing (a tool launches no process: rule 32).
+#: to :data:`VAULT_RECEIVERS` and to nothing else: the adapter, which launches it; the vault's
+#: door, which fixes its identity and launches nothing (a tool launches no process: rule 32); and
+#: **the terminal's table of programs, which is told it so as to refuse it at every launch**
+#: (decision 28 of the review after the red CI of ``56c672c``: the check of the start-up is a
+#: belief about the launch). Each receiver is named by its class and its constructor — two of the
+#: three are called ``fixed``, and a name alone would let any ``fixed`` in.
 VAULT_FIELD = "vault_program"
 VAULT_READERS = frozenset(
     {Path(COMPOSITION_DIR) / "settings.py", Path(COMPOSITION_DIR) / "root.py"}
 )
 VAULT_ROOT = Path(COMPOSITION_DIR) / "root.py"
-VAULT_RECEIVERS = frozenset({"BitwardenVault", "fixed"})
+VAULT_RECEIVERS = frozenset({"BitwardenVault", "VaultDoor.fixed", "Programs.fixed"})
 #: Rule 70 (M13.4f, ADR 0064): the gate of the browser **looks at** the requests the browser makes,
 #: and makes none in its place. Until M13.4f it was a route of Playwright's that fetched the
 #: document of the main frame itself and handed it to the page: the driver chose the cookies of
@@ -1927,21 +1931,39 @@ def _names_the_vault_program(node: ast.AST) -> bool:
 
 def _handed_elsewhere(rule: str, module: str, tree: ast.AST) -> list[Violation]:
     """The calls of the composition root that are handed the vault's program and are not one of
-    :data:`VAULT_RECEIVERS`."""
-    holders = {
-        target.id
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Assign)
-        and any(_names_the_vault_program(inner) for inner in ast.walk(node.value))
-        for target in node.targets
-        if isinstance(target, ast.Name)
-    }
+    :data:`VAULT_RECEIVERS`.
+
+    «Handed» is an argument that names the field, or a name the root bound to it — however many
+    names it went through —, anywhere inside the argument **but not inside a call or a lambda in
+    it**: those are calls of their own, judged by their own callee. So ``to_thread(lambda:
+    Programs.fixed(entries, never=program))`` hands it to ``Programs.fixed``, and ``Other(str(
+    program))`` hands it to ``str`` — which is not a receiver."""
+    holders: set[str] = set()
 
     def carries(value: ast.AST) -> bool:
-        return any(
-            _names_the_vault_program(inner) or (isinstance(inner, ast.Name) and inner.id in holders)
-            for inner in ast.walk(value)
-        )
+        todo = [value]
+        while todo:
+            node = todo.pop()
+            if isinstance(node, (ast.Call, ast.Lambda)):
+                continue
+            if _names_the_vault_program(node) or (
+                isinstance(node, ast.Name) and node.id in holders
+            ):
+                return True
+            todo.extend(ast.iter_child_nodes(node))
+        return False
+
+    assignments = [node for node in ast.walk(tree) if isinstance(node, ast.Assign)]
+    grew = True
+    while grew:
+        grew = False
+        for node in assignments:
+            if not carries(node.value):
+                continue
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id not in holders:
+                    holders.add(target.id)
+                    grew = True
 
     found: list[Violation] = []
     for node in ast.walk(tree):
@@ -1950,17 +1972,25 @@ def _handed_elsewhere(rule: str, module: str, tree: ast.AST) -> list[Violation]:
         handed = [*node.args, *(keyword.value for keyword in node.keywords)]
         if not any(carries(value) for value in handed):
             continue
-        callee = node.func
-        called = (
-            callee.id
-            if isinstance(callee, ast.Name)
-            else callee.attr
-            if isinstance(callee, ast.Attribute)
-            else ""
-        )
+        called = _called(node.func)
         if called not in VAULT_RECEIVERS:
             found.append(Violation(rule, module, called or VAULT_FIELD, node.lineno))
     return found
+
+
+def _called(callee: ast.AST) -> str:
+    """How a call names what it calls: ``Name``, or ``Owner.name`` for a method of a named
+    owner — the last two parts of a longer chain."""
+    if isinstance(callee, ast.Name):
+        return callee.id
+    if isinstance(callee, ast.Attribute):
+        owner = callee.value
+        if isinstance(owner, ast.Name):
+            return f"{owner.id}.{callee.attr}"
+        if isinstance(owner, ast.Attribute):
+            return f"{owner.attr}.{callee.attr}"
+        return callee.attr
+    return ""
 
 
 def check_the_gate_looks_and_does_not_redo(pkg_root: Path) -> list[Violation]:

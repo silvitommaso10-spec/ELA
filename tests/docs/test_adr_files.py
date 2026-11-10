@@ -55,7 +55,7 @@ def test_it_is_a_proposal_until_the_proof_of_its_branch() -> None:
 def test_the_adrs_it_revises_say_so_on_their_state_line_and_no_other_does() -> None:
     listed = revised_by_the_list()
 
-    assert listed == {"0063", "0064"}
+    assert listed == {"0047", "0063", "0064"}
     assert listed == revised_by_their_state(written())
 
 
