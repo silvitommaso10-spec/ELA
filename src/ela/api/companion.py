@@ -686,6 +686,20 @@ def _pairs(found: ApprovalOut, seen: bool) -> pages.Markup:
                 HERE, "pair", key="Nome utente", value=visible(found.username, lines=False)
             )
         )
+    if seen and found.site:
+        # A file from the browser (M13.13, ADR 0066): the target above is the file, and these say
+        # the site it comes from or is given to, what the yes does there — the capability's
+        # sentence, as it stands — and, of a file that leaves, its size and its sha256 as they
+        # were when the question was asked. The user's content: behind the ceiling.
+        pairs.append(
+            pages.fragment(HERE, "pair", key="Il sito", value=visible(found.site, lines=False))
+        )
+    if seen and found.visits:
+        pairs.append(pages.fragment(HERE, "pair", key="Sul sito", value=found.visits))
+    if seen and found.size is not None:
+        pairs.append(pages.fragment(HERE, "pair", key="Dimensione", value=f"{found.size} byte"))
+    if seen and found.digest:
+        pairs.append(pages.fragment(HERE, "pair", key="Impronta (sha256)", value=found.digest))
     if seen and found.does:
         # The sentence comes from the capability and is rendered as it stands (M13.1 dec. G):
         # a page that composed one would be lending a write's words to a read.

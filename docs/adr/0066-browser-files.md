@@ -111,6 +111,159 @@ Righe dei verifier, riscritte:
 |---|---|---|---|---|
 | `terminal.run` | `TerminalRunVerifier` | `terminal-run-verifier` | `terminal.exit_code_matches`, `terminal.output_whole`, `terminal.program_unchanged` | `terminal.exit_code_mismatch`, `terminal.no_program`, `terminal.not_declared`, `terminal.output_incomplete`, `terminal.program_changed`, `terminal.program_gone`, `terminal.vault_program` |
 
+### 4. Quattro capability, e lo scope è il file (M13.13)
+
+`browser.download` e `browser.upload` sul browser vuoto di ELA, `browser.download_as_you` e `browser.upload_as_you` sul
+browser con gli account: capability loro, perché un consenso non si eredita (ADR 0034). Tutte `HIGH`: chiedono a ogni
+uso, e nessuna policy le copre fino a M13.14. Nessuna viaggia, nessuna continua una pagina, nessuna ne lascia una allo
+step dopo.
+
+Capability aggiunte:
+
+| Capability | Rischio | Scope | Argomenti scoped | Autorizzazione | Argomenti obbligatori | Argomenti opzionali |
+|---|---|---|---|---|---|---|
+| `browser.download` | HIGH | `undeclared` | `file` | sì | `site: string`, `path: string`, `file: string`, `overwrite: boolean`, `purpose: string` | `click: string` |
+| `browser.download_as_you` | HIGH | `undeclared` | `file` | sì | `site: string`, `path: string`, `file: string`, `overwrite: boolean`, `purpose: string` | `click: string` |
+| `browser.upload` | HIGH | `undeclared` | `file` | sì | `site: string`, `path: string`, `file: string`, `file_field: string`, `expect_text: string`, `purpose: string` | `fill: array`, `click: string` |
+| `browser.upload_as_you` | HIGH | `undeclared` | `file` | sì | `site: string`, `path: string`, `file: string`, `file_field: string`, `expect_text: string`, `purpose: string` | `fill: array`, `click: string` |
+
+**Uno scaricamento è giudicato come un `fs.write`, un caricamento come un `fs.read`.** Una capability ha uno scope
+solo, e il loro è `ELA_FS_SCOPE` su `file`: un file fuori dallo scope lo nega il Guardian, come per `fs.*`. Quindi
+**il sito è il confine del tool**: un sito non dichiarato in `ELA_BROWSER_SITES` lo rifiuta il tool, prima della
+domanda, con `browser.site_not_declared` — dove per ogni altro `browser.*` è un `DENIED` del Guardian.
+
+**Tutto ciò che si può rifiutare prima della domanda si rifiuta lì**, senza spendere un sì (ADR 0045 §6-bis), in
+quest'ordine: la forma (`arguments.invalid`); il sito; il browser e il profilo, come per gli altri tool del browser;
+la radice (`fs.no_root`); il file, con la classificazione che `fs` condivide. Per uno scaricamento ciò che `fs.write`
+rifiuta, con `overwrite` come asserzione sul mondo nei due versi (`fs.overwrite_mismatch`); per un caricamento ciò che
+`fs.read` rifiuta, il file che manca compreso. *«Ciò che `fs.read` rifiuta» sono la sua radice e la sua
+classificazione* (risposta 19): il rifiuto del testo che non è UTF-8 resta suo, perché è il testo che `fs.read` mette in
+un risultato, e i byte di un caricamento non entrano in nessun risultato. **Un PDF si carica.** I codici sono quelli di
+`fs`, chiesti a `fs` dai test sullo stesso disco: un percorso con `..` è `path.invalid`, e un link che porta fuori dalla
+radice è `path.outside_root`.
+
+`click` è facoltativo nei due schemi: senza, per uno scaricamento l'indirizzo **è** il file; per un caricamento la
+pagina è una che carica da sé quando il file le è dato (risposta 22).
+
+### 5. La domanda nomina il file, e il sito ha campi suoi (M13.13)
+
+Il bersaglio della domanda resta **il file, risolto, con ciò che gli succede** — crea, sostituisce, è letto e dato al
+sito —, come per `fs.*`. Il sito non è un secondo bersaglio: ha quattro campi suoi, tenuti a mondo chiuso sulle tre
+superfici che rispondono, come `entry` e `username` di un login (ADR 0045 §11):
+
+- `site`, il sito da cui il file viene o a cui è dato;
+- `visits`, che cosa fa il sì su quel sito, nella frase della capability — accanto a `does`, che dice del file;
+- `size` e `digest`, **per un file che esce**: la dimensione in byte e lo sha256 del file com'è quando la domanda è
+  composta. Per uno scaricamento restano vuoti: non esce niente.
+
+L'indirizzo, i gesti, il testo atteso e il tempo sono quelli di ogni domanda su una pagina (ADR 0052 §7). Sono contenuto
+dell'utente, **sotto il tetto**: oltre il tetto di un task una superficie non legge né il file, né il sito, né
+l'impronta.
+
+**L'impronta sta sulle superfici e non nell'audit.** ADR 0045 §8 tiene gli hash fuori dai fallimenti dei verifier,
+perché l'hash di un file breve si inverte per dizionario; qui lo sha256 è mostrato a chi dice sì — la console e il
+telefono compresi — e non entra nella frase della domanda, che è ciò che l'audit registra. È dichiarato qui.
+
+### 6. Un caricamento dà byte e nome, mai il percorso (M13.13)
+
+1. **Alla domanda** ELA legge il file — un file regolare, mai attraverso un link — e la dimensione e lo sha256 viaggiano
+   con il sì, in ciò che la domanda ha nominato (ADR 0065 §2). Un file sopra i **50 MiB** è rifiutato prima della
+   domanda con `browser.file_too_large` (risposta 20): è il tetto di ciò che il motore dà a una pagina come byte, e una
+   domanda si compone solo per ciò che riuscirebbe adesso. La dimensione è chiesta al disco prima di leggere un byte.
+2. **Dopo il sì** ELA lo rilegge allo stesso modo: una dimensione o uno sha256 che non tornano sono
+   `browser.file_changed`, con il sì speso, nessuna pagina aperta e niente uscito.
+3. La pagina si apre con **il solo sito come confine**. Il campo che il sì ha nominato dev'essere **un elemento solo, un
+   `input` di tipo `file`** (`browser.element_ambiguous`, `browser.not_a_file_field`): un altro campo file della pagina,
+   che ELA non tocca, non rifiuta niente (risposta 24). *Il motore dà un file a un `input` di tipo `text` senza dire
+   niente* (misura del 2026-11-10): che cosa sia l'elemento lo chiede alla pagina anche l'adapter.
+4. **Dare il file è il primo gesto**: la fermata è ascoltata prima di lui, ed è il punto del tool. ELA dà alla pagina
+   **i byte che ha letto e il nome** del file, mai il percorso; il tipo è quello che il nome dice (`mimetypes`), o
+   `application/octet-stream` — un fatto che la pagina ricaverebbe dal nome.
+5. Poi `fill` e `click` sono la sequenza di ADR 0065 §1, e il verifier è quello di un gesto: la pagina ha mostrato il
+   testo atteso. **Dice ciò che la pagina ha mostrato, mai che il sito ha tenuto il file.** *Un testo che la pagina
+   mostra per quattro secondi il verifier lo vede* (risposta 22: misurato sui due browser, con un sito locale che rifà
+   la pagina scelta per la prova).
+
+### 7. Il cancello di una pagina che tiene un file (M13.13)
+
+ADR 0064 §1 dice che il confine «non impedisce a una pagina di caricare da altri siti»: guarda dove la pagina **va**,
+non dove **manda**. Una pagina a cui è stato dato un file può mandarlo dove dice il suo script. Quindi, **dall'istante
+prima che il file sia dato e finché la pagina vive, ogni richiesta della pagina che va a un sito fuori dal confine
+fallisce** — non più solo i documenti della cornice principale (la domanda 23 di M13.10, decisa (a)). Ciò che la pagina
+manda al suo sito arriva; ciò che aveva caricato da altri siti prima del file era partito, come per ogni pagina. Una
+richiesta rifiutata così non è una navigazione della pagina: non resta scritta da nessuna parte, e lo step non fallisce
+per lei. La pagina che tiene un file non passa allo step dopo: la guarda il verifier, e si chiude.
+
+### 8. La porta degli scaricamenti (M13.13)
+
+**Chiusa per ogni pagina e a ogni altro istante, e dice chi bussa.** Dall'apertura di ogni pagina una sessione del
+protocollo del browser, accanto a quella del cancello, dice al browser `deny` con gli eventi accesi: niente è scritto,
+e il browser **annuncia** comunque lo scaricamento, con il suo indirizzo (misura del 2026-11-10,
+`.git/m13.13-reference/m13.13/h-door.txt`).
+
+**Aperta per un gesto**, su una cartella:
+
+1. ELA crea la cartella del bersaglio se non c'è, come `fs.write`, mai la radice;
+2. la porta si apre **su quella cartella** con `allowAndName` — il browser scrive sotto un nome suo, che il sito non
+   sceglie —, la fermata è ascoltata, e il gesto è fatto subito dopo: il click, o la navigazione all'indirizzo quando
+   `click` non c'è. Il punto del tool è una parola sola per le due capability, «il gesto che avvia lo scaricamento»;
+3. **si richiude alla prima parola di avanzamento del primo scaricamento annunciato** (misure (c) e (g) di M13.10:
+   l'unico istante usabile). Ciò che è annunciato accanto al primo non è dello step: è annullato e tolto;
+4. la fine si aspetta come un evento, entro il tempo del tool; poi il file prende **il nome del piano** — creando senza
+   sostituire, o sostituendo quando `overwrite` lo dice — e **i permessi `600`**, anche quando sostituisce un file che
+   c'era. Il risultato porta il file, la dimensione e lo sha256, letti dal file stesso;
+5. uno scaricamento interrotto, fermato o scaduto è annullato, ed ELA toglie dalla cartella ciò che porta il suo
+   identificativo — quello, e niente per somiglianza.
+
+**Che cosa il gesto ha avviato lo dice il browser, non un tempo.** Uno scaricamento è annunciato dopo che il gesto è
+tornato, e una navigazione che diventa uno scaricamento non impegna mai un documento: quindi la cornice principale che
+ne impegna uno è «una pagina, non un file» — `browser.download_not_started`, niente scritto —, e un documento che il
+cancello ha rifiutato è il sito che manda il browser fuori dal confine — `browser.left_site`, con la sola origine.
+
+**Uno scaricamento che nessuno step ha chiesto** non scrive niente; l'adapter tiene l'indirizzo del primo annunciato, e
+**ogni tool che tiene una pagina** lo dice nel risultato con la sola origine, nella chiave `download_refused` — la forma
+di `another_page` —, senza far fallire lo step: i cinque di prima e le quattro nuove. È una chiave del risultato, non un
+codice né un numero dell'audit: le righe dei tool di prima non cambiano.
+
+**Un download che il suo verifier trova**: `browser.file_downloaded` — il file che il piano ha nominato c'è, è regolare,
+è dentro la radice, e la sua dimensione e il suo sha256 sono quelli del risultato. Un fallimento dice le dimensioni,
+mai gli hash (ADR 0045 §8). Non dice che i byte sono quelli che il sito intendeva: nessuno li conosce prima.
+
+### 9. I tool, i verifier e dove ascoltano la fermata (M13.13)
+
+I tool, in `ela/tools/browser_files.py`:
+
+| Capability | Tool | Nome | Idempotente | Codici d'errore | Numeri nell'audit |
+|---|---|---|---|---|---|
+| `browser.download` | `BrowserDownloadTool` | `browser-download` | no | `arguments.invalid`, `browser.download_not_started`, `browser.element_ambiguous`, `browser.element_missing`, `browser.failed`, `browser.http_status`, `browser.left_site`, `browser.not_installed`, `browser.site_not_declared`, `browser.stopped`, `browser.timeout`, `browser.unreachable`, `browser.unsupported_system`, `fs.no_root`, `fs.overwrite_mismatch`, `io.error`, `path.invalid`, `path.is_directory`, `path.outside_root`, `path.symlink` | `gestures`, `size`, `status` |
+| `browser.download_as_you` | `AccountDownloadTool` | `browser-download-as-you` | no | `arguments.invalid`, `browser.download_not_started`, `browser.element_ambiguous`, `browser.element_missing`, `browser.failed`, `browser.http_status`, `browser.left_site`, `browser.not_installed`, `browser.profile_busy`, `browser.profile_undeclared`, `browser.profile_unsafe`, `browser.site_not_declared`, `browser.stopped`, `browser.timeout`, `browser.unreachable`, `browser.unsupported_system`, `fs.no_root`, `fs.overwrite_mismatch`, `io.error`, `path.invalid`, `path.is_directory`, `path.outside_root`, `path.symlink` | `gestures`, `size`, `status` |
+| `browser.upload` | `BrowserUploadTool` | `browser-upload` | no | `arguments.invalid`, `browser.element_ambiguous`, `browser.element_missing`, `browser.failed`, `browser.file_changed`, `browser.file_too_large`, `browser.http_status`, `browser.left_site`, `browser.not_a_file_field`, `browser.not_installed`, `browser.secret_field`, `browser.site_not_declared`, `browser.stopped`, `browser.timeout`, `browser.unreachable`, `browser.unsupported_system`, `fs.no_root`, `io.error`, `path.invalid`, `path.is_directory`, `path.missing`, `path.outside_root`, `path.symlink` | `gestures`, `status`, `stopped_at` |
+| `browser.upload_as_you` | `AccountUploadTool` | `browser-upload-as-you` | no | `arguments.invalid`, `browser.element_ambiguous`, `browser.element_missing`, `browser.failed`, `browser.file_changed`, `browser.file_too_large`, `browser.http_status`, `browser.left_site`, `browser.not_a_file_field`, `browser.not_installed`, `browser.profile_busy`, `browser.profile_undeclared`, `browser.profile_unsafe`, `browser.secret_field`, `browser.site_not_declared`, `browser.stopped`, `browser.timeout`, `browser.unreachable`, `browser.unsupported_system`, `fs.no_root`, `io.error`, `path.invalid`, `path.is_directory`, `path.missing`, `path.outside_root`, `path.symlink` | `gestures`, `status`, `stopped_at` |
+
+I verifier, nello stesso modulo — quello di uno scaricamento legge il disco, quello di un caricamento guarda la pagina
+nel browser che l'ha aperta:
+
+| Capability | Verifier | Nome | Condizioni | Codici di fallimento |
+|---|---|---|---|---|
+| `browser.download` | `FileDownloadedVerifier` | `browser-download-verifier` | `browser.file_downloaded` | `browser.file_mismatch`, `browser.file_unreadable`, `path.invalid`, `path.is_directory`, `path.missing`, `path.not_regular`, `path.outside_root`, `path.symlink`, `path.unreachable` |
+| `browser.download_as_you` | `AccountFileDownloadedVerifier` | `browser-download-as-you-verifier` | `browser.file_downloaded` | `browser.file_mismatch`, `browser.file_unreadable`, `path.invalid`, `path.is_directory`, `path.missing`, `path.not_regular`, `path.outside_root`, `path.symlink`, `path.unreachable` |
+| `browser.upload` | `UploadVerifier` | `browser-upload-verifier` | `browser.expect_visible` | `browser.another_page`, `browser.expect_missing`, `browser.left_site`, `browser.page_gone` |
+| `browser.upload_as_you` | `AccountUploadVerifier` | `browser-upload-as-you-verifier` | `browser.expect_visible` | `browser.another_page`, `browser.expect_missing`, `browser.left_site`, `browser.page_gone` |
+
+Dove ciascuno ascolta la fermata del suo task (ADR 0054 §3) — nessuno viaggia, quindi su un nodo nessuno:
+
+| Capability | Qui | Su un nodo |
+|---|---|---|
+| `browser.download` | `the gesture that starts the download` | `None` |
+| `browser.download_as_you` | `the gesture that starts the download` | `None` |
+| `browser.upload` | `the first gesture` | `None` |
+| `browser.upload_as_you` | `the first gesture` | `None` |
+
+**Il gesto di uno scaricamento lo fa il browser** — apre la porta, ascolta la fermata e clicca o naviga, in una
+chiamata sola —, quindi il tool sa due cose: prima di quella chiamata il gesto **non è fatto**, e da quando è cominciata
+**può esserlo stato**. Da lì conta come fatto (`gestures: 1`), e il messaggio dice «may have been made»: un gesto
+avvenuto non si riferisce mai come non avvenuto, e uno che non è avvenuto non si dice avvenuto.
+
 ### Ciò che questo ADR dichiara e non risolve
 
 1. **Il risultato di un gesto dice la pagina del browser se è già lì quando il tool guarda** (§1): un gesto non aspetta
@@ -121,6 +274,25 @@ Righe dei verifier, riscritte:
 3. **Un'altra copia della CLI di Bitwarden, in un altro file, non si riconosce** (§3): l'identità è del file, non del
    programma. E **che cosa farebbe un `bw` lanciato da `terminal.run`**, senza la chiave di sessione, **non è
    verificato**: `bw` non si lancia.
+4. **La copia nella cache del profilo** (§8): uno scaricamento fatto con il browser del profilo resta anche in
+   `Default/Cache/Cache_Data/`, e spegnere la cache sulla pagina non la toglie (misura del 2026-11-02, cinque giri su
+   cinque nei due modi).
+5. **`com.apple.quarantine` e `com.apple.macl`** sul file scaricato dal browser del profilo; lo shell non li mette.
+6. **Il `.crdownload` che resta se ELA è uccisa a metà** di uno scaricamento: nessuno lo toglie.
+7. **Il primo scaricamento annunciato è preso per quello dello step** (§8): se il sito ne avvia un altro prima, è
+   quello che è scritto sotto il nome del piano.
+8. **Nessun tetto alla dimensione di uno scaricamento** oltre il tempo del tool.
+9. **La WebSocket** di una pagina che tiene un file (§7): nessun test con il cancello afferma che non parta.
+10. **Un sito che carica il file su un altro suo indirizzo** — un'altra origine — non funziona con il cancello di §7: la
+    richiesta fallisce, e il verifier non vede il testo.
+11. **Il tipo del file è dedotto dal nome** (§6), e **l'impronta è sulle superfici della domanda** (§5).
+12. **Una cartella creata per uno scaricamento che poi non comincia resta, vuota** — come fa `fs.write` quando la sua
+    scrittura fallisce.
+13. **Un click che non avvia né uno scaricamento né una pagina** finisce con il tempo del tool (`browser.timeout`), non
+    con `browser.download_not_started`: nessun evento dice «niente» (§8).
+14. **`download_refused` è nel risultato se il browser l'ha annunciato prima che lo step finisse** (§8): uno
+    scaricamento annunciato dopo non lo dice nessuno step.
+15. **Il conto del gesto di uno scaricamento è «al più»** (§9).
 
 ## Conseguenze
 
@@ -129,22 +301,29 @@ con la sezione di questo ADR a cui guardare.
 
 - **ADR 0063** §5 — `landed` aspetta la fine della navigazione che il click ha avviato, e la pagina d'errore del browser è detta all'indirizzo che il browser ha provato a raggiungere (§1, §2).
 - **ADR 0047** §9 — le righe del verifier e del tool di `terminal.run` guadagnano `terminal.vault_program`: riscritte per intero qui (§3).
-- **ADR 0064** §4 — la riga «nessun confine ammette un indirizzo che non è di un sito»: la pagina d'errore del browser è chiesta al confine per l'indirizzo che il browser ha provato a raggiungere; `about:blank` e `blob:` restano fuori (§1).
+- **ADR 0064** §4 — la riga «nessun confine ammette un indirizzo che non è di un sito»: la pagina d'errore del browser è chiesta al confine per l'indirizzo che il browser ha provato a raggiungere; `about:blank` e `blob:` restano fuori (§1). E §1, §2 — «non impedisce a una pagina di caricare da altri siti» e la riga «ogni altra richiesta di quella pagina … parte» non valgono per una pagina che tiene un file (§7).
+- **ADR 0052** §4, §5, §7 — per le quattro capability dei file lo scope è il file e il sito è il confine del tool, che lo rifiuta prima della domanda; la domanda nomina il file, e il sito ha campi suoi (§4, §5).
 
 Le altre conseguenze:
 
-- **Il port** `Browser` guadagna `unanswered`; `Landed` e `Glanced` guadagnano `unanswered`.
+- **Il port** `Browser` guadagna `unanswered`, e con i file `give`, `download`, `downloaded_from` e
+  `refused_download`; `Landed` e `Glanced` guadagnano `unanswered`.
 
 Port estesi:
 
 | Port | Spec | Modalità | Membri |
 |---|---|---|---|
-| `Browser` | §19 | async | `unanswered` |
-| `AccountBrowser` | §19 | async | `unanswered` |
+| `Browser` | §19 | async | `unanswered`, `give`, `download`, `downloaded_from`, `refused_download` |
+| `AccountBrowser` | §19 | async | `unanswered`, `give`, `download`, `downloaded_from`, `refused_download` |
 
-`unanswered` è del §1.
+`unanswered` è del §1; `give` del §6; `download`, `downloaded_from` e `refused_download` del §8.
 - **Regola di architettura 72** (§3): il programma del vault arriva al suo adapter e alla sua porta, e a nient'altro.
+- **Regola di architettura 73** (§6, §8), su ciò che un test statico vede negli adapter: `set_input_files` riceve un
+  solo carico di byte, scritto lì, mai un percorso né un elenco; e `Browser.setDownloadBehavior` si manda con il
+  comportamento scritto accanto, `allowAndName` o `deny` — mai `allow`, mai `default`, mai un dizionario costruito
+  altrove. Che la cartella sia quella del bersaglio e che la porta si richiuda lo affermano i test sul browser vero.
+- **La domanda** guadagna quattro campi sulle superfici che rispondono: `site`, `visits`, `size`, `digest` (§5).
 
-Con questo ADR le regole di architettura sono **settantadue** (la 72); i contratti di import-linter restano
+Con questo ADR le regole di architettura sono **settantatré** (la 72 e la 73); i contratti di import-linter restano
 **quindici**, i port **trentasei**, le rotte dell'API **settantadue** e i comandi della CLI **trentanove**; le
-capability restano **diciotto**, le identità del middleware **sei**.
+capability diventano **ventidue**, le identità del middleware restano **sei**.

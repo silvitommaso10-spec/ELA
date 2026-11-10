@@ -2210,6 +2210,11 @@ class Executor:
         has left** (decision H): here and not in ``prompt``, so the three surfaces show them and the
         audit of the question does not (review decision 6) — the money in the audit is the usage
         of ``TOOL_EXECUTED`` and the numbers of a ``TASK_DENIED``.
+
+        Since M13.13 a question about a file from the browser carries **both**: the file, resolved,
+        as the target, and the site with what the yes does there (``site``, ``visits``); and for a
+        file that leaves, its size and its sha256 (ADR 0066). The sha256 is on the surfaces that
+        answer and never in ``prompt``: it does not enter the audit.
         """
         asked: dict[str, JsonValue] = {
             "description": spec.description,
@@ -2231,9 +2236,21 @@ class Executor:
             asked["timeout_seconds"] = invocation.timeout_seconds
             asked["expect_exit"] = invocation.expect_exit
         if visit is not None:
-            asked["target"] = visit.site
-            asked["does"] = visit.does
-            asked["label"] = visit.label
+            if target is None:
+                asked["target"] = visit.site
+                asked["does"] = visit.does
+                asked["label"] = visit.label
+            else:
+                # A file from the browser (M13.13, ADR 0066): **the target stays the file**, with
+                # what happens to it, as for ``fs.*`` — and the site and what the yes does there
+                # have fields of their own, like the entry and the username of a login. Of a file
+                # that leaves, the size and the sha256 as they were when this was composed: what
+                # the yes covers is that content.
+                asked["site"] = visit.site
+                asked["visits"] = visit.does
+                if target.size is not None and target.digest is not None:
+                    asked["size"] = target.size
+                    asked["digest"] = target.digest
             asked["address"] = visit.address
             asked["gestures"] = list(visit.gestures)
             asked["timeout_seconds"] = visit.timeout_seconds

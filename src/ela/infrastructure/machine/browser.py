@@ -65,6 +65,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
 import json
 import logging
 import os
@@ -94,6 +95,7 @@ from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import TimeoutError as PlaywrightTimeout
 
 from ela.ports import (
+    DOWNLOAD_GESTURE,
     NAVIGATION,
     AnotherPage,
     BrowserError,
@@ -101,7 +103,10 @@ from ela.ports import (
     BrowserNotInstalled,
     BrowserStopped,
     BrowserUnsupported,
+    Downloaded,
+    DownloadNotStarted,
     Field,
+    GivenFile,
     Glanced,
     LeftSite,
     Opened,
@@ -142,6 +147,14 @@ PAGE: Final = "page"
 """What the browser calls a page among the things it announces; a frame that runs by itself is
 an ``iframe``, and a worker has a name of its own."""
 REFUSED: Final = "Aborted"
+DOWNLOAD_STARTING: Final = "Download is starting"
+"""What Playwright says of a navigation that became a download (measured on 2026-11-10,
+``.git/m13.13-reference/m13.13/h-door.txt``): the second message of the engine this module reads,
+held by the test of a download from an address that is the file."""
+FILE_FIELD: Final = "el => el instanceof HTMLInputElement && el.type === 'file'"
+"""Whether an element is what a file is given to. Asked of the page, because the engine gives a
+file to an ``input`` of type ``text`` without a word (measured on 2026-11-10)."""
+DOOR_ENDED: Final = "completed"
 """How a request the gate does not let go fails: as one somebody gave up — the page stays where
 it is, and shows no error of the browser's in its place (measured)."""
 DRIVER: Final = "node"
@@ -206,6 +219,8 @@ class _Open:
     allowed: Callable[[str], bool]
     """The boundary of the page: the function its tool handed to :meth:`PlaywrightBrowser.open`,
     asked by the gate about a request and by every use of the page about where the page is."""
+    door: _Door
+    """The door of the downloads of the page: closed, and telling what knocks (M13.13)."""
     documents: list[int | None] = field(default_factory=list)
     """The status of every document the main frame asked for, in the order they were asked: the
     last is the page's own, and ``None`` for one that never came (M13.9, decision 106)."""
@@ -223,6 +238,10 @@ class _Open:
     """The navigation the last click started — asked for before the click returned, in 60 rounds
     of 60 —, ``None`` for a click that started none: what :meth:`AccountChrome.landed` waits
     for (answer 15 of the review of M13.9b's SPEC)."""
+    committed: asyncio.Event = field(default_factory=asyncio.Event)
+    """Set when the main frame commits a document (``Page.frameNavigated``): a navigation that
+    becomes a download never does (measured on 2026-11-10) — so after the gesture of a download
+    this is «it led to a page» (M13.13)."""
 
 
 class PlaywrightBrowser:
@@ -421,40 +440,51 @@ class PlaywrightBrowser:
             if not self._opening:
                 self._settled.set()
 
+    async def _made(
+        self, playwright: Playwright, token: str, allowed: Callable[[str], bool]
+    ) -> _Open:
+        """A page of a browser just started, in the table under ``token``, **and nothing asked of
+        any site yet**: its gate on and proved, the door of its downloads closed and telling, the
+        words of its navigations heard. What :meth:`open` navigates, and what a download from an
+        address navigates with the door open (M13.13)."""
+        try:
+            browser, context = await self._begun(playwright)
+        except PlaywrightError as error:
+            if MISSING_EXECUTABLE in str(error):
+                raise BrowserNotInstalled("the browser ELA uses is not installed") from None
+            raise
+        context.set_default_timeout(0)
+        context.set_default_navigation_timeout(0)
+        refused: list[str] = []
+        page = await self._paged(context)
+        try:
+            gate = await self._gated(context, page, allowed, refused)
+            door = await self._doored(context, gate)
+        except BrowserError:
+            raise
+        except Exception as error:
+            if self._stopping.is_set():
+                raise  # said by the caller as what it is: ELA was stopping
+            # Whatever it was, the gate is not there: nothing is asked of any site, and the
+            # step says which part of the browser failed.
+            raise BrowserFailed(
+                f"the gate of the browser could not be turned on ({type(error).__name__})"
+            ) from None
+        await self._proved(page, gate)
+        documents: list[int | None] = []
+        page.on("request", lambda request: _asked(documents, request, page))
+        page.on("response", lambda response: _answered(documents, response, page))
+        made = _Open(playwright, browser, context, page, refused, gate, allowed, door, documents)
+        self._pages[token] = made
+        await self._navigations_of(made)
+        return made
+
     async def _opened(self, address: str, allowed: Callable[[str], bool], stop: TaskStop) -> Opened:
         playwright = await self._driver()
         token = uuid4().hex
         try:
-            try:
-                browser, context = await self._begun(playwright)
-            except PlaywrightError as error:
-                if MISSING_EXECUTABLE in str(error):
-                    raise BrowserNotInstalled("the browser ELA uses is not installed") from None
-                raise
-            context.set_default_timeout(0)
-            context.set_default_navigation_timeout(0)
-            refused: list[str] = []
-            page = await self._paged(context)
-            try:
-                gate = await self._gated(context, page, allowed, refused)
-            except BrowserError:
-                raise
-            except Exception as error:
-                if self._stopping.is_set():
-                    raise  # said below as what it is: ELA was stopping
-                # Whatever it was, the gate is not there: nothing is asked of any site, and the
-                # step says which part of the browser failed.
-                raise BrowserFailed(
-                    f"the gate of the browser could not be turned on ({type(error).__name__})"
-                ) from None
-            await self._proved(page, gate)
-            documents: list[int | None] = []
-            page.on("request", lambda request: _asked(documents, request, page))
-            page.on("response", lambda response: _answered(documents, response, page))
-            self._pages[token] = _Open(
-                playwright, browser, context, page, refused, gate, allowed, documents
-            )
-            await self._navigations_of(self._pages[token])
+            made = await self._made(playwright, token, allowed)
+            page, gate, refused = made.page, made.gate, made.refused
             # The last instant before the site sees anything (M6.3c, ADR 0054 §3): a stopped task
             # leaves here with ToolStopped, and the page and its browser are closed below. **No
             # use of the page stands between the check of the gate and this navigation**
@@ -529,6 +559,17 @@ class PlaywrightBrowser:
         gate = _Gate(session, own, context, page, main, allowed, self._stopping, refused)
         await gate.on()
         return gate
+
+    async def _doored(self, context: BrowserContext, gate: _Gate) -> _Door:
+        """The door of the downloads of the page, **closed and telling** (M13.13, ADR 0066): a
+        session of the browser's own beside the gate's, as the door was measured, told which
+        context the page is in by the browser itself."""
+        session = await self._attached(context)
+        targets = (await session.send("Target.getTargets"))["targetInfos"]
+        (inside,) = [one["browserContextId"] for one in targets if one["targetId"] == gate.main]
+        door = _Door(session, str(inside))
+        await door.shut()
+        return door
 
     async def _proved(self, page: Page, gate: _Gate) -> None:
         """Ask for :data:`CHECK`, which the browser itself would refuse, and see that the gate
@@ -620,10 +661,16 @@ class PlaywrightBrowser:
             if event.get("frameId") == opened.gate.main and opened.navigation is not None:
                 opened.navigation.set()
 
+        def committed(event: Mapping[str, Any]) -> None:
+            frame = event.get("frame", {})
+            if frame.get("id") == opened.gate.main and "parentId" not in frame:
+                opened.committed.set()
+
         await opened.gate.listen(
             {
                 "Page.frameRequestedNavigation": requested,
                 "Page.frameStoppedLoading": stopped,
+                "Page.frameNavigated": committed,
             }
         )
 
@@ -709,6 +756,172 @@ class PlaywrightBrowser:
     async def another(self, page: str) -> AnotherPage | None:
         opened = self._pages.get(page)
         return None if opened is None else opened.gate.another
+
+    async def refused_download(self, page: str) -> str | None:
+        opened = self._pages.get(page)
+        return None if opened is None else opened.door.refused
+
+    async def give(self, page: str, selector: str, file: GivenFile) -> None:
+        """The bytes and the name, to an ``input`` of type ``file`` and to nothing else — asked
+        of the page, because the engine would give a file to a text field without a word. **From
+        the instant before the file is given the page holds a file**: its gate lets it ask
+        nothing of another origin (:meth:`_Gate.holds_a_file`)."""
+
+        async def given(opened: _Open) -> None:
+            element = opened.page.locator(selector)
+            if not await element.evaluate(FILE_FIELD):
+                raise BrowserFailed("not an input of type file: nothing was given to the page")
+            opened.gate.holds_a_file()
+            await element.set_input_files(
+                {"name": file.name, "mimeType": file.type, "buffer": file.data}
+            )
+
+        await self._on(page, given)
+
+    async def download(self, page: str, selector: str, stop: TaskStop, into: str) -> Downloaded:
+        """A use of the page: the boundary asked before, and again once the download ended —
+        and **what was downloaded on a page that ended elsewhere meanwhile is thrown away**, as
+        what was read there is (ADR 0064 §4)."""
+        written: list[Path] = []
+
+        async def clicked(opened: _Open) -> Downloaded | _NotStarted:
+            async def click() -> bool:
+                await opened.page.locator(selector).click()
+                return True
+
+            got = await self._downloaded(opened, click, stop, into)
+            if isinstance(got, Downloaded):
+                written.append(Path(into) / got.name)
+            return got
+
+        try:
+            got = await self._on(page, clicked)
+        except BaseException:
+            for left in written:
+                with contextlib.suppress(OSError):
+                    left.unlink()
+            raise
+        if isinstance(got, _NotStarted):
+            raise DownloadNotStarted("the click started no download", left=got.left)
+        return got
+
+    async def downloaded_from(
+        self, address: str, allowed: Callable[[str], bool], stop: TaskStop, into: str
+    ) -> Downloaded:
+        self._refuse_if_stopping()
+        self._watch()
+        self._opening += 1
+        self._settled.clear()
+        try:
+            return await self._fetched(address, allowed, stop, into)
+        finally:
+            self._opening -= 1
+            if not self._opening:
+                self._settled.set()
+
+    async def _fetched(
+        self, address: str, allowed: Callable[[str], bool], stop: TaskStop, into: str
+    ) -> Downloaded:
+        """A page of its own, the navigation to ``address`` made with the door open, and the
+        page closed before this returns — whatever it returns or raises."""
+        playwright = await self._driver()
+        token = uuid4().hex
+        try:
+            made = await self._made(playwright, token, allowed)
+
+            async def navigate() -> bool:
+                try:
+                    await made.page.goto(address, wait_until="commit")
+                except PlaywrightError as error:
+                    if made.refused or DOWNLOAD_STARTING in str(error):
+                        return True  # the gate refused, or a download begins: said by the wait
+                    if self._stopping.is_set():
+                        raise
+                    if made.gate.broken:
+                        raise BrowserFailed(UNJUDGED) from None
+                    raise SiteUnreachable(type(error).__name__) from None
+                return False  # a document was committed: the address answered a page
+
+            got = await self._downloaded(made, navigate, stop, into)
+            if isinstance(got, _NotStarted):
+                raise DownloadNotStarted("the address answered a page, not a file", left=got.left)
+            await asyncio.shield(self._carried(self._dropped(token, playwright)))
+            return got
+        except asyncio.CancelledError:
+            await asyncio.shield(self._carried(self._dropped(token, playwright)))
+            raise
+        except Exception as error:
+            await asyncio.shield(self._carried(self._dropped(token, playwright)))
+            raise self._translated(error) from None
+
+    async def _downloaded(
+        self,
+        opened: _Open,
+        gesture: Callable[[], Awaitable[bool]],
+        stop: TaskStop,
+        into: str,
+    ) -> Downloaded | _NotStarted:
+        """**The door, open for one gesture** (M13.13, ADR 0066; measures (c) and (g) of M13.10).
+
+        Opened on ``into`` — the browser writes there under a name of its own —, then the stop is
+        listened to and the gesture made, with no wait between the two; the door closes itself at
+        the first word of progress of the first download the browser announces, and that download
+        is awaited to its end as an event. **No time of this adapter's**: the tool's is the one.
+
+        What the gesture led to is told by what the browser says next (measured on 2026-11-10): a
+        download is announced after the gesture returns, and a navigation that becomes one never
+        commits a document — so the main frame committing one is «a page, not a file»; and a
+        document the gate refused is the site sending the browser elsewhere. Whatever way this
+        ends, the door is closed again; and a download that did not end completed is cancelled,
+        and what carries its name in the folder taken away — that, and nothing by resemblance."""
+        door, gate = opened.door, opened.gate
+        opened.committed.clear()
+        gate.turned_away.clear()
+        seen = len(opened.refused)
+        await door.open_on(into)
+        ended = False
+        try:
+            # The tool's point (M6.3c, ADR 0054 §3): a task stopped by now leaves here with
+            # ToolStopped, the door closed below and nothing clicked. No wait between this look,
+            # the look at ELA's own stop, and the gesture.
+            stop.listen(DOWNLOAD_GESTURE)
+            self._refuse_if_stopping()
+            if not await gesture():
+                return _NotStarted(None)
+            await self._first_of(door.begun, opened.committed, gate.turned_away)
+            if not door.begun.is_set():
+                left = opened.refused[seen] if len(opened.refused) > seen else None
+                return _NotStarted(left)
+            state = await self._stopped_or(door.ended)
+            if state != DOOR_ENDED:
+                raise BrowserFailed("the download was interrupted before its end")
+            ended = True
+            return Downloaded(door.asked)
+        finally:
+            await asyncio.shield(self._carried(door.done(Path(into), kept=ended)))
+
+    async def _first_of(self, *events: asyncio.Event) -> None:
+        """Wait for the first of ``events`` — or for ELA's stop, said as what it is."""
+        waits = [asyncio.ensure_future(one.wait()) for one in (*events, self._stopping)]
+        try:
+            await asyncio.wait(waits, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            for one in waits:
+                one.cancel()
+        if self._stopping.is_set():
+            raise BrowserStopped("ELA is stopping: the browser was closed")
+
+    async def _stopped_or(self, ended: asyncio.Future[str]) -> str:
+        """How a download ended — or ELA's stop, said as what it is."""
+        halted = asyncio.ensure_future(self._stopping.wait())
+        either: set[asyncio.Future[Any]] = {ended, halted}
+        try:
+            await asyncio.wait(either, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            halted.cancel()
+        if not ended.done():
+            raise BrowserStopped("ELA is stopping: the browser was closed")
+        return ended.result()
 
     async def keep(self, page: str) -> None:
         opened = self._pages.get(page)
@@ -808,6 +1021,116 @@ def _frames_in(tree: Mapping[str, Any]) -> list[str]:
     return found
 
 
+@dataclass(frozen=True, slots=True)
+class _NotStarted:
+    """The gesture led to no download: to a page — or, with ``left``, to a document the gate
+    refused."""
+
+    left: str | None
+
+
+class _Door:
+    """The door of the downloads of one page (M13.13, ADR 0066): **closed, and telling**.
+
+    A session of the browser's own protocol beside the gate's, as the door was measured (M13.10,
+    measures (c) and (g)), tells the browser what to do with a download of the page's context —
+    and only two things are ever said (architecture rule 73):
+
+    * ``deny``, from the opening of the page and at every other instant: nothing is written, and
+      the browser still **announces** what knocked — its address is kept (:attr:`refused`);
+    * ``allowAndName`` on one folder, for one gesture (:meth:`open_on`): the browser writes there
+      under a name of its own, which the site does not choose. Never ``allow``, which uses the
+      site's name and overwrites in silence (measured).
+
+    **It closes itself at the first word of progress of the first download announced while it is
+    open**: the one instant that was usable — closed at the announcement the download asked for is
+    cancelled, closed later a second one the site starts is written too (measured, 80 of 80 and 20
+    of 20). What is announced beside the first while the door is open is not the step's: it is
+    kept apart, cancelled and taken away with what carries its name.
+    """
+
+    def __init__(self, session: CDPSession, context: str) -> None:
+        self._session = session
+        self._context = context
+        self._open = False
+        self._shutting: set[asyncio.Future[None]] = set()
+        self._others: list[str] = []
+        self.refused: str | None = None
+        """The address of the first download the page started that no step asked for."""
+        self.asked = ""
+        """The name the browser gave the download the gesture started — its file in the folder."""
+        self.begun = asyncio.Event()
+        self.ended: asyncio.Future[str] = asyncio.get_running_loop().create_future()
+        session.on("Browser.downloadWillBegin", self._announced)
+        session.on("Browser.downloadProgress", self._progressed)
+
+    async def shut(self) -> None:
+        """Closed: nothing is written, and what knocks is announced."""
+        self._open = False
+        await self._session.send(
+            "Browser.setDownloadBehavior",
+            {"behavior": "deny", "browserContextId": self._context, "eventsEnabled": True},
+        )
+
+    async def open_on(self, into: str) -> None:
+        """Open on ``into``, for the gesture that follows."""
+        self.asked, self._others = "", []
+        self.begun = asyncio.Event()
+        self.ended = asyncio.get_running_loop().create_future()
+        await self._session.send(
+            "Browser.setDownloadBehavior",
+            {
+                "behavior": "allowAndName",
+                "browserContextId": self._context,
+                "downloadPath": into,
+                "eventsEnabled": True,
+            },
+        )
+        self._open = True
+
+    def _announced(self, event: Mapping[str, Any]) -> None:
+        name = str(event.get("guid", ""))
+        if self._open and not self.asked:
+            self.asked = name
+            self.begun.set()
+            return
+        if self._open:
+            self._others.append(name)
+        self.refused = self.refused or str(event.get("url", ""))
+
+    def _progressed(self, event: Mapping[str, Any]) -> None:
+        if not self.asked or event.get("guid") != self.asked:
+            return
+        if self._open:
+            # The first word of progress of the download the gesture started: closed now.
+            self._open = False
+            shutting = asyncio.ensure_future(_quietly(self.shut))
+            self._shutting.add(shutting)
+            shutting.add_done_callback(self._shutting.discard)
+        state = str(event.get("state", ""))
+        if state != "inProgress" and not self.ended.done():
+            self.ended.set_result(state)
+
+    async def done(self, folder: Path, *, kept: bool) -> None:
+        """The gesture is over, whatever way: the door closed, what was announced beside the
+        download cancelled and taken away, and the download itself too unless it is ``kept``."""
+        if self._open:
+            await _quietly(self.shut)
+        if self._shutting:
+            await asyncio.wait(self._shutting)
+        gone = [*self._others, *(() if kept or not self.asked else (self.asked,))]
+        for name in gone:
+            await _quietly(functools.partial(self._cancelled, name))
+            for left in (folder / name, folder / f"{name}.crdownload"):
+                with contextlib.suppress(OSError):
+                    left.unlink()
+
+    async def _cancelled(self, name: str) -> None:
+        await self._session.send(
+            "Browser.cancelDownload", {"guid": name, "browserContextId": self._context}
+        )
+
+
 class _Gate:
     """The gate of one page (M13.4f, ADR 0064 §2): **it looks, and makes no request**.
 
@@ -877,6 +1200,10 @@ class _Gate:
         check, and not something a page asks for — which the boundary judges like the rest."""
         self.checked = False
         self.broken = False
+        self._holds = False
+        self.turned_away = asyncio.Event()
+        """Set when a document of the main frame is refused: the site sent the browser outside
+        the boundary. What a download waits for beside its announcement (M13.13)."""
         self._strangers: dict[str, str] = {}
         """What the browser announced that is not this page and is no frame — another page, a
         worker —, with what kind of thing it said it was. A request that names one of them as
@@ -886,6 +1213,14 @@ class _Gate:
         self._judging: set[asyncio.Task[None]] = set()
         session.on("Fetch.requestPaused", self._told)
         session.on("Target.targetCreated", self._born)
+
+    def holds_a_file(self) -> None:
+        """From now on, and for as long as the page lives, **every request of the page that goes
+        to a site outside the boundary fails** — not only the documents of its main frame
+        (M13.13, ADR 0066; the question 23 of M13.10, decided (a)): a page that was given a file
+        can send it wherever its script says, and the boundary of ADR 0064 §1 looked at where the
+        page goes, never at where it sends."""
+        self._holds = True
 
     def rebound(self, allowed: Callable[[str], bool]) -> None:
         """Judge from now on with ``allowed``: the boundary of the step that continues on this
@@ -988,8 +1323,11 @@ class _Gate:
         of_the_main_frame = frame == self._main and event.get("resourceType") == "Document"
         if of_the_main_frame and not self._allowed(address):
             self.refused.append(address)
+            self.turned_away.set()
             return False
-        return True
+        # A page that holds a file asks nothing of another site (M13.13): whatever it loads or
+        # sends there fails, and is no navigation of the page — nothing is kept of it.
+        return not (self._holds and at_a_site(address) and not self._allowed(address))
 
     async def _of_the_page(self, frame: str) -> bool:
         """Whether ``frame`` is a frame of the page ELA works on. Asked of the browser only for

@@ -114,6 +114,7 @@ from ela.ports import (
     BrowserFailed,
     BrowserNotInstalled,
     BrowserUnsupported,
+    Downloaded,
     Field,
     FormField,
     Glanced,
@@ -1038,6 +1039,16 @@ class AccountChrome(PlaywrightBrowser):
         # From the look of ``_free`` to the count of this opening there is no wait: a second
         # opening that looks now finds this one.
         return await super().open(address, allowed, stop)
+
+    async def downloaded_from(
+        self, address: str, allowed: Callable[[str], bool], stop: TaskStop, into: str
+    ) -> Downloaded:
+        """A download from an address is an opening on the profile like any other (M13.13): the
+        folder is looked at first, and from that look to the count of the opening there is no
+        wait, as in :meth:`open`."""
+        self._refuse_if_stopping()
+        await self._free()
+        return await super().downloaded_from(address, allowed, stop, into)
 
     async def can_show(self) -> bool:
         self._refuse_if_stopping()

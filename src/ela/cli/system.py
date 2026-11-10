@@ -161,6 +161,10 @@ QUESTION_FIELDS: Final[frozenset[str]] = frozenset(
         "expect",
         "entry",
         "username",
+        "site",
+        "visits",
+        "size",
+        "digest",
         "worst_case",
         "left",
         "phrase",
@@ -234,6 +238,7 @@ def _rows(one: Mapping[str, Any]) -> list[tuple[str, Any]]:
     gestures = one.get("gestures")
     timeout = one.get("timeout_seconds")
     sites = one.get("sites")
+    size = one.get("size")
     rows = [
         ("approval", one["id"]),
         ("task", one["task_id"]),
@@ -267,6 +272,10 @@ def _rows(one: Mapping[str, Any]) -> list[tuple[str, Any]]:
         ("expects", _seen(one.get("expect"))),
         ("entry", _seen(one.get("entry"))),
         ("username", _seen(one.get("username"))),
+        ("site", _seen(one.get("site"))),
+        ("on the site", one.get("visits") or None),
+        ("size", None if size is None else f"{size} bytes"),
+        ("sha256", one.get("digest") or None),
         ("does", one.get("does") or None),
         ("disk", one.get("unseen") or None),
         ("asks", _seen(one["prompt"])),
@@ -280,6 +289,7 @@ def _rows(one: Mapping[str, Any]) -> list[tuple[str, Any]]:
         | NODE_ROWS
         | PAGE_ROWS
         | LOGIN_ROWS
+        | FILE_ROWS
         | SPENDING_ROWS
         | SESSION_ROWS
         | POLICY_ROWS
@@ -305,6 +315,12 @@ LOGIN_ROWS: Final[frozenset[str]] = frozenset({"entry", "username"})
 """The rows only a question about a login has (M13.9, ADR 0063 §9): the entry of the vault the yes
 covers, by its name, and its username masked — absent, not dashed, for every other, and the
 second absent for an entry that has no username."""
+
+FILE_ROWS: Final[frozenset[str]] = frozenset({"site", "on the site", "size", "sha256"})
+"""The rows only a question about a file from the browser has (M13.13, ADR 0066): the site the
+file comes from or is given to, what the yes does there, and — of a file that leaves — its size and
+its sha256 as they were when the question was asked. Absent, not dashed, for every other; the last
+two absent for a download, which gives nothing away."""
 
 SPENDING_ROWS: Final[frozenset[str]] = frozenset({"worst case", "left this month"})
 """The rows only a question about a call that spends has (M14.1, ADR 0057): its worst case and what

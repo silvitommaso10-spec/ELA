@@ -91,6 +91,7 @@ from ela.tools.base import ARGUMENTS_INVALID, Outcome
 from ela.tools.browser import (
     ANOTHER_PAGE,
     BROWSER_CODES,
+    DOWNLOAD_REFUSED,
     ELEMENT_AMBIGUOUS,
     ELEMENT_MISSING,
     FAILED,
@@ -610,6 +611,7 @@ class LoginTool(_OnTheProfile, _BrowserTool):
             PASSWORD_FIELD_STILL_THERE,
             UNANSWERED,
             ANOTHER_PAGE,
+            DOWNLOAD_REFUSED,
         }
     )
     audit_numbers: ClassVar[frozenset[str]] = frozenset({"status", "gestures"})

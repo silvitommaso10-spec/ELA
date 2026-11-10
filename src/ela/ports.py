@@ -26,6 +26,7 @@ comparison in ``tests/contracts/test_protocols.py`` covers what ``isinstance`` c
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -129,8 +130,11 @@ __all__ = [
     "Clock",
     "Command",
     "CommandLauncher",
+    "DOWNLOAD_GESTURE",
     "DeviceRegistryPort",
     "DeviceRevokedError",
+    "DownloadNotStarted",
+    "Downloaded",
     "ENVELOPE",
     "Ending",
     "EnrollmentConsumedError",
@@ -162,6 +166,7 @@ __all__ = [
     "GUIDED_UNRESERVED",
     "Gesture",
     "Gestures",
+    "GivenFile",
     "Glanced",
     "Guided",
     "HELD",
@@ -1474,6 +1479,12 @@ class Target:
     exists: bool
     does: str
     label: str
+    size: int | None = None
+    """The size in bytes of the file the call would give away, read when the question is composed —
+    ``None`` for a call that gives none (M13.13, ADR 0066): what leaves the Mac is the content, and
+    the yes covers that."""
+    digest: str | None = None
+    """The sha256 of that content, in hexadecimal, read with :attr:`size` (M13.13)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -2834,6 +2845,42 @@ def tried(address: str, unreachable: str | None) -> str:
     return unreachable
 
 
+DOWNLOAD_GESTURE: Final = "the gesture that starts the download"
+"""Where a download listens for the stop of its task (M13.13, ADR 0066): right before the gesture
+that starts it — the click, or the navigation to the address that is the file —, with the door of
+the downloads opened on the folder of the target an instant before."""
+
+
+class DownloadNotStarted(BrowserError):
+    """The gesture was made, and no download began (M13.13): it led to a page — or the site sent
+    the browser outside the boundary, the gate refused, and ``left`` is the address it refused,
+    whole and in no sentence of this error. Nothing was written."""
+
+    def __init__(self, said: str, *, left: str | None = None) -> None:
+        super().__init__(said)
+        self.left = left
+
+
+@dataclass(frozen=True, slots=True)
+class GivenFile:
+    """What ELA gives a page for its file field (M13.13, ADR 0066): **the bytes ELA read itself and
+    the file's name — never its path** —, and the type the name says (``mimetypes``, else
+    ``application/octet-stream``), which Playwright asks for and the page learns from the name."""
+
+    name: str
+    type: str
+    data: bytes = dataclasses.field(repr=False)
+
+
+@dataclass(frozen=True, slots=True)
+class Downloaded:
+    """A download the browser ended, **completed**, in the folder ELA named (M13.13): ``name`` is
+    the file the browser wrote there — the identifier it gave the download, which the site does not
+    choose."""
+
+    name: str
+
+
 PROFILE_STEP: Final = "step"
 """The profile is held by a page of ELA's own: a step that is running."""
 PROFILE_TASK: Final = "task"
@@ -3147,6 +3194,47 @@ class Browser(Protocol):
         (M13.10, ADR 0065 §3). For a page at no site the browser is asked once whether it is its
         own page for an address it tried, and that address is the answer (:func:`tried`; M13.9b,
         ADR 0066). Never raises."""
+
+    async def give(self, page: str, selector: str, file: GivenFile) -> None:
+        """Give the file field ``selector`` names **the bytes and the name** of ``file`` — never a
+        path (M13.13, ADR 0066) —, and from this instant on **the page holds a file**: every
+        request of the page the browser tells of that goes to another origin than the boundary's is
+        refused (the question 23 of M13.10, decided (a)). A use of the page: the boundary is asked
+        before and after.
+
+        :raises LeftSite, PageGone, BrowserStopped, BrowserFailed:
+        """
+
+    async def download(self, page: str, selector: str, stop: TaskStop, into: str) -> Downloaded:
+        """Click ``selector`` with **the door of the downloads open on the folder** ``into`` —
+        opened right before the click, closed again at the first word of progress of the first
+        download the browser announces (measures (c) and (g) of M13.10) —, and wait for that one to
+        end, as an event, within the tool's time (M13.13, ADR 0066). **The stop is listened at**
+        :data:`DOWNLOAD_GESTURE` **once the door is open, with no wait between that and the
+        click**: a task stopped there leaves with ``ToolStopped``, the door closed again and
+        nothing clicked. A use of the page.
+
+        :raises DownloadNotStarted: the click started no download — nothing was written.
+        :raises ToolStopped, LeftSite, PageGone, BrowserStopped, BrowserFailed:
+        """
+
+    async def downloaded_from(
+        self, address: str, allowed: Callable[[str], bool], stop: TaskStop, into: str
+    ) -> Downloaded:
+        """Open a page with the door of the downloads closed, and **navigate to** ``address`` — the
+        address that is the file — with the door open on ``into``: the opening's gate and its proof
+        as for :meth:`open`, the stop listened at :data:`DOWNLOAD_GESTURE` right before the
+        navigation, the door closed at the first word of progress, and the download awaited to its
+        end. The page is closed before this returns (M13.13, ADR 0066).
+
+        :raises DownloadNotStarted: the address answered a page, not a file — nothing was written.
+        :raises ToolStopped, BrowserNotInstalled, SiteUnreachable, BrowserStopped, BrowserFailed:
+        """
+
+    async def refused_download(self, page: str) -> str | None:
+        """The address of the first download the browser announced for ``page`` **while the door
+        was closed** — nobody's step asked for it, and nothing of it was written —, or ``None``
+        (M13.13, ADR 0066). **Not a use of the page**, like :meth:`another`. Never raises."""
 
     async def unanswered(self, page: str) -> str | None:
         """The address the site did not answer at, when the page is **the browser's own page**

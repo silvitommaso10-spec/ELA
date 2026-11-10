@@ -36,9 +36,9 @@ from __future__ import annotations
 import asyncio
 import re
 from abc import abstractmethod
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, replace
-from typing import ClassVar, Final
+from typing import Any, ClassVar, Final
 from urllib.parse import urlsplit
 
 from ela.domain import (
@@ -87,6 +87,7 @@ __all__ = [
     "ACTS",
     "ACTS_ON",
     "ANOTHER_PAGE",
+    "DOWNLOAD_REFUSED",
     "UNANSWERED",
     "ASKED_FOR_NOTHING",
     "BROWSER_ACT_TOOL_NAME",
@@ -214,6 +215,11 @@ LEFT_WHILE_WAITING: Final = "left_while_waiting"
 the last navigation the boundary refused **while the page waited between two steps** — never the
 rest of the address. Absent when nothing was refused meanwhile. The step does not fail for it:
 nobody's step was running, as for :data:`ANOTHER_PAGE`."""
+DOWNLOAD_REFUSED: Final = "download_refused"
+"""The key of a result whose page started **a download nobody's step asked for** while the door of
+the downloads was closed (M13.13, ADR 0066): the origin of its address — never the rest —, and
+nothing of it was written. Absent when there was none. The step does not fail for it, as for
+:data:`ANOTHER_PAGE`."""
 UNANSWERED: Final = "unanswered"
 """The key of a result whose page is **the browser's own page**: the site did not answer at the
 address asked, and the browser shows a page of its own (M13.9b, ADR 0066; answer 16 of the review
@@ -378,7 +384,20 @@ class _Done:
     click_asked: bool = False
 
 
-def _retrieved(task: asyncio.Future[int]) -> None:
+FELL: Final = (
+    TimeoutError,
+    BrowserNotInstalled,
+    SiteUnreachable,
+    BrowserStopped,
+    LeftSite,
+    BrowserFailed,
+    PageGone,
+)
+"""What the run of a browser tool can fall with and turn into a result (:meth:`_BrowserTool._fell`).
+``ToolStopped`` is not here: a task stopped at the tool's point leaves as it is."""
+
+
+def _retrieved(task: asyncio.Future[Any]) -> None:
     """Retrieve what a wait that was abandoned ended with, so that nobody is told of it later."""
     if not task.cancelled():
         task.exception()
@@ -610,29 +629,8 @@ class _BrowserTool(Tool):
                             await self._pages.release(looked.task)
                         opened = await self._opened(looked, stop)
                     outcome = await self._on_the_page(looked, opened, done, stop)
-            except TimeoutError:
-                outcome = self._timed_out(site, done)
-            except BrowserNotInstalled:
-                outcome = Outcome({}, NOT_INSTALLED, NOT_INSTALLED_MESSAGE)
-            except SiteUnreachable as away:
-                outcome = Outcome({}, UNREACHABLE, f"the page of {site} did not answer: {away}")
-            except BrowserStopped:
-                outcome = Outcome(
-                    self._partial(done),
-                    STOPPED,
-                    f"ELA stopped while the page of {site} was open{self._after(done)}",
-                )
-            except LeftSite as elsewhere:
-                # The one predicate, asked by whoever holds the page at every use of it
-                # (ADR 0064 §4): nothing of that page is in this result, whatever had been read.
-                outcome = self._elsewhere(site, elsewhere.address, done, opened)
-            except (BrowserFailed, PageGone) as failed:
-                outcome = Outcome(
-                    self._partial(done),
-                    FAILED,
-                    f"the browser failed on the page of {site}: {type(failed).__name__}"
-                    f"{': ' + str(failed) if str(failed) else ''}{self._after(done)}",
-                )
+            except FELL as fell:
+                outcome = self._fell(fell, site, done, opened)
             if opened is not None:
                 outcome = await self._with_another_page(opened, outcome)
                 if opened.waited is not None:
@@ -653,6 +651,34 @@ class _BrowserTool(Tool):
             page = opened.page if opened is not None else taken
             if page is not None and not handed_over:
                 await self._browser.close(page)
+
+    def _fell(self, fell: BaseException, site: str, done: _Done, opened: Opened | None) -> Outcome:
+        """What a run says of what it fell with — one of :data:`FELL`, in the order a browser
+        can fall: its time, the browser that is not there, the site that does not answer, ELA
+        stopping, the page outside the boundary, and the browser itself. In one place because a
+        download that opens no page of its own falls in the same ways (M13.13)."""
+        if isinstance(fell, TimeoutError):
+            return self._timed_out(site, done)
+        if isinstance(fell, BrowserNotInstalled):
+            return Outcome({}, NOT_INSTALLED, NOT_INSTALLED_MESSAGE)
+        if isinstance(fell, SiteUnreachable):
+            return Outcome({}, UNREACHABLE, f"the page of {site} did not answer: {fell}")
+        if isinstance(fell, BrowserStopped):
+            return Outcome(
+                self._partial(done),
+                STOPPED,
+                f"ELA stopped while the page of {site} was open{self._after(done)}",
+            )
+        if isinstance(fell, LeftSite):
+            # The one predicate, asked by whoever holds the page at every use of it
+            # (ADR 0064 §4): nothing of that page is in this result, whatever had been read.
+            return self._elsewhere(site, fell.address, done, opened)
+        return Outcome(
+            self._partial(done),
+            FAILED,
+            f"the browser failed on the page of {site}: {type(fell).__name__}"
+            f"{': ' + str(fell) if str(fell) else ''}{self._after(done)}",
+        )
 
     async def _taken(self, call: _Call) -> str | None:
         """The page the task of a call that continues keeps on this browser, now the step's."""
@@ -763,13 +789,21 @@ class _BrowserTool(Tool):
         )
 
     async def _with_another_page(self, opened: Opened, outcome: Outcome) -> Outcome:
-        """The outcome, saying that the page opened another page when it did (decision 123):
-        always — whatever the step did —, and with the origin alone."""
+        """The outcome, saying that the page opened another page when it did (decision 123), and
+        that it started a download nobody asked for (M13.13): always — whatever the step did —,
+        and with the origin alone."""
+        more: dict[str, JsonValue] = {}
         another = await self._browser.another(opened.page)
-        if another is None:
+        if another is not None:
+            more[ANOTHER_PAGE] = (
+                ASKED_FOR_NOTHING if another.address is None else origin_of(another.address)
+            )
+        refused = await self._browser.refused_download(opened.page)
+        if refused is not None:
+            more[DOWNLOAD_REFUSED] = origin_of(refused)
+        if not more:
             return outcome
-        said = ASKED_FOR_NOTHING if another.address is None else origin_of(another.address)
-        return replace(outcome, output={**outcome.output, ANOTHER_PAGE: said})
+        return replace(outcome, output={**outcome.output, **more})
 
     async def _gesture(self, done: _Done, gesture: Awaitable[None]) -> None:
         """A gesture, counted when it was made — **also when the page was found elsewhere once
@@ -818,6 +852,7 @@ class BrowserReadTool(_BrowserTool):
             "page",
             ANOTHER_PAGE,
             LEFT_WHILE_WAITING,
+            DOWNLOAD_REFUSED,
         }
     )
     audit_numbers: ClassVar[frozenset[str]] = frozenset({"status", "shown", "total"})
@@ -900,7 +935,16 @@ class BrowserActTool(_BrowserTool):
         {ARGUMENTS_INVALID, NO_PAGE_TO_CONTINUE, *BROWSER_CODES}
     )
     output_keys: ClassVar[frozenset[str]] = frozenset(
-        {"status", "gestures", STOPPED_AT, "page", ANOTHER_PAGE, LEFT_WHILE_WAITING, UNANSWERED}
+        {
+            "status",
+            "gestures",
+            STOPPED_AT,
+            "page",
+            ANOTHER_PAGE,
+            LEFT_WHILE_WAITING,
+            UNANSWERED,
+            DOWNLOAD_REFUSED,
+        }
     )
     audit_numbers: ClassVar[frozenset[str]] = frozenset({"status", "gestures", STOPPED_AT})
     """The status of the page of the form, how many gestures were made, and — when the sequence did
@@ -939,48 +983,17 @@ class BrowserActTool(_BrowserTool):
             arguments.get("click"),
             arguments.get("expect_text"),
         )
-        if not isinstance(fill, list | tuple) or len(fill) > FILLS_MAX:
-            return Outcome(
-                {}, ARGUMENTS_INVALID, f"fill must be a list of at most {FILLS_MAX} pairs"
-            )
-        fills: list[tuple[str, str]] = []
-        for index, pair in enumerate(fill, start=1):
-            if (
-                not isinstance(pair, list | tuple)
-                or len(pair) != 2
-                or not all(isinstance(one, str) for one in pair)
-            ):
-                return Outcome(
-                    {}, ARGUMENTS_INVALID, f"fill {index} must be a pair [selector, value]"
-                )
-            selector, value = str(pair[0]), str(pair[1])
-            refused = _selector(selector, f"the selector of fill {index}")
-            if refused is not None:
-                return refused
-            if len(value) > VALUE_MAX_LENGTH:
-                return Outcome(
-                    {},
-                    ARGUMENTS_INVALID,
-                    f"the value of fill {index} is longer than {VALUE_MAX_LENGTH} characters",
-                )
-            fills.append((selector, value))
-        refused = _selector(click, "click")
+        fills = _pairs(fill)
+        if isinstance(fills, Outcome):
+            return fills
+        refused = _selector(click, "click") or _expected(expect)
         if refused is not None:
             return refused
-        if not isinstance(expect, str) or not 0 < len(expect) <= EXPECT_MAX_LENGTH:
-            return Outcome(
-                {},
-                ARGUMENTS_INVALID,
-                f"expect_text must be a text of 1 to {EXPECT_MAX_LENGTH} characters",
-            )
-        assert isinstance(click, str)  # noqa: S101 — ``_selector`` said so
-        gestures = (
-            *(f"fills {selector} with “{value}”" for selector, value in fills),
-            f"clicks {click}",
-        )
+        assert isinstance(click, str) and isinstance(expect, str)  # noqa: S101 — said above
+        gestures = (*_filling(fills), f"clicks {click}")
         return _Call(
             visit=self._visit(site, address, gestures, expect),
-            fills=tuple(fills),
+            fills=fills,
             click=click,
             selector=None,
             allowed=boundary(frozenset({self._browsing.origin(site)})),
@@ -995,10 +1008,26 @@ class BrowserActTool(_BrowserTool):
         the first gesture the look is the tool's point (M6.3c): a task stopped there leaves with
         ``ToolStopped``, and nothing was done. After it the tool ends the step itself."""
         assert call.click is not None  # noqa: S101 — an action always clicks
-        site, page = call.visit.site, opened.page
         steps: list[tuple[str, str | None]] = [*call.fills, (call.click, None)]
         done.total = len(steps)
-        for index, (selector, value) in enumerate(steps, start=1):
+        refused = await self._sequence(opened, done, stop, steps, call.visit.site)
+        if refused is not None:
+            return refused
+        return await self._after_the_gestures(opened, done, call.visit.site)
+
+    async def _sequence(
+        self,
+        opened: Opened,
+        done: _Done,
+        stop: TaskStop,
+        steps: Sequence[tuple[str, str | None]],
+        site: str,
+    ) -> Outcome | None:
+        """The gestures of ``steps`` in order, each awaiting its element, counted after those
+        ``done`` has made already — ``None`` when every one was made, or the outcome that ended the
+        sequence (M13.10; a file given first, M13.13)."""
+        page = opened.page
+        for index, (selector, value) in enumerate(steps, start=done.made + 1):
             which = f"gesture {index} of {done.total}"
             found = await self._awaited(page, selector, stop, done, which)
             if found is None:
@@ -1030,6 +1059,11 @@ class BrowserActTool(_BrowserTool):
                 await self._gesture(done, self._browser.click(page, selector))
             else:
                 await self._gesture(done, self._browser.fill(page, selector, value))
+        return None
+
+    async def _after_the_gestures(self, opened: Opened, done: _Done, site: str) -> Outcome:
+        """What a sequence that reached its end says: where the page went, or what it is."""
+        page = opened.page
         left = await self._browser.left(page)
         if left is not None:
             return Outcome(
@@ -1068,6 +1102,50 @@ class BrowserActTool(_BrowserTool):
             f"the task was stopped on the page of {site}{self._after(done)}, and no other gesture "
             "followed",
         )
+
+
+def _pairs(fill: object) -> Outcome | tuple[tuple[str, str], ...]:
+    """The pairs of a ``fill`` as the tool hands them to the browser, or the refusal: a list of
+    at most :data:`FILLS_MAX` pairs, each a selector the question can show and a value of a
+    bounded length. ``browser.act``'s, and an upload's (M13.13)."""
+    if not isinstance(fill, list | tuple) or len(fill) > FILLS_MAX:
+        return Outcome({}, ARGUMENTS_INVALID, f"fill must be a list of at most {FILLS_MAX} pairs")
+    fills: list[tuple[str, str]] = []
+    for index, pair in enumerate(fill, start=1):
+        if (
+            not isinstance(pair, list | tuple)
+            or len(pair) != 2
+            or not all(isinstance(one, str) for one in pair)
+        ):
+            return Outcome({}, ARGUMENTS_INVALID, f"fill {index} must be a pair [selector, value]")
+        selector, value = str(pair[0]), str(pair[1])
+        refused = _selector(selector, f"the selector of fill {index}")
+        if refused is not None:
+            return refused
+        if len(value) > VALUE_MAX_LENGTH:
+            return Outcome(
+                {},
+                ARGUMENTS_INVALID,
+                f"the value of fill {index} is longer than {VALUE_MAX_LENGTH} characters",
+            )
+        fills.append((selector, value))
+    return tuple(fills)
+
+
+def _filling(fills: Sequence[tuple[str, str]]) -> tuple[str, ...]:
+    """The fills of a call, one line each, in the words the question shows."""
+    return tuple(f"fills {selector} with “{value}”" for selector, value in fills)
+
+
+def _expected(expect: object) -> Outcome | None:
+    """``None`` for a text the verifier can wait for; the refusal otherwise."""
+    if not isinstance(expect, str) or not 0 < len(expect) <= EXPECT_MAX_LENGTH:
+        return Outcome(
+            {},
+            ARGUMENTS_INVALID,
+            f"expect_text must be a text of 1 to {EXPECT_MAX_LENGTH} characters",
+        )
+    return None
 
 
 def _selector(selector: object, which: str) -> Outcome | None:

@@ -31,3 +31,7 @@ browser.read_as_you
 browser.act_as_you
 browser.login
 browser.guided_as_you
+browser.download
+browser.download_as_you
+browser.upload
+browser.upload_as_you
