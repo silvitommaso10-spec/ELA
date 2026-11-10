@@ -279,6 +279,17 @@ async def test_the_door_closes_at_the_first_word_of_progress_of_the_download_it_
     a, _ = sites(served)
     a.pages[("GET", "/twice")] = (200, HTML, TWICE)
     a.pages[("GET", "/second")] = (200, ATTACHED, FILE)
+    # The slow order, built: the first answer comes after the page's timer has fired — as on the
+    # macOS runner of 0bc3278, where the answer took longer than its 30 ms.
+    fired = threading.Event()
+
+    def held(asked: str) -> None:
+        if asked == "GET /second":
+            fired.set()
+        elif asked == "GET /attach":
+            fired.wait(bounds.LONG)
+
+    a.before = held
     into = folder(tmp_path)
     opened = await browser.open(a.origin + "/twice", only(a), FakeStop())
 
@@ -304,6 +315,8 @@ class Slow:
         self.half_sent = threading.Event()
         self.release = threading.Event()
         self.go = threading.Event()
+        self.answers = threading.Event()
+        self.answers.set()
         self.cut = False
         slow = self
 
@@ -328,6 +341,7 @@ class Slow:
                     more = THEN_ANOTHER if self.path == "/two" else b""
                     self.answer(HTML, SLOW_PAGE + more)
                     return
+                slow.answers.wait(bounds.LONG)
                 self.send_response(200)
                 for name, value in ATTACHED:
                     self.send_header(name, value)
@@ -350,6 +364,7 @@ class Slow:
     def close(self) -> None:
         self.release.set()
         self.go.set()
+        self.answers.set()
         self.server.shutdown()
         self.server.server_close()
 
@@ -681,8 +696,12 @@ async def test_a_download_the_time_of_its_step_cuts_leaves_nothing_in_the_folder
         "overwrite": False,
         "purpose": "la prova",
     }
+    # The slow order, built: the file comes after the five seconds of the step — as a launch of
+    # the browser slower than they are would make it on a runner (census of decision 47).
+    slow.answers.clear()
 
     result = await run(tool, capability, arguments)
+    slow.answers.set()
 
     assert slow.half_sent.is_set(), "the time ran out while the file was arriving"
     assert result.error is not None and result.error.code == TIMEOUT

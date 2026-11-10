@@ -24,6 +24,7 @@ injected.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
 import importlib.util
 import io
@@ -35,6 +36,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Iterator
 from functools import cache
 from pathlib import Path
 from types import SimpleNamespace
@@ -599,22 +601,70 @@ def test_main_stops_at_step_1_when_the_world_lacks_something(
 # ----------------------------------------------------------------------------------------
 
 
+class Telling(CliRunner):
+    """A command line that says when it has put back the ``sys.stdout`` it found."""
+
+    def __init__(self, back: threading.Event) -> None:
+        super().__init__()
+        self.back = back
+
+    @contextlib.contextmanager
+    def isolation(self, *args: Any, **kwargs: Any) -> Iterator[Any]:
+        with super().isolation(*args, **kwargs) as streams:
+            yield streams
+        self.back.set()
+
+
+class Late(CliRunner):
+    """A command line that puts back the ``sys.stdout`` it found only after ``after`` — the order
+    two threads can take on a slower machine, built (census of decision 47 of M13.13): click
+    swaps the stdout of the whole process, and the one that ends last puts back what it found."""
+
+    def __init__(self, after: threading.Event) -> None:
+        super().__init__()
+        self.after = after
+
+    @contextlib.contextmanager
+    def isolation(self, *args: Any, **kwargs: Any) -> Iterator[Any]:
+        with super().isolation(*args, **kwargs) as streams:
+            yield streams
+            assert self.after.wait(60), "the run in the background did not end"
+
+
 class World:
     """The edge of the machine of one walk: the command line of ELA answered in process — in the
-    foreground and in the background —, and Tommaso's yes."""
+    foreground and in the background —, and Tommaso's yes. With ``late``, the run of a child of
+    the session that runs in the background gives the stdout back only after that run has."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, late: bool = False) -> None:
         self.ran: list[str] = []
+        self.late = late
+        self.background_back = threading.Event()
+        self.background: str | None = None
 
-    def run(self, line: str) -> subprocess.CompletedProcess[str]:
+    def runner(self, line: str, *, in_the_background: bool) -> CliRunner:
+        if not self.late:
+            return CliRunner()
+        if in_the_background:
+            return Telling(self.background_back)
+        running = self.background is not None and not self.background_back.is_set()
+        if running and line.startswith("uv run ela task run ") and line != self.background:
+            return Late(self.background_back)
+        return CliRunner()
+
+    def run(
+        self, line: str, *, in_the_background: bool = False
+    ) -> subprocess.CompletedProcess[str]:
         self.ran.append(line)
         prefix = "uv run ela "
         assert line.startswith(prefix), line
-        done = CliRunner().invoke(ela_app, shlex.split(line.removeprefix(prefix)))
+        runner = self.runner(line, in_the_background=in_the_background)
+        done = runner.invoke(ela_app, shlex.split(line.removeprefix(prefix)))
         return subprocess.CompletedProcess(line, done.exit_code, plain(done.output), "")
 
     def started(self, line: str) -> Any:
         world = self
+        world.background = line
 
         class InTheBackground:
             def __init__(self) -> None:
@@ -623,7 +673,7 @@ class World:
                 self.thread.start()
 
             def go(self) -> None:
-                self.done = world.run(line)
+                self.done = world.run(line, in_the_background=True)
 
             def poll(self) -> int | None:
                 return None if self.thread.is_alive() or self.done is None else self.returncode
@@ -693,6 +743,7 @@ async def walked(
     session: Script | None = None,
     accounts: FakeAccountBrowser | None = None,
     vault: FakeVault | None = None,
+    late: bool = False,
     **declared: str,
 ) -> Walked:
     """The steps of the section in ``steps``, as written in the guide, run by the script itself
@@ -725,7 +776,7 @@ async def walked(
         g.browser.page.texts['pre:has-text("ELA prova 7431")'] = (
             '{"form": {"custname": "ELA prova 7431"}}'
         )
-        world = World()
+        world = World(late=late)
         monkeypatch.setattr(module.base, "run", world.run)
         monkeypatch.setattr(module.base, "started", world.started)
         monkeypatch.setattr(
@@ -898,14 +949,20 @@ async def test_step_4_shows_the_results_of_the_session_on_the_screen_before_its_
     """M13.10b: the question to the eye of step 4 asked about «the model's answer, in the file»,
     and neither the file nor the screen carried it. Now a ``schermo`` with the results of the
     session's task comes before it — on the screen, and the file says so —, and the question does
-    not say «nel file» nor what only the machine knows of the vault."""
+    not say «nel file» nor what only the machine knows of the vault.
+
+    **The slow order, built** (census of decision 47 of M13.13): the run of the child gives back
+    the process's stdout after the session's run has — as two threads can on a slower machine."""
+    monkeypatch.setattr(sys, "stdout", sys.stdout)  # put back whatever the walk leaves
     walk = await walked(
         monkeypatch,
         tmp_path,
         {4},
         session=Script([gesture("login", site=HN)]),
+        late=True,
         **with_the_vault(tmp_path),
     )
+    assert walk.world.background_back.is_set(), "the order was built: the background ended first"
     screen = capsys.readouterr().out
 
     shown = walk.written.find("$ uv run ela task results")

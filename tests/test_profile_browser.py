@@ -33,6 +33,7 @@ on the test as it runs (the hook of ``tests/conftest.py``), and the fixture read
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -173,10 +174,23 @@ def test_a_test_passed_when_its_own_phase_ran_and_passed_and_never_otherwise(
     assert profile_browser.passed(ran) is passed  # type: ignore[arg-type]
 
 
-@profile_browser.ON_A_MAC
-def test_a_test_that_falls_has_its_own_error_alone_and_one_that_passes_idle_the_guard_s() -> None:
-    """In a pytest of their own, with the hook and the fixture of this suite: where a test that
-    takes the fixture runs at all — elsewhere the three are skipped, which is the point of it."""
+SHAPES_THE_OUTPUT = ("CI", "BUILD_NUMBER", "COLUMNS", "PYTEST_ADDOPTS", "PY_COLORS", "NO_COLOR")
+"""What in the environment changes what pytest writes: with ``CI`` or ``BUILD_NUMBER`` it does not
+cut the lines of its summary (``running_on_ci``), ``COLUMNS`` is where it cuts them, and the rest
+add options or colours. None of it is inherited by the pytest of the cases: the test declares it
+(decision 41 B, after the red CI of ``0bc3278`` — the runner sets ``CI``, this Mac does not)."""
+
+
+def cases_said(ci: str | None) -> str:
+    """What the pytest of the cases writes, run with this environment **without** what shapes its
+    output, and with ``CI`` when ``ci`` says so. The environment is built here, in a frame that
+    cannot fail, and is no argument of anything that can (the form of
+    ``tests/test_foreign_machine_browsers.py``)."""
+    environment = {
+        name: value for name, value in os.environ.items() if name not in SHAPES_THE_OUTPUT
+    }
+    if ci is not None:
+        environment["CI"] = ci
     ran = subprocess.run(
         [sys.executable, "-m", "pytest", CASES, "-p", "no:cacheprovider", "--no-cov", "-n0"],
         cwd=REPO,
@@ -184,8 +198,22 @@ def test_a_test_that_falls_has_its_own_error_alone_and_one_that_passes_idle_the_
         text=True,
         check=False,
         timeout=120,
+        env=environment,
     )
-    said = ran.stdout
+    del environment
+    return ran.stdout
+
+
+@profile_browser.ON_A_MAC
+@pytest.mark.parametrize("ci", [None, "true"], ids=["CI absent", "CI present, as on a runner"])
+def test_a_test_that_falls_has_its_own_error_alone_and_one_that_passes_idle_the_guard_s(
+    ci: str | None,
+) -> None:
+    """In a pytest of their own, with the hook and the fixture of this suite: where a test that
+    takes the fixture runs at all — elsewhere the three are skipped, which is the point of it.
+    **The verdict does not depend on who launches the suite**: the two values of ``CI``, so this
+    Mac sees what the runner sees."""
+    said = cases_said(ci)
     fell = f"{CASES}::test_falls_before_it_builds_the_browser"
     idle = f"{CASES}::test_passes_and_never_builds_the_browser"
 

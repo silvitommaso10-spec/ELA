@@ -1303,9 +1303,12 @@ class Changing:
         self.closed = False
         self.asked = 0
         self.closes_at: int | None = None
+        self.seen: list[str] = []
+        """Every address it was asked about, in order: what a test recognises a question by."""
 
     def __call__(self, address: str) -> bool:
         self.asked += 1
+        self.seen.append(address)
         if self.closes_at is not None and self.asked >= self.closes_at:
             self.closed = True
         return not self.closed
@@ -1377,6 +1380,13 @@ ASKED_AFTER_TOO = sorted(set(USES) - set(ASKED_BEFORE_ONLY))
 """Every use of a page but those that read nothing of it, named with their reason beside the
 test of the fakes: there is nothing of theirs to throw away."""
 
+REPORTS_ASKED = {"give": ("input", "change")}
+"""The uses after which the page **holds a file**, and so asks the boundary of every request it
+makes — its reports of the events the use fired among them (``shell.REPORTS``), which arrive
+whenever the page sends them: after the use has returned, on a runner (the red CI of ``0bc3278``,
+decision 41 A)."""
+REPORT_PATH = "/event"
+
 
 @pytest.mark.parametrize("use", ASKED_AFTER_TOO)
 async def test_what_was_read_on_a_page_that_ended_elsewhere_meanwhile_is_thrown_away(
@@ -1394,6 +1404,12 @@ async def test_what_was_read_on_a_page_that_ended_elsewhere_meanwhile_is_thrown_
 
     with pytest.raises(LeftSite) as found:
         await USES[use](browser, opened.page, tmp_path)
+    # The slow order, built: the page's reports of the use are asked about before the questions
+    # are read — as on the runner, where they came after the use had returned.
+    reported = len(REPORTS_ASKED.get(use, ()))
+    await until(
+        lambda: allowed.seen.count(web.origin + REPORT_PATH) >= reported, "the page's reports"
+    )
 
     assert allowed.asked == allowed.closes_at, "asked once before the use, and once after it"
     assert found.value.made is True, "the use had been made when the page was found elsewhere"
