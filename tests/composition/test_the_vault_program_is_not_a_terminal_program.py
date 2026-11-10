@@ -141,3 +141,19 @@ def test_a_program_that_is_not_there_written_through_a_link_is_the_same_by_where
     said = refused(monkeypatch, tmp_path, tmp_path / "through" / "bw", real / "bw")
 
     assert PROGRAM in said and TERMINAL in said
+
+
+def test_a_terminal_program_that_is_not_there_yet_starts_ela_beside_the_vault_s(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Decision 28 of the review after the red CI of ``56c672c``: the branch nobody walked — the
+    vault's program is there, an entry of the terminal is not, and nothing can be compared by
+    identity: ELA starts. **What that path leads to later is asked at the launch**, where it
+    counts (``tests/tools/test_the_vault_program_is_never_run.py``)."""
+    vault = made(tmp_path / "bin")
+    absent = tmp_path / "other" / "not-there-yet"
+
+    settings = loaded(monkeypatch, tmp_path, vault, absent)
+
+    assert settings.terminal.programs == (entry(absent),)
+    assert settings.accounts.vault_program == str(vault)

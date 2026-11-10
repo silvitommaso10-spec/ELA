@@ -125,3 +125,38 @@ async def test_the_signal_of_stopping_is_one_event_for_the_pages_and_the_launche
 
     assert app.state.stopping is ela.stopping
     assert launcher._stopping is ela.stopping  # noqa: SLF001
+
+
+async def test_the_terminal_is_told_the_vault_s_program_and_refuses_it_at_the_launch(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """M13.9c, decision 28 of the review after the red CI of ``56c672c``: the start-up cannot
+    compare by identity a program that is not there, so ``build`` hands the vault's program to the
+    terminal's table, which asks at every launch. Here the vault's program is born after the
+    start as a second name of a program of the terminal — which did not change —, and the tool
+    ``build`` made refuses it before the question."""
+    from ela.tools.programs import VAULT_PROGRAM
+
+    program = tmp_path.resolve() / "bin" / "eco"
+    program.parent.mkdir()
+    program.write_text("#!/bin/sh\necho eco\n", encoding="utf-8")
+    program.chmod(0o755)
+    vault = tmp_path.resolve() / "vault" / "bw"
+    vault.parent.mkdir()
+    declare(
+        monkeypatch,
+        tmp_path,
+        ELA_TERMINAL_PROGRAMS=json.dumps([str(program).lstrip("/")]),
+        ELA_VAULT_PROGRAM=str(vault),
+    )
+    await create_schema(database_url(tmp_path))
+    ela = await build(Settings.load())
+    try:
+        os.link(program, vault)
+        prospect = await ela.tools.get(TERMINAL_RUN).prospect(
+            {"program": str(program).lstrip("/"), "args": [], "purpose": "la prova"}
+        )
+    finally:
+        await ela.aclose()
+
+    assert prospect.refusal is not None and prospect.refusal.code == VAULT_PROGRAM
