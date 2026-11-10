@@ -15,7 +15,12 @@ So the skip is put by **where a test takes that browser** (``tests/profile_brows
 * every test whose fixtures reach :data:`~tests.profile_browser.TAKEN` — the fixture the folder of
   a test's profile asks for — is marked at collection, a ``skipif`` that shows in the summary;
 * and the browser of the profile **is built only through that fixture**: built outside it, it is
-  an error on every system, this Mac included — a new test cannot forget what it cannot leave out.
+  an error on every system, this Mac included — a new test cannot forget what it cannot leave out;
+* and **a test that took the fixture and never built that browser is an error too**, where it
+  runs: the skip is of the browser, not of a folder. The first form of this marked every test
+  that took the folder of a profile, and three tests of the *empty* browser stopped running on
+  Linux (found on 2026-11-10 by comparing the skips of two ``make check-linux``, line by line,
+  before anything was pushed).
 
 **On a system that has the browser nothing is skipped and nothing is caught**: there a
 ``BrowserUnsupported`` is a red.
@@ -55,8 +60,10 @@ def test_the_skip_is_the_product_s_own_condition_and_no_system_written_in_a_test
 def test_a_test_that_takes_the_browser_of_the_profile_is_marked_and_wrote_nothing(
     request: pytest.FixtureRequest, profile: Path
 ) -> None:
-    """This test carries no mark of its own and takes the folder of a profile: the mark is on it.
-    Where the product does not have the browser it does not run — and says why in the summary."""
+    """This test carries no mark of its own, takes the folder of a profile and builds its browser:
+    the mark is on it. Where the product does not have the browser it does not run — and says why
+    in the summary."""
+    assert account.chrome(profile) is not None
     assert len(derived(request.node)) == 1
 
 
@@ -73,6 +80,40 @@ def test_the_browser_of_the_profile_is_built_only_through_its_fixture(tmp_path: 
 
 def test_inside_a_test_that_took_the_fixture_it_is_built(profile: Path) -> None:
     assert account.chrome(profile) is not None
+
+
+def test_a_test_that_took_the_fixture_and_never_built_the_browser_is_an_error() -> None:
+    """The other half. A test that takes the folder of a profile and never builds its browser
+    carries a skip that is not its own: where the product has no such browser it would stop
+    running, and only a count in a summary would change. So it is an error where it does run."""
+    taking = profile_browser.taken()
+    next(taking)
+
+    with pytest.raises(AssertionError, match="never built the browser of the profile"):
+        next(taking)
+
+
+def test_a_test_that_took_the_fixture_and_built_the_browser_ends_clean() -> None:
+    taking = profile_browser.taken()
+    next(taking)
+    profile_browser.built_through_the_fixture()
+
+    with pytest.raises(StopIteration):
+        next(taking)
+
+
+@pytest.mark.parametrize("builds", [0, 1, 2])
+def test_after_a_test_that_took_the_fixture_the_browser_is_not_built_any_more(builds: int) -> None:
+    """Whatever the test did: what it took ends with it."""
+    taking = profile_browser.taken()
+    next(taking)
+    for _ in range(builds):
+        profile_browser.built_through_the_fixture()
+    with pytest.raises((AssertionError, StopIteration)):
+        next(taking)
+
+    with pytest.raises(AssertionError, match="without the fixture"):
+        profile_browser.built_through_the_fixture()
 
 
 def test_the_conditions_once_written_by_hand_are_the_one_source() -> None:

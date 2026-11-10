@@ -40,13 +40,9 @@ def _the_browser_of_the_profile() -> Iterator[None]:
     """**Where a test takes the browser of the profile** (decision 27 of the review after the red CI
     of ``56c672c``): the folder of a test's profile asks for this fixture, the collection marks
     every test whose fixtures reach it with the skip of the systems the product does not have that
-    browser on, and the browser is built only while it is taken (``tests/profile_browser.py``)."""
-    taking = profile_browser.taking()
-    taking.append(True)
-    try:
-        yield
-    finally:
-        taking.pop()
+    browser on, and the browser is built only while it is taken — **and a test that took it and
+    never built that browser is an error** (``tests/profile_browser.py``)."""
+    yield from profile_browser.taken()
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
