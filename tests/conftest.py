@@ -12,7 +12,7 @@ speaks to the application in this process and opens no socket at all.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
 from typing import Any, NoReturn
 
 import httpx
@@ -36,13 +36,35 @@ def _no_network(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(name=profile_browser.TAKEN)
-def _the_browser_of_the_profile() -> Iterator[None]:
+def _the_browser_of_the_profile(request: pytest.FixtureRequest) -> Iterator[None]:
     """**Where a test takes the browser of the profile** (decision 27 of the review after the red CI
     of ``56c672c``): the folder of a test's profile asks for this fixture, the collection marks
     every test whose fixtures reach it with the skip of the systems the product does not have that
-    browser on, and the browser is built only while it is taken — **and a test that took it and
-    never built that browser is an error** (``tests/profile_browser.py``)."""
-    yield from profile_browser.taken()
+    browser on, and the browser is built only while it is taken (``tests/profile_browser.py``).
+
+    **And a test that took it, passed, and never built that browser is an error** — the guard of
+    the other way round, and why it exists (decision 33): the first form of the skip marked every
+    test that took the *folder* of a profile, and three tests of the empty browser stopped running
+    on Linux with every run green. Found on 2026-11-10 by comparing the skipped tests of two runs
+    line by line; the commit that shows it red is ``efac3a7``. With the guard, who is skipped
+    elsewhere is exactly who builds that browser here.
+
+    **It speaks only of a test that passed** (decision 34): the report of the test's own phase is
+    on the test (the hook below), and one that fell before it built the browser keeps its one
+    failure, its own."""
+    yield from profile_browser.taken(lambda: profile_browser.passed(request.node))
+
+
+@pytest.hookimpl(wrapper=True, tryfirst=True)
+def pytest_runtest_makereport(
+    item: pytest.Item, call: pytest.CallInfo[None]
+) -> Generator[None, pytest.TestReport, pytest.TestReport]:
+    """Every report pytest makes of a test is put on the test, as it is made: the standard hook
+    for a fixture that has to know how its test went (decision 34) — the guard of the browser of
+    the profile reads the one of the test's own phase at its closing."""
+    report = yield
+    profile_browser.reported(item, report)
+    return report
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:

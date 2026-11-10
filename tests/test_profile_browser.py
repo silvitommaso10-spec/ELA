@@ -139,6 +139,40 @@ def test_the_reports_of_a_test_are_put_on_it_as_it_runs(request: pytest.FixtureR
     assert profile_browser.passed(request.node) is False, "not yet: it is running"
 
 
+class Reported:
+    """A report of a phase, as far as the guard reads one."""
+
+    def __init__(self, when: str, *, passed: bool) -> None:
+        self.when, self.passed = when, passed
+
+
+class Ran:
+    """A test, as far as the hook and the guard read one: what its reports are put on."""
+
+    def __init__(self, *reports: Reported) -> None:
+        self.stash = pytest.Stash()
+        for report in reports:
+            profile_browser.reported(self, report)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("ran", "passed"),
+    [
+        (Ran(), False),
+        (Ran(Reported("setup", passed=True)), False),
+        (Ran(Reported("setup", passed=False)), False),
+        (Ran(Reported("setup", passed=True), Reported("call", passed=False)), False),
+        (Ran(Reported("setup", passed=True), Reported("call", passed=True)), True),
+    ],
+    ids=["no report", "still running", "its set-up fell", "it fell", "it passed"],
+)
+def test_a_test_passed_when_its_own_phase_ran_and_passed_and_never_otherwise(
+    ran: Ran, passed: bool
+) -> None:
+    """On every system: a test whose set-up fell never began, and one that fell has its reason."""
+    assert profile_browser.passed(ran) is passed  # type: ignore[arg-type]
+
+
 @profile_browser.ON_A_MAC
 def test_a_test_that_falls_has_its_own_error_alone_and_one_that_passes_idle_the_guard_s() -> None:
     """In a pytest of their own, with the hook and the fixture of this suite: where a test that
@@ -155,9 +189,12 @@ def test_a_test_that_falls_has_its_own_error_alone_and_one_that_passes_idle_the_
     fell = f"{CASES}::test_falls_before_it_builds_the_browser"
     idle = f"{CASES}::test_passes_and_never_builds_the_browser"
 
-    assert f"FAILED {fell} - RuntimeError: {profile_browser_cases.FELL}" in said, said
+    assert f"FAILED {fell}\n" in said and f"RuntimeError: {profile_browser_cases.FELL}" in said, (
+        said
+    )
     assert f"ERROR {fell}" not in said, "a second error covers the reason the test fell for"
-    assert f"ERROR {idle} - AssertionError: a test took the fixture" in said, said
+    assert "ERROR at teardown of test_falls_before_it_builds_the_browser" not in said
+    assert f"ERROR {idle}\n" in said and profile_browser.NEVER_BUILT in said, said
     assert "test_builds_the_browser_and_passes" not in said
     assert "1 failed, 2 passed, 1 error in" in said, said
 
