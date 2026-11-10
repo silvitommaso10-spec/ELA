@@ -47,6 +47,7 @@ from typer.testing import CliRunner
 
 from ela.cli import client as cli_client
 from ela.cli.app import app as ela_app
+from ela.cli.tasks import _ran
 from ela.ports import VAULT_LOCKED
 from ela.testing.fakes import FakeAccountBrowser, FakeVault, FakeVaultEntry
 from tests.api.guided import SITES, Script, gesture, guided
@@ -601,20 +602,6 @@ def test_main_stops_at_step_1_when_the_world_lacks_something(
 # ----------------------------------------------------------------------------------------
 
 
-class Telling(CliRunner):
-    """A command line that says when it has put back the ``sys.stdout`` it found."""
-
-    def __init__(self, back: threading.Event) -> None:
-        super().__init__()
-        self.back = back
-
-    @contextlib.contextmanager
-    def isolation(self, *args: Any, **kwargs: Any) -> Iterator[Any]:
-        with super().isolation(*args, **kwargs) as streams:
-            yield streams
-        self.back.set()
-
-
 class Late(CliRunner):
     """A command line that puts back the ``sys.stdout`` it found only after ``after`` — the order
     two threads can take on a slower machine, built (census of decision 47 of M13.13): click
@@ -634,7 +621,12 @@ class Late(CliRunner):
 class World:
     """The edge of the machine of one walk: the command line of ELA answered in process — in the
     foreground and in the background —, and Tommaso's yes. With ``late``, the run of a child of
-    the session that runs in the background gives the stdout back only after that run has."""
+    the session that runs in the background gives the stdout back only after that run has ended.
+
+    **The run in the background goes without the command line's isolation** (census of decision
+    47 of M13.13): click swaps the stdout of the whole process, and two threads that swap it can
+    give back each other's — a closed one, when the background ends first. It is asked of the API
+    the command asks, and written by the command's own function: the text is the one it prints."""
 
     def __init__(self, *, late: bool = False) -> None:
         self.ran: list[str] = []
@@ -642,25 +634,30 @@ class World:
         self.background_back = threading.Event()
         self.background: str | None = None
 
-    def runner(self, line: str, *, in_the_background: bool) -> CliRunner:
+    def runner(self, line: str) -> CliRunner:
         if not self.late:
             return CliRunner()
-        if in_the_background:
-            return Telling(self.background_back)
         running = self.background is not None and not self.background_back.is_set()
         if running and line.startswith("uv run ela task run ") and line != self.background:
             return Late(self.background_back)
         return CliRunner()
 
-    def run(
-        self, line: str, *, in_the_background: bool = False
-    ) -> subprocess.CompletedProcess[str]:
+    def run(self, line: str) -> subprocess.CompletedProcess[str]:
         self.ran.append(line)
         prefix = "uv run ela "
         assert line.startswith(prefix), line
-        runner = self.runner(line, in_the_background=in_the_background)
-        done = runner.invoke(ela_app, shlex.split(line.removeprefix(prefix)))
+        done = self.runner(line).invoke(ela_app, shlex.split(line.removeprefix(prefix)))
         return subprocess.CompletedProcess(line, done.exit_code, plain(done.output), "")
+
+    def ran_in_the_background(self, line: str) -> subprocess.CompletedProcess[str]:
+        """``ela task run <id>``, the one line of ``sfondo``: the run asked of the API, and the
+        text :func:`ela.cli.tasks._ran` makes of it — what the command prints."""
+        self.ran.append(line)
+        words = shlex.split(line.removeprefix("uv run ela "))
+        assert words[:2] == ["task", "run"] and len(words) == 3, line
+        with cli_client.connect() as api:
+            payload = api.post(f"/tasks/{words[2]}/run")
+        return subprocess.CompletedProcess(line, 0, plain(_ran(payload)) + "\n", "")
 
     def started(self, line: str) -> Any:
         world = self
@@ -673,7 +670,10 @@ class World:
                 self.thread.start()
 
             def go(self) -> None:
-                self.done = world.run(line, in_the_background=True)
+                try:
+                    self.done = world.ran_in_the_background(line)
+                finally:
+                    world.background_back.set()
 
             def poll(self) -> int | None:
                 return None if self.thread.is_alive() or self.done is None else self.returncode
@@ -968,7 +968,10 @@ async def test_step_4_shows_the_results_of_the_session_on_the_screen_before_its_
     shown = walk.written.find("$ uv run ela task results")
     asked = walk.written.index("[4] GUARDATO")
     assert 0 <= shown < asked, walk.written
-    assert "browser.guided_as_you" in screen
+    on_the_screen_alone = [line for line in screen.splitlines() if line not in walk.report.lines]
+    assert any("browser.guided_as_you" in line for line in on_the_screen_alone), (
+        "the results are on the screen, and not only what the file says too"
+    )
     question = walk.written[asked:].splitlines()[0]
     assert "nel file" not in question and "vault" not in question
 

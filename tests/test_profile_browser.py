@@ -34,6 +34,7 @@ on the test as it runs (the hook of ``tests/conftest.py``), and the fixture read
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -174,11 +175,22 @@ def test_a_test_passed_when_its_own_phase_ran_and_passed_and_never_otherwise(
     assert profile_browser.passed(ran) is passed  # type: ignore[arg-type]
 
 
-SHAPES_THE_OUTPUT = ("CI", "BUILD_NUMBER", "COLUMNS", "PYTEST_ADDOPTS", "PY_COLORS", "NO_COLOR")
-"""What in the environment changes what pytest writes: with ``CI`` or ``BUILD_NUMBER`` it does not
-cut the lines of its summary (``running_on_ci``), ``COLUMNS`` is where it cuts them, and the rest
-add options or colours. None of it is inherited by the pytest of the cases: the test declares it
-(decision 41 B, after the red CI of ``0bc3278`` — the runner sets ``CI``, this Mac does not)."""
+SHAPES_THE_OUTPUT = (
+    "CI",
+    "BUILD_NUMBER",
+    "COLUMNS",
+    "PYTEST_ADDOPTS",
+    "PYTEST_PLUGINS",
+    "PYTEST_DISABLE_PLUGIN_AUTOLOAD",
+    "PY_COLORS",
+    "NO_COLOR",
+    "FORCE_COLOR",
+)
+"""What in the environment changes what pytest writes or loads: with ``CI`` or ``BUILD_NUMBER`` it
+does not cut the lines of its summary (``running_on_ci``), ``COLUMNS`` is where it cuts them, three
+add options or plugins or take them away, and three colour what it writes. None of it is inherited
+by the pytest of the cases: the test declares it (decision 41 B, after the red CI of ``0bc3278`` —
+the runner sets ``CI``, this Mac does not)."""
 
 
 def cases_said(ci: str | None) -> str:
@@ -204,6 +216,14 @@ def cases_said(ci: str | None) -> str:
     return ran.stdout
 
 
+def in_the_summary(said: str, outcome: str, test: str) -> bool:
+    """Whether the short summary has the line of ``test`` with ``outcome`` — **in either of its
+    two forms**: cut where the line ends, as pytest writes it at a terminal of this width, or with
+    its message, ``FAILED <id> - <message>``, as it writes it with ``CI`` set."""
+    line = re.compile(rf"^{outcome} {re.escape(test)}(?: - .*)?$", re.MULTILINE)
+    return line.search(said) is not None
+
+
 @profile_browser.ON_A_MAC
 @pytest.mark.parametrize("ci", [None, "true"], ids=["CI absent", "CI present, as on a runner"])
 def test_a_test_that_falls_has_its_own_error_alone_and_one_that_passes_idle_the_guard_s(
@@ -217,12 +237,11 @@ def test_a_test_that_falls_has_its_own_error_alone_and_one_that_passes_idle_the_
     fell = f"{CASES}::test_falls_before_it_builds_the_browser"
     idle = f"{CASES}::test_passes_and_never_builds_the_browser"
 
-    assert f"FAILED {fell}\n" in said and f"RuntimeError: {profile_browser_cases.FELL}" in said, (
-        said
-    )
+    assert in_the_summary(said, "FAILED", fell), said
+    assert f"RuntimeError: {profile_browser_cases.FELL}" in said, said
     assert f"ERROR {fell}" not in said, "a second error covers the reason the test fell for"
     assert "ERROR at teardown of test_falls_before_it_builds_the_browser" not in said
-    assert f"ERROR {idle}\n" in said and profile_browser.NEVER_BUILT in said, said
+    assert in_the_summary(said, "ERROR", idle) and profile_browser.NEVER_BUILT in said, said
     assert "test_builds_the_browser_and_passes" not in said
     assert "1 failed, 2 passed, 1 error in" in said, said
 

@@ -24,6 +24,7 @@ import stat
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -47,6 +48,7 @@ from ela.ports import (
     ToolStopped,
 )
 from ela.testing.fakes import FakeIdGenerator, FakeStop, FakeTaskPages
+from ela.tools import browser_files
 from ela.tools.account import AccountReadTool
 from ela.tools.browser import (
     DOWNLOAD_REFUSED,
@@ -266,40 +268,6 @@ async def test_a_download_nobody_asked_for_is_announced_and_nothing_is_written(
     assert [one for one in tmp_path.rglob("*") if one.is_file()] == []
 
 
-TWICE = (
-    '<a id="two" href="/attach" onclick="setTimeout(() => {{ location = \'/second\' }}, 30)">t</a>'
-)
-
-
-async def test_the_door_closes_at_the_first_word_of_progress_of_the_download_it_opened_for(
-    browser: Any, served: list[Any], tmp_path: Path
-) -> None:
-    """The site starts a second download 30 ms after the click (measure (g) of M13.10: cancelled
-    20 times of 20, no file). One is written — the first the browser announced —, one is refused."""
-    a, _ = sites(served)
-    a.pages[("GET", "/twice")] = (200, HTML, TWICE)
-    a.pages[("GET", "/second")] = (200, ATTACHED, FILE)
-    # The slow order, built: the first answer comes after the page's timer has fired — as on the
-    # macOS runner of 0bc3278, where the answer took longer than its 30 ms.
-    fired = threading.Event()
-
-    def held(asked: str) -> None:
-        if asked == "GET /second":
-            fired.set()
-        elif asked == "GET /attach":
-            fired.wait(bounds.LONG)
-
-    a.before = held
-    into = folder(tmp_path)
-    opened = await browser.open(a.origin + "/twice", only(a), FakeStop())
-
-    got = await browser.download(opened.page, "#two", FakeStop(), str(into))
-    refused = await until(lambda: browser._pages[opened.page].door.refused, "the other refused")
-
-    assert os.listdir(into) == [got.name] and (into / got.name).read_bytes() == FILE
-    assert refused in {a.origin + "/second", a.origin + "/attach"}
-
-
 SLOW_PAGE = b'<a id="at" href="/slow.bin">s</a><p>slow</p>'
 THEN_ANOTHER = b"<script>fetch('/go').then(() => { location = '/other.bin' })</script>"
 """What ``/two`` of :class:`Slow` adds to its page: a second download, started by the page itself
@@ -315,8 +283,6 @@ class Slow:
         self.half_sent = threading.Event()
         self.release = threading.Event()
         self.go = threading.Event()
-        self.answers = threading.Event()
-        self.answers.set()
         self.cut = False
         slow = self
 
@@ -341,7 +307,6 @@ class Slow:
                     more = THEN_ANOTHER if self.path == "/two" else b""
                     self.answer(HTML, SLOW_PAGE + more)
                     return
-                slow.answers.wait(bounds.LONG)
                 self.send_response(200)
                 for name, value in ATTACHED:
                     self.send_header(name, value)
@@ -364,7 +329,6 @@ class Slow:
     def close(self) -> None:
         self.release.set()
         self.go.set()
-        self.answers.set()
         self.server.shutdown()
         self.server.server_close()
 
@@ -419,7 +383,13 @@ async def test_while_a_file_arrives_the_door_is_closed_and_a_second_download_wri
     would have it written there, under a name of the browser's own (measure (g) of M13.10).
 
     What the browser says of each download is heard on the door's own session, by a listener of
-    this test: the fate of the second is its last word, never a guess from the folder."""
+    this test: the fate of the second is its last word, never a guess from the folder.
+
+    **It is the one test of the door's closing** (decision 41 C, after the red CI of ``0bc3278``):
+    the one before it left the second download to a timer of its page, 30 ms after the click, and
+    on a runner whose first answer came later there was one download and nothing to refuse. The
+    two mutants of the door — closed at the end of the download, and never closed again — are
+    caught here, on the two browsers (``.git/m13.13-reference/review-0bc3278/mutanti-41c.txt``)."""
     into = folder(tmp_path)
     opened = await browser.open(slow.origin + "/two", only(slow), FakeStop())
     door = browser._pages[opened.page].door
@@ -681,12 +651,34 @@ async def test_a_download_from_a_page_instead_of_a_file_writes_nothing_and_says_
     assert off.requests == [] and os.listdir(under / "ELA") == []
 
 
+class Cut:
+    """The time of a step as the tool asks it of ``asyncio``, kept — and run out when the test says
+    (the census of decision 47, after the red CI of ``0bc3278``). Five seconds of the step covered
+    the launch of the browser too, which on a runner can take that long: the step was cut before
+    the file had begun to arrive, and the test said nothing of what it is about."""
+
+    def __init__(self) -> None:
+        self.kept: list[asyncio.Timeout] = []
+
+    def timeout(self, delay: float | None) -> asyncio.Timeout:
+        made = asyncio.timeout(None)
+        self.kept.append(made)
+        return made
+
+    def asyncio(self) -> SimpleNamespace:
+        """``asyncio`` as the tool's module sees it: the same, but for its time."""
+        names = {name: getattr(asyncio, name) for name in dir(asyncio) if not name.startswith("_")}
+        return SimpleNamespace(**{**names, "timeout": self.timeout})
+
+
 async def test_a_download_the_time_of_its_step_cuts_leaves_nothing_in_the_folder(
-    browser: Any, slow: Slow, tmp_path: Path
+    browser: Any, slow: Slow, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The time of the step runs out **when half the file is in the folder**: an event, never a
+    number of seconds that a launch of the browser can outlast."""
     under = root(tmp_path)
     tool = of(browser, BrowserDownloadTool, AccountDownloadTool)(
-        under, browsing(slow.origin, 5), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+        under, browsing(slow.origin), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
     )
     capability = of(browser, BROWSER_DOWNLOAD, BROWSER_DOWNLOAD_AS_YOU)
     arguments = {
@@ -696,14 +688,17 @@ async def test_a_download_the_time_of_its_step_cuts_leaves_nothing_in_the_folder
         "overwrite": False,
         "purpose": "la prova",
     }
-    # The slow order, built: the file comes after the five seconds of the step — as a launch of
-    # the browser slower than they are would make it on a runner (census of decision 47).
-    slow.answers.clear()
+    cut = Cut()
+    monkeypatch.setattr(browser_files, "asyncio", cut.asyncio())
 
-    result = await run(tool, capability, arguments)
-    slow.answers.set()
+    running = asyncio.ensure_future(run(tool, capability, arguments))
+    await until(
+        lambda: slow.half_sent.is_set() and os.listdir(under / "ELA"), "half a file in the folder"
+    )
+    (kept,) = cut.kept
+    kept.reschedule(asyncio.get_running_loop().time())
+    result = await running
 
-    assert slow.half_sent.is_set(), "the time ran out while the file was arriving"
     assert result.error is not None and result.error.code == TIMEOUT
     assert result.output["gestures"] == 1, "the gesture counts as made once the browser has it"
     assert os.listdir(under / "ELA") == [] and not browser._pages

@@ -1394,24 +1394,31 @@ async def test_what_was_read_on_a_page_that_ended_elsewhere_meanwhile_is_thrown_
 ) -> None:
     """Decision 122. The boundary of this test admits the page when the use begins and not when
     it ends: what was read is in nobody's hands, a gesture is said as made — and a look
-    releases the page all the same."""
+    releases the page all the same.
+
+    **The questions are recognised by what they are about, never counted** (decision 41 A, after
+    the red CI of ``0bc3278``): the use asks about the page twice, before and after; a page that
+    holds a file also asks about its own reports of the use, whenever it sends them. The test
+    waits for those reports — the slow order of the runner, built — and then reads."""
     from ela.ports import LeftSite
 
     web = site(served, {"/": (200, {}, USED)})
     allowed = Changing()
     opened = await browser.open(web.origin + "/", allowed, FakeStop())
     allowed.closes_at = allowed.asked + 2
+    since = len(allowed.seen)
 
     with pytest.raises(LeftSite) as found:
         await USES[use](browser, opened.page, tmp_path)
-    # The slow order, built: the page's reports of the use are asked about before the questions
-    # are read — as on the runner, where they came after the use had returned.
+    report = web.origin + REPORT_PATH
     reported = len(REPORTS_ASKED.get(use, ()))
-    await until(
-        lambda: allowed.seen.count(web.origin + REPORT_PATH) >= reported, "the page's reports"
-    )
+    await until(lambda: allowed.seen.count(report) >= reported, "the page's reports of the use")
+    asked = allowed.seen[since:]
 
-    assert allowed.asked == allowed.closes_at, "asked once before the use, and once after it"
+    assert [one for one in asked if one != report] == [web.origin + "/"] * 2, (
+        "asked about the page once before the use, and once after it"
+    )
+    assert set(asked) <= {web.origin + "/", report}, "and about nothing else but its reports"
     assert found.value.made is True, "the use had been made when the page was found elsewhere"
     assert use != "glance" or opened.page not in browser._pages
     assert list(tmp_path.iterdir()) == [], "what was downloaded there is thrown away too"
