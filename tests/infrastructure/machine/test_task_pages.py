@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 from datetime import timedelta
-from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -313,7 +312,7 @@ async def test_the_end_of_the_task_closes_the_page_and_leaves_no_process(
 
 
 async def test_ela_s_stop_closes_a_page_that_waits_and_leaves_no_process(
-    served: list[Site], profile: Path
+    served: list[Site],
 ) -> None:
     web = site(served, {"/": (200, {}, "<p>qui</p>")})
     stopping = asyncio.Event()

@@ -254,12 +254,16 @@ def everywhere(address: str) -> bool:
 
 
 @asynccontextmanager
-async def alone(made: Any, profile: Path) -> AsyncIterator[Any]:
+async def alone(made: Any, request: pytest.FixtureRequest) -> AsyncIterator[Any]:
     """A page of the same binary, launched with the options its adapter launches it with — on a
     folder prepared as the adapter prepares its own — and **with no gate at all**: the
-    precondition of every «as the browser alone»."""
+    precondition of every «as the browser alone». **The folder of the profile is asked for by
+    name, and only when the browser is the profile's**: taken by a test of the empty browser, it
+    would carry the skip of a browser the test does not launch (decision 27, repaired on
+    2026-11-10)."""
     async with async_playwright() as playwright:
         if isinstance(made, AccountChrome):
+            profile: Path = request.getfixturevalue("profile")
             other = account.chrome(profile.with_name("alone"))
             folder = await other._folder()
             await other._prepare(folder, driven=True)
@@ -389,7 +393,7 @@ async def test_a_link_that_downloads_from_another_site_sends_nothing_there(
 
 
 async def test_what_a_site_receives_through_the_gate_is_what_the_browser_alone_sends(
-    browser: Any, profile: Path, served: list[Site]
+    browser: Any, request: pytest.FixtureRequest, served: list[Site]
 ) -> None:
     """Criterion 6: the same names and the same values, for a document asked by address, for
     the ``POST`` of a form and for the page after its redirect — and for a first request the
@@ -400,7 +404,7 @@ async def test_what_a_site_receives_through_the_gate_is_what_the_browser_alone_s
     a.pages[("GET", "/done")] = (200, HTML, "<p>done</p>")
     walk = ["GET /", "POST /send", "GET /done"]
 
-    async with alone(browser, profile) as page:
+    async with alone(browser, request) as page:
         await page.goto(a.origin + "/")
         await page.locator("#go").click()
         await page.get_by_text("done").wait_for(timeout=LONG * 1000)
@@ -433,7 +437,7 @@ CROSSED = {
 
 
 async def test_every_frame_of_the_page_loads_what_it_loads_with_no_gate(
-    browser: Any, profile: Path, served: list[Site]
+    browser: Any, request: pytest.FixtureRequest, served: list[Site]
 ) -> None:
     """The gate is told of a request with its frame, and nothing of its page: a frame of another
     site, the frames inside it, and a frame of the first site inside those are all **the
@@ -451,7 +455,7 @@ async def test_every_frame_of_the_page_loads_what_it_loads_with_no_gate(
     def asked() -> list[str]:
         return sorted([f"A {one}" for one in a.requests] + [f"OFF {one}" for one in off.requests])
 
-    async with alone(browser, profile) as page:
+    async with alone(browser, request) as page:
         await page.goto(a.origin + "/")
         await until(lambda: len(asked()) == whole, "the browser alone loaded every frame")
     bare = asked()
