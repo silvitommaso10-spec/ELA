@@ -10,8 +10,10 @@ the last test, and it is the one ``make check`` fails on.
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import sys
+from collections.abc import Iterable
 from pathlib import Path
 from types import ModuleType
 
@@ -367,3 +369,83 @@ def test_a_milestone_that_promises_a_payment_does_not_close_the_debt(
     (debt,) = generate_stato.dated_debts(tmp_path)
 
     assert debt.open
+
+
+# ----------------------------------------------------------------------------------------
+# What may change after the proof (decision 43 of the review after the red CI of 0bc3278)
+# ----------------------------------------------------------------------------------------
+
+GENERATOR = "generate_stato"
+LOADERS = frozenset({"import_module", "spec_from_file_location", "__import__", "run_path"})
+"""The calls that load a module by a name or a path written as a string."""
+
+
+def importers(paths: Iterable[Path]) -> list[Path]:
+    """The files among ``paths`` that load the generator of STATO: an ``import`` or a ``from …
+    import`` that names it, or a call that loads a module by a string that names it. A word in a
+    docstring is no import."""
+    found: list[Path] = []
+    for path in paths:
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Import):
+                named = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                named = [node.module or "", *(alias.name for alias in node.names)]
+            elif (
+                isinstance(node, ast.Call)
+                and getattr(node.func, "attr", getattr(node.func, "id", "")) in LOADERS
+            ):
+                named = [
+                    argument.value
+                    for argument in node.args
+                    if isinstance(argument, ast.Constant) and isinstance(argument.value, str)
+                ]
+            else:
+                continue
+            if any(GENERATOR in name for name in named):
+                found.append(path)
+                break
+    return found
+
+
+def what_the_proof_runs(root: Path) -> list[Path]:
+    """The code a proof by hand sees: every module of ``src/``, and every script of a proof."""
+    return [*sorted((root / "src").rglob("*.py")), *sorted((root / "scripts").glob("prova_*.py"))]
+
+
+def test_nothing_a_proof_runs_imports_the_generator_of_stato() -> None:
+    """Decision 43, which revises decision 87 of M13.10 openly in one point only: after the proof
+    of a branch only ``docs/`` and ``tests/`` change — **and ``scripts/generate_stato.py``**,
+    because nothing the proof ran loads it, so what the proof saw cannot change with it. The rest of
+    ``scripts/`` does not: a script of a proof imports its siblings."""
+    root = SCRIPT.parents[1]
+    looked = what_the_proof_runs(root)
+
+    assert len(looked) > 100 and any(path.name.startswith("prova_") for path in looked)
+    assert importers(looked) == []
+
+
+@pytest.mark.parametrize(
+    ("where", "written"),
+    [
+        ("scripts/prova_m99.py", "import generate_stato\n"),
+        ("scripts/prova_m99.py", "import generate_stato as stato\n"),
+        ("scripts/prova_m99.py", "from generate_stato import dated_debts\n"),
+        (
+            "src/ela/uno.py",
+            "import importlib\nimportlib.import_module('generate_stato')\n",
+        ),
+        (
+            "src/ela/uno.py",
+            "import importlib.util\n"
+            "importlib.util.spec_from_file_location('x', 'scripts/generate_stato.py')\n",
+        ),
+    ],
+)
+def test_a_module_or_a_script_of_a_proof_that_imports_it_is_found(
+    tmp_path: Path, where: str, written: str
+) -> None:
+    write(tmp_path / where, written)
+    write(tmp_path / "src" / "ela" / "due.py", '"""Read ``scripts/generate_stato.py``."""\n')
+
+    assert importers(what_the_proof_runs(tmp_path)) == [tmp_path / where]

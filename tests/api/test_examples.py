@@ -165,10 +165,12 @@ def test_every_example_explains_itself() -> None:
     brought the five of section 29 — two steps on one page, the same with a question between them,
     the stop inside a wait, the login from a phrase, and the message on WhatsApp with its
     placeholders; forty-four since the review of its implementation (decision 61), which took
-    WhatsApp out of that proof and its plan out of the repository.
+    WhatsApp out of that proof and its plan out of the repository; forty-eight since M13.13, which
+    brought the four of section 30 — a download as you that replaces a file, a download outside the
+    scope, an upload, and the same upload as you.
     """
     found = sorted(EXAMPLES.glob("*.json"))
-    assert len(found) == 44, [path.name for path in found]
+    assert len(found) == 48, [path.name for path in found]
     for path in found:
         plan = json.loads(path.read_text(encoding="utf-8"))
         assert NOTE in plan, path.name
