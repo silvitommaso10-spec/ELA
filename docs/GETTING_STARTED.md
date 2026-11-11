@@ -7417,6 +7417,160 @@ error browser.file_changed
 Dopo il passo 7 nella cartella della prova restano i due file — `da-una-frase.bin` e `da-caricare.txt` —: la prossima
 prova li toglie da sé, al passo 1.
 
+## 31. Haiku 4.5 fuori dal listino: la prova a mano di M14.6b
+
+> **Scritta con l'implementazione l'11 novembre 2026** (`milestones/M14.6b.md`, la bozza della SPEC e le risposte 24 e 28
+> della sua review), e `tests/docs/test_prova_m14_6b.py` tiene lo script allineato a questa sezione. La si fa **sul Mac,
+> senza il PC**, sul branch di M14.6b, con lo script `scripts/prova_m14_6b.py`.
+
+Da M14.6b **Haiku 4.5 non è nel listino di ELA** ([ADR 0067](adr/0067-three-models.md)): nessun profilo lo nominava da
+M14.6, e ora nemmeno la tabella dei modelli e dei prezzi. Per ELA il suo id è un suggerimento che non nomina niente: **un
+piano che lo scrive nel `model_hint` di uno step è negato prima della domanda**, perché il caso peggiore di quella chiamata
+non si sa dire, e la ragione dice quale id e dove sta. **Ciò che il mese di ottobre ha speso su di lui resta com'è
+scritto**: `ela spend` e i risultati di un task lo leggono con gli importi di quel giorno, senza riprezzarlo. Una rotta del
+`.env` che fissa quell'id ferma ELA all'avvio, con la variabile nominata: questo la prova non lo fa, lo prova la suite.
+
+**Che cosa serve**: la chiave del modello e il tetto, con almeno **0,508192 $** che restano nel mese — il caso peggiore di
+una chiamata al profilo economico —; ed ELA **riavviata dal branch**. **Lo script non tocca il `.env`, il database né
+`ela serve`**: legge ELA attraverso l'API e la CLI, come le altre prove. Stampa **PASSATO**, **FALLITO**, **SALTATO** o
+**FERMATO** per ogni passo, e scrive tutto in `~/Downloads/prova-m14.6b-<data>.txt`. Delle sezioni 23 e 28–30 usa
+`comando`, `atteso`, `occhio`, `schermo`, `spesa` e `costo`; e ha questi suoi:
+
+- **`ottobre`** cerca nel database, attraverso l'API, un task di ottobre 2026 con un risultato riuscito su
+  `claude-haiku-4-5-20251001` e un costo — i task del 7 ottobre della sezione 23 —; lo legge con
+  `uv run ela task results <id> --json`, e il modello e il costo che la CLI stampa devono essere quelli dell'API; e con
+  `uv run ela task show <id>`, che risponde con lo stato e non ha né modello né costo. Nel file scrive l'id, la data, il
+  modello e il costo; il testo del modello mai. **Se il database non ne ha uno, il passo è SALTATO**, con la ragione, e la
+  prova continua: una prova con un SALTATO non è passata, e ciò che si è visto lo scrive ADR 0067.
+- **`ricalcolo`** prende il risultato della chiamata del passo: i suoi token d'ingresso, cache compresa, stanno nella
+  fascia bassa di Haiku 5.5, e il costo che il libro ha scritto è quello che **la fascia bassa del listino** dà su quei
+  token — il listino, non la funzione che sceglie la fascia da sé.
+
+Ogni passo comincia leggendo `GET /spend`: la `spesa` di un passo dice che cosa è cambiato da lì.
+
+```
+uv run python scripts/prova_m14_6b.py
+```
+
+### 1. Prima
+
+Lo script controlla, e stampa **PASSATO** per ciascuno: il Mac è sull'ultimo commit del branch, con l'albero pulito; ELA
+risponde; il provider del modello ha una chiave, c'è un tetto, e restano almeno 0,508192 $. **Se qualcosa manca, la prova
+si ferma lì** — **FERMATO** —, con ciò che manca. Che il Core giri dal codice del branch lo dice il passo 3: su `main` lo
+stesso piano aspetterebbe una domanda, e l'`atteso` fallirebbe senza spendere niente.
+
+### 2. Il mese di ottobre, letto
+
+`ela spend` risponde, con il mese di oggi; poi il task di ottobre, letto come ELA lo ha scritto.
+
+<!-- prova: 2.comando -->
+```
+uv run ela spend
+```
+
+<!-- prova: 2.atteso -->
+```
+month
+spent
+reserved
+```
+
+<!-- prova: 2.ottobre -->
+```
+claude-haiku-4-5-20251001
+```
+
+### 3. Un piano che nomina Haiku 4.5
+
+Il piano di `docs/examples/ask-model-gone.json`: uno step `model.complete` con il `model_hint` uguale all'id di Haiku 4.5.
+ELA lo accetta e lo **nega al cancello, prima della domanda**: nessuna riga scritta, niente prenotato, niente mandato.
+
+<!-- prova: 3.comando -->
+```
+uv run ela task create "Haiku 4.5, che il listino non ha più" --json
+uv run ela task plan <id> --file docs/examples/ask-model-gone.json
+uv run ela task run <id>
+```
+
+<!-- prova: 3.atteso -->
+```
+outcome        denied
+reason         deny_by_cap: EXECUTING -> DENIED (this call cannot be bounded: provider.unknown_model_hint: no model for hint 'claude-haiku-4-5-20251001': it is the step's model_hint)
+state          DENIED
+steps handled  3f0d1a44-5b6c-4d7e-8f90-000000000005
+stopped step   —
+```
+
+<!-- prova: 3.spesa -->
+```
+speso invariato
+prenotato invariato
+```
+
+<!-- prova: 3.schermo -->
+```
+uv run ela task show <id>
+```
+
+<!-- prova: 3.occhio -->
+```
+Qui sopra, sullo schermo: la ragione del rifiuto dice quale id il piano nomina e che sta nel model_hint dello step. Leggendola, sapresti che cosa cambiare nel piano?
+```
+
+### 4. Una chiamata vera sulla rotta `routine`
+
+Il piano della sezione 23 per il profilo economico, che oggi è Haiku 5.5: la domanda nomina il caso peggiore della fascia
+alta, che la finestra meno l'uscita raggiunge sempre; il sì lo dà lo script; la chiamata parte, e il libro scrive il
+costo della fascia bassa, perché la domanda è corta.
+
+<!-- prova: 4.comando -->
+```
+uv run ela task create "Haiku 5.5, il profilo economico di oggi" --json
+uv run ela task plan <id> --file docs/examples/ask-model-routine.json
+uv run ela task run <id>
+uv run ela approvals
+```
+
+<!-- prova: 4.atteso -->
+```
+worst case            0.508192 USD, claude-haiku-5-5, up to 995904 tokens in and 4096 out
+left this month
+```
+
+<!-- prova: 4.comando -->
+```
+uv run ela task approve <id> --approval <approval-id>
+uv run ela task run <id>
+```
+
+<!-- prova: 4.atteso -->
+```
+outcome        completed
+reason         —
+state          COMPLETED
+steps handled  3f0d1a44-5b6c-4d7e-8f90-000000000003
+stopped step   —
+```
+
+<!-- prova: 4.costo -->
+```
+claude-haiku-5-5
+```
+
+<!-- prova: 4.ricalcolo -->
+```
+fascia bassa
+```
+
+<!-- prova: 4.spesa -->
+```
+speso cresciuto del costo
+prenotato invariato
+```
+
+La prova costa **una chiamata a Haiku 5.5**, frazioni di centesimo, con 0,508192 $ prenotati durante la chiamata. Dopo,
+non c'è niente da rimettere com'era: il `.env` non è cambiato.
+
 ## Dove guardare dopo
 
 - [`spec/ELA_spec.md`](spec/ELA_spec.md) — che cos'è ELA, per intero. È la fonte di verità.

@@ -387,10 +387,11 @@ async def test_a_step_whose_model_hint_names_no_model_is_denied_and_nothing_is_w
 
         assert run["outcome"] == "denied", run
         assert run["task"]["state"] == TaskState.DENIED.value
-        assert (
-            f"this call cannot be bounded: {PROVIDER_UNKNOWN_MODEL_HINT}: no model for hint "
-            f"{HAIKU_4_5_ID!r}: it is the step's model_hint" in run["reason"]
-        )
+        assert run["reason"] == (
+            f"deny_by_cap: EXECUTING -> DENIED (this call cannot be bounded: "
+            f"{PROVIDER_UNKNOWN_MODEL_HINT}: no model for hint {HAIKU_4_5_ID!r}: it is the step's "
+            "model_hint)"
+        ), "the line the guide's §31 expects at step 3"
         assert (await world.client.get(f"/tasks/{task_id}/results")).json() == []
         assert (await world.client.get("/spend")).json() == before
         assert (await world.client.get("/approvals")).json() == []
