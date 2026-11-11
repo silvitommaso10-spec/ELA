@@ -1046,7 +1046,14 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
 - **M13.13 — i file dal browser** (§19, §18). **Registrata il 2026-10-14**, dalla review della SPEC di M13.10
   (decisione 21): uno scaricamento è giudicato come un `fs.write`, un caricamento come un `fs.read`, con la
   domanda che nomina il file. **Subito dopo M13.10, prima di M13.11.** **Condizione d'ingresso**: il sito per il
-  caricamento, che Tommaso sceglie fra candidati guardati senza entrare.
+  caricamento, che Tommaso sceglie fra candidati guardati senza entrare. ***Annotato il 2026-11-11***: **il codice è
+  scritto** sul branch `m13.13-i-file-dal-browser` — quattro capability `HIGH`, `browser.download`,
+  `browser.upload` e le due con il profilo; lo scope è il file, il sito lo guarda il tool prima della domanda; la porta
+  degli scaricamenti e il caricamento per byte —, con [ADR 0066](adr/0066-browser-files.md), `Proposta` **fino alla
+  prova a mano**, che è la sezione 30 della guida con `scripts/prova_m13_13.py`. Il sito scelto è
+  `testpages.eviltester.com`. **Il debito di ADR 0065 §6 si decide alla fine del branch**, dopo la prova, con il conto
+  finale dei giri (decisione 43 della review dopo la CI rossa di `0bc3278`). La milestone resta `Proposta` fino alla
+  prova, come le tre riparazioni del suo branch.
 - **M13.9b — la pagina d'errore del browser non è un altro sito** (§19, §33; ADR 0064 §4). **Registrata il
   2026-10-14** dalla review dell'implementazione di M13.10 (decisione 57): con il confine dell'origine del sito,
   un sito che non risponde al login — il browser mostra la sua pagina d'errore, `chrome-error://chromewebdata/` —

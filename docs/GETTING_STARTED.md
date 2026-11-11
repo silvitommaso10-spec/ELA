@@ -7005,6 +7005,407 @@ SIGTERM
 
 Dopo il passo 5 ELA è ferma, e la prova finisce lì: ELA si riavvia a mano, come sempre.
 
+## 30. I file dal browser: la prova a mano di M13.13
+
+> **Scritta con l'implementazione il 10 novembre 2026** (`milestones/M13.13.md`, decisione 10 della SPEC e risposte 22 e
+> 23 della sua review), e `tests/docs/test_prova_m13_13.py` tiene lo script allineato a questa sezione. La si fa **sul
+> Mac, senza il PC**, sul branch di M13.13, con lo script `scripts/prova_m13_13.py`. **Nessun login e nessun vault**: i
+> due siti della prova non vogliono un account.
+
+Da M13.13 ELA **scarica un file** da un sito dentro la cartella che le hai dichiarato, e **dà a un sito un file** di
+quella cartella. Quattro capability, tutte `HIGH` — chiedono **a ogni uso**, e nessuna policy le copre —:
+`browser.download` e `browser.upload` nel browser vuoto di ELA, `browser.download_as_you` e `browser.upload_as_you` nel
+browser con il tuo profilo. **Lo scope è il file**, come per `fs.read` e `fs.write`: `ELA_FS_SCOPE`. Il sito lo guarda il
+tool, prima della domanda: uno che non è in `ELA_BROWSER_SITES` è rifiutato lì, senza spendere un sì.
+
+**La domanda nomina il file e il sito.** Di uno scaricamento dice il percorso intero del file e se lo **crea** o lo
+**sostituisce** — `overwrite` è un'asserzione nei due versi: un file che c'è con `false`, o che non c'è con `true`, è
+rifiutato prima della domanda —. Di un caricamento dice il percorso intero, **la dimensione e l'impronta sha256 del file
+com'è in quell'istante**: dopo il tuo sì ELA rilegge il file, e se non è più quello **non parte niente**. Alla pagina ELA
+dà i byte e il nome, mai il percorso. Un file scaricato arriva con il nome del piano — non con quello che sceglie il
+sito — e con i permessi `600`.
+
+**Che cosa serve**: in `ELA_BROWSER_SITES` `httpbin.org` e `testpages.eviltester.com` — la pagina di prova scelta per i
+caricamenti, che dice di sé di non tenere il file —: alla riga della sezione 28 si aggiunge quel sito, e i siti che
+c'erano restano.
+
+```
+ELA_BROWSER_SITES=["www.youtube.com","httpbin.org","accounts.google.com","news.ycombinator.com","testpages.eviltester.com"]
+```
+
+Poi `ELA_FS_ROOT` e `ELA_FS_SCOPE` come nella sezione 15, con lo scope `ELA`; il profilo del browser dichiarato e libero, come nella sezione 28; la chiave del modello e il tetto, per **una**
+pianificazione — il suo caso peggiore è 4,262144 $, come nella sezione 24 —; ed ELA **riavviata dal branch**. Lo script
+stampa **PASSATO**, **FALLITO**, **SALTATO** o **FERMATO** per ogni passo, e scrive tutto in
+`~/Downloads/prova-m13.13-<data>.txt`. Dei tipi delle sezioni 28 e 29 usa `comando`, `atteso`, `occhio`, `sì` e
+`schermo`; e ha questi suoi:
+
+- **`piano`** guarda il piano che il Planner ha scritto dalla frase del passo 2: dell'autore `MODEL`, con lo step della
+  riga e nessun altro — la capability, il sito, il percorso della pagina, il file —. Lo scrive nel file della prova. **Un
+  piano diverso chiude il passo**, FALLITO: il resto misurerebbe un'altra cosa.
+- **`domanda`** legge dall'API la domanda che il task aspetta e la confronta riga per riga: `capability`, il `file`
+  sotto la radice dichiarata, ciò che gli succede (`fa`, nella frase del tool), il `sito`, e — con `impronta` — **la
+  dimensione e lo sha256 che la domanda dice, contro quelli del file sul disco in quell'istante**. Oppure `nessuna`.
+- **`file`** guarda il disco sotto la radice dichiarata: un file c'è, con i suoi byte e i permessi `600`; o è
+  `assente`; o la cartella della prova tiene `solo` i nomi della riga.
+- **`scrive`** scrive un file di testo **dentro `ELA/prova-m13.13/`**, la cartella della prova, e in nessun altro posto.
+
+**Il percorso intero di un file non entra nel file della prova**: è dentro la tua home. Lo script lo scrive com'è nel
+piano, sotto la radice; intero lo vedi sullo schermo, dove un blocco `schermo` mostra la domanda prima che un `occhio` te
+la chieda.
+
+```
+uv run python scripts/prova_m13_13.py
+```
+
+### 1. Prima
+
+Lo script controlla, e stampa **PASSATO** per ciascuno: il Mac è sull'ultimo commit del branch, con l'albero pulito; ELA
+risponde e gira dal codice del branch; il provider del modello ha una chiave, c'è un tetto, e ciò che resta del mese
+basta per una pianificazione al caso peggiore; i due siti sono dichiarati; lo scope ammette `ELA/prova-m13.13/`; il
+profilo è dichiarato e libero. Poi **toglie dalla cartella della prova i file che una prova di prima ha lasciato** — solo
+i file regolari con i nomi dei file dei suoi piani, letti dai piani —, uno per uno, e lo dice. **Se nella cartella c'è
+altro** — un altro nome, una cartella, un link — la prova si ferma lì senza toccare niente, e te lo dice: lo guardi tu.
+**Se qualcosa manca, la prova si ferma lì** — **FERMATO** —, con ciò che manca.
+
+### 2. Uno scaricamento da una frase
+
+Una frase, e nessun piano scritto a mano: il Planner offre al modello ogni capability che ha un tool e un verifier, e le
+quattro nuove ci sono da sé. Prima la domanda della chiamata al modello, con il suo caso peggiore; poi il piano, che lo
+script confronta con la riga qui sotto; poi **la domanda dello scaricamento**, che guardi sullo schermo. Il file arriva
+con il nome del piano, 1024 byte, `600` — e nella cartella non resta nient'altro.
+
+<!-- prova: 2.comando -->
+```
+uv run ela task create "Scarica in ELA/prova-m13.13/da-una-frase.bin il file di https://httpbin.org/bytes/1024." --json
+uv run ela task plan <id>
+```
+
+<!-- prova: 2.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 2.sì -->
+```
+uv run ela task approve <id del figlio> --approval <approval-id>
+```
+
+<!-- prova: 2.comando -->
+```
+uv run ela task plan <id>
+```
+
+<!-- prova: 2.atteso -->
+```
+outcome planned
+```
+
+<!-- prova: 2.piano -->
+```
+browser.download httpbin.org /bytes/1024 ELA/prova-m13.13/da-una-frase.bin
+```
+
+<!-- prova: 2.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 2.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 2.domanda -->
+```
+capability browser.download
+file ELA/prova-m13.13/da-una-frase.bin
+fa creates a new file, with what the download brings
+sito httpbin.org
+```
+
+<!-- prova: 2.schermo -->
+```
+uv run ela approvals
+```
+
+<!-- prova: 2.occhio -->
+```
+Qui sopra, sullo schermo: la domanda di browser.download nomina il percorso intero di da-una-frase.bin dentro la tua cartella, dice che crea un file nuovo, e nomina il sito httpbin.org?
+```
+
+<!-- prova: 2.sì -->
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+<!-- prova: 2.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 2.atteso -->
+```
+outcome completed
+```
+
+<!-- prova: 2.file -->
+```
+ELA/prova-m13.13/da-una-frase.bin 1024 600
+ELA/prova-m13.13/ solo da-una-frase.bin
+```
+
+### 3. Con il tuo profilo, al posto del file di prima
+
+Da un piano, `browser.download_as_you` con `overwrite` vero: **la domanda dice che sostituisce** il file del passo 2.
+Mentre ELA scarica compare la finestra del suo browser: **finché c'è, non scrivere**. Dopo, il file ha 2048 byte e
+ancora `600`.
+
+<!-- prova: 3.comando -->
+```
+uv run ela task create --json "scaricare come me un file che sostituisce quello di prima"
+uv run ela task plan <id> --file docs/examples/download-as-you-replaces.json
+uv run ela task run <id>
+```
+
+<!-- prova: 3.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 3.domanda -->
+```
+capability browser.download_as_you
+file ELA/prova-m13.13/da-una-frase.bin
+fa overwrites a file that is already there, with what the download brings
+sito httpbin.org
+```
+
+<!-- prova: 3.sì -->
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+<!-- prova: 3.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 3.atteso -->
+```
+outcome completed
+```
+
+<!-- prova: 3.file -->
+```
+ELA/prova-m13.13/da-una-frase.bin 2048 600
+ELA/prova-m13.13/ solo da-una-frase.bin
+```
+
+### 4. Fuori dallo scope
+
+Un file sotto la radice ma **fuori da `ELA_FS_SCOPE`**. Si prova da tre assenze: il task è `DENIED` subito, **nessuna
+domanda** — nessun sì speso —, e nessun file.
+
+<!-- prova: 4.comando -->
+```
+uv run ela task create --json "scaricare un file fuori dallo scope"
+uv run ela task plan <id> --file docs/examples/download-outside-the-scope.json
+uv run ela task run <id>
+```
+
+<!-- prova: 4.atteso -->
+```
+outcome denied
+```
+
+<!-- prova: 4.domanda -->
+```
+nessuna
+```
+
+<!-- prova: 4.file -->
+```
+fuori-dallo-scope/prova-m13.13.bin assente
+```
+
+### 5. Un caricamento
+
+Lo script scrive un file di testo nella cartella della prova, e un piano lo dà alla pagina di prova di
+`testpages.eviltester.com`. **La domanda nomina il percorso, la dimensione e l'impronta**: lo script le confronta con il
+file sul disco, e tu le guardi sullo schermo. Quella pagina manda il file da sé appena il campo lo riceve, e mostra
+«Upload successful!» per quattro secondi dal gesto: il piano non ha un click, e lo step riesce solo se ELA ha visto quel
+testo.
+
+<!-- prova: 5.scrive -->
+```
+ELA/prova-m13.13/da-caricare.txt Un file della prova a mano di M13.13, con un testo neutro.
+```
+
+<!-- prova: 5.comando -->
+```
+uv run ela task create --json "caricare un file sul sito della prova"
+uv run ela task plan <id> --file docs/examples/upload-a-file.json
+uv run ela task run <id>
+```
+
+<!-- prova: 5.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 5.domanda -->
+```
+capability browser.upload
+file ELA/prova-m13.13/da-caricare.txt
+fa is read and given to the site: its name and its bytes leave this machine
+sito testpages.eviltester.com
+impronta ELA/prova-m13.13/da-caricare.txt
+```
+
+<!-- prova: 5.schermo -->
+```
+uv run ela approvals
+```
+
+<!-- prova: 5.occhio -->
+```
+Qui sopra, sullo schermo: la domanda di browser.upload nomina il percorso intero di da-caricare.txt, la sua dimensione (size) e la sua impronta (sha256), e il sito testpages.eviltester.com?
+```
+
+<!-- prova: 5.sì -->
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+<!-- prova: 5.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 5.atteso -->
+```
+outcome completed
+```
+
+<!-- prova: 5.comando -->
+```
+uv run ela task results <id>
+```
+
+<!-- prova: 5.atteso -->
+```
+gestures 1
+```
+
+### 6. Un caricamento con il tuo profilo
+
+Lo stesso file e la stessa pagina, con `browser.upload_as_you`: una capability sua, e una domanda sua. Compare la
+finestra del browser di ELA: **finché c'è, non scrivere**.
+
+<!-- prova: 6.comando -->
+```
+uv run ela task create --json "caricare come me un file sul sito della prova"
+uv run ela task plan <id> --file docs/examples/upload-as-you.json
+uv run ela task run <id>
+```
+
+<!-- prova: 6.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 6.domanda -->
+```
+capability browser.upload_as_you
+file ELA/prova-m13.13/da-caricare.txt
+fa is read and given to the site: its name and its bytes leave this machine
+sito testpages.eviltester.com
+impronta ELA/prova-m13.13/da-caricare.txt
+```
+
+<!-- prova: 6.sì -->
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+<!-- prova: 6.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 6.atteso -->
+```
+outcome completed
+```
+
+<!-- prova: 6.comando -->
+```
+uv run ela task results <id>
+```
+
+<!-- prova: 6.atteso -->
+```
+gestures 1
+```
+
+### 7. Il file cambiato fra la domanda e il sì
+
+Il piano del passo 5 un'altra volta. **Dopo la domanda, e prima del tuo sì, lo script cambia il file.** Il sì è speso, e
+lo step finisce con `browser.file_changed`: nessuna pagina aperta, nessun gesto, niente uscito. Il controllo
+dell'impronta è del tool, prima della pagina.
+
+<!-- prova: 7.comando -->
+```
+uv run ela task create --json "caricare un file che cambia dopo la domanda"
+uv run ela task plan <id> --file docs/examples/upload-a-file.json
+uv run ela task run <id>
+```
+
+<!-- prova: 7.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 7.domanda -->
+```
+capability browser.upload
+impronta ELA/prova-m13.13/da-caricare.txt
+```
+
+<!-- prova: 7.scrive -->
+```
+ELA/prova-m13.13/da-caricare.txt Cambiato dopo la domanda, prima del sì.
+```
+
+<!-- prova: 7.sì -->
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+<!-- prova: 7.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 7.atteso -->
+```
+outcome failed
+```
+
+<!-- prova: 7.comando -->
+```
+uv run ela task results <id>
+```
+
+<!-- prova: 7.atteso -->
+```
+gestures 0
+error browser.file_changed
+```
+
+Dopo il passo 7 nella cartella della prova restano i due file — `da-una-frase.bin` e `da-caricare.txt` —: la prossima
+prova li toglie da sé, al passo 1.
+
 ## Dove guardare dopo
 
 - [`spec/ELA_spec.md`](spec/ELA_spec.md) — che cos'è ELA, per intero. È la fonte di verità.
