@@ -23,7 +23,8 @@ from typing import Any
 
 import pytest
 
-from ela.providers.anthropic.models import MODELS
+from ela.providers.anthropic.models import HAIKU_5_5, MODELS
+from tests.domain.examples import HAIKU_4_5_ID
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "prova_m14_1.py"
@@ -169,6 +170,52 @@ def test_the_ctrl_c_is_said_after_the_claim_is_seen_and_before_the_silence_is_ch
     assert kinds.index("tace") < kinds.index("aspetta")
     (look,) = [block for block in marked()[6] if block.kind == "guarda"]
     assert look.lines == ["risultato STARTED su un nodo"]
+
+
+def never(*_: object, **__: object) -> Any:
+    raise AssertionError("the proof went past the check of its models")
+
+
+def test_a_section_that_names_a_model_the_list_has_not_stops_before_anything(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Decision 20 of M14.6b: §23 names the id of Haiku 4.5 in its ``costo`` lines, and ``MODELS``
+    no longer has it. ``main()`` stops before the world is asked anything — no call, no cap, no
+    file — and says that the proof is the record of 2026-10-07. Derived from the section and the
+    list, not from a flag: the section as it stands is the case."""
+    module = script()
+    monkeypatch.setattr(module, "preconditions", never)
+    monkeypatch.setattr(module.base, "Api", never)
+    out = tmp_path / "prova.txt"
+
+    code = module.main(["--out", str(out)], ask=never)
+
+    printed = capsys.readouterr().out
+    assert code == 1
+    assert HAIKU_4_5_ID in printed
+    assert "la registrazione del 2026-10-07" in printed
+    assert not out.exists()
+
+
+def test_a_section_with_the_models_of_today_goes_on_to_the_world(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The other value: the section with the models of today goes on, to the check of step 1."""
+    module = script()
+    today = tmp_path / "GETTING_STARTED.md"
+    today.write_text(guide().replace(HAIKU_4_5_ID, HAIKU_5_5), encoding="utf-8")
+    monkeypatch.setattr(module, "GUIDE", today)
+    asked: list[object] = []
+
+    def the_world(report: object) -> bool:
+        asked.append(report)
+        return False
+
+    monkeypatch.setattr(module, "preconditions", the_world)
+
+    module.main(["--out", str(tmp_path / "prova.txt")], ask=never)
+
+    assert len(asked) == 1
 
 
 def test_the_file_is_in_downloads_with_the_name_of_the_milestone() -> None:

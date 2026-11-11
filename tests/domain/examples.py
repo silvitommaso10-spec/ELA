@@ -175,6 +175,12 @@ WORST_CASE: Final = WorstCase(
 """The most one call to Haiku 4.5 can cost with 4096 tokens out: the window less the output in,
 the output out (M14.1, ADR 0057 §2)."""
 
+HAIKU_4_5_ID: Final = "claude-haiku-4-5-20251001"
+"""The id of Haiku 4.5 as the world still writes it — a row of October in a real database, a route
+somebody pinned in a real ``.env`` — and, since M14.6b (2026-11-11), no model of ELA's list: to ELA
+it is a hint that names nothing, like any other. Written here once, as a fact of the world and not
+as a model of the list; ``tests/providers/test_pricing.py`` asserts that it is not in the list."""
+
 RESERVATION: Final = Reservation(
     task_id=TASK_ID,
     step_id=STEP_ID,

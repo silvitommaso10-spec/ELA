@@ -29,6 +29,7 @@ from ela.domain import (
 from ela.executive.sessions import SessionRoom
 from ela.executive.spending import SpendingGate
 from ela.permissions import BROWSER_GUIDED, production_catalogue
+from ela.ports import ModelRouterPort, ProviderRegistryPort
 from ela.tasks.engine import TaskEngine
 from ela.testing.fakes import (
     FakeAgentSession,
@@ -122,10 +123,12 @@ def guided_world(
     sleep: Callable[[float], Awaitable[None]] = no_wait,
     worst: WorstCase | None = None,
     kind: SessionKind = EMPTY_SESSION,
+    routing: tuple[ModelRouterPort, ProviderRegistryPort] | None = None,
 ) -> GuidedWorld:
     """The tool with a room whose results hold the ``STARTED`` record the cap would have written
     for the step — ``reserved`` dollars, one call of ``fake-model`` at a time —, unless
-    ``reserved`` is ``None``."""
+    ``reserved`` is ``None``. ``routing`` is a router and its providers other than the fake's: the
+    real provider on a client double, for a refusal only the provider gives (M14.6b)."""
     repository, results = FakeTaskRepository(), FakeExecutionResultStore()
     gateway = FakeModelGateway()
     room = SessionRoom(
@@ -139,7 +142,7 @@ def guided_world(
         audit=FakeAuditLog(),
     )
     provider = FakeModelProvider(FakeClock(), FakeIdGenerator(), worst=worst)
-    router, providers = routing_for(provider)
+    router, providers = routing_for(provider) if routing is None else routing
     agents = (
         session
         if session is not None

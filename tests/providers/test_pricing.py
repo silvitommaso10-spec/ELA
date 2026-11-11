@@ -8,7 +8,15 @@ from decimal import Decimal
 import pytest
 
 from ela.providers.anthropic import pricing
-from ela.providers.anthropic.models import HAIKU_4_5, HAIKU_5_5, MODELS, OPUS_5_5, SONNET_5_5, Model
+from ela.providers.anthropic.models import (
+    HAIKU_4_5,
+    HAIKU_5_5,
+    MODELS,
+    OPUS_5_5,
+    SONNET_5_5,
+    Model,
+    model_for_hint,
+)
 from ela.providers.anthropic.pricing import (
     CURRENCY,
     PRICES,
@@ -17,6 +25,7 @@ from ela.providers.anthropic.pricing import (
     estimate_cost,
     worst_cost,
 )
+from tests.domain.examples import HAIKU_4_5_ID
 
 
 @pytest.mark.parametrize(
@@ -61,6 +70,14 @@ def test_money_is_decimal_not_float() -> None:
         assert isinstance(price.input, Decimal)
         assert isinstance(price.output, Decimal)
         assert isinstance(price.cache_read, Decimal)
+
+
+def test_the_id_of_haiku_4_5_the_world_still_holds_names_no_model_of_the_list() -> None:
+    """M14.6b (decision 5): out of ``MODELS`` and ``PRICES``, and no tombstone — the id a real
+    database and a real ``.env`` may still hold is a hint that names nothing, like any other."""
+    assert HAIKU_4_5_ID not in MODELS
+    assert HAIKU_4_5_ID not in PRICES
+    assert model_for_hint(HAIKU_4_5_ID) is None
 
 
 def test_every_model_ela_uses_has_a_price() -> None:

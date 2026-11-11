@@ -26,11 +26,15 @@ from ela.ports import (
     GUIDED_ROUTE_CHANGED,
     GUIDED_UNRESERVED,
     PROVIDER_UNAVAILABLE,
+    PROVIDER_UNKNOWN_MODEL_HINT,
     ROUTING_UNKNOWN_TASK_TYPE,
     SessionEnd,
     SessionHost,
     SessionPlan,
 )
+from ela.providers.anthropic.provider import PROVIDER_NAME
+from ela.providers.registry import ProviderRegistry
+from ela.routing import DEFAULT_ROUTES, ModelRouter, Route, RoutePolicy
 from ela.testing.fakes import FakeAgentSession, FakeAuditLog, FakeStop, finished
 from ela.tools import ARGUMENTS_INVALID
 from ela.tools.guided import (
@@ -40,10 +44,12 @@ from ela.tools.guided import (
     GUIDED_GESTURES_AUDITED,
     GUIDED_MAX_TOKENS,
     GUIDED_RESERVATIONS_CLOSED,
+    GUIDED_ROUTE,
     READ_DESCRIPTION,
     BrowserGuidedVerifier,
 )
-from tests.domain.examples import STEP_ID, TASK_ID
+from tests.domain.examples import HAIKU_4_5_ID, STEP_ID, TASK_ID
+from tests.providers.support import make_provider
 from tests.tools.guided import ARGUMENTS, MODEL, GuidedWorld, guided_world
 
 
@@ -110,6 +116,29 @@ async def test_a_provider_that_cannot_bound_one_call_refuses_the_session() -> No
     prospect = await world.tool.prospect(ARGUMENTS)
 
     assert prospect.refusal is not None and prospect.refusal.code == "provider.unavailable"
+
+
+async def test_a_route_whose_profile_names_no_model_is_refused_with_the_route_named() -> None:
+    """M14.6b (decision 7), at the call: the route of the session's task type pins the id of
+    Haiku 4.5, which a real ``.env`` may still write. The real provider refuses it before any call,
+    and the refusal says where the id is written — with the same words as ``model.complete``."""
+    provider, client = make_provider()
+    assert client is not None
+    registry = ProviderRegistry((provider,))
+    pinned = Route(providers=(PROVIDER_NAME,), profile=HAIKU_4_5_ID)
+    policy = RoutePolicy({**DEFAULT_ROUTES, GUIDED_ROUTE: pinned})
+    world = guided_world(routing=(ModelRouter(policy, registry), registry))
+
+    worst = await world.tool.worst_case(ARGUMENTS)
+    prospect = await world.tool.prospect(ARGUMENTS)
+
+    assert isinstance(worst, ErrorMetadata) and worst.code == PROVIDER_UNKNOWN_MODEL_HINT
+    assert worst.message == (
+        f"no model for hint {HAIKU_4_5_ID!r}: it is the profile of the route of task type "
+        f"{GUIDED_ROUTE!r} (ELA_MODEL_ROUTES)"
+    )
+    assert prospect.refusal is not None and prospect.refusal.message == worst.message
+    assert client.messages.calls == [], "never the network"
 
 
 async def test_a_cost_below_the_worst_case_of_one_call_is_refused_before_the_question() -> None:

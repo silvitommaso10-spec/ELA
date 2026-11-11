@@ -42,7 +42,8 @@ from ela.infrastructure.machine import (
     UnsupportedSpeech,
 )
 from ela.ports import SPEECH_NO_KEY
-from ela.providers.anthropic import AnthropicSettings
+from ela.providers.anthropic import PROVIDER_NAME, AnthropicSettings
+from ela.providers.anthropic.models import HAIKU_5_5, MODELS, PROFILES
 from ela.providers.elevenlabs import ElevenLabsSettings
 from ela.routing import RoutingSettings
 from ela.routing.policy import Route
@@ -60,6 +61,7 @@ from ela.tools import (
     VerifierRegistry,
 )
 from ela.tools.settings import VoiceSettings
+from tests.domain.examples import HAIKU_4_5_ID
 
 
 def config(directory: Path, **sections: object) -> NodeConfig:
@@ -176,6 +178,43 @@ def test_a_routing_table_it_cannot_use_stops_it_with_the_variable_named(tmp_path
             ),
             speech=FakeSpeech(),
         )
+
+
+def test_a_route_whose_profile_no_model_answers_stops_it_naming_what_exists(
+    tmp_path: Path,
+) -> None:
+    """M14.6b, decisions 7 and 21: the same check as the Core's, with the same function — a node
+    whose ``.env`` still pins the id of Haiku 4.5 stops at startup, not at every call."""
+    pinned = Route(providers=(PROVIDER_NAME,), profile=HAIKU_4_5_ID)
+    for routing, start in (
+        (
+            RoutingSettings(model_routes={"routine": pinned}),
+            "ELA_MODEL_ROUTES cannot be used: the route of task type 'routine' names the profile",
+        ),
+        (
+            RoutingSettings(model_default_route=pinned),
+            "ELA_MODEL_DEFAULT_ROUTE cannot be used: the default route names the profile",
+        ),
+    ):
+        with pytest.raises(ConfigurationError) as raised:
+            build_node(config(tmp_path, routing=routing), speech=FakeSpeech())
+
+        message = str(raised.value)
+        assert message.startswith(f"{start} {HAIKU_4_5_ID!r}, which no model answers.")
+        assert (
+            f"The profiles are {', '.join(sorted(PROFILES))}; "
+            f"the model ids are {', '.join(sorted(MODELS))}." in message
+        )
+
+
+def test_a_route_that_pins_a_model_of_the_list_builds_the_node(tmp_path: Path) -> None:
+    """The negative case: the id of Haiku 5.5, in both variables."""
+    today = Route(providers=(PROVIDER_NAME,), profile=HAIKU_5_5)
+    routing = RoutingSettings(model_routes={"routine": today}, model_default_route=today)
+
+    built = build_node(config(tmp_path, routing=routing), speech=FakeSpeech())
+
+    assert "model-complete" in {tool.name for tool in built.tools.tools()}
 
 
 def test_a_provider_with_no_key_is_not_a_broken_configuration(tmp_path: Path) -> None:

@@ -35,7 +35,9 @@ from ela.permissions import (
 )
 from ela.ports import ROUTING_EMPTY_ROUTES, ROUTING_UNKNOWN_PROVIDER
 from ela.providers.anthropic import PROVIDER_NAME
+from ela.providers.anthropic.models import HAIKU_5_5, MODELS, PROFILES
 from tests.composition.support import TOKEN, create_schema, database_url, declare
+from tests.domain.examples import HAIKU_4_5_ID
 
 ROUTER = "_router"
 """Where the tool and the verifier keep the router they were given.
@@ -280,6 +282,71 @@ async def test_an_empty_routing_table_stops_ela(
         await build(Settings.load())
 
     assert ROUTING_EMPTY_ROUTES in str(raised.value)
+
+
+def what_exists(message: str) -> bool:
+    """Whether a refusal names every profile and every model id there is, read from the provider's
+    tables and sorted — never written by hand (M14.6b, decision 7)."""
+    return (
+        f"The profiles are {', '.join(sorted(PROFILES))}; "
+        f"the model ids are {', '.join(sorted(MODELS))}." in message
+    )
+
+
+async def test_a_route_whose_profile_no_model_answers_stops_ela_naming_what_exists(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """M14.6b, decision 7, at startup: a ``.env`` that still pins the id of Haiku 4.5 stops ELA
+    with the variable, the task type and the profile it wrote, and what it could write instead.
+    A belief, not the defence: the defence is the refusal at the call (``tests/tools/``)."""
+    table = json.dumps({"routine": {"providers": [PROVIDER_NAME], "profile": HAIKU_4_5_ID}})
+    declare(monkeypatch, tmp_path, ELA_MODEL_ROUTES=table)
+    await create_schema(database_url(tmp_path))
+
+    with pytest.raises(ConfigurationError) as raised:
+        await build(Settings.load())
+
+    message = str(raised.value)
+    assert message.startswith(
+        f"ELA_MODEL_ROUTES cannot be used: the route of task type 'routine' names the profile "
+        f"{HAIKU_4_5_ID!r}, which no model answers."
+    )
+    assert what_exists(message)
+
+
+async def test_a_default_route_whose_profile_no_model_answers_stops_ela_the_same_way(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    route = json.dumps({"providers": [PROVIDER_NAME], "profile": HAIKU_4_5_ID})
+    declare(monkeypatch, tmp_path, ELA_MODEL_DEFAULT_ROUTE=route)
+    await create_schema(database_url(tmp_path))
+
+    with pytest.raises(ConfigurationError) as raised:
+        await build(Settings.load())
+
+    message = str(raised.value)
+    assert message.startswith(
+        f"ELA_MODEL_DEFAULT_ROUTE cannot be used: the default route names the profile "
+        f"{HAIKU_4_5_ID!r}, which no model answers."
+    )
+    assert what_exists(message)
+
+
+async def test_a_route_that_pins_a_model_of_the_list_starts(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The negative case: the same two variables with the id of Haiku 5.5 build ELA."""
+    route = {"providers": [PROVIDER_NAME], "profile": HAIKU_5_5}
+    declare(
+        monkeypatch,
+        tmp_path,
+        ELA_MODEL_ROUTES=json.dumps({"routine": route}),
+        ELA_MODEL_DEFAULT_ROUTE=json.dumps(route),
+    )
+    await create_schema(database_url(tmp_path))
+
+    ela = await build(Settings.load())
+    await ela.aclose()
 
 
 async def test_a_refused_configuration_leaves_no_connection_open(

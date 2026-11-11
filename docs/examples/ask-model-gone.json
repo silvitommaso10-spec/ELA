@@ -1,0 +1,33 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M14.6b (GETTING_STARTED §31, passo 3): uno step che nomina un",
+    "modello che il listino di ELA non ha più. \"model_hint\" è l'id di Haiku 4.5, uscito dal listino",
+    "con M14.6b: per ELA è un suggerimento che non nomina niente, come qualunque altro (ADR 0022 §3).",
+    "ELA accetta il piano, perché il Planner e la strada a mano non filtrano i suggerimenti, e lo",
+    "nega al cancello, prima della domanda: una chiamata di cui il provider non sa dire il caso",
+    "peggiore non si fa (ADR 0057 §2). Nessuna riga scritta, niente prenotato, niente mandato; la",
+    "ragione nomina l'id e dice che sta nel model_hint dello step.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8): JSON non ha commenti."
+  ],
+  "goal": "chiedere una cosa a un modello che il listino non ha più",
+  "steps": [
+    {
+      "id": "3f0d1a44-5b6c-4d7e-8f90-000000000005",
+      "goal": "farsi dire in una riga che cosa fa un listino dei prezzi",
+      "required_capabilities": [
+        "model.complete"
+      ],
+      "arguments": {
+        "input": "In una riga: a che cosa serve un listino dei prezzi?",
+        "purpose": "un modello fuori dal listino nella prova di M14.6b",
+        "model_hint": "claude-haiku-4-5-20251001"
+      },
+      "risk": "MEDIUM",
+      "expected_result": "nessuna: il cancello la nega prima della domanda",
+      "success_conditions": [
+        "model.answered",
+        "model.routed_as_asked"
+      ]
+    }
+  ]
+}

@@ -33,7 +33,7 @@ from ela.composition import Ela
 from ela.composition.settings import Settings
 from ela.domain import TaskState
 from ela.executive.spending import CAP_VARIABLE, month_of
-from ela.ports import PROVIDER_UNAVAILABLE
+from ela.ports import PROVIDER_UNAVAILABLE, PROVIDER_UNKNOWN_MODEL_HINT
 from ela.providers.anthropic import AnthropicGateway
 from ela.providers.anthropic.models import model_for_hint
 from ela.routing.settings import RoutingSettings
@@ -41,11 +41,14 @@ from ela.tools import CREATES, OVERWRITES, READS
 from ela.tools.guided import GUIDED_MAX_TOKENS, GUIDED_ROUTE
 from ela.tools.settings import MAX_SPOKEN_CHARACTERS
 from tests.api.reasons import example, opened
+from tests.domain.examples import HAIKU_4_5_ID
 from tests.providers.support import SECRET
 
 EXAMPLES = Path(__file__).resolve().parents[2] / "docs" / "examples"
 EXAMPLE = EXAMPLES / "first-task.json"
 ASK_MODEL = EXAMPLES / "ask-model.json"
+GONE = EXAMPLES / "ask-model-gone.json"
+"""The plan of the hand test of M14.6b: a ``model_hint`` naming a model the list no longer has."""
 SPEAK_ON_A_NODE = EXAMPLES / "speak-on-a-node.json"
 SPEAK_TO_THE_END = EXAMPLES / "speak-on-a-node-to-the-end.json"
 COMPANION = EXAMPLES / "companion.json"
@@ -167,10 +170,12 @@ def test_every_example_explains_itself() -> None:
     placeholders; forty-four since the review of its implementation (decision 61), which took
     WhatsApp out of that proof and its plan out of the repository; forty-eight since M13.13, which
     brought the four of section 30 — a download as you that replaces a file, a download outside the
-    scope, an upload, and the same upload as you.
+    scope, an upload, and the same upload as you; forty-nine since M14.6b, which brought the plan of
+    section 31 that ELA accepts and denies at the gate: a step whose model_hint names a model the
+    list no longer has.
     """
     found = sorted(EXAMPLES.glob("*.json"))
-    assert len(found) == 48, [path.name for path in found]
+    assert len(found) == 49, [path.name for path in found]
     for path in found:
         plan = json.loads(path.read_text(encoding="utf-8"))
         assert NOTE in plan, path.name
@@ -357,6 +362,38 @@ async def test_with_a_cap_and_no_key_it_is_denied_as_a_call_nobody_can_bound(
 
         assert run["outcome"] == "denied"
         assert f"this call cannot be bounded: {PROVIDER_UNAVAILABLE}: " in run["reason"]
+
+
+async def test_a_step_whose_model_hint_names_no_model_is_denied_and_nothing_is_written(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """M14.6b, decision 6, through the whole pipeline: ``ask-model-gone.json`` pins the id of
+    Haiku 4.5 in its step's ``model_hint``. ELA accepts the plan — neither the Planner nor the hand
+    route filter a hint (ADR 0022 §3) — and the gate denies it before the question, because the
+    provider cannot bound it (ADR 0057 §2). No ``STARTED``, no reservation, no question, nothing
+    sent: a ``STARTED`` comes before the call, and ``tests/conftest.py`` makes httpx's network
+    transports unusable. The reason names the id and where it is written."""
+    async with opened(
+        monkeypatch, tmp_path, ELA_SPENDING_CAP_USD="5", ELA_ANTHROPIC_API_KEY=SECRET
+    ) as world:
+        plan = example(GONE.name)
+        assert plan["steps"][0]["arguments"]["model_hint"] == HAIKU_4_5_ID
+        task_id = (await world.client.post("/tasks", json={"text": GONE.name})).json()["id"]
+        planned = await world.client.post(f"/tasks/{task_id}/plan", json=plan)
+        assert planned.status_code == 200, planned.text
+        before = (await world.client.get("/spend")).json()
+
+        run = (await world.client.post(f"/tasks/{task_id}/run")).json()
+
+        assert run["outcome"] == "denied", run
+        assert run["task"]["state"] == TaskState.DENIED.value
+        assert (
+            f"this call cannot be bounded: {PROVIDER_UNKNOWN_MODEL_HINT}: no model for hint "
+            f"{HAIKU_4_5_ID!r}: it is the step's model_hint" in run["reason"]
+        )
+        assert (await world.client.get(f"/tasks/{task_id}/results")).json() == []
+        assert (await world.client.get("/spend")).json() == before
+        assert (await world.client.get("/approvals")).json() == []
 
 
 # ----------------------------------------------------------------------------------------
