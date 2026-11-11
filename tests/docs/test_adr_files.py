@@ -51,10 +51,24 @@ def revised_by_their_state(texts: dict[str, str]) -> set[str]:
     return {number for number, text in texts.items() if REVISED_MARK in status_of(text)}
 
 
-def test_it_is_a_proposal_until_the_proof_of_its_branch() -> None:
+PROOF_FILE = "`~/Downloads/prova-m13.13-20261111-124909.txt`"
+PROVEN_AT = "`ead73aa`"
+
+
+def test_it_is_accepted_by_the_proof_of_its_branch_with_the_file_and_the_commit() -> None:
+    """Decision 51 of M13.13: Accettata with a commit of its own once the proof passed on the last
+    commit of the branch — the file of the proof and that commit on the state line; what the proof
+    saw and who saw it, the verifier for the site's confirmation and Tommaso for the two questions;
+    and the mark of the revised rows it carries. Proposta until then, and the line still says so."""
     said = " ".join(status_of(adr_text()).split())
-    assert said.startswith("Proposta il **2026-11-03**")
+
+    assert said.startswith("Accettata il **2026-11-11**")
     assert "la sezione 30 di `docs/GETTING_STARTED.md`" in said
+    assert PROOF_FILE in said and PROVEN_AT in said
+    assert "«Upload successful!»" in said and "il verifier `browser.expect_visible`" in said
+    assert "ai passi 2 e 5" in said and "sullo schermo" in said
+    assert "**Le «Righe riviste» che questo ADR porta sono già scritte**" in said
+    assert "Proposta il **2026-11-03**" in said
 
 
 def test_the_adrs_it_revises_say_so_on_their_state_line_and_no_other_does() -> None:

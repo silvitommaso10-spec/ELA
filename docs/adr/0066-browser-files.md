@@ -1,8 +1,22 @@
 # 0066. I file dal browser, e la pagina del browser che non è un sito
 
-- **Stato:** Proposta il **2026-11-03**, con l'implementazione del branch `m13.13-i-file-dal-browser` — M13.9b,
-  M13.9c, M13.10b e M13.13 —, per diventare Accettata con un commit suo quando la prova a mano — la sezione 30 di
-  `docs/GETTING_STARTED.md` — sarà passata sull'ultimo commit del branch (decisione 11 del branch).
+- **Stato:** Accettata il **2026-11-11**, con un commit suo: la prova a mano — la sezione 30 di
+  `docs/GETTING_STARTED.md`, con `scripts/prova_m13_13.py` — è passata sul Mac, sul branch e prima del merge, a
+  `ead73aa`, l'ultimo commit del branch su `origin`, con l'albero pulito (`~/Downloads/prova-m13.13-20261111-124909.txt`:
+  42 PASSATI, tutti al primo giro, 0 FALLITI, 0 GUARDATI con un no, 0 SALTATI — decisione 51 di
+  `docs/milestones/M13.13.md`). **Che cosa la prova ha visto, e chi l'ha visto, scritto com'è**: la conferma del sito,
+  «Upload successful!», ai passi 5 e 6 l'ha vista il verifier `browser.expect_visible`, perché lo step è COMPLETED; il
+  file della prova riporta l'esito, non il testo. Le due domande che la prova mette all'occhio, ai passi 2 e 5 — quella
+  di `browser.download`, con il percorso intero del file, che lo crea, e il sito; quella di `browser.upload`, con il
+  percorso intero, la dimensione, l'impronta e il sito —, Tommaso le ha guardate sullo schermo, e la risposta è stata
+  sì; le altre domande della prova le ha confrontate lo script con l'API e con il disco. **Le «Righe riviste» che
+  questo ADR porta sono già scritte**, ciascuna con il suo marchio sulla riga «Stato:» dell'ADR che rivede — ADR 0047,
+  ADR 0052, ADR 0063, ADR 0064 —; quella di ADR 0065 §6 si scrive alla fine del branch, con l'esito del debito
+  (decisioni 44 e 52). Proposta il **2026-11-03**, con l'implementazione del branch `m13.13-i-file-dal-browser` —
+  M13.9b, M13.9c, M13.10b e M13.13 —, per diventare Accettata con un commit suo quando quella prova fosse passata
+  sull'ultimo commit del branch (decisione 11 del branch). *`ead73aa` era l'ultimo commit del branch quando la prova è
+  girata: dopo, per la decisione 50, il branch porta solo `docs/`, `tests/` e `scripts/generate_stato.py`, che né `src/`
+  né gli script della prova importano (decisione 43) — niente di ciò che la prova esercita.*
 - **Data:** 2026-11-03
 - **Riferimenti spec:** §19, §33, §57, §58, §65
 - **Milestone:** [M13.13](../milestones/M13.13.md), con [M13.9b](../milestones/M13.9b.md),
