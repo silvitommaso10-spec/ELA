@@ -93,6 +93,14 @@ branch; un branch di sola registrazione comincia con `docs-` e non porta codice.
   ***Dal 2026-11-10*** (decisione 35 di M13.13): i browser di questa macchina li trova da sé, e ciò
   che resta diverso dal runner è nel docstring di `tests/foreign_machine.py`, con la data — i saltati
   si confrontano lista per lista, file per file, mai nei totali.
+- **Dopo un push si lavora pure in locale, ma non si pusha di nuovo finché il giro di quel push non è
+  finito e letto sui tre job.** Un giro annullato da un push non è una verifica: un rosso che nessuno ha
+  visto non conta come verde. E la trappola è tolta: in `.github/workflows/ci.yml` `cancel-in-progress`
+  è `false`, e un giro partito finisce sempre — lo tiene `tests/docs/test_adr_ci_runner.py`, con il suo
+  caso negativo.
+  ***Scritta il 2026-11-11*** (decisione 2 di M14.6b): era la decisione 26 di M13.13, per quel branch
+  soltanto (`docs/milestones/M13.13.md`). Il 2026-11-03 un giro che sarebbe stato rosso, a `e072864`, è
+  stato annullato dal push di `56c672c` dieci minuti dopo, e nessuno l'ha visto.
 - **Un test afferma solo ciò di cui ha costruito le precondizioni.** Se gli serve una macchina
   vera, la dichiara con uno `skipif`, che compare nel riepilogo — un `if` dentro il test no
   (ADR 0031 §6). Una precondizione che non si può costruire dichiarando il sistema si costruisce

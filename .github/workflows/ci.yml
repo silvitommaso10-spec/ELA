@@ -4,9 +4,11 @@ on:
   push:
   pull_request:
 
+# A run that started always finishes (CLAUDE.md, decision 2 of M14.6b): a run a push cancels is a
+# verification nobody saw, and on 2026-11-03 one that would have been red was cancelled that way.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   check:
