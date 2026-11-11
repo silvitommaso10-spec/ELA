@@ -88,7 +88,10 @@ cov-critical: test
 # l'altra metà della matrice — `tests/foreign_machine.py` dice cosa finge e, soprattutto, **cosa
 # non può riprodurre**. Non entra in `make check`. Dal 2026-09-18 non è più il controllo prima di
 # un push: il controllo Linux è la CI sul branch, e il merge la vuole verde su entrambi i runner
-# all'ultimo commit. Serve a riprodurre qui una CI rossa su ubuntu.
+# all'ultimo commit. Serve a riprodurre qui una CI rossa su ubuntu. Dal 2026-11-10 il plugin dice da
+# sé dove sono i browser di questa macchina, se `PLAYWRIGHT_BROWSERS_PATH` non c'è
+# (tests/test_foreign_machine_browsers.py): prima andava messa a mano, o 104 test del browser vuoto
+# cadevano per conto loro.
 check-linux:
 	PYTHONPATH=. $(UV) run pytest -p tests.foreign_machine
 	$(COVERAGE_CRITICAL)

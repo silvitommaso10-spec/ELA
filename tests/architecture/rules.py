@@ -744,6 +744,38 @@ PROFILE_FIELD = "browser_profile_dir"
 PROFILE_READERS = frozenset(
     {Path(COMPOSITION_DIR) / "settings.py", Path(COMPOSITION_DIR) / "root.py"}
 )
+#: Rule 72 (M13.9c, ADR 0066 §3): the vault's program is launched by the vault's adapter alone,
+#: with its closed list of commands (ADR 0063 §2) — a program of the terminal is launched with the
+#: arguments of a plan, and the settings refuse a configuration that makes the vault's program one
+#: of the terminal's. The line that declares it is :data:`VAULT_FIELD`; it is named by the settings,
+#: which declare and check it, and by the composition root — :data:`VAULT_READERS` —, which hands it
+#: to :data:`VAULT_RECEIVERS` and to nothing else: the adapter, which launches it; the vault's
+#: door, which fixes its identity and launches nothing (a tool launches no process: rule 32); and
+#: **the terminal's table of programs, which is told it so as to refuse it at every launch**
+#: (decision 28 of the review after the red CI of ``56c672c``: the check of the start-up is a
+#: belief about the launch). Each receiver is named by its class and its constructor — two of the
+#: three are called ``fixed``, and a name alone would let any ``fixed`` in.
+VAULT_FIELD = "vault_program"
+VAULT_READERS = frozenset(
+    {Path(COMPOSITION_DIR) / "settings.py", Path(COMPOSITION_DIR) / "root.py"}
+)
+VAULT_ROOT = Path(COMPOSITION_DIR) / "root.py"
+VAULT_RECEIVERS = frozenset({"BitwardenVault", "VaultDoor.fixed", "Programs.fixed"})
+#: Rule 73 (M13.13, ADR 0066): the files of a page, as far as a static test sees them. Under
+#: :data:`MACHINE_ADAPTER_DIR`, a call of :data:`FILE_GIVING_CALL` is handed **one payload of
+#: bytes** — a dictionary written there, with the key :data:`BYTES_KEY` — and never a path or a
+#: list of paths: a path given to the engine is a file the engine reads by itself, whatever ELA
+#: read when it asked. And :data:`DOOR_COMMAND` is sent **with the behaviour written beside it**,
+#: one of :data:`DOOR_BEHAVIOURS`: never ``allow``, which writes under the name the site chooses
+#: and overwrites in silence (measure (c) of M13.10), never ``default``, never a dictionary built
+#: elsewhere, which nobody reading the call can check. **What the rule cannot see**: that the
+#: folder is the one of the target, and that the door is closed again — held by the tests of the
+#: behaviour on the real browsers.
+FILE_GIVING_CALL = "set_input_files"
+BYTES_KEY = "buffer"
+DOOR_COMMAND = "Browser.setDownloadBehavior"
+DOOR_BEHAVIOUR_KEY = "behavior"
+DOOR_BEHAVIOURS = frozenset({"allowAndName", "deny"})
 #: Rule 70 (M13.4f, ADR 0064): the gate of the browser **looks at** the requests the browser makes,
 #: and makes none in its place. Until M13.4f it was a route of Playwright's that fetched the
 #: document of the main frame itself and handed it to the page: the driver chose the cookies of
@@ -1877,6 +1909,105 @@ def _names_the_profile(node: ast.AST) -> bool:
     return isinstance(node, ast.Constant) and node.value == PROFILE_FIELD
 
 
+def check_the_vault_s_program_is_its_adapter_s(pkg_root: Path) -> list[Violation]:
+    """Rule 72: the vault's program reaches its adapter, and its door, and nothing else (M13.9c).
+
+    Reported: :data:`VAULT_FIELD` as an attribute, a name, a parameter, a keyword or a string,
+    outside :data:`VAULT_READERS`; and in :data:`VAULT_ROOT`, a call that is handed the field — or a
+    name the root bound to it — and whose callee is not one of :data:`VAULT_RECEIVERS`. A heuristic
+    on a name, like rule 69: no other thing in ELA is called that.
+    """
+    rule = "the-vault-s-program-is-its-adapter-s"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        where = path.relative_to(pkg_root)
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        if where not in VAULT_READERS:
+            found.extend(
+                Violation(rule, name, VAULT_FIELD, getattr(node, "lineno", 0))
+                for node in ast.walk(tree)
+                if _names_the_vault_program(node)
+            )
+        elif where == VAULT_ROOT:
+            found.extend(_handed_elsewhere(rule, name, tree))
+    return found
+
+
+def _names_the_vault_program(node: ast.AST) -> bool:
+    if isinstance(node, ast.Attribute):
+        return node.attr == VAULT_FIELD
+    if isinstance(node, ast.Name):
+        return node.id == VAULT_FIELD
+    if isinstance(node, (ast.arg, ast.keyword)):
+        return node.arg == VAULT_FIELD
+    return isinstance(node, ast.Constant) and node.value == VAULT_FIELD
+
+
+def _handed_elsewhere(rule: str, module: str, tree: ast.AST) -> list[Violation]:
+    """The calls of the composition root that are handed the vault's program and are not one of
+    :data:`VAULT_RECEIVERS`.
+
+    «Handed» is an argument that names the field, or a name the root bound to it — however many
+    names it went through —, anywhere inside the argument **but not inside a call or a lambda in
+    it**: those are calls of their own, judged by their own callee. So ``to_thread(lambda:
+    Programs.fixed(entries, never=program))`` hands it to ``Programs.fixed``, and ``Other(str(
+    program))`` hands it to ``str`` — which is not a receiver."""
+    holders: set[str] = set()
+
+    def carries(value: ast.AST) -> bool:
+        todo = [value]
+        while todo:
+            node = todo.pop()
+            if isinstance(node, (ast.Call, ast.Lambda)):
+                continue
+            if _names_the_vault_program(node) or (
+                isinstance(node, ast.Name) and node.id in holders
+            ):
+                return True
+            todo.extend(ast.iter_child_nodes(node))
+        return False
+
+    assignments = [node for node in ast.walk(tree) if isinstance(node, ast.Assign)]
+    grew = True
+    while grew:
+        grew = False
+        for node in assignments:
+            if not carries(node.value):
+                continue
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id not in holders:
+                    holders.add(target.id)
+                    grew = True
+
+    found: list[Violation] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        handed = [*node.args, *(keyword.value for keyword in node.keywords)]
+        if not any(carries(value) for value in handed):
+            continue
+        called = _called(node.func)
+        if called not in VAULT_RECEIVERS:
+            found.append(Violation(rule, module, called or VAULT_FIELD, node.lineno))
+    return found
+
+
+def _called(callee: ast.AST) -> str:
+    """How a call names what it calls: ``Name``, or ``Owner.name`` for a method of a named
+    owner — the last two parts of a longer chain."""
+    if isinstance(callee, ast.Name):
+        return callee.id
+    if isinstance(callee, ast.Attribute):
+        owner = callee.value
+        if isinstance(owner, ast.Name):
+            return f"{owner.id}.{callee.attr}"
+        if isinstance(owner, ast.Attribute):
+            return f"{owner.attr}.{callee.attr}"
+        return callee.attr
+    return ""
+
+
 def check_the_gate_looks_and_does_not_redo(pkg_root: Path) -> list[Violation]:
     """Rule 70: the browser's adapter looks at a request, and never makes one (M13.4f, ADR 0064).
 
@@ -1906,6 +2037,62 @@ def check_the_gate_looks_and_does_not_redo(pkg_root: Path) -> list[Violation]:
                     if command in node.value
                 )
     return found
+
+
+def check_a_file_is_given_as_bytes_and_a_download_is_named(pkg_root: Path) -> list[Violation]:
+    """Rule 73: a page is given bytes, and a download a name of the browser's (M13.13, ADR 0066).
+
+    Reported, under :data:`MACHINE_ADAPTER_DIR`: a call of :data:`FILE_GIVING_CALL` whose
+    arguments are not exactly one dictionary written there with the key :data:`BYTES_KEY`; and
+    every text that names :data:`DOOR_COMMAND` unless it is the first argument of a call whose
+    second is a dictionary written there, with :data:`DOOR_BEHAVIOUR_KEY` one of
+    :data:`DOOR_BEHAVIOURS` — a docstring too, as for rule 70: the command is named where it is
+    sent, with what it is sent with. A heuristic on two names, like rule 70.
+    """
+    rule = "a-file-is-given-as-bytes-and-a-download-is-named"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root / MACHINE_ADAPTER_DIR):
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        sent_well: set[int] = set()
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if isinstance(node.func, ast.Attribute) and node.func.attr == FILE_GIVING_CALL:
+                given = [*node.args, *(keyword.value for keyword in node.keywords)]
+                if len(given) != 1 or BYTES_KEY not in _written_keys(given[0]):
+                    found.append(Violation(rule, name, f".{FILE_GIVING_CALL}(", node.lineno))
+            if node.args and _is_the_text(node.args[0], DOOR_COMMAND):
+                said = _written_keys(node.args[1]) if len(node.args) == 2 else {}
+                behaviour = said.get(DOOR_BEHAVIOUR_KEY)
+                if isinstance(behaviour, ast.Constant) and behaviour.value in DOOR_BEHAVIOURS:
+                    sent_well.add(id(node.args[0]))
+        found.extend(
+            Violation(rule, name, DOOR_COMMAND, node.lineno)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and DOOR_COMMAND in node.value
+            and id(node) not in sent_well
+        )
+    return found
+
+
+def _is_the_text(node: ast.expr, text: str) -> bool:
+    return isinstance(node, ast.Constant) and node.value == text
+
+
+def _written_keys(node: ast.expr) -> dict[str, ast.expr]:
+    """The keys of a dictionary written where it is used, with their values; none for anything
+    else — a name, a call, a dictionary that unpacks another."""
+    if not isinstance(node, ast.Dict):
+        return {}
+    keys: dict[str, ast.expr] = {}
+    for key, value in zip(node.keys, node.values, strict=True):
+        if not isinstance(key, ast.Constant) or not isinstance(key.value, str):
+            return {}
+        keys[key.value] = value
+    return keys
 
 
 def check_named_reaches_the_tool_only(pkg_root: Path) -> list[Violation]:
@@ -4089,6 +4276,10 @@ RULES: dict[str, Rule] = {
     "the-profile-s-folder-is-its-adapter-s": check_the_profile_s_folder_is_its_adapter_s,
     "the-gate-looks-and-does-not-redo": check_the_gate_looks_and_does_not_redo,
     "named-reaches-the-tool-only": check_named_reaches_the_tool_only,
+    "the-vault-s-program-is-its-adapter-s": check_the_vault_s_program_is_its_adapter_s,
+    "a-file-is-given-as-bytes-and-a-download-is-named": (
+        check_a_file_is_given_as_bytes_and_a_download_is_named
+    ),
 }
 
 
@@ -4598,6 +4789,60 @@ CONSTANTS: tuple[Constant, ...] = (
     Constant("a-policy-is-born-at-its-route", "TOOLS_DIR", DETECTOR),
     Constant(
         "a-policy-is-born-at-its-route",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # a-file-is-given-as-bytes-and-a-download-is-named (rule 73, M13.13)
+    Constant("a-file-is-given-as-bytes-and-a-download-is-named", "MACHINE_ADAPTER_DIR", DETECTOR),
+    Constant("a-file-is-given-as-bytes-and-a-download-is-named", "FILE_GIVING_CALL", DETECTOR),
+    Constant("a-file-is-given-as-bytes-and-a-download-is-named", "DOOR_COMMAND", DETECTOR),
+    Constant(
+        "a-file-is-given-as-bytes-and-a-download-is-named",
+        "BYTES_KEY",
+        EXEMPTION,
+        adr="ADR 0066",
+    ),
+    Constant(
+        "a-file-is-given-as-bytes-and-a-download-is-named",
+        "DOOR_BEHAVIOUR_KEY",
+        EXEMPTION,
+        adr="ADR 0066",
+    ),
+    Constant(
+        "a-file-is-given-as-bytes-and-a-download-is-named",
+        "DOOR_BEHAVIOURS",
+        EXEMPTION,
+        by=EACH,
+        adr="ADR 0066",
+    ),
+    Constant(
+        "a-file-is-given-as-bytes-and-a-download-is-named",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # the-vault-s-program-is-its-adapter-s (rule 72, M13.9c)
+    Constant("the-vault-s-program-is-its-adapter-s", "VAULT_FIELD", DETECTOR),
+    Constant("the-vault-s-program-is-its-adapter-s", "VAULT_ROOT", DETECTOR),
+    Constant(
+        "the-vault-s-program-is-its-adapter-s",
+        "VAULT_RECEIVERS",
+        EXEMPTION,
+        by=EACH,
+        adr="ADR 0066",
+    ),
+    Constant(
+        "the-vault-s-program-is-its-adapter-s",
+        "VAULT_READERS",
+        EXEMPTION,
+        by=EACH,
+        adr="ADR 0066",
+    ),
+    Constant(
+        "the-vault-s-program-is-its-adapter-s",
         "ROOT_PACKAGE",
         SUBJECT,
         why=INEVITABLE,

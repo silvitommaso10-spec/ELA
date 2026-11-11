@@ -25,6 +25,7 @@ and here it is wider, because the root is the user's own house and not a folder 
 
 from __future__ import annotations
 
+import hashlib
 import os
 import stat
 from pathlib import Path
@@ -219,13 +220,7 @@ class FsReadTool(Tool):
         path = arguments.get("path")
         if not isinstance(path, str):
             return Outcome({}, ARGUMENTS_INVALID, "path must be a string"), None
-        if not self._root.is_dir():
-            return Outcome({}, NO_ROOT, _no_root(self._root)), None
-        problem = classify(self._root, path)
-        if problem is not None:
-            code = problem.code if problem.code in READ_REFUSALS else IO_ERROR
-            return Outcome({}, code, problem.message(path)), None
-        return None, Target(resolved=str(self._root / path), exists=True, does=READS, label=FILE)
+        return looked_for_a_read(self._root, path)
 
     async def _run(self, arguments: JsonMapping, stop: TaskStop) -> Outcome:
         refused, _ = self._look(arguments)
@@ -325,17 +320,7 @@ class FsWriteTool(Tool):
             return Outcome({}, ARGUMENTS_INVALID, "path and body must be strings"), None
         if not isinstance(overwrite, bool):
             return Outcome({}, ARGUMENTS_INVALID, "overwrite must be a boolean"), None
-        if not self._root.is_dir():
-            return Outcome({}, NO_ROOT, _no_root(self._root)), None
-        problem = classify(self._root, path)
-        if problem is not None and problem.code != PATH_MISSING:
-            code = problem.code if problem.code in WRITE_REFUSALS else IO_ERROR
-            return Outcome({}, code, problem.message(path)), None
-        there = problem is None
-        if there is not overwrite:
-            return Outcome({}, OVERWRITE_MISMATCH, _moved(path, declared=overwrite)), None
-        does = OVERWRITES if there else CREATES
-        return None, Target(resolved=str(self._root / path), exists=there, does=does, label=FILE)
+        return looked_for_a_write(self._root, path, overwrite)
 
     async def _run(self, arguments: JsonMapping, stop: TaskStop) -> Outcome:
         refused, _ = self._look(arguments)
@@ -395,6 +380,62 @@ def _as_written(path: str, *, exists: bool, does: str, tool_name: str) -> Prospe
 def _no_root(root: Path) -> str:
     """The root, which is a configured directory and never the user's content (§57)."""
     return f"{root} is not there: ELA does not create the folder you declared in ELA_FS_ROOT"
+
+
+def looked_for_a_read(root: Path, path: str) -> tuple[Outcome | None, Target | None]:
+    """**What a read refuses, in one place**: the root, and the classification ``fs`` shares with
+    its verifiers — a file that is not there is a refusal, not a question. ``fs.read``'s, and an
+    upload's from the browser (M13.13, ADR 0066; answer 19 of the review of its SPEC): the refusal
+    of a text that is not UTF-8 stays ``fs.read``'s own, because its text enters a result."""
+    if not root.is_dir():
+        return Outcome({}, NO_ROOT, _no_root(root)), None
+    problem = classify(root, path)
+    if problem is not None:
+        code = problem.code if problem.code in READ_REFUSALS else IO_ERROR
+        return Outcome({}, code, problem.message(path)), None
+    return None, Target(resolved=str(root / path), exists=True, does=READS, label=FILE)
+
+
+def looked_for_a_write(
+    root: Path, path: str, overwrite: bool
+) -> tuple[Outcome | None, Target | None]:
+    """**What a write refuses, in one place**: the root, the classification, and ``overwrite`` as
+    an assertion on the world, both ways (ADR 0045 §7). ``fs.write``'s, and a download's from the
+    browser (M13.13, ADR 0066)."""
+    if not root.is_dir():
+        return Outcome({}, NO_ROOT, _no_root(root)), None
+    problem = classify(root, path)
+    if problem is not None and problem.code != PATH_MISSING:
+        code = problem.code if problem.code in WRITE_REFUSALS else IO_ERROR
+        return Outcome({}, code, problem.message(path)), None
+    there = problem is None
+    if there is not overwrite:
+        return Outcome({}, OVERWRITE_MISMATCH, _moved(path, declared=overwrite)), None
+    does = OVERWRITES if there else CREATES
+    return None, Target(resolved=str(root / path), exists=there, does=does, label=FILE)
+
+
+def read_bytes(target: Path) -> bytes:
+    """The bytes of a regular file, opened read-only and **never through a link** — what ``fs.read``
+    reads, and what an upload gives a page (M13.13)."""
+    return _read(target)
+
+
+def measured(target: Path) -> tuple[int, str]:
+    """The size of a regular file and the sha256 of its bytes, in hexadecimal — read as
+    :func:`read_bytes` reads, never through a link, and **without holding the file**: what a
+    download left is as large as its site made it (M13.13)."""
+    descriptor = os.open(target, READ_FLAGS)
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise OSError(PATH_NOT_REGULAR)
+        size, digest = 0, hashlib.sha256()
+        while chunk := os.read(descriptor, CHUNK):
+            size += len(chunk)
+            digest.update(chunk)
+    finally:
+        os.close(descriptor)
+    return size, digest.hexdigest()
 
 
 def _moved(path: str, *, declared: bool) -> str:

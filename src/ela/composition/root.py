@@ -881,7 +881,13 @@ async def build(
         # read from ``os.environ`` by the tool (decision 1); the limits of what ``execve`` passes;
         # and the launcher that stops a command's group on the stop signal.
         stopping = asyncio.Event()
-        programs = await asyncio.to_thread(Programs.fixed, settings.terminal.programs)
+        # The vault's program, told to the terminal's table too (M13.9c, ADR 0066 §3): the
+        # settings refused a configuration that makes it a program of the terminal **today**, and
+        # the table asks again at every launch, where what a path leads to is what it leads to.
+        vault_s = settings.accounts.vault_program
+        programs = await asyncio.to_thread(
+            lambda: Programs.fixed(settings.terminal.programs, never=vault_s)
+        )
         terminal = Terminal(
             programs=programs,
             root=settings.filesystem.root,
@@ -933,7 +939,7 @@ async def build(
         # ``os.environ`` —, behind the door of the tools: the identity of the program fixed **now**,
         # in a thread, and every closing told to the audit. Without a declared program there is a
         # door and nothing behind it: every use says which line to write.
-        declared = settings.accounts.vault_program
+        declared = vault_s
         if vault is None and declared is not None:
             vault = BitwardenVault(
                 declared, environment=closed_environment, timeout_seconds=VAULT_TIMEOUT_SECONDS

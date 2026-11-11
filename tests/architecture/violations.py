@@ -2126,6 +2126,104 @@ VIOLATIONS: tuple[Case, ...] = (
         "    await session.send('Target.detachFromTarget', {'sessionId': held})\n",
         "Target.detachFromTarget",
     ),
+    # --- a-file-is-given-as-bytes-and-a-download-is-named (rule 73, M13.13) ---
+    Case(
+        # A file given by its path: the engine reads it by itself, whatever ELA read before.
+        "an-adapter-gives-a-page-a-file-by-its-path",
+        "a-file-is-given-as-bytes-and-a-download-is-named",
+        "infrastructure/machine/browser.py",
+        "async def give(page, path):\n    await page.locator('#f').set_input_files(path)\n",
+        ".set_input_files(",
+    ),
+    Case(
+        # A list — of paths, or of anything: one file, one payload.
+        "an-adapter-gives-a-page-a-list-of-files",
+        "a-file-is-given-as-bytes-and-a-download-is-named",
+        "infrastructure/machine/account.py",
+        "async def give(page, paths):\n"
+        "    await page.locator('#f').set_input_files(files=[str(one) for one in paths])\n",
+        ".set_input_files(",
+    ),
+    Case(
+        # A payload that is not of bytes: a name and a type, and the engine left to find the rest.
+        "an-adapter-gives-a-page-a-payload-with-no-bytes",
+        "a-file-is-given-as-bytes-and-a-download-is-named",
+        "infrastructure/machine/browser.py",
+        "async def give(page, file):\n"
+        "    await page.locator('#f').set_input_files({'name': file.name, 'path': file.path})\n",
+        ".set_input_files(",
+    ),
+    Case(
+        # The site's own name for what it sends, in the user's folder: it overwrites in silence.
+        "the-door-lets-the-site-name-the-download",
+        "a-file-is-given-as-bytes-and-a-download-is-named",
+        "infrastructure/machine/browser.py",
+        "async def opened(session, into):\n"
+        "    await session.send(\n"
+        "        'Browser.setDownloadBehavior', {'behavior': 'allow', 'downloadPath': into}\n"
+        "    )\n",
+        "Browser.setDownloadBehavior",
+    ),
+    Case(
+        # The browser's default: whatever it is on that build.
+        "the-door-is-left-to-the-browser-s-default",
+        "a-file-is-given-as-bytes-and-a-download-is-named",
+        "infrastructure/machine/browser.py",
+        "async def opened(session):\n"
+        "    await session.send('Browser.setDownloadBehavior', {'behavior': 'default'})\n",
+        "Browser.setDownloadBehavior",
+    ),
+    Case(
+        # A behaviour built elsewhere: nobody reading the call can say what is sent.
+        "the-door-is-sent-what-nobody-can-read",
+        "a-file-is-given-as-bytes-and-a-download-is-named",
+        "infrastructure/machine/account.py",
+        "async def opened(session, said):\n"
+        "    await session.send('Browser.setDownloadBehavior', said)\n",
+        "Browser.setDownloadBehavior",
+    ),
+    Case(
+        # The command kept in a name, and sent from there: the same, one step further.
+        "the-door-s-command-is-kept-in-a-name",
+        "a-file-is-given-as-bytes-and-a-download-is-named",
+        "infrastructure/machine/browser.py",
+        "DOOR = 'Browser.setDownloadBehavior'\n"
+        "async def opened(session):\n"
+        "    await session.send(DOOR, {'behavior': 'deny'})\n",
+        "Browser.setDownloadBehavior",
+    ),
+    # --- the-vault-s-program-is-its-adapter-s (rule 72, M13.9c) ---
+    Case(
+        # A tool reading the vault's program off the settings: one step from launching it with
+        # arguments the closed list of the adapter does not know.
+        "a-tool-reads-the-vault-s-program",
+        "the-vault-s-program-is-its-adapter-s",
+        "tools/terminal.py",
+        "def program(settings):\n    return settings.accounts.vault_program\n",
+        "vault_program",
+    ),
+    Case(
+        # The composition handing it to something that is not the vault's adapter or its door.
+        "the-root-hands-the-vault-s-program-to-another",
+        "the-vault-s-program-is-its-adapter-s",
+        "composition/root.py",
+        "def built(settings, Terminal):\n"
+        "    declared = settings.accounts.vault_program\n"
+        "    return Terminal(declared)\n",
+        "Terminal",
+    ),
+    Case(
+        # A constructor that is called ``fixed`` too, and is neither the door's nor the table's:
+        # the receivers are named by their owner.
+        "the-root-hands-the-vault-s-program-to-another-fixed",
+        "the-vault-s-program-is-its-adapter-s",
+        "composition/root.py",
+        "def built(settings, Other):\n"
+        "    declared = settings.accounts.vault_program\n"
+        "    again = declared\n"
+        "    return Other.fixed(again)\n",
+        "Other.fixed",
+    ),
     # --- the-profile-s-folder-is-its-adapter-s (rule 69, M13.9) ---
     Case(
         # A route reading where the profile is, to answer with it — or to open it.
@@ -3152,6 +3250,55 @@ ALLOWED: tuple[Case, ...] = (
         "    return SessionCover(\n"
         "        session=session, task_id=live.task_id,\n"
         "        capability_id=live.capability, sites=live.sites,\n"
+        "    )\n",
+        "",
+    ),
+    Case(
+        # Rule 73: a page is given one payload of bytes, written where it is given.
+        "an-adapter-gives-a-page-the-bytes-and-the-name",
+        "a-file-is-given-as-bytes-and-a-download-is-named",
+        "infrastructure/machine/browser.py",
+        "async def give(page, file):\n"
+        "    await page.locator('#f').set_input_files(\n"
+        "        {'name': file.name, 'mimeType': file.type, 'buffer': file.data}\n"
+        "    )\n",
+        "",
+    ),
+    Case(
+        # Rule 73: the door closed, and open on one folder under a name of the browser's.
+        "the-door-is-closed-and-opened-on-a-folder",
+        "a-file-is-given-as-bytes-and-a-download-is-named",
+        "infrastructure/machine/browser.py",
+        "async def door(session, into):\n"
+        "    await session.send('Browser.setDownloadBehavior', {'behavior': 'deny'})\n"
+        "    await session.send(\n"
+        "        'Browser.setDownloadBehavior',\n"
+        "        {'behavior': 'allowAndName', 'downloadPath': into, 'eventsEnabled': True},\n"
+        "    )\n",
+        "",
+    ),
+    Case(
+        # Rule 72: the composition root hands the vault's program to its adapter and its door.
+        "the-root-hands-the-vault-s-program-to-its-adapter-and-door",
+        "the-vault-s-program-is-its-adapter-s",
+        "composition/root.py",
+        "async def built(settings, BitwardenVault, VaultDoor):\n"
+        "    declared = settings.accounts.vault_program\n"
+        "    vault = BitwardenVault(declared)\n"
+        "    return await VaultDoor.fixed(vault, declared)\n",
+        "",
+    ),
+    Case(
+        # Rule 72: and to the terminal's table, which refuses it at every launch — built in a
+        # thread, inside a lambda: the call that is handed the program is the table's own.
+        "the-root-tells-the-terminal-s-table-the-vault-s-program",
+        "the-vault-s-program-is-its-adapter-s",
+        "composition/root.py",
+        "import asyncio\n"
+        "async def built(settings, Programs):\n"
+        "    vault_s = settings.accounts.vault_program\n"
+        "    return await asyncio.to_thread(\n"
+        "        lambda: Programs.fixed(settings.terminal.programs, never=vault_s)\n"
         "    )\n",
         "",
     ),

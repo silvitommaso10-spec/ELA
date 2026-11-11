@@ -59,7 +59,7 @@ from ela.infrastructure.machine import browser as adapter
 from ela.infrastructure.machine.account import AccountChrome
 from ela.infrastructure.machine.browser import PlaywrightBrowser, _descendants, _listed
 from ela.permissions import BROWSER_ACT, BROWSER_READ
-from ela.ports import BrowserFailed, BrowserStopped, Secret, SiteUnreachable
+from ela.ports import BrowserFailed, BrowserStopped, GivenFile, Secret, SiteUnreachable
 from ela.testing.fakes import FakeIdGenerator, FakeStop, FakeTaskPages
 from ela.tools.browser import (
     FAILED,
@@ -76,6 +76,7 @@ from ela.tools.verifiers import (
     BROWSER_EXPECT_VISIBLE,
     BrowserActVerifier,
 )
+from tests import profile_browser
 from tests.architecture.test_every_use_of_a_page_asks_the_boundary import ASKED_BEFORE_ONLY
 from tests.browser_leftovers import running
 from tests.infrastructure.machine import test_account_browser as account
@@ -87,9 +88,9 @@ nothing_left_behind = shell.nothing_left_behind
 judged = shell.judged
 profile = account.profile
 
-ON_A_MAC = pytest.mark.skipif(
-    account.SYSTEM != "Darwin", reason="the browser with the profile is Chrome for Testing on a Mac"
-)
+ON_A_MAC = profile_browser.ON_A_MAC
+"""The one skip of the browser of the profile (``tests/profile_browser.py``): a test that takes
+that browser through its fixture is marked at collection, and needs not write this."""
 EMPTY, PROFILE = "the empty browser", "the browser of the profile"
 ENVIRONMENT = {"PATH": "/usr/bin:/bin", "HOME": str(Path.home()), "LANG": "C.UTF-8"}
 HTML = [("Content-Type", "text/html; charset=utf-8")]
@@ -117,9 +118,13 @@ def empty(stopping: asyncio.Event | None = None, **more: str) -> PlaywrightBrows
 
 
 @pytest.fixture(params=[EMPTY, pytest.param(PROFILE, marks=ON_A_MAC)])
-async def browser(request: pytest.FixtureRequest, profile: Path) -> AsyncIterator[Any]:
-    """Each of the two browsers, closed by ELA's own closing whatever the test did."""
-    made = empty() if request.param == EMPTY else account.chrome(profile)
+async def browser(request: pytest.FixtureRequest) -> AsyncIterator[Any]:
+    """Each of the two browsers, closed by ELA's own closing whatever the test did. **The folder
+    of the profile is taken only for the browser of the profile** — asked for by name, when the
+    parameter is that one —: a test of the empty browser does not take it, and is not skipped
+    where the product has no browser of the profile (decision 27 of the review after the red CI
+    of ``56c672c``)."""
+    made = empty() if request.param == EMPTY else account.chrome(request.getfixturevalue("profile"))
     if not await made.installed():
         pytest.fail("the browser this test launches is not installed on this machine")
     yield made
@@ -249,12 +254,16 @@ def everywhere(address: str) -> bool:
 
 
 @asynccontextmanager
-async def alone(made: Any, profile: Path) -> AsyncIterator[Any]:
+async def alone(made: Any, request: pytest.FixtureRequest) -> AsyncIterator[Any]:
     """A page of the same binary, launched with the options its adapter launches it with — on a
     folder prepared as the adapter prepares its own — and **with no gate at all**: the
-    precondition of every «as the browser alone»."""
+    precondition of every «as the browser alone». **The folder of the profile is asked for by
+    name, and only when the browser is the profile's**: taken by a test of the empty browser, it
+    would carry the skip of a browser the test does not launch (decision 27, repaired on
+    2026-11-10)."""
     async with async_playwright() as playwright:
         if isinstance(made, AccountChrome):
+            profile: Path = request.getfixturevalue("profile")
             other = account.chrome(profile.with_name("alone"))
             folder = await other._folder()
             await other._prepare(folder, driven=True)
@@ -384,7 +393,7 @@ async def test_a_link_that_downloads_from_another_site_sends_nothing_there(
 
 
 async def test_what_a_site_receives_through_the_gate_is_what_the_browser_alone_sends(
-    browser: Any, profile: Path, served: list[Site]
+    browser: Any, request: pytest.FixtureRequest, served: list[Site]
 ) -> None:
     """Criterion 6: the same names and the same values, for a document asked by address, for
     the ``POST`` of a form and for the page after its redirect — and for a first request the
@@ -395,7 +404,7 @@ async def test_what_a_site_receives_through_the_gate_is_what_the_browser_alone_s
     a.pages[("GET", "/done")] = (200, HTML, "<p>done</p>")
     walk = ["GET /", "POST /send", "GET /done"]
 
-    async with alone(browser, profile) as page:
+    async with alone(browser, request) as page:
         await page.goto(a.origin + "/")
         await page.locator("#go").click()
         await page.get_by_text("done").wait_for(timeout=LONG * 1000)
@@ -428,7 +437,7 @@ CROSSED = {
 
 
 async def test_every_frame_of_the_page_loads_what_it_loads_with_no_gate(
-    browser: Any, profile: Path, served: list[Site]
+    browser: Any, request: pytest.FixtureRequest, served: list[Site]
 ) -> None:
     """The gate is told of a request with its frame, and nothing of its page: a frame of another
     site, the frames inside it, and a frame of the first site inside those are all **the
@@ -446,7 +455,7 @@ async def test_every_frame_of_the_page_loads_what_it_loads_with_no_gate(
     def asked() -> list[str]:
         return sorted([f"A {one}" for one in a.requests] + [f"OFF {one}" for one in off.requests])
 
-    async with alone(browser, profile) as page:
+    async with alone(browser, request) as page:
         await page.goto(a.origin + "/")
         await until(lambda: len(asked()) == whole, "the browser alone loaded every frame")
     bare = asked()
@@ -1294,28 +1303,42 @@ class Changing:
         self.closed = False
         self.asked = 0
         self.closes_at: int | None = None
+        self.seen: list[str] = []
+        """Every address it was asked about, in order: what a test recognises a question by."""
 
     def __call__(self, address: str) -> bool:
         self.asked += 1
+        self.seen.append(address)
         if self.closes_at is not None and self.asked >= self.closes_at:
             self.closed = True
         return not self.closed
 
 
-USES: dict[str, Callable[[Any, str], Awaitable[Any]]] = {
-    "count": lambda b, p: b.count(p, "#f"),
-    "appeared": lambda b, p: b.appeared(p, "#f"),
-    "field": lambda b, p: b.field(p, "#f"),
-    "fill": lambda b, p: b.fill(p, "#f", "x"),
-    "click": lambda b, p: b.click(p, "#go"),
-    "text": lambda b, p: b.text(p, None),
-    "title": lambda b, p: b.title(p),
-    "left": lambda b, p: b.left(p),
+USES: dict[str, Callable[[Any, str, Path], Awaitable[Any]]] = {
+    "count": lambda b, p, into: b.count(p, "#f"),
+    "appeared": lambda b, p, into: b.appeared(p, "#f"),
+    "field": lambda b, p, into: b.field(p, "#f"),
+    "fill": lambda b, p, into: b.fill(p, "#f", "x"),
+    "click": lambda b, p, into: b.click(p, "#go"),
+    "text": lambda b, p, into: b.text(p, None),
+    "title": lambda b, p, into: b.title(p),
+    "left": lambda b, p, into: b.left(p),
+    # Whether the page is the browser's own, for an address the site did not answer at (M13.9b).
+    "unanswered": lambda b, p, into: b.unanswered(p),
     # Taken back with a boundary of its own, which the page is outside of (M13.10).
-    "resume": lambda b, p: b.resume(p, lambda url: False),
-    "glance": lambda b, p: b.glance(p, selector=None, expect="x", seconds=1),
+    "resume": lambda b, p, into: b.resume(p, lambda url: False),
+    "glance": lambda b, p, into: b.glance(p, selector=None, expect="x", seconds=1),
+    # A file given by its bytes, and a click with the door of the downloads open on a folder of
+    # the test's (M13.13, ADR 0066): what was downloaded on a page that ended elsewhere meanwhile
+    # is thrown away, as what was read there is.
+    "give": lambda b, p, into: b.give(p, "#file", GivenFile("x.txt", "text/plain", b"x")),
+    "download": lambda b, p, into: b.download(p, "#dl", FakeStop(), str(into)),
 }
-USED = shell.REPORTS + '<title>t</title><input id="f"><button id="go">go</button><p>x</p>'
+USED = (
+    shell.REPORTS
+    + '<title>t</title><input id="f"><button id="go">go</button><p>x</p>'
+    + '<input id="file" type="file"><a id="dl" download="x.txt" href="data:text/plain,ciao">d</a>'
+)
 
 
 OF_THE_PROFILE_ALONE = {"fill_secret", "landed", "holds", "forms"}
@@ -1334,7 +1357,7 @@ def test_every_use_of_a_page_the_port_has_is_walked_here_on_the_real_browser() -
 
 @pytest.mark.parametrize("use", sorted(USES))
 async def test_no_use_of_a_page_that_is_not_inside_the_boundary_takes_place(
-    browser: Any, served: list[Site], use: str
+    browser: Any, served: list[Site], tmp_path: Path, use: str
 ) -> None:
     from ela.ports import LeftSite
 
@@ -1344,39 +1367,61 @@ async def test_no_use_of_a_page_that_is_not_inside_the_boundary_takes_place(
     allowed.closed = True
 
     with pytest.raises(LeftSite) as refused:
-        await USES[use](browser, opened.page)
+        await USES[use](browser, opened.page, tmp_path)
 
     assert refused.value.made is False, "found outside before the use, which did not take place"
     assert refused.value.address == web.origin + "/"
     assert web.origin not in str(refused.value), "the sentence of the error names no address"
     assert web.events == [], "nothing was typed and nothing was clicked"
+    assert list(tmp_path.iterdir()) == [], "and nothing was downloaded"
 
 
 ASKED_AFTER_TOO = sorted(set(USES) - set(ASKED_BEFORE_ONLY))
 """Every use of a page but those that read nothing of it, named with their reason beside the
 test of the fakes: there is nothing of theirs to throw away."""
 
+REPORTS_ASKED = {"give": ("input", "change")}
+"""The uses after which the page **holds a file**, and so asks the boundary of every request it
+makes — its reports of the events the use fired among them (``shell.REPORTS``), which arrive
+whenever the page sends them: after the use has returned, on a runner (the red CI of ``0bc3278``,
+decision 41 A)."""
+REPORT_PATH = "/event"
+
 
 @pytest.mark.parametrize("use", ASKED_AFTER_TOO)
 async def test_what_was_read_on_a_page_that_ended_elsewhere_meanwhile_is_thrown_away(
-    browser: Any, served: list[Site], use: str
+    browser: Any, served: list[Site], tmp_path: Path, use: str
 ) -> None:
     """Decision 122. The boundary of this test admits the page when the use begins and not when
     it ends: what was read is in nobody's hands, a gesture is said as made — and a look
-    releases the page all the same."""
+    releases the page all the same.
+
+    **The questions are recognised by what they are about, never counted** (decision 41 A, after
+    the red CI of ``0bc3278``): the use asks about the page twice, before and after; a page that
+    holds a file also asks about its own reports of the use, whenever it sends them. The test
+    waits for those reports — the slow order of the runner, built — and then reads."""
     from ela.ports import LeftSite
 
     web = site(served, {"/": (200, {}, USED)})
     allowed = Changing()
     opened = await browser.open(web.origin + "/", allowed, FakeStop())
     allowed.closes_at = allowed.asked + 2
+    since = len(allowed.seen)
 
     with pytest.raises(LeftSite) as found:
-        await USES[use](browser, opened.page)
+        await USES[use](browser, opened.page, tmp_path)
+    report = web.origin + REPORT_PATH
+    reported = len(REPORTS_ASKED.get(use, ()))
+    await until(lambda: allowed.seen.count(report) >= reported, "the page's reports of the use")
+    asked = allowed.seen[since:]
 
-    assert allowed.asked == allowed.closes_at, "asked once before the use, and once after it"
+    assert [one for one in asked if one != report] == [web.origin + "/"] * 2, (
+        "asked about the page once before the use, and once after it"
+    )
+    assert set(asked) <= {web.origin + "/", report}, "and about nothing else but its reports"
     assert found.value.made is True, "the use had been made when the page was found elsewhere"
     assert use != "glance" or opened.page not in browser._pages
+    assert list(tmp_path.iterdir()) == [], "what was downloaded there is thrown away too"
 
 
 AT_NO_SITE = {

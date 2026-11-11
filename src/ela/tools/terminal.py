@@ -69,7 +69,14 @@ from ela.tools.paths import (
     classify,
     resolve_workspace,
 )
-from ela.tools.programs import NO_PROGRAM, NOT_DECLARED, PROGRAM_CHANGED, PROGRAM_GONE, Programs
+from ela.tools.programs import (
+    NO_PROGRAM,
+    NOT_DECLARED,
+    PROGRAM_CHANGED,
+    PROGRAM_GONE,
+    VAULT_PROGRAM,
+    Programs,
+)
 
 __all__ = [
     "ARGUMENTS_UNPASSABLE",
@@ -205,6 +212,7 @@ class TerminalRunTool(Tool):
             NO_PROGRAM,
             PROGRAM_CHANGED,
             PROGRAM_GONE,
+            VAULT_PROGRAM,
             ARGUMENTS_UNPASSABLE,
             CWD_NOT_A_FOLDER,
             NO_ROOT,

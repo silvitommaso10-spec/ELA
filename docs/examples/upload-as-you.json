@@ -1,0 +1,33 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M13.13 per un CARICAMENTO COME TE (GETTING_STARTED, sezione 30,",
+    "passo 6): lo stesso file e la stessa pagina di `upload-a-file.json`, con il browser del tuo",
+    "profilo. `browser.upload_as_you` è HIGH: chiede a ogni uso, e nessuna policy né sessione lo copre.",
+    "Su testpages.eviltester.com non hai un account: il file parte con il tuo profilo.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "caricare come me un file sul sito della prova",
+  "steps": [
+    {
+      "id": "c0de1a28-0000-4b00-8a00-000000001314",
+      "goal": "caricare con il profilo il file che lo script della prova ha scritto",
+      "required_capabilities": [
+        "browser.upload_as_you"
+      ],
+      "arguments": {
+        "site": "testpages.eviltester.com",
+        "path": "/pages/files/file-upload/",
+        "file": "ELA/prova-m13.13/da-caricare.txt",
+        "file_field": "#fileinput",
+        "expect_text": "Upload successful!",
+        "purpose": "la prova a mano dei file dal browser"
+      },
+      "risk": "HIGH",
+      "expected_result": "la pagina del sito conferma il caricamento",
+      "success_conditions": [
+        "browser.expect_visible"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}

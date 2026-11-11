@@ -77,6 +77,12 @@ def test_the_levels_did_not_move() -> None:
         CapabilityId("browser.act_as_you"): RiskLevel.HIGH,
         CapabilityId("browser.login"): RiskLevel.HIGH,
         CapabilityId("browser.guided_as_you"): RiskLevel.MEDIUM,
+        # The files from the browser (M13.13, ADR 0066): four rows more, all ``HIGH`` — no row
+        # of before moved.
+        CapabilityId("browser.download"): RiskLevel.HIGH,
+        CapabilityId("browser.download_as_you"): RiskLevel.HIGH,
+        CapabilityId("browser.upload"): RiskLevel.HIGH,
+        CapabilityId("browser.upload_as_you"): RiskLevel.HIGH,
     }
 
 

@@ -21,12 +21,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 from playwright.async_api import async_playwright
 
 from ela.infrastructure.machine.browser import PlaywrightBrowser
 from ela.testing.fakes import FakeStop, FakeTaskPages
 from ela.tools.browser import boundary
+from tests import profile_browser
 from tests.infrastructure.machine import test_account_browser as account
 from tests.infrastructure.machine import test_browser as shell
 from tests.infrastructure.machine.test_browser import Site, site
@@ -36,9 +36,8 @@ nothing_left_behind = shell.nothing_left_behind
 browser = shell.browser
 profile = account.profile
 
-ON_A_MAC = pytest.mark.skipif(
-    account.SYSTEM != "Darwin", reason="the browser with the profile is Chrome for Testing on a Mac"
-)
+ON_A_MAC = profile_browser.ON_A_MAC
+"""The one skip of the browser of the profile (``tests/profile_browser.py``)."""
 
 
 def chained(served: list[Site]) -> tuple[Site, Site]:

@@ -43,11 +43,11 @@ import os
 import platform
 import sys
 import urllib.request
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -64,6 +64,20 @@ GUIDE = base.GUIDE
 HEADING = "## 22. "
 QUESTION_HEADING = "## 6. "
 KINDS = ("comando", "atteso", "occhio")
+LOOKS: Final[Mapping[str, str]] = {
+    "occhio": "una domanda all'occhio di Tommaso, su ciò che ha davanti",
+}
+"""The kinds of block that ask Tommaso's eye, each with its reason (M13.10b): before each of them,
+in its step, ``tests/docs/test_prova_eyes.py`` wants a block of a kind of :data:`SHOWS`."""
+SHOWS: Final[Mapping[str, str]] = {
+    "comando": (
+        "fa ciò di cui l'occhio chiede: suona la voce (`voice audition`), apre la pagina del "
+        "design system"
+    ),
+}
+"""The kinds of block that put in front of Tommaso what a question to his eye then asks, each with
+its reason (M13.10b) — not every kind that prints: what it puts in front is what an eye of this
+section asks about. A judgement, which no test sees: its reason is written for the review."""
 ID = base.ID
 APPROVAL_ID = "<approval-id>"
 VOICE_ID = "<id della voce configurata>"

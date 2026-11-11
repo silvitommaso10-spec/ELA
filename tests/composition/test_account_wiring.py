@@ -34,9 +34,13 @@ from ela.infrastructure.machine import AccountChrome, PlaywrightBrowser
 from ela.permissions import (
     BROWSER_ACT,
     BROWSER_ACT_AS_YOU,
+    BROWSER_DOWNLOAD,
+    BROWSER_DOWNLOAD_AS_YOU,
     BROWSER_LOGIN,
     BROWSER_READ,
     BROWSER_READ_AS_YOU,
+    BROWSER_UPLOAD,
+    BROWSER_UPLOAD_AS_YOU,
 )
 from ela.ports import (
     PROFILE_PROCESS,
@@ -114,10 +118,21 @@ async def test_the_profile_s_browser_is_chrome_on_the_declared_folder_with_the_c
 # Which tool holds which browser: a closed world, both ways (criterion 7)
 # ----------------------------------------------------------------------------------------
 
-EMPTY = frozenset({BROWSER_READ, BROWSER_ACT})
-"""The capabilities of the empty browser: a visitor, on every page."""
-WITH_THE_PROFILE = frozenset({BROWSER_READ_AS_YOU, BROWSER_ACT_AS_YOU, BROWSER_LOGIN})
+EMPTY = frozenset({BROWSER_READ, BROWSER_ACT, BROWSER_DOWNLOAD, BROWSER_UPLOAD})
+"""The capabilities of the empty browser: a visitor, on every page — the files too (M13.13)."""
+WITH_THE_PROFILE = frozenset(
+    {
+        BROWSER_READ_AS_YOU,
+        BROWSER_ACT_AS_YOU,
+        BROWSER_LOGIN,
+        BROWSER_DOWNLOAD_AS_YOU,
+        BROWSER_UPLOAD_AS_YOU,
+    }
+)
 """The capabilities of the browser with the user's accounts."""
+VERIFIED_ON_THE_DISK = frozenset({BROWSER_DOWNLOAD, BROWSER_DOWNLOAD_AS_YOU})
+"""The two whose verifier holds no browser at all: a download is verified on the disk it was
+written to (M13.13, ADR 0066)."""
 
 
 def holding_a_browser(tools: Any, verifiers: Any) -> dict[str, tuple[str, object]]:
@@ -148,15 +163,20 @@ def misplaced(tools: Any, verifiers: Any, empty: object, accounts: object) -> li
 async def test_no_tool_of_the_empty_browser_can_open_the_profile_and_none_of_its_own_can_miss_it(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The seventh criterion, as ELA is built: the two tools of the empty browser and their
-    verifiers hold the empty browser — an object that has no folder —, the three of the profile
-    hold the other, and **every** tool that holds a browser is one of these."""
+    """The seventh criterion, as ELA is built: the tools of the empty browser and their
+    verifiers hold the empty browser — an object that has no folder —, those of the profile hold
+    the other, and **every** tool that holds a browser is one of these."""
     ela = await built(monkeypatch, tmp_path, {PROFILE: str(tmp_path / "state" / "profile")})
     try:
         held = holding_a_browser(ela.tools, ela.verifiers)
 
         assert {capability for capability, _ in held.values()} == EMPTY | WITH_THE_PROFILE
-        assert len(held) == 2 * len(EMPTY | WITH_THE_PROFILE), "a tool and a verifier for each"
+        both = EMPTY | WITH_THE_PROFILE
+        assert len(held) == 2 * len(both) - len(VERIFIED_ON_THE_DISK), (
+            "a tool and a verifier for each — but the verifier of a download, which reads the disk"
+        )
+        verified_here = {one.capability_id for one in ela.verifiers.verifiers() if one.name in held}
+        assert both - verified_here == VERIFIED_ON_THE_DISK
         assert misplaced(ela.tools, ela.verifiers, ela.browser, ela.accounts) == []
         assert ela.browser is not ela.accounts
         assert not isinstance(ela.browser, AccountChrome), "the empty browser has no profile"
@@ -165,12 +185,13 @@ async def test_no_tool_of_the_empty_browser_can_open_the_profile_and_none_of_its
         await ela.aclose()
 
 
-async def test_the_five_tools_of_the_two_browsers_hold_ela_s_one_room_of_the_pages(
+async def test_the_tools_of_the_two_browsers_hold_ela_s_one_room_of_the_pages(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """M13.10, ADR 0065 §3: one page per task, whichever browser it is on — so one room for
-    the five tools, the one ``GET /browser`` reads; a tool handed another would keep pages
-    nobody sees and no task's end closes."""
+    every tool that holds a browser, the one ``GET /browser`` reads; a tool handed another would
+    keep pages nobody sees and no task's end closes. The files from the browser too (M13.13):
+    they keep no page, and the page their task kept is closed through this room."""
     ela = await built(monkeypatch, tmp_path, {PROFILE: str(tmp_path / "state" / "profile")})
     try:
         rooms = {

@@ -86,6 +86,7 @@ from ela.domain import (
 )
 from ela.ports import (
     ANNOUNCED_FIELDS,
+    DOWNLOAD_GESTURE,
     HELD,
     HELD_IN_PART,
     NAVIGATION,
@@ -123,12 +124,15 @@ from ela.ports import (
     Clock,
     Command,
     DeviceRevokedError,
+    Downloaded,
+    DownloadNotStarted,
     Ending,
     EnrollmentConsumedError,
     EnrollmentExpiredError,
     EnrollmentRoleError,
     Field,
     Forwarded,
+    GivenFile,
     Glanced,
     IdentityConflictError,
     IdGenerator,
@@ -164,6 +168,7 @@ from ela.ports import (
     check_answer,
     check_limit,
     check_verifiable,
+    tried,
 )
 
 __all__ = [
@@ -1111,6 +1116,16 @@ class FakePage:
     forms: tuple[PageForm, ...] = ()
     """The forms that hold a password field, as the browser with the profile reads them
     (M13.10)."""
+    download: bytes | None = None
+    """What a download gesture on this page writes — the bytes the browser would put in the folder
+    of the target under a name of its own —, ``None`` for a gesture that starts no download
+    (M13.13)."""
+    download_refused: str | None = None
+    """The address of a download the page started while the door was closed (M13.13)."""
+    unreachable: str | None = None
+    """The address the browser tried to reach, when the page it shows — ``address``, or
+    ``landed`` once the click was made — is **its own page** for it (M13.9b, ADR 0066): what the
+    boundary is asked about, through :func:`~ela.ports.tried`, as the adapters do."""
 
 
 @dataclass
@@ -1255,6 +1270,12 @@ class FakeBrowser:
         sets its event (M13.10)."""
         self.waited: list[str] = []
         """Every selector :meth:`appeared` was asked to wait for, in order."""
+        self.given: list[tuple[str, GivenFile]] = []
+        """Every file given to a page, with the selector of its field (M13.13)."""
+        self.holding_a_file: list[str] = []
+        """Every page that holds a file since it was given one (M13.13)."""
+        self.downloads: list[tuple[str, str]] = []
+        """Every download asked of a page — its selector and the folder — in order (M13.13)."""
         self.holding: list[str] = []
         """Every page handed to a task with :meth:`hold`, in order (M13.10)."""
         self.resumed: list[str] = []
@@ -1273,9 +1294,10 @@ class FakeBrowser:
             raise error
 
     def stall(self, member: str) -> tuple[asyncio.Event, asyncio.Event]:
-        """Hold ``count``, ``appeared`` or ``text`` from now on: the first event is set when the
-        member is reached, and the member answers when the test sets the second."""
-        if member not in ("count", "appeared", "text"):
+        """Hold ``count``, ``appeared``, ``text`` — or a download while its file arrives — from now
+        on: the first event is set when the member is reached, and the member answers when the
+        test sets the second."""
+        if member not in ("count", "appeared", "text", "download", "downloaded_from"):
             raise ValueError(f"{member} is not a member this fake holds")
         self._held[member] = (asyncio.Event(), asyncio.Event())
         return self._held[member]
@@ -1310,21 +1332,37 @@ class FakeBrowser:
             raise LeftSite(address, made=made)
 
     def _address(self) -> str:
-        """Where the page of the script is now."""
+        """Where the page of the script is now, **as the boundary is asked about it**: where the
+        browser tried to go, when the page is its own (M13.9b) — :func:`~ela.ports.tried`, the
+        adapters' own function."""
+        return tried(self._shown(), self.page.unreachable)
+
+    def _shown(self) -> str:
+        """The address of the page the script shows now, the browser's own page included."""
         if self._where is not None:
             return self._where
         landed = self.page.landed if self._clicked else None
         return landed or self.page.address or self.opened[-1]
 
+    def _unanswered(self) -> str | None:
+        """The address the site did not answer at, when the page is the browser's own."""
+        shown = self._shown()
+        placed = tried(shown, self.page.unreachable)
+        return placed if placed != shown else None
+
     async def installed(self) -> bool:
         self._raise("installed")
         return self.installed_answer
 
-    async def open(self, address: str, allowed: Callable[[str], bool], stop: TaskStop) -> Opened:
-        self._raise("open")
+    async def _launched(self) -> None:
+        """The browser starts: the wait a test can hold a tool at, before the tool's point."""
         if self.launch_reached is not None and self.launch_released is not None:
             self.launch_reached.set()
             await self.launch_released.wait()
+
+    async def open(self, address: str, allowed: Callable[[str], bool], stop: TaskStop) -> Opened:
+        self._raise("open")
+        await self._launched()
         stop.listen(NAVIGATION)
         self.opened.append(address)
         self.allowed.append(allowed)
@@ -1423,6 +1461,57 @@ class FakeBrowser:
         self._on(page, "left")
         return self.page.left_after_click if self._clicked else self.page.left
 
+    async def unanswered(self, page: str) -> str | None:
+        self._on(page, "unanswered")
+        return self._unanswered()
+
+    async def give(self, page: str, selector: str, file: GivenFile) -> None:
+        self._on(page, "give")
+        self._raise("give")
+        self.given.append((selector, file))
+        self.holding_a_file.append(page)
+        self._done(page, "give")
+
+    async def download(self, page: str, selector: str, stop: TaskStop, into: str) -> Downloaded:
+        self._on(page, "download")
+        self._raise("download")
+        stop.listen(DOWNLOAD_GESTURE)
+        self.downloads.append((selector, into))
+        await self._wait("download")  # the file arrives: a test can hold it here
+        # The click was made: the boundary is asked again **before anything is kept** — a page
+        # that ended elsewhere meanwhile leaves no file, as the real browser throws it away.
+        self._done(page, "download")
+        return self._downloaded(into)
+
+    async def downloaded_from(
+        self, address: str, allowed: Callable[[str], bool], stop: TaskStop, into: str
+    ) -> Downloaded:
+        self._raise("downloaded_from")
+        await self._launched()
+        stop.listen(DOWNLOAD_GESTURE)
+        self.opened.append(address)
+        self.downloads.append(("", into))
+        await self._wait("downloaded_from")  # the file arrives: a test can hold it here
+        if self.page.left is not None or not allowed(address):
+            # The site sent the browser outside the boundary: the gate refused, nothing began.
+            raise DownloadNotStarted(
+                "the address led outside the boundary", left=self.page.left or address
+            )
+        return self._downloaded(into)
+
+    def _downloaded(self, into: str) -> Downloaded:
+        """What the browser does with the door open on ``into``: the bytes of the page's download
+        under a name of its own — or no download, and nothing written."""
+        if self.page.download is None:
+            raise DownloadNotStarted("the gesture started no download")
+        name = f"download-{len(self.downloads)}"
+        Path(into).mkdir(parents=True, exist_ok=True)
+        (Path(into) / name).write_bytes(self.page.download)
+        return Downloaded(name)
+
+    async def refused_download(self, page: str) -> str | None:
+        return self.page.download_refused if page in self._open else None
+
     async def another(self, page: str) -> AnotherPage | None:
         return self.page.another if page in self._open else None
 
@@ -1456,6 +1545,7 @@ class FakeBrowser:
             another=self.page.another,
             found=found,
             status=self.page.landed_status if self._clicked else self.page.status,
+            unanswered=self._unanswered(),
         )
 
     async def hold(self, page: str) -> None:
@@ -1584,6 +1674,16 @@ class FakeAccountBrowser(FakeBrowser):
             raise ProfileBusy(holder)
         return await super().open(address, allowed, stop)
 
+    async def downloaded_from(
+        self, address: str, allowed: Callable[[str], bool], stop: TaskStop, into: str
+    ) -> Downloaded:
+        """An opening on the profile like any other: refused while the folder is held."""
+        self._raise("downloaded_from")
+        holder = self._held_by()
+        if holder is not None:
+            raise ProfileBusy(holder)
+        return await super().downloaded_from(address, allowed, stop, into)
+
     async def can_show(self) -> bool:
         self._raise("can_show")
         return self.screen
@@ -1624,7 +1724,9 @@ class FakeAccountBrowser(FakeBrowser):
         self._raise("landed")
         self.landings.append(page)
         self._done(page, "landed")
-        return Landed(address=self.page.landed or self.opened[-1], status=self.page.landed_status)
+        return Landed(
+            address=self._address(), status=self.page.landed_status, unanswered=self._unanswered()
+        )
 
     async def window(self, address: str | None) -> None:
         self._raise("window")

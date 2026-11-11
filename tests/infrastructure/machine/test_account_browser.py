@@ -24,7 +24,6 @@ import asyncio
 import contextlib
 import json
 import os
-import platform
 import signal
 import sqlite3
 import subprocess
@@ -55,6 +54,7 @@ from ela.ports import (
     Secret,
 )
 from ela.testing.fakes import FakeStop
+from tests import profile_browser
 from tests.browser_leftovers import named
 from tests.infrastructure.machine import test_browser as shell
 from tests.infrastructure.machine.test_browser import (
@@ -74,11 +74,11 @@ served = shell.served
 nothing_left_behind = shell.nothing_left_behind
 judged = shell.judged
 
-SYSTEM = platform.system()
+SYSTEM = profile_browser.SYSTEM
 INSTALL = "uv run playwright install chromium"
-pytestmark = pytest.mark.skipif(
-    SYSTEM != "Darwin", reason="the browser with the profile is Chrome for Testing on a Mac"
-)
+pytestmark = profile_browser.ON_A_MAC
+"""The one skip of the browser of the profile, derived from the product's own condition
+(``tests/profile_browser.py``; decision 27 of the review after the red CI of ``56c672c``)."""
 
 SENTINEL = "-".join(("SENTINEL", "typed", "in", "the", "field"))
 LOGIN = """
@@ -96,14 +96,20 @@ def everywhere(address: str) -> bool:
 
 
 @pytest.fixture
-def profile(nothing_left_behind: None) -> Path:
-    """The folder of this test's profile: inside the folder the leftovers are found by."""
+def profile(nothing_left_behind: None, the_browser_of_the_profile: None) -> Path:
+    """The folder of this test's profile: inside the folder the leftovers are found by. **Where a
+    test takes the browser of the profile**: the fixture it asks for carries the skip of the
+    systems the product does not have that browser on, so a test that takes this folder wrote no
+    condition of its own and cannot forget one."""
     return Path(os.environ["TMPDIR"]) / "profile"
 
 
 def chrome(
     profile: Path, stopping: asyncio.Event | None = None, **options: object
 ) -> AccountChrome:
+    """The real browser of the profile — built only in a test that took the fixture of
+    :func:`profile`: outside one this raises, on every system."""
+    profile_browser.built_through_the_fixture()
     return AccountChrome(
         asyncio.Event() if stopping is None else stopping,
         environment={"PATH": "/usr/bin:/bin", "HOME": str(Path.home()), "LANG": "C.UTF-8"},

@@ -19,7 +19,14 @@ from ela.tools.programs import PROGRAM_CHANGED, Programs
 from ela.tools.terminal import TerminalRunTool
 from ela.tools.verifiers import TerminalRunVerifier
 from tests.contracts.protocols import port_protocols
-from tests.docs.guided_ports import ACCOUNT_CAPABILITIES, ACCOUNT_PORTS, GUIDED_PORTS, STEPS_PORTS
+from tests.docs.files_additions import rewritten_rows, rewritten_verifier_rows
+from tests.docs.guided_ports import (
+    ACCOUNT_CAPABILITIES,
+    ACCOUNT_PORTS,
+    FILE_CAPABILITIES,
+    GUIDED_PORTS,
+    STEPS_PORTS,
+)
 from tests.docs.test_adr_composition import coded_routes, routes_after_0048
 from tests.docs.test_adr_filesystem import verifiers_today
 from tests.docs.test_adr_placement import _rules_up_to
@@ -53,8 +60,13 @@ def codes(cell: str) -> frozenset[str]:
 # ----------------------------------------------------------------------------------------
 
 
-AFTER_0047 = frozenset({"browser.read", "browser.act", "browser.guided"}) | ACCOUNT_CAPABILITIES
-"""What ADR 0052 added, and pins itself: this ADR keeps the totals it saw."""
+AFTER_0047 = (
+    frozenset({"browser.read", "browser.act", "browser.guided"})
+    | ACCOUNT_CAPABILITIES
+    | FILE_CAPABILITIES
+)
+"""What ADR 0052 added, and the ADRs after it, each pinning itself: this ADR keeps the totals it
+saw."""
 
 
 def test_the_capabilities_of_today_are_eleven_and_four_of_them_travel(tmp_path: Path) -> None:
@@ -98,10 +110,13 @@ def test_the_conseguenze_count_the_rules_the_ports_and_the_routes_of_today() -> 
 
 
 def test_the_tool_row_is_the_running_tool() -> None:
+    """This ADR's row — or the row ADR 0066 (M13.9c) wrote again, whole, which wins: the terminal
+    refuses the vault's program at the launch, and an accepted ADR is not rewritten."""
     rows = [match for line in adr_text().splitlines() if (match := TOOL_ROW.match(line))]
 
     (row,) = rows
-    _, class_name, name, idempotent, errors, numbers = row.groups()
+    assert "terminal.vault_program" not in row.group(5), "the row of then is as it was"
+    _, class_name, name, idempotent, errors, numbers = rewritten_rows()["terminal.run"]
     assert class_name == TerminalRunTool.__name__
     assert name == "terminal-run"
     assert (idempotent == "sì") is TerminalRunTool.idempotent
@@ -114,7 +129,8 @@ def test_the_verifier_row_is_the_running_verifier() -> None:
     verifier = TerminalRunVerifier(no_programs())
 
     (row,) = [match for match in rows if match.group(2) == TerminalRunVerifier.__name__]
-    _, _, name, conditions, failures = row.groups()
+    assert "terminal.vault_program" not in row.group(5), "the row of then is as it was"
+    _, _, name, conditions, failures = rewritten_verifier_rows()["terminal.run"]
     assert name == verifier.name
     assert codes(conditions) == verifier.conditions
     assert codes(failures) == verifier.failure_codes - {

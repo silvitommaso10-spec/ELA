@@ -1,0 +1,32 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M13.13 per uno SCARICAMENTO FUORI DALLO SCOPE (GETTING_STARTED,",
+    "sezione 30, passo 4): il file sta sotto la radice ma fuori da `ELA_FS_SCOPE`. Lo scope di",
+    "`browser.download` è il file: il Guardian nega prima di ogni domanda — nessun sì speso, nessun",
+    "browser avviato, nessun file. È il passo che si prova da un'assenza.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "scaricare un file fuori dallo scope",
+  "steps": [
+    {
+      "id": "c0de1a28-0000-4b00-8a00-000000001312",
+      "goal": "scaricare in una cartella che lo scope non ammette",
+      "required_capabilities": [
+        "browser.download"
+      ],
+      "arguments": {
+        "site": "httpbin.org",
+        "path": "/bytes/1024",
+        "file": "fuori-dallo-scope/prova-m13.13.bin",
+        "overwrite": false,
+        "purpose": "la prova a mano dei file dal browser"
+      },
+      "risk": "HIGH",
+      "expected_result": "negato prima della domanda",
+      "success_conditions": [
+        "browser.file_downloaded"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}

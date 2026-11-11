@@ -53,32 +53,75 @@ from ela.permissions.rows import no_policy_for, no_session_covers, no_session_of
 from ela.ports import CONTINUES, AlreadyExistsError
 
 __all__ = [
+    "ACCOUNTS_INTRODUCED_AT",
+    "BROWSER_ACT",
+    "BROWSER_ACT_AS_YOU",
+    "BROWSER_DOWNLOAD",
+    "BROWSER_DOWNLOAD_AS_YOU",
+    "BROWSER_GUIDED",
+    "BROWSER_GUIDED_AS_YOU",
+    "BROWSER_INTRODUCED_AT",
+    "BROWSER_LOGIN",
+    "BROWSER_READ",
+    "BROWSER_READ_AS_YOU",
+    "BROWSER_UPLOAD",
+    "BROWSER_UPLOAD_AS_YOU",
     "CORE_ECHO",
+    "COST_PATTERN",
+    "CapabilityRegistry",
     "DECLARES_AN_EMPTY_SCOPE",
     "DEFAULT_NOTES_SCOPE",
+    "ENTRY_MAX_LENGTH",
+    "EXPECT_MAX_LENGTH",
+    "FILES_INTRODUCED_AT",
+    "FILLS_MAX",
     "FS_READ",
     "FS_WRITE",
-    "MAX_RISK",
-    "PHASE_13_INTRODUCED_AT",
-    "TERMINAL_RUN",
-    "UNDECLARED_FS_SCOPE",
-    "UNDECLARED_PROGRAMS",
-    "MODEL_COMPLETE",
+    "GUIDED_INTRODUCED_AT",
+    "GUIDED_ROUTE",
+    "LOOKS_MAX",
+    "LOOKS_MIN",
     "MAX_LISTEN_SECONDS",
+    "MAX_RISK",
+    "MODEL_COMPLETE",
+    "PATH_MAX_LENGTH",
+    "PATH_PATTERN",
     "PERCEPTION_CAPTURE_SCREEN",
     "PERCEPTION_LISTEN",
     "PERCEPTION_READ_SCREEN_TEXT",
     "PHASE_10_INTRODUCED_AT",
+    "PHASE_13_INTRODUCED_AT",
     "SCHEMA_VALIDATOR",
+    "SECONDS_MAX",
+    "SECONDS_MIN",
+    "SELECTOR_MAX_LENGTH",
+    "SITE_PATTERN",
+    "TERMINAL_RUN",
+    "UNDECLARED_FS_SCOPE",
+    "UNDECLARED_MODEL",
+    "UNDECLARED_PROGRAMS",
+    "UNDECLARED_SITES",
     "V01_INTRODUCED_AT",
+    "VALUE_MAX_LENGTH",
     "WORKSPACE_WRITE_NOTE",
-    "CapabilityRegistry",
+    "browser_act",
+    "browser_act_as_you",
+    "browser_download",
+    "browser_download_as_you",
+    "browser_guided",
+    "browser_guided_as_you",
+    "browser_login",
+    "browser_read",
+    "browser_read_as_you",
+    "browser_upload",
+    "browser_upload_as_you",
     "catalogue_v01",
     "check_capability",
     "core_echo",
     "fs_read",
     "fs_write",
     "is_valid_scope_entry",
+    "is_valid_value",
     "model_complete",
     "perception_capture_screen",
     "perception_read_screen_text",
@@ -86,40 +129,6 @@ __all__ = [
     "terminal_run",
     "validate_arguments",
     "workspace_write_note",
-    "BROWSER_ACT",
-    "BROWSER_GUIDED",
-    "BROWSER_READ",
-    "COST_PATTERN",
-    "GUIDED_INTRODUCED_AT",
-    "GUIDED_ROUTE",
-    "UNDECLARED_MODEL",
-    "is_valid_value",
-    "LOOKS_MAX",
-    "LOOKS_MIN",
-    "SECONDS_MAX",
-    "SECONDS_MIN",
-    "browser_guided",
-    "PATH_PATTERN",
-    "SITE_PATTERN",
-    "UNDECLARED_SITES",
-    "BROWSER_INTRODUCED_AT",
-    "browser_act",
-    "browser_read",
-    "EXPECT_MAX_LENGTH",
-    "FILLS_MAX",
-    "PATH_MAX_LENGTH",
-    "SELECTOR_MAX_LENGTH",
-    "VALUE_MAX_LENGTH",
-    "ACCOUNTS_INTRODUCED_AT",
-    "BROWSER_ACT_AS_YOU",
-    "BROWSER_GUIDED_AS_YOU",
-    "BROWSER_LOGIN",
-    "BROWSER_READ_AS_YOU",
-    "ENTRY_MAX_LENGTH",
-    "browser_act_as_you",
-    "browser_guided_as_you",
-    "browser_login",
-    "browser_read_as_you",
 ]
 
 MAX_RISK: Final = RiskLevel.HIGH
@@ -437,6 +446,10 @@ BROWSER_READ_AS_YOU: Final = CapabilityId("browser.read_as_you")
 BROWSER_ACT_AS_YOU: Final = CapabilityId("browser.act_as_you")
 BROWSER_LOGIN: Final = CapabilityId("browser.login")
 BROWSER_GUIDED_AS_YOU: Final = CapabilityId("browser.guided_as_you")
+BROWSER_DOWNLOAD: Final = CapabilityId("browser.download")
+BROWSER_DOWNLOAD_AS_YOU: Final = CapabilityId("browser.download_as_you")
+BROWSER_UPLOAD: Final = CapabilityId("browser.upload")
+BROWSER_UPLOAD_AS_YOU: Final = CapabilityId("browser.upload_as_you")
 
 DECLARES_AN_EMPTY_SCOPE: Final[frozenset[CapabilityId]] = frozenset(
     {
@@ -559,6 +572,8 @@ BROWSER_INTRODUCED_AT: Final = datetime(2026, 9, 29, tzinfo=UTC)
 GUIDED_INTRODUCED_AT: Final = datetime(2026, 10, 8, tzinfo=UTC)
 """``created_at`` of ``browser.guided`` (M14.3, ADR 0060)."""
 ACCOUNTS_INTRODUCED_AT: Final = datetime(2026, 10, 11, tzinfo=UTC)
+FILES_INTRODUCED_AT: Final = datetime(2026, 11, 3, tzinfo=UTC)
+"""When the files from the browser entered the catalogue (M13.13, ADR 0066)."""
 """``created_at`` of the capabilities of the browser with the user's accounts (M13.9, ADR 0063)."""
 
 GUIDED_ROUTE: Final = "browsing"
@@ -1465,6 +1480,135 @@ def browser_guided_as_you(
     )
 
 
+def _download_schema() -> dict[str, Any]:
+    """``site`` and ``path`` as for every page; ``file``, a path under the root as ``fs.write``
+    writes it, with ``overwrite`` its assertion on the world; ``click`` when the download starts
+    from a page, and without it the address of ``path`` **is** the file (M13.13)."""
+    return {
+        "type": "object",
+        "properties": {
+            "site": {"type": "string", "pattern": SITE_PATTERN},
+            "path": {"type": "string", "pattern": PATH_PATTERN, "maxLength": PATH_MAX_LENGTH},
+            "file": {"type": "string", "minLength": 1},
+            "overwrite": {"type": "boolean"},
+            "click": {"type": "string", "minLength": 1, "maxLength": SELECTOR_MAX_LENGTH},
+            "purpose": {"type": "string", "minLength": 1},
+        },
+        "required": ["site", "path", "file", "overwrite", "purpose"],
+        "additionalProperties": False,
+    }
+
+
+def _upload_schema() -> dict[str, Any]:
+    """``site`` and ``path``; ``file``, a path under the root as ``fs.read`` reads it;
+    ``file_field``, the one ``input type="file"`` that receives it; ``fill`` and ``click`` as a
+    gesture's — ``click`` optional, for a page that uploads when the file is given (answer 22 of the
+    review of M13.13's SPEC) —, and the ``expect_text`` the page shows after (M13.13)."""
+    return {
+        "type": "object",
+        "properties": {
+            "site": {"type": "string", "pattern": SITE_PATTERN},
+            "path": {"type": "string", "pattern": PATH_PATTERN, "maxLength": PATH_MAX_LENGTH},
+            "file": {"type": "string", "minLength": 1},
+            "file_field": {"type": "string", "minLength": 1, "maxLength": SELECTOR_MAX_LENGTH},
+            "fill": {
+                "type": "array",
+                "maxItems": FILLS_MAX,
+                "items": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "minItems": 2,
+                    "maxItems": 2,
+                },
+            },
+            "click": {"type": "string", "minLength": 1, "maxLength": SELECTOR_MAX_LENGTH},
+            "expect_text": {"type": "string", "minLength": 1, "maxLength": EXPECT_MAX_LENGTH},
+            "purpose": {"type": "string", "minLength": 1},
+        },
+        "required": ["site", "path", "file", "file_field", "expect_text", "purpose"],
+        "additionalProperties": False,
+    }
+
+
+def _a_file_capability(
+    capability: CapabilityId, description: str, schema: dict[str, Any], fs_scope: str
+) -> CapabilitySpec:
+    return CapabilitySpec(
+        id=capability,
+        created_at=FILES_INTRODUCED_AT,
+        description=description,
+        risk=RiskLevel.HIGH,
+        input_schema=schema,
+        scope=(fs_scope,),
+        scoped_arguments=("file",),
+        prompt_arguments=("purpose",),
+        requires_authorization=True,
+        metadata={"introduced_in": "0.2"},
+    )
+
+
+def browser_download(fs_scope: str = UNDECLARED_FS_SCOPE) -> CapabilitySpec:
+    """``browser.download``, **HIGH**: downloads one file of a declared site, in ELA's empty
+    browser, into a file under the declared root (M13.13, ADR 0066).
+
+    **A download is judged as an ``fs.write``**: the scope is ``ELA_FS_SCOPE`` on ``file``, and
+    every refusal of ``fs.write`` — ``overwrite`` an assertion both ways — comes before the
+    question. The site is the boundary of the tool, and one that is not declared is refused before
+    the question too: a capability has one scope, and this one's is the file (X11 of M13.10).
+    """
+    return _a_file_capability(
+        BROWSER_DOWNLOAD,
+        "Downloads one file of a site you declared, in ELA's own empty browser, into a file "
+        "inside the authorised folder.",
+        _download_schema(),
+        fs_scope,
+    )
+
+
+def browser_download_as_you(fs_scope: str = UNDECLARED_FS_SCOPE) -> CapabilitySpec:
+    """``browser.download_as_you``, **HIGH**: ``browser.download``'s, with the browser of your
+    accounts — a capability of its own, because a consent is not inherited (ADR 0034): where you
+    are signed in, what arrives is content of yours (M13.13)."""
+    return _a_file_capability(
+        BROWSER_DOWNLOAD_AS_YOU,
+        "Downloads one file of a site you declared as you, with the browser of your accounts, "
+        "into a file inside the authorised folder.",
+        _download_schema(),
+        fs_scope,
+    )
+
+
+def browser_upload(fs_scope: str = UNDECLARED_FS_SCOPE) -> CapabilitySpec:
+    """``browser.upload``, **HIGH**: gives one page of a declared site, in ELA's empty browser,
+    one file read under the declared root, and sends it (M13.13, ADR 0066).
+
+    **An upload is judged as an ``fs.read``**, and what leaves the Mac is the content: the question
+    names the file's resolved path, its size and its sha256, and a file changed between the
+    question and the yes does not leave. ELA reads the bytes itself and gives the page the bytes and
+    the name, never the path; from then on the page holds a file, and no request of it reaches
+    another origin.
+    """
+    return _a_file_capability(
+        BROWSER_UPLOAD,
+        "Gives one page of a site you declared, in ELA's own empty browser, one file of the "
+        "authorised folder, and sends it: what it sends cannot be taken back.",
+        _upload_schema(),
+        fs_scope,
+    )
+
+
+def browser_upload_as_you(fs_scope: str = UNDECLARED_FS_SCOPE) -> CapabilitySpec:
+    """``browser.upload_as_you``, **HIGH**: ``browser.upload``'s, with the browser of your
+    accounts — its own capability, because a consent is not inherited (ADR 0034) (M13.13)."""
+    return _a_file_capability(
+        BROWSER_UPLOAD_AS_YOU,
+        "Gives one page of a site you declared, as you, with the browser of your accounts, one "
+        "file of the authorised folder, and sends it: what it sends cannot be taken back.",
+        _upload_schema(),
+        fs_scope,
+    )
+
+
 def production_catalogue(
     *,
     notes_scope: str = DEFAULT_NOTES_SCOPE,
@@ -1501,5 +1645,9 @@ def production_catalogue(
             browser_act_as_you(sites),
             browser_login(sites),
             browser_guided_as_you(sites, guided_model),
+            browser_download(fs_scope),
+            browser_download_as_you(fs_scope),
+            browser_upload(fs_scope),
+            browser_upload_as_you(fs_scope),
         )
     )

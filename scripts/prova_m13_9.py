@@ -33,6 +33,10 @@ I tipi suoi, che la sezione spiega uno per uno:
 * ``schermo``: i comandi del blocco li lancia lo script, e **ciò che stampano va sullo schermo e
   non nel file** — il risultato di una lettura è contenuto di Tommaso —: ciò che l'occhio deve
   guardare gli è messo davanti, senza un altro Terminale e senza un id da copiare (decisione 155);
+* ``voce`` (M13.10b, risposta 17 della review delle SPEC del branch ``m13.13-i-file-dal-browser``):
+  lo script scrive **sullo schermo e mai nel file** la frase del blocco — apri l'app di Bitwarden
+  sulla voce —, e aspetta Invio: nel file c'è solo che la voce è sullo schermo dell'app. Nomina il
+  vault, e niente del vault entra nel file;
 * ``assente``: i comandi del blocco li lancia lo script, **niente di ciò che stampano va nel file
   né sullo schermo**, e lo script guarda che lì non ci sia il testo che il piano del login
   aspetta, letto dal piano: se c'è, Tommaso è già dentro quel sito, e la prova si ferma —
@@ -86,7 +90,21 @@ KINDS: Final = (
     "chiude",
     "schermo",
     "assente",
+    "voce",
 )
+LOOKS: Final[Mapping[str, str]] = {
+    "occhio": "una domanda all'occhio di Tommaso, su ciò che ha davanti",
+    "prosegui": "una domanda all'occhio, il cui no ferma la prova",
+}
+"""The kinds of block that ask Tommaso's eye, each with its reason (M13.10b): before each of them,
+in its step, ``tests/docs/test_prova_eyes.py`` wants a block of a kind of :data:`SHOWS`."""
+SHOWS: Final[Mapping[str, str]] = {
+    "schermo": "stampa sullo schermo, e non nel file, l'uscita dei suoi comandi",
+    "voce": "ti fa aprire l'app di Bitwarden sulla voce: sullo schermo, e mai nel file",
+}
+"""The kinds of block that put in front of Tommaso what a question to his eye then asks, each with
+its reason (M13.10b) — not every kind that prints: what it puts in front is what an eye of this
+section asks about. A judgement, which no test sees: its reason is written for the review."""
 ID = base.ID
 APPROVAL_ID: Final = guided.APPROVAL_ID
 LOGIN_PLAN: Final = "<il piano del login>"
@@ -432,6 +450,17 @@ def on_the_screen(number: int, block: base.Block, turn: guided.Turn, proof: Proo
         proof.report.say(f"    $ {asked} — {ON_THE_SCREEN}")
 
 
+def an_entry_on_the_screen(number: int, block: base.Block, proof: Proof) -> None:
+    """``voce`` (M13.10b): the entry of the vault the eye will ask about, put in front of Tommaso —
+    he opens it in the app of Bitwarden, as the block says **on the screen alone** —; the file says
+    only that the entry is on the app's screen. Nothing of the vault enters the file."""
+    print(f"[{number}] A TE, sullo schermo e non nel file: {' '.join(block.lines)}", flush=True)
+    proof.ask(f"[{number}] Premi Invio quando la voce è davanti a te. ")
+    proof.report.say(
+        f"    [{number}] la voce di Bitwarden è sullo schermo dell'app, non in questo file"
+    )
+
+
 def an_absence(number: int, block: base.Block, turn: guided.Turn, proof: Proof) -> None:
     """``assente``: before the login, the page the step will read after it does **not** hold the
     text the login's plan awaits (decision 151) — or the user is inside that site already, and
@@ -691,6 +720,8 @@ def a_block(number: int, block: base.Block, turn: guided.Turn, proof: Proof) -> 
         on_the_screen(number, block, turn, proof)
     elif kind == "assente":
         an_absence(number, block, turn, proof)
+    elif kind == "voce":
+        an_entry_on_the_screen(number, block, proof)
     else:
         raise ValueError(f"step {number}: {kind!r} is not a kind of the section")
 

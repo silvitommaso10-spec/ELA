@@ -589,6 +589,22 @@ class Asked(BaseModel):
     username: str = ""
     """The username of that entry, **masked** — the whole one never leaves the vault's adapter.
     Empty when the entry has none, and when the question is not a login."""
+    site: str = ""
+    """The site a file comes from, or is given to, when the question is about a file from the
+    browser (M13.13, ADR 0066): then :attr:`target` is the file, resolved, and the site has this
+    field of its own. Empty for every other question — for a page the site is the target."""
+    visits: str = ""
+    """What saying yes does on that site, in the capability's own sentence (M13.13) — beside
+    :attr:`does`, which says what happens to the file. Rendered as it stands; empty when the
+    question is not about a file from the browser."""
+    size: int | None = None
+    """The size in bytes of a file that would leave, read when the question was composed
+    (M13.13): after the yes ELA reads the file again, and one of another size does not leave.
+    ``None`` when no file leaves."""
+    digest: str = ""
+    """The sha256 of that file, in hexadecimal, read with :attr:`size`: what the yes covers is
+    this content. On the surfaces that answer and never in the audit. Empty when no file
+    leaves."""
     worst_case: str = ""
     """The most the call can cost, in the executor's line — amount, model, tokens — when the call
     spends (M14.1, ADR 0057; decision H). Empty for a call that spends nothing."""
@@ -658,6 +674,10 @@ class ApprovalOut(BaseModel):
     expect: str
     entry: str
     username: str
+    site: str
+    visits: str
+    size: int | None
+    digest: str
     worst_case: str
     left: str
     phrase: str

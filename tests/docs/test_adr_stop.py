@@ -48,9 +48,15 @@ def conseguenze() -> str:
 def test_the_table_of_the_two_halves_is_production(tmp_path: Path) -> None:
     guided = ADR_PATH.with_name("0060-guided-browser.md").read_text(encoding="utf-8")
     accounts = ADR_PATH.with_name("0063-browser-with-your-accounts.md").read_text(encoding="utf-8")
+    files = ADR_PATH.with_name("0066-browser-files.md").read_text(encoding="utf-8")
     rows = {
         match.group(1): (match.group(2), match.group(3))
-        for line in (*section(3).splitlines(), *guided.splitlines(), *accounts.splitlines())
+        for line in (
+            *section(3).splitlines(),
+            *guided.splitlines(),
+            *accounts.splitlines(),
+            *files.splitlines(),
+        )
         if (match := ROW.match(line))
     }
     tools, _, _ = _production(tmp_path)

@@ -9,6 +9,7 @@
   **Riletta da ADR 0060 (M14.3)** il 2026-10-09: i tre fatti di §4 si riscrivono per il modello che legge la pagina
   dentro una sessione guidata, e il vincolo del GET si allarga al testo delle pagine lette (ADR 0060 §9).
   **Riletta da ADR 0063 (M13.9)** il 2026-10-11: §1, lo shell «sempre senza finestra» e il suo sandbox sono del browser vuoto; §3 e §4, il profilo vuoto e i due livelli sono delle capability del browser vuoto; §6, per una lettura con il profilo il confine è il sito che nomina, e un service worker del profilo si toglie prima del lancio; §7, la domanda di `browser.login` si compone dopo aver chiesto al vault; §8, un campo segreto lo riempie `browser.login`, e nessun altro tool; §10, da quando la fermata di ELA è alzata niente parte più, e ciò che era già partito è aspettato entro una grazia e poi ucciso (M13.4b, M13.4c, M13.4e); §14, dall'ambiente escono anche `DEBUG…` e `PWDEBUG` (ADR 0063 §4 e §5, e «Conseguenze»).
+  **Rivista da ADR 0066 (M13.13)** il 2026-11-10: §4, §5 e §7, per le quattro capability dei file dal browser lo scope è il file e il sito è il confine del tool, che rifiuta un sito non dichiarato prima della domanda; la domanda nomina il file, e il sito ha campi suoi (ADR 0066 §4, §5).
   **Corretta da ADR 0063 §11 (M13.9)** il 2026-10-12, da una misura: in §6 la pagina **non** ripassa dalla route
   per seguire un rimando ammesso — la richiesta dopo un rimando la manda il browser —, e quindi **un secondo
   rimando fuori dal confine parte, e una lettura o un gesto avvengono sulla pagina di un sito non dichiarato**;

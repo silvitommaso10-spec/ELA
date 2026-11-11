@@ -34,7 +34,8 @@ from ela.tools.base import Perceiving
 from ela.tools.guided import SESSION_AS_YOU, BrowserGuidedTool, BrowserGuidedVerifier
 from tests.architecture.rules import RULES
 from tests.contracts.protocols import members, port_protocols
-from tests.docs.guided_ports import STEPS_PORTS
+from tests.docs.files_additions import added_members as files_members
+from tests.docs.guided_ports import STEPS_PORTS, before_the_files
 from tests.docs.steps_additions import added_members as steps_members
 from tests.docs.steps_additions import rewritten_rows, rewritten_verifier_rows
 from tests.docs.test_adr_browser import CODE, TOOL_ROW, VERIFIER_ROW, codes
@@ -82,7 +83,8 @@ def test_the_conseguenze_count_the_totals_as_this_adr_saw_them() -> None:
     assert "**settantadue**" in text and len(coded_routes()) == 72
     assert "**trentanove**" in text.split("i port diventano", 1)[1].split("le rotte", 1)[1]
     assert len(coded_commands()) == 39
-    assert "**diciotto**" in text and len(production_catalogue().specs()) == 18
+    # Eighteen the day this ADR was written: ADR 0066 (M13.13) added the files from the browser.
+    assert "**diciotto**" in text and len(before_the_files()) == 18
     assert "**sei**" in text and len(Kind) == 6
 
 
@@ -147,9 +149,10 @@ def test_the_verifier_rows_are_the_running_verifiers() -> None:
 
 
 def test_the_port_row_is_the_running_port() -> None:
-    """This ADR's row, and what ADR 0065 (M13.10) added to it."""
+    """This ADR's row, and what ADR 0065 (M13.10) and ADR 0066 (M13.13) added to it."""
     line = next(line for line in adr_text().splitlines() if line.startswith("| `AccountBrowser` |"))
-    here, later = frozenset(CODE.findall(line.split("|")[4])), steps_members()["AccountBrowser"]
+    here = frozenset(CODE.findall(line.split("|")[4]))
+    later = steps_members()["AccountBrowser"] | files_members()["AccountBrowser"]
 
     assert not here & later
     assert here | later == frozenset(members(AccountBrowser))

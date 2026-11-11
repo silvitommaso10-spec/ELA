@@ -66,6 +66,11 @@ branch; un branch di sola registrazione comincia con `docs-` e non porta codice.
   interrompe a dieci minuti, e il solo pytest di `make check` ne ha presi quasi dieci — 597,98 secondi —
   nel giro di M13.10 del 2026-10-29 (`.git/m13.10-reference/review-79-88/make-check.txt`): la regola
   com'era non si poteva rispettare.
+  ***Chiarita il 2026-11-10*** (decisione 36 di M13.13): **dopo una CI rossa, prima del push della
+  riparazione, `make check` una volta — e `make check-linux` se il rosso era di ubuntu — sulla punta
+  esatta da pushare.** Quella è la «fine» della riparazione. **E ogni giro di cui si usa l'esito si
+  legge intero**: un giro letto solo nell'esito non decide niente, e accanto a lui si scrive che non
+  è stato letto intero.
   **Nella sessione cloud, che gira come root**, il gate `cov-critical` manca dei rami che solo un
   sistema che nega raggiunge: `make -k check`, il riepilogo elenca quelle righe, e le giudica la CI
   sul branch. La suite di `main` non si rifà per confronto, salvo per un rosso che non si sa spiegare.
@@ -85,6 +90,9 @@ branch; un branch di sola registrazione comincia con `docs-` e non porta codice.
   — resta CPython su macOS, non dimostra che Linux funzioni, e non dice niente su tempi e
   installazione. Verde lì significa che la suite non sta ereditando la macchina; verde sul runner
   vero resta l'unica cosa che conta.
+  ***Dal 2026-11-10*** (decisione 35 di M13.13): i browser di questa macchina li trova da sé, e ciò
+  che resta diverso dal runner è nel docstring di `tests/foreign_machine.py`, con la data — i saltati
+  si confrontano lista per lista, file per file, mai nei totali.
 - **Un test afferma solo ciò di cui ha costruito le precondizioni.** Se gli serve una macchina
   vera, la dichiara con uno `skipif`, che compare nel riepilogo — un `if` dentro il test no
   (ADR 0031 §6). Una precondizione che non si può costruire dichiarando il sistema si costruisce

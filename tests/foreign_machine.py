@@ -38,13 +38,37 @@ machine too, exactly as on the runner.
 
 So: green here means the suite is not *inheriting* the machine. Green there is the one that
 counts, and it is still the gate before a merge.
+
+**One thing it provides, which is no pretence** (decision 35 of the review after the red CI of
+``56c672c``, 2026-11-10): **where the browsers of this machine are.** Pretending to be Linux, the
+suite looks for Playwright's browsers where Linux keeps them, and on a Mac they are not there — on
+2026-11-10 a run at ``56c672c`` added 104 errors of its own, «the browser this test launches is
+not installed on this machine», to the three it was run to reproduce. So when
+``PLAYWRIGHT_BROWSERS_PATH`` is not set, this sets it to the folder Playwright uses on the machine
+that launches it (:func:`browsers_of`, held to the product's own rule by
+``tests/test_foreign_machine_browsers.py``); **one that is set is left as it is**.
+
+**What stays different from the runner, measured on 2026-11-10** (run 42855676471 of the ubuntu
+job against ``make check-linux``, both at ``89efd0e``) — the skips each has and the other has not:
+
+* **``/proc``**: the tests that read a process the way only Linux lets one
+  (``test_nothing_left_behind.py``, ``test_agent_session.py``) are skipped here by ``sys.platform``,
+  which this does not fake, and run there;
+* **``GITHUB_ACTIONS``**: ``test_permissions_bite.py`` runs only on a runner;
+* **the volume that tells the cases of a name apart**: a runner's does, and four tests of
+  ``tests/composition/test_account_settings.py`` are skipped there and run here.
+
+That day both said «168 skipped», four of each kind: **the totals of the skipped can be equal by
+chance. Compare the lists, file by file — never the counts.**
 """
 
 from __future__ import annotations
 
 import os
 import platform
-from typing import Any
+from collections.abc import Mapping, MutableMapping
+from pathlib import Path
+from typing import Any, Final
 
 APPLE_BINARIES = frozenset(
     {"/usr/bin/afplay", "/usr/bin/pmset", "/usr/bin/say", "/usr/sbin/screencapture"}
@@ -65,5 +89,36 @@ def _absent_on_a_foreign_machine(path: Any, mode: int, **named: Any) -> bool:
     return result
 
 
+BROWSERS: Final = "PLAYWRIGHT_BROWSERS_PATH"
+"""Where Playwright is told its browsers are, and where ELA looks for them first."""
+
+_real_system = platform.system()
+"""The machine that launches this, asked before the answer is replaced below."""
+
+
+def browsers_of(system: str, environment: Mapping[str, str], home: Path) -> str | None:
+    """The folder Playwright keeps its browsers in on ``system`` when nobody tells it another —
+    found from the system and the home, never written —, or ``None`` on a system the product has
+    no rule for. **The product's own rule** (``registry_folder``, in
+    ``ela.infrastructure.machine.browser``), said again here because this file imports nothing of
+    the product before it replaces the machine's answers:
+    ``tests/test_foreign_machine_browsers.py`` holds the two equal, system by system."""
+    if system == "Darwin":
+        return str(home / "Library" / "Caches" / "ms-playwright")
+    if system == "Linux":
+        return str(Path(environment.get("XDG_CACHE_HOME") or home / ".cache") / "ms-playwright")
+    return None
+
+
+def _say_where_the_browsers_are(environment: MutableMapping[str, str]) -> None:
+    """Set :data:`BROWSERS` to this machine's folder — **only when it is not there**."""
+    if BROWSERS in environment:
+        return
+    found = browsers_of(_real_system, environment, Path.home())
+    if found is not None:
+        environment[BROWSERS] = found
+
+
+_say_where_the_browsers_are(os.environ)
 platform.system = lambda: FOREIGN_SYSTEM  # type: ignore[assignment]
 os.access = _absent_on_a_foreign_machine  # type: ignore[assignment]

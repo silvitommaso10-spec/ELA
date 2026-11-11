@@ -91,6 +91,7 @@ from ela.tools.base import ARGUMENTS_INVALID, Outcome
 from ela.tools.browser import (
     ANOTHER_PAGE,
     BROWSER_CODES,
+    DOWNLOAD_REFUSED,
     ELEMENT_AMBIGUOUS,
     ELEMENT_MISSING,
     FAILED,
@@ -100,6 +101,7 @@ from ela.tools.browser import (
     NOT_INSTALLED,
     SECRET_FIELD,
     STOPPED,
+    UNANSWERED,
     UNSUPPORTED_SYSTEM,
     BrowserActTool,
     BrowserReadTool,
@@ -607,7 +609,9 @@ class LoginTool(_OnTheProfile, _BrowserTool):
             ENDED_AT,
             ENDED_STATUS,
             PASSWORD_FIELD_STILL_THERE,
+            UNANSWERED,
             ANOTHER_PAGE,
+            DOWNLOAD_REFUSED,
         }
     )
     audit_numbers: ClassVar[frozenset[str]] = frozenset({"status", "gestures"})
@@ -920,16 +924,19 @@ class LoginTool(_OnTheProfile, _BrowserTool):
         # it is told but its origin (``_elsewhere``).
         landed = await self._browser.landed(page)
         still = await self._browser.count(page, word)
-        return Outcome(
-            {
-                "status": opened.status,
-                "gestures": done.made,
-                "page": page,
-                ENDED_AT: place_of(landed.address),
-                ENDED_STATUS: landed.status,
-                PASSWORD_FIELD_STILL_THERE: still > 0,
-            }
-        )
+        ended: dict[str, JsonValue] = {
+            "status": opened.status,
+            "gestures": done.made,
+            "page": page,
+            ENDED_AT: place_of(landed.address),
+            ENDED_STATUS: landed.status,
+            PASSWORD_FIELD_STILL_THERE: still > 0,
+        }
+        # The browser's own page, for the address of the login (M13.9b): the site did not
+        # answer — no status, at the address asked —, and the result says so.
+        if landed.unanswered is not None:
+            ended[UNANSWERED] = place_of(landed.unanswered)
+        return Outcome(ended)
 
     def _still_at_work(self, site: str, done: _Done) -> str:
         """A time that ran out **after the click** is not a page still at work: the password was
@@ -1079,6 +1086,9 @@ class LoginVerifier(_PageVerifier):
         glanced = await self._glanced(condition, result, selector=None, expect=expect)
         if isinstance(glanced, ErrorMetadata):
             return glanced
+        browser_s = self._the_browser_s(condition, glanced, BROWSER_EXPECT_MISSING)
+        if browser_s is not None:
+            return browser_s
         if glanced.shown:
             return None
         if glanced.second_factor:
@@ -1120,6 +1130,9 @@ class LoginVerifier(_PageVerifier):
         glanced = await self._glanced(condition, result, selector=word, expect=None)
         if isinstance(glanced, ErrorMetadata):
             return glanced
+        browser_s = self._the_browser_s(condition, glanced, HTTP_STATUS)
+        if browser_s is not None:
+            return browser_s
         if glanced.second_factor:
             return self._failure(
                 condition,

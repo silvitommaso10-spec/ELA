@@ -80,6 +80,7 @@ DEBT_HEADING = re.compile(r"^#{2,3} (\d+)\. Un debito datato: (.+)$", re.MULTILI
 NEXT_SECTION = re.compile(r"^#{1,2} ", re.MULTILINE)
 CHARGED = re.compile(r"\*\*Debito a carico (.+?)\*\*, dichiarato il \*\*(\d{4}-\d{2}-\d{2})\*\*")
 PAID = re.compile(r"[Ii]l debito di \*{0,2}ADR (\d{4}) §(\d+)\*{0,2},? saldat")
+REDECLARED = re.compile(r"[Ii]l debito di \*{0,2}ADR (\d{4}) §(\d+)\*{0,2},? ridichiarat")
 DECLARED = "### Vincoli dichiarati"
 BULLET = re.compile(r"^- \*\*(.+?)\*\*")
 PROPOSED = "Proposta"
@@ -361,7 +362,7 @@ def render_future(rows: Iterable[tuple[int, int]]) -> str:
 
 @dataclass(frozen=True)
 class Debt:
-    """A debt an ADR dated, charged to somebody, and either paid or still open."""
+    """A debt an ADR dated, charged to somebody, and paid, redeclared, or still open."""
 
     adr: str
     section: str
@@ -369,10 +370,23 @@ class Debt:
     charged: str
     declared: str
     paid_by: str | None
+    redeclared_in: str | None = None
+    """The dated debt of another ADR that carries this one now, charged to somebody else (M13.13,
+    decision 21 of the review of its SPEC): the owner of this row ended without paying it."""
 
     @property
     def open(self) -> bool:
-        return self.paid_by is None
+        return self.paid_by is None and self.redeclared_in is None
+
+    @property
+    def state(self) -> str:
+        """What the table says of it. **A payment is the last word**: a debt that changed hands
+        and was then paid says who paid it."""
+        if self.paid_by is not None:
+            return f"saldato da {self.paid_by}"
+        if self.redeclared_in is not None:
+            return f"ridichiarato in {self.redeclared_in}"
+        return "**aperto**"
 
 
 def payments(root: Path) -> dict[tuple[str, str], str]:
@@ -391,6 +405,29 @@ def payments(root: Path) -> dict[tuple[str, str], str]:
             adr, section = match.groups()
             if path.stem[:4] != adr:
                 found.setdefault((adr, section), _name_of(path, text, match.start()))
+    return found
+
+
+def redeclarations(root: Path) -> dict[tuple[str, str], str]:
+    """``(ADR, §)`` -> the dated debt of another ADR that redeclares that debt.
+
+    The third state (M13.13). A debt whose owner ended without paying it is not open any more —
+    its owner is done — and is not paid: it is **charged to somebody else, in a section that is
+    itself a dated debt**, with its own payer and its own date, and whose heading says which debt
+    it carries: «Un debito datato: il debito di ADR NNNN §N, ridichiarato …». Read from that heading
+    and from nowhere else — a sentence in a paragraph would close a debt by writing that somebody
+    else has it —, and never from the ADR whose debt it is, as for a payment.
+    """
+    found: dict[tuple[str, str], str] = {}
+    for path in adrs(root):
+        text = path.read_text(encoding="utf-8")
+        for heading in DEBT_HEADING.finditer(text):
+            carried = REDECLARED.search(heading.group(2))
+            if carried is not None and path.stem[:4] != carried.group(1):
+                found.setdefault(
+                    (carried.group(1), carried.group(2)),
+                    f"ADR {path.stem[:4]} §{heading.group(1)}",
+                )
     return found
 
 
@@ -424,7 +461,7 @@ def _section_body(text: str, start: int) -> str:
 
 def dated_debts(root: Path) -> list[Debt]:
     """Every "Un debito datato" section of every ADR, open ones first."""
-    paid = payments(root)
+    paid, moved = payments(root), redeclarations(root)
     found: list[Debt] = []
     for path in adrs(root):
         text = path.read_text(encoding="utf-8")
@@ -444,6 +481,7 @@ def dated_debts(root: Path) -> list[Debt]:
                     charged=charged.group(1),
                     declared=charged.group(2),
                     paid_by=paid.get((adr, heading.group(1))),
+                    redeclared_in=moved.get((adr, heading.group(1))),
                 )
             )
     return sorted(found, key=lambda debt: (not debt.open, debt.adr, int(debt.section)))
@@ -452,10 +490,9 @@ def dated_debts(root: Path) -> list[Debt]:
 def render_debts(found: Iterable[Debt]) -> str:
     lines = ["| Debito | Dichiarato | A carico | Stato |", "|---|---|---|---|"]
     for debt in found:
-        state = "**aperto**" if debt.open else f"saldato da {debt.paid_by}"
         lines.append(
             f"| ADR {debt.adr} §{debt.section} — {debt.title} | {debt.declared} "
-            f"| {debt.charged} | {state} |"
+            f"| {debt.charged} | {debt.state} |"
         )
     return "\n".join(lines)
 

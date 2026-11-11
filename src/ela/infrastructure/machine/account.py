@@ -114,6 +114,7 @@ from ela.ports import (
     BrowserFailed,
     BrowserNotInstalled,
     BrowserUnsupported,
+    Downloaded,
     Field,
     FormField,
     Glanced,
@@ -1039,6 +1040,16 @@ class AccountChrome(PlaywrightBrowser):
         # opening that looks now finds this one.
         return await super().open(address, allowed, stop)
 
+    async def downloaded_from(
+        self, address: str, allowed: Callable[[str], bool], stop: TaskStop, into: str
+    ) -> Downloaded:
+        """A download from an address is an opening on the profile like any other (M13.13): the
+        folder is looked at first, and from that look to the count of the opening there is no
+        wait, as in :meth:`open`."""
+        self._refuse_if_stopping()
+        await self._free()
+        return await super().downloaded_from(address, allowed, stop, into)
+
     async def can_show(self) -> bool:
         self._refuse_if_stopping()
         if self._system != SUPPORTED:
@@ -1099,16 +1110,27 @@ class AccountChrome(PlaywrightBrowser):
         return await self._on(page, read)
 
     async def landed(self, page: str) -> Landed:
-        """Where the page is once the document its last gesture led to is parsed, and the
-        status of that document (decision 106). **The click has already waited for the
-        navigation it started** — measured on 2026-10-12 with a site that takes its time: when
-        it returns, the page is at the address the site's redirect led to —, so what is waited
-        for here is the document itself, which the count of an element needs."""
+        """Where the page is once **the navigation the last click started has ended**, committed
+        or failed, and the status of the document it ended on (decision 106 of M13.9; M13.9b,
+        ADR 0066). *Rewritten on 2026-11-03 (answer 15 of the review of M13.9b's SPEC)*: the
+        docstring said the click had already waited for the navigation it started — measured on
+        2026-10-12 with a site that answers slowly —, and **for a ``POST`` that fails it is not
+        true**: the click returns before the browser shows its own page (10 rounds of 10 on
+        2026-11-03), and this read the form's page. Now it waits for the end — the main frame
+        stopped loading, which says it in 60 navigations of 60 —, with no time of its own: the
+        tool's is the one. **A click that started no navigation waits for nothing.**
+
+        Where the page ended is where the browser tried to go when the page is its own:
+        :attr:`Landed.unanswered`, and no status."""
 
         async def read(opened: _Open) -> Landed:
+            started = opened.clicked
+            if started is not None:
+                await started.wait()
             await opened.page.wait_for_load_state("domcontentloaded")
             status = opened.documents[-1] if opened.documents else None
-            return Landed(address=opened.page.url, status=status)
+            address, unanswered = await self._place(opened)
+            return Landed(address=address, status=status, unanswered=unanswered)
 
         return await self._on(page, read)
 
@@ -1127,7 +1149,7 @@ class AccountChrome(PlaywrightBrowser):
         opened = self._page(page)
         # The one predicate, as around every use of a page (ADR 0064 §4): a secret is not typed
         # on a page that is not inside its boundary.
-        self._within(opened)
+        await self._within(opened)
         failed: BaseException | None = None
         try:
             await opened.page.locator(selector).fill(value.reveal())
@@ -1138,7 +1160,7 @@ class AccountChrome(PlaywrightBrowser):
                 failed = self._translated(error)
         if failed is not None:
             raise failed
-        self._within(opened, made=True)
+        await self._within(opened, made=True)
 
     async def holds(self, page: str, selector: str, value: Secret) -> str:
         """What the field holds of what ``value`` holds: read from the page and compared here,

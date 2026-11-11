@@ -10,8 +10,10 @@ the last test, and it is the one ``make check`` fails on.
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import sys
+from collections.abc import Iterable
 from pathlib import Path
 from types import ModuleType
 
@@ -227,6 +229,92 @@ def test_the_line_of_the_debt_below_is_not_borrowed_by_the_one_above(
         generate_stato.dated_debts(tmp_path)
 
 
+REDECLARING = """# ADR
+
+## 10. Un debito datato: il debito di ADR 0001 §3, ridichiarato — qualcosa non torna ancora
+
+**Debito a carico di chi viene dopo**, dichiarato il **2026-11-10**.
+"""
+
+
+def test_a_debt_another_adr_redeclares_is_neither_open_nor_paid_and_names_where(
+    tmp_path: Path, generate_stato: ModuleType
+) -> None:
+    """Decisions 21 and 52 of M13.13: the third state, born with the redeclaration it is for. A
+    debt whose owner ended without paying it is charged to somebody else **in a dated debt of
+    another ADR**, whose heading says so: the old row stops being open — its owner is done — and
+    names the section that carries it now, and the new row is the open one."""
+    write(tmp_path / "docs" / "adr" / "0001-uno.md", DEBT)
+    write(tmp_path / "docs" / "adr" / "0002-due.md", REDECLARING)
+
+    old, new = sorted(generate_stato.dated_debts(tmp_path), key=lambda debt: debt.adr)
+
+    assert not old.open and old.paid_by is None
+    assert old.redeclared_in == "ADR 0002 §10"
+    assert new.open and (new.adr, new.section, new.charged) == ("0002", "10", "di chi viene dopo")
+    rendered = generate_stato.render_debts(generate_stato.dated_debts(tmp_path))
+    first, second = rendered.splitlines()[2:]
+    assert first.startswith("| ADR 0002 §10 ") and first.endswith("| **aperto** |")
+    assert second.startswith("| ADR 0001 §3 ")
+    assert second.endswith("| ridichiarato in ADR 0002 §10 |")
+
+
+def test_a_sentence_that_says_redeclared_outside_the_heading_of_a_dated_debt_redeclares_nothing(
+    tmp_path: Path, generate_stato: ModuleType
+) -> None:
+    """The cheapest way to close a debt would be to write that somebody else has it: the
+    redeclaration counts only as the heading of a section that **is** a dated debt — with its own
+    payer and its own date, or the generator refuses it. Not as a sentence in a section that is not
+    one, nor as a sentence in the body of one that is: the ADR that writes it here has a dated debt
+    of its own, about something else."""
+    write(tmp_path / "docs" / "adr" / "0001-uno.md", DEBT)
+    write(
+        tmp_path / "docs" / "adr" / "0002-due.md",
+        "# ADR\n\n## 5. Un debito datato: un'altra cosa\n\n"
+        "**Debito a carico di qualcuno**, dichiarato il **2026-11-10**.\n\n"
+        "Il debito di ADR 0001 §3, ridichiarato a carico di qualcuno.\n\n"
+        "## 10. Altro\n\nIl debito di ADR 0001 §3, ridichiarato a carico di qualcuno.\n",
+    )
+
+    debts = {(debt.adr, debt.section): debt for debt in generate_stato.dated_debts(tmp_path)}
+
+    assert set(debts) == {("0001", "3"), ("0002", "5")}
+    assert debts["0001", "3"].open and debts["0001", "3"].redeclared_in is None
+
+
+def test_an_adr_cannot_redeclare_its_own_debt(tmp_path: Path, generate_stato: ModuleType) -> None:
+    """As for a payment: an ADR that moved its own debt further down its own page would have
+    closed it by writing."""
+    own = DEBT.replace(
+        "## 4. Altro\n",
+        "## 4. Un debito datato: il debito di ADR 0001 §3, ridichiarato\n\n"
+        "**Debito a carico di un altro**, dichiarato il **2026-11-10**.\n",
+    )
+    write(tmp_path / "docs" / "adr" / "0001-uno.md", own)
+
+    first, second = generate_stato.dated_debts(tmp_path)
+
+    assert first.open and second.open
+    assert first.redeclared_in is None and second.redeclared_in is None
+
+
+def test_a_debt_redeclared_and_then_paid_is_paid(
+    tmp_path: Path, generate_stato: ModuleType
+) -> None:
+    """The payment is the last word: the row says who paid, not where the debt had moved."""
+    write(tmp_path / "docs" / "adr" / "0001-uno.md", DEBT)
+    write(tmp_path / "docs" / "adr" / "0002-due.md", REDECLARING)
+    write(
+        tmp_path / "docs" / "adr" / "0003-tre.md",
+        "# ADR\n\n## 2. Il debito di ADR 0001 §3, saldato\n\nEcco.\n",
+    )
+
+    old = next(debt for debt in generate_stato.dated_debts(tmp_path) if debt.adr == "0001")
+
+    assert not old.open and old.paid_by == "ADR 0003 §2"
+    assert "| saldato da ADR 0003 §2 |" in generate_stato.render_debts([old])
+
+
 # ----------------------------------------------------------------------------------------
 # The spec nobody has cited yet
 # ----------------------------------------------------------------------------------------
@@ -367,3 +455,83 @@ def test_a_milestone_that_promises_a_payment_does_not_close_the_debt(
     (debt,) = generate_stato.dated_debts(tmp_path)
 
     assert debt.open
+
+
+# ----------------------------------------------------------------------------------------
+# What may change after the proof (decision 43 of the review after the red CI of 0bc3278)
+# ----------------------------------------------------------------------------------------
+
+GENERATOR = "generate_stato"
+LOADERS = frozenset({"import_module", "spec_from_file_location", "__import__", "run_path"})
+"""The calls that load a module by a name or a path written as a string."""
+
+
+def importers(paths: Iterable[Path]) -> list[Path]:
+    """The files among ``paths`` that load the generator of STATO: an ``import`` or a ``from …
+    import`` that names it, or a call that loads a module by a string that names it. A word in a
+    docstring is no import."""
+    found: list[Path] = []
+    for path in paths:
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Import):
+                named = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                named = [node.module or "", *(alias.name for alias in node.names)]
+            elif (
+                isinstance(node, ast.Call)
+                and getattr(node.func, "attr", getattr(node.func, "id", "")) in LOADERS
+            ):
+                named = [
+                    argument.value
+                    for argument in node.args
+                    if isinstance(argument, ast.Constant) and isinstance(argument.value, str)
+                ]
+            else:
+                continue
+            if any(GENERATOR in name for name in named):
+                found.append(path)
+                break
+    return found
+
+
+def what_the_proof_runs(root: Path) -> list[Path]:
+    """The code a proof by hand sees: every module of ``src/``, and every script of a proof."""
+    return [*sorted((root / "src").rglob("*.py")), *sorted((root / "scripts").glob("prova_*.py"))]
+
+
+def test_nothing_a_proof_runs_imports_the_generator_of_stato() -> None:
+    """Decision 43, which revises decision 87 of M13.10 openly in one point only: after the proof
+    of a branch only ``docs/`` and ``tests/`` change — **and ``scripts/generate_stato.py``**,
+    because nothing the proof ran loads it, so what the proof saw cannot change with it. The rest of
+    ``scripts/`` does not: a script of a proof imports its siblings."""
+    root = SCRIPT.parents[1]
+    looked = what_the_proof_runs(root)
+
+    assert len(looked) > 100 and any(path.name.startswith("prova_") for path in looked)
+    assert importers(looked) == []
+
+
+@pytest.mark.parametrize(
+    ("where", "written"),
+    [
+        ("scripts/prova_m99.py", "import generate_stato\n"),
+        ("scripts/prova_m99.py", "import generate_stato as stato\n"),
+        ("scripts/prova_m99.py", "from generate_stato import dated_debts\n"),
+        (
+            "src/ela/uno.py",
+            "import importlib\nimportlib.import_module('generate_stato')\n",
+        ),
+        (
+            "src/ela/uno.py",
+            "import importlib.util\n"
+            "importlib.util.spec_from_file_location('x', 'scripts/generate_stato.py')\n",
+        ),
+    ],
+)
+def test_a_module_or_a_script_of_a_proof_that_imports_it_is_found(
+    tmp_path: Path, where: str, written: str
+) -> None:
+    write(tmp_path / where, written)
+    write(tmp_path / "src" / "ela" / "due.py", '"""Read ``scripts/generate_stato.py``."""\n')
+
+    assert importers(what_the_proof_runs(tmp_path)) == [tmp_path / where]

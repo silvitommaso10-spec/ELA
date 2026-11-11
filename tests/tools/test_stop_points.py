@@ -18,6 +18,7 @@ node, and its three wrong promises are built here with a fake each.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import threading
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
@@ -40,13 +41,18 @@ from ela.executive import StopOfTask
 from ela.permissions import (
     BROWSER_ACT,
     BROWSER_ACT_AS_YOU,
+    BROWSER_DOWNLOAD,
+    BROWSER_DOWNLOAD_AS_YOU,
     BROWSER_GUIDED,
     BROWSER_GUIDED_AS_YOU,
     BROWSER_LOGIN,
     BROWSER_READ,
     BROWSER_READ_AS_YOU,
+    BROWSER_UPLOAD,
+    BROWSER_UPLOAD_AS_YOU,
 )
 from ela.ports import (
+    DOWNLOAD_GESTURE,
     ENVELOPE,
     GUIDED_STOPPED,
     NAVIGATION,
@@ -108,6 +114,12 @@ from ela.tools import (
 from ela.tools.account import AccountActTool, AccountReadTool, LoginTool
 from ela.tools.browser import STOPPED as BROWSER_STOPPED
 from ela.tools.browser import BrowserActTool, BrowserReadTool
+from ela.tools.browser_files import (
+    AccountDownloadTool,
+    AccountUploadTool,
+    BrowserDownloadTool,
+    BrowserUploadTool,
+)
 from ela.tools.captures import name_for, text_name_for
 from ela.tools.guided import SESSION_AS_YOU
 from ela.tools.model import ModelCompleteTool
@@ -144,6 +156,9 @@ class Subject:
     hold: Callable[[], Held] | None = None
     """Where the tool waits before its point, held until the test lets it go; ``None`` for a
     tool with no wait of its own before it."""
+    named: dict[str, Any] | None = None
+    """What the question of the call named, handed back with the yes (ADR 0065 §2); ``None`` for
+    a tool whose question names nothing it has to use after."""
 
 
 @dataclass
@@ -436,6 +451,75 @@ def _login(tmp_path: Path) -> Subject:
     )
 
 
+GIVEN = b"il file della prova, con un testo neutro\n"
+"""The file an upload of these tests gives a page, as it is when the question is composed."""
+
+
+def _a_download(tmp_path: Path, *, profile: bool) -> Subject:
+    """A download from an address that is the file: what the port sees of it is the gesture."""
+    root = tmp_path / "files"
+    (root / "ELA").mkdir(parents=True)
+    browser = (FakeAccountBrowser if profile else FakeBrowser)(FakePage(download=GIVEN))
+    made = AccountDownloadTool if profile else BrowserDownloadTool
+    return Subject(
+        made(root, SITES, browser, FakeClock(), FakeIdGenerator(), pages=FakeTaskPages()),  # type: ignore[arg-type]
+        browser_decision(BROWSER_DOWNLOAD_AS_YOU if profile else BROWSER_DOWNLOAD),
+        {
+            "site": ACT["site"],
+            "path": "/file.bin",
+            "file": "ELA/scaricato.bin",
+            "overwrite": False,
+            "purpose": "la prova",
+        },
+        lambda: bool(browser.downloads),
+        hold=lambda: _launch(browser),
+    )
+
+
+def _download(tmp_path: Path) -> Subject:
+    return _a_download(tmp_path, profile=False)
+
+
+def _download_as_you(tmp_path: Path) -> Subject:
+    return _a_download(tmp_path, profile=True)
+
+
+def _an_upload(tmp_path: Path, *, profile: bool) -> Subject:
+    """An upload with a click after the file: what the port sees of it is the file given — and
+    the yes carries what the question named of the file, as the executor hands it back."""
+    root = tmp_path / "files"
+    (root / "ELA").mkdir(parents=True)
+    (root / "ELA" / "da-caricare.txt").write_bytes(GIVEN)
+    browser = (FakeAccountBrowser if profile else FakeBrowser)(
+        FakePage(fields={"#file": Field("file", "")})
+    )
+    made = AccountUploadTool if profile else BrowserUploadTool
+    return Subject(
+        made(root, SITES, browser, FakeClock(), FakeIdGenerator(), pages=FakeTaskPages()),  # type: ignore[arg-type]
+        browser_decision(BROWSER_UPLOAD_AS_YOU if profile else BROWSER_UPLOAD),
+        {
+            "site": ACT["site"],
+            "path": "/form",
+            "file": "ELA/da-caricare.txt",
+            "file_field": "#file",
+            "click": "#go",
+            "expect_text": "Ricevuto",
+            "purpose": "la prova",
+        },
+        lambda: bool(browser.given),
+        hold=lambda: _launch(browser),
+        named={"size": len(GIVEN), "digest": hashlib.sha256(GIVEN).hexdigest()},
+    )
+
+
+def _upload(tmp_path: Path) -> Subject:
+    return _an_upload(tmp_path, profile=False)
+
+
+def _upload_as_you(tmp_path: Path) -> Subject:
+    return _an_upload(tmp_path, profile=True)
+
+
 def _guided(tmp_path: Path) -> Subject:
     world = guided_world()
     return Subject(
@@ -472,6 +556,10 @@ SUBJECTS: dict[CapabilityId, Callable[[Path], Subject]] = {
     BROWSER_ACT_AS_YOU: _act_as_you,
     BROWSER_LOGIN: _login,
     BROWSER_GUIDED_AS_YOU: _guided_as_you,
+    BROWSER_DOWNLOAD: _download,
+    BROWSER_DOWNLOAD_AS_YOU: _download_as_you,
+    BROWSER_UPLOAD: _upload,
+    BROWSER_UPLOAD_AS_YOU: _upload_as_you,
 }
 WITH_A_WAIT = sorted(
     capability
@@ -487,6 +575,10 @@ WITH_A_WAIT = sorted(
         _read_as_you,
         _act_as_you,
         _login,
+        _download,
+        _download_as_you,
+        _upload,
+        _upload_as_you,
     }
 )
 """The tools with a wait of their own before the point (proposal 2): the hash of the program, the
@@ -567,9 +659,15 @@ PRODUCTION: dict[str, tuple[str | None, str | None]] = {
     "browser.act_as_you": ("the first gesture", None),
     "browser.login": ("the first gesture", None),
     "browser.guided_as_you": ("the launch of the session", None),
+    "browser.download": ("the gesture that starts the download", None),
+    "browser.download_as_you": ("the gesture that starts the download", None),
+    "browser.upload": ("the first gesture", None),
+    "browser.upload_as_you": ("the first gesture", None),
 }
-"""The table of proposal 2 of the SPEC, and of ADR 0054 §3 — and since M14.3 the launch of a guided
-session (ADR 0060)."""
+"""The table of proposal 2 of the SPEC, and of ADR 0054 §3 — since M14.3 the launch of a guided
+session (ADR 0060), and since M13.13 the files from the browser (ADR 0066): a download listens
+right before the gesture that starts it, an upload before its first gesture, which gives the
+file."""
 
 
 def test_the_two_halves_of_production_are_the_table(tmp_path: Path) -> None:
@@ -582,6 +680,7 @@ def test_the_two_halves_of_production_are_the_table(tmp_path: Path) -> None:
 
     assert declared == PRODUCTION
     assert PRODUCTION["browser.read"][0] == NAVIGATION
+    assert PRODUCTION["browser.download"][0] == DOWNLOAD_GESTURE
 
 
 # ----------------------------------------------------------------------------------------
@@ -664,7 +763,7 @@ async def test_before_the_point_the_tool_raises_and_the_port_sees_nothing(
     stop = FakeStop(stopped=True)
 
     with pytest.raises(ToolStopped):
-        await subject.tool.execute(subject.decision, subject.arguments, stop)
+        await subject.tool.execute(subject.decision, subject.arguments, stop, subject.named)
 
     assert not subject.acted()
     assert stop.listened, "it raised without listening"
@@ -681,7 +780,9 @@ async def test_stopped_during_the_wait_before_the_point_the_port_sees_nothing(
     held = subject.hold()
     stop = FakeStop()
 
-    running = asyncio.create_task(subject.tool.execute(subject.decision, subject.arguments, stop))
+    running = asyncio.create_task(
+        subject.tool.execute(subject.decision, subject.arguments, stop, subject.named)
+    )
     await held.reached()
     assert stop.listened == []
     stop.event.set()
@@ -701,7 +802,7 @@ async def test_after_the_point_the_effect_happens_and_the_result_is_the_tools(
     assert here is not None
     stop = FakeStop(after=here)
 
-    result = await subject.tool.execute(subject.decision, subject.arguments, stop)
+    result = await subject.tool.execute(subject.decision, subject.arguments, stop, subject.named)
 
     assert isinstance(result, ExecutionResult)
     assert subject.acted()
@@ -720,7 +821,13 @@ def ok_after_the_point(capability: CapabilityId, result: ExecutionResult) -> boo
     code = None if result.error is None else result.error.code
     if capability == TERMINAL_RUN:
         return code == TERMINAL_STOPPED and result.output["ended"] == "stopped_with_the_task"
-    if capability in {BROWSER_ACT, BROWSER_ACT_AS_YOU, BROWSER_LOGIN}:
+    if capability in {
+        BROWSER_ACT,
+        BROWSER_ACT_AS_YOU,
+        BROWSER_LOGIN,
+        BROWSER_UPLOAD,
+        BROWSER_UPLOAD_AS_YOU,
+    }:
         return code == BROWSER_STOPPED and result.output["gestures"] == 1
     if capability in {BROWSER_GUIDED, BROWSER_GUIDED_AS_YOU}:
         return code == GUIDED_STOPPED and result.usage is not None

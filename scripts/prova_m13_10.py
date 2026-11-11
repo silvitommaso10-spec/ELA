@@ -79,6 +79,17 @@ KINDS: Final = (
     "pagina",
     "vault",
 )
+LOOKS: Final[Mapping[str, str]] = {
+    "occhio": "una domanda all'occhio di Tommaso, su ciò che ha davanti",
+}
+"""The kinds of block that ask Tommaso's eye, each with its reason (M13.10b): before each of them,
+in its step, ``tests/docs/test_prova_eyes.py`` wants a block of a kind of :data:`SHOWS`."""
+SHOWS: Final[Mapping[str, str]] = {
+    "schermo": "stampa sullo schermo, e non nel file, l'uscita dei suoi comandi",
+}
+"""The kinds of block that put in front of Tommaso what a question to his eye then asks, each with
+its reason (M13.10b) — not every kind that prints: what it puts in front is what an eye of this
+section asks about. A judgement, which no test sees: its reason is written for the review."""
 ID = base.ID
 APPROVAL_ID: Final = guided.APPROVAL_ID
 CHILD: Final = guided.CHILD

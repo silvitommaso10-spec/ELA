@@ -1373,3 +1373,38 @@ def test_main_walks_every_step_of_the_section_when_step_1_holds(
     code = module.main(["--out", str(tmp_path / "prova.txt"), "--login", str(LOGIN_PLAN)])
 
     assert code == 0 and walked == [list(range(2, 11))]
+
+
+ENTRY_HAND = "Apri l'app di Bitwarden, cerca news.ycombinator.com e apri la voce del tuo account."
+
+
+def test_the_entry_of_the_vault_is_put_on_the_screen_and_never_in_the_file(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """M13.10b, answer 17 of the review of its SPEC: before the first eye of step 6, a block puts
+    the entry of the vault in front of Tommaso — he opens it in the app of Bitwarden, as the block
+    says on the screen — and **nothing of it goes into the file**: it names the vault. The script
+    waits for him, and the file says only that the entry is on the app's screen."""
+    module = script()
+    asked: list[str] = []
+    report = module.Report(io.StringIO())
+    proof = module.Proof(None, report, lambda question: asked.append(question) or "", None)
+    block = module.base.Block(6, "voce", ENTRY_HAND)
+
+    module.a_block(6, block, module.guided.Turn(), proof)
+
+    assert ENTRY_HAND in capsys.readouterr().out + "".join(asked)
+    assert not any("news.ycombinator.com" in line for line in report.lines)
+    assert any("sullo schermo dell'app" in line for line in report.lines)
+    assert asked, "the script waits for the hand"
+
+
+def test_the_two_eyes_of_step_6_have_what_they_ask_in_front_of_them() -> None:
+    """Answer 17: a ``voce`` before the first, a ``schermo`` with the questions before the
+    second — and the dated note in the heading of the section."""
+    blocks = [one.kind for one in marked()[6]]
+    eyes = [index for index, kind in enumerate(blocks) if kind == "occhio"]
+
+    assert blocks[eyes[0] - 1] == "voce"
+    assert blocks[eyes[1] - 1] == "schermo"
+    assert "cambiata dopo la prova del 2026-10-13" in " ".join(section().split())

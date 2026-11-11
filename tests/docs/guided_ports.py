@@ -39,10 +39,29 @@ of the ADRs before it take away to keep counting the catalogue their ADR saw."""
 assert ACCOUNT_CAPABILITIES, "ADR 0063 adds capabilities"
 
 
+FILES_ADR: Final = GUIDED_ADR.with_name("0066-browser-files.md")
+FILE_CAPABILITIES: Final = frozenset(
+    _ADDED.findall(FILES_ADR.read_text(encoding="utf-8").split("Capability aggiunte:", 1)[1])
+)
+"""The capabilities ADR 0066 added (M13.13), read from its own table of the catalogue in the same
+way: what the tests of every ADR before it take away to keep counting the catalogue theirs saw."""
+assert FILE_CAPABILITIES, "ADR 0066 adds capabilities"
+
+
 def before_the_accounts() -> tuple[str, ...]:
-    """The catalogue as the ADRs up to ADR 0062 saw it: today's, less what ADR 0063 added."""
+    """The catalogue as the ADRs up to ADR 0062 saw it: today's, less what ADR 0063 added — and
+    what ADR 0066 added after it."""
+    from ela.permissions import production_catalogue
+
+    later = ACCOUNT_CAPABILITIES | FILE_CAPABILITIES
+    return tuple(spec.id for spec in production_catalogue().specs() if spec.id not in later)
+
+
+def before_the_files() -> tuple[str, ...]:
+    """The catalogue as ADR 0063, ADR 0064 and ADR 0065 saw it: today's, less what ADR 0066
+    added."""
     from ela.permissions import production_catalogue
 
     return tuple(
-        spec.id for spec in production_catalogue().specs() if spec.id not in ACCOUNT_CAPABILITIES
+        spec.id for spec in production_catalogue().specs() if spec.id not in FILE_CAPABILITIES
     )

@@ -11,11 +11,15 @@ from ela.domain import CapabilityId
 from ela.permissions import (
     BROWSER_ACT,
     BROWSER_ACT_AS_YOU,
+    BROWSER_DOWNLOAD,
+    BROWSER_DOWNLOAD_AS_YOU,
     BROWSER_GUIDED,
     BROWSER_GUIDED_AS_YOU,
     BROWSER_LOGIN,
     BROWSER_READ,
     BROWSER_READ_AS_YOU,
+    BROWSER_UPLOAD,
+    BROWSER_UPLOAD_AS_YOU,
     MODEL_COMPLETE,
     TERMINAL_RUN,
     catalogue_v01,
@@ -312,6 +316,10 @@ def test_the_production_registries_are_v01_plus_what_came_after(tmp_path: Path) 
         BROWSER_ACT_AS_YOU,
         BROWSER_LOGIN,
         BROWSER_GUIDED_AS_YOU,
+        BROWSER_DOWNLOAD,
+        BROWSER_DOWNLOAD_AS_YOU,
+        BROWSER_UPLOAD,
+        BROWSER_UPLOAD_AS_YOU,
     ]
     assert {v.capability_id for v in verifiers.verifiers()} == {
         t.capability_id for t in tools.tools()

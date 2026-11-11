@@ -52,6 +52,16 @@ from ela.tools.account import (
 )
 from ela.tools.base import NotNow
 from ela.tools.browser import BrowserActTool, BrowserReadTool, Browsing
+from ela.tools.browser_files import (
+    AccountDownloadTool,
+    AccountFileDownloadedVerifier,
+    AccountUploadTool,
+    AccountUploadVerifier,
+    BrowserDownloadTool,
+    BrowserUploadTool,
+    FileDownloadedVerifier,
+    UploadVerifier,
+)
 from ela.tools.echo import EchoTool
 from ela.tools.errors import (
     NotIdempotentError,
@@ -381,6 +391,13 @@ def production_tools(
                 gateway=gateway,
                 kind=SESSION_AS_YOU,
             ),
+            # The files from the browser (M13.13, ADR 0066): the declared root of ``fs.*`` — a
+            # download is judged as a write under it, an upload as a read —, the declared sites,
+            # and each browser for its own two. None of the four is a gesture of a guided session.
+            BrowserDownloadTool(fs_root, browsing, browser, clock, ids, pages=pages),
+            AccountDownloadTool(fs_root, browsing, accounts, clock, ids, pages=pages),
+            BrowserUploadTool(fs_root, browsing, browser, clock, ids, pages=pages),
+            AccountUploadTool(fs_root, browsing, accounts, clock, ids, pages=pages),
         )
     )
 
@@ -509,5 +526,11 @@ def production_verifiers(
             AccountActVerifier(accounts, browser_seconds),
             LoginVerifier(accounts, browser_seconds),
             BrowserGuidedVerifier(gestures, sessions, audit, kind=SESSION_AS_YOU),
+            # A download is verified on the disk it was written to; an upload on the page that
+            # received the file, in the browser that opened it.
+            FileDownloadedVerifier(fs_root),
+            AccountFileDownloadedVerifier(fs_root),
+            UploadVerifier(browser, browser_seconds),
+            AccountUploadVerifier(accounts, browser_seconds),
         )
     )

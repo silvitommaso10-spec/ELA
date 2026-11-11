@@ -16,12 +16,14 @@ The real adapters are walked with the real browsers
 from __future__ import annotations
 
 import inspect
+import tempfile
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import pytest
 
-from ela.ports import AccountBrowser, Browser, Secret
+from ela.ports import AccountBrowser, Browser, GivenFile, Secret
 from ela.testing.fakes import FakeAccountBrowser, FakeBrowser, FakeStop
 
 NOT_A_USE = {
@@ -33,13 +35,22 @@ NOT_A_USE = {
     ),
     "where": (
         "says where a page a task keeps is, for the question of the step that continues — the "
-        "address the adapter already knows, with no call, and nothing of the page"
+        "address the adapter already knows, with one call more only for a page at no site "
+        "(M13.9b), and nothing of the page"
+    ),
+    "refused_download": (
+        "says what the door of the downloads refused — a download nobody's step asked for "
+        "(M13.13) —, and nothing of this page: the form of ``another``"
     ),
 }
 """The members that are given a page and do not use it, each with its reason."""
 
 ASKED_BEFORE_ONLY = {
     "left": "reads nothing of the page: it says what the gate refused, and nothing is thrown away",
+    "unanswered": (
+        "says whether the page is the browser's own, for an address the site did not answer at "
+        "(M13.9b): where the page is, and nothing of it — nothing is read, nothing to throw away"
+    ),
     "resume": (
         "takes a page back with the boundary it is handed, asks that boundary where the page is, "
         "and reads nothing of it: what it returns is said of a page inside, as an opening's"
@@ -71,6 +82,11 @@ def _arguments(member: Any) -> dict[str, object]:
         "seconds": 0.0,
         # The boundary a page is taken back with (``resume``): one the page is outside of.
         "allowed": lambda url: False,
+        # What a file field is given, and what a download is handed (M13.13): the stop of its
+        # task, and a folder nobody makes — on a page outside its boundary nothing is written.
+        "file": GivenFile("a-file.txt", "text/plain", b"the bytes of this test"),
+        "stop": FakeStop(),
+        "into": str(Path(tempfile.gettempdir()) / "a-folder-no-walk-of-this-test-makes"),
     }
     parameters = inspect.signature(member).parameters
     if "value" in parameters:
@@ -182,6 +198,64 @@ async def test_every_use_of_a_page_by_a_fake_asks_the_boundary_again_once_it_is_
     """The second half of the predicate (decision 122): what was read on a page that ended
     elsewhere meanwhile is thrown away, and a gesture is said as made."""
     assert await unguarded_after(made, port) == []
+
+
+TRIED = "https://altro.example/x"
+"""The address a page of the browser's own stands for, outside the boundary of these walks."""
+
+
+async def unguarded_on_the_browser_s_page(made: Callable[[], Any], port: type) -> list[str]:
+    """The uses of a page that is **the browser's own page for an address outside its boundary**
+    (M13.9b, ADR 0066): each member that did not raise ``LeftSite`` **with the address the
+    browser tried** — a fake that asked the boundary about ``chrome-error://`` would let a tool's
+    test pass where the real browser says another site."""
+    from ela.ports import LeftSite
+
+    found: list[str] = []
+    for name in uses(port):
+        browser = made()
+        browser.page.unreachable = TRIED
+        opened = await browser.open(
+            "https://sito.example/", lambda url: url.startswith("https://sito.example/"), FakeStop()
+        )
+        await browser.keep(opened.page)
+        browser.moves[name] = "chrome-error://chromewebdata/"
+        try:
+            await getattr(browser, name)(opened.page, **_arguments(getattr(port, name)))
+        except LeftSite as elsewhere:
+            if elsewhere.address != TRIED:
+                found.append(f"{name}: asked about {elsewhere.address}")
+            continue
+        except Exception as error:  # noqa: BLE001 — said, as what the member did instead
+            found.append(f"{name}: {type(error).__name__}")
+            continue
+        found.append(name)
+    return found
+
+
+@pytest.mark.parametrize(
+    ("made", "port"), [(FakeBrowser, Browser), (FakeAccountBrowser, AccountBrowser)]
+)
+async def test_every_use_of_the_browser_s_page_by_a_fake_asks_about_the_address_tried(
+    made: Callable[[], Any], port: type
+) -> None:
+    assert await unguarded_on_the_browser_s_page(made, port) == []
+
+
+class AskingAboutTheBrowser_sPage(FakeBrowser):
+    """A fake that asks the boundary about where the browser's page is, not about the address
+    the browser tried."""
+
+    def _address(self) -> str:
+        if self._where is not None:
+            return self._where
+        return self.page.address or self.opened[-1]
+
+
+async def test_a_fake_that_asks_about_the_browser_s_page_is_found() -> None:
+    found = await unguarded_on_the_browser_s_page(AskingAboutTheBrowser_sPage, Browser)
+
+    assert "title: asked about chrome-error://chromewebdata/" in found
 
 
 class ForgetfulAfterwards(FakeBrowser):

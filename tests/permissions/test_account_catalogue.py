@@ -263,13 +263,20 @@ def test_no_policy_of_59_can_be_born_for_any_of_the_three(capability: str) -> No
 
 def test_they_come_after_the_guided_session_in_the_catalogue_the_composition_builds() -> None:
     ids = [spec.id for spec in production_catalogue().specs()]
+    after = ids[ids.index("browser.guided") + 1 :]
 
-    assert ids[ids.index("browser.guided") + 1 :] == [
+    assert after[:4] == [
         BROWSER_READ_AS_YOU,
         BROWSER_ACT_AS_YOU,
         BROWSER_LOGIN,
         BROWSER_GUIDED_AS_YOU,
     ]
+    assert after[4:] == [
+        "browser.download",
+        "browser.download_as_you",
+        "browser.upload",
+        "browser.upload_as_you",
+    ], "and after them the files from the browser (M13.13, ADR 0066)"
 
 
 # ----------------------------------------------------------------------------------------

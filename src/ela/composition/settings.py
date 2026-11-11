@@ -21,7 +21,7 @@ import os
 import platform
 import re
 import stat
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -69,6 +69,7 @@ from ela.routing import RoutingSettings
 from ela.tombstones import (
     refuse_retired,
 )
+from ela.tools.programs import same_program
 from ela.tools.settings import (
     CaptureSettings,
     ListenSettings,
@@ -726,6 +727,8 @@ class SpendingSettings(BaseSettings):
 
 
 PROFILE_VARIABLE: Final = "ELA_BROWSER_PROFILE_DIR"
+VAULT_VARIABLE: Final = "ELA_VAULT_PROGRAM"
+TERMINAL_VARIABLE: Final = "ELA_TERMINAL_PROGRAMS"
 VAULT_PROGRAM_VARIABLE: Final = "ELA_VAULT_PROGRAM"
 
 COPIED_ELSEWHERE: Final = ("Library/Mobile Documents", "Library/CloudStorage")
@@ -888,6 +891,33 @@ def _within(folder: Path, place: Path) -> bool:
     return place in chain or any(_same_folder(part, place) for part in chain)
 
 
+def refuse_the_vault_program(program: str, terminal: Sequence[str]) -> None:
+    """Refuse a configuration in which **the vault's program is one of the terminal's** (M13.9c,
+    ADR 0066 §3): the vault's adapter launches it with a closed list of commands (ADR 0063 §2), and
+    a program of the terminal is launched with the arguments of a plan (ADR 0047) — declared in
+    both, the closed list would be a defence the terminal steps around.
+
+    **By identity, not by name** (answer 18 of the review of M13.9c):
+    :func:`~ela.tools.programs.same_program`, the comparison the launch makes too — the same
+    resolved path, or the same file under a second name; a copy in another file is another
+    program, and is not recognised (declared in ADR 0066).
+
+    **A check of the start-up, and so a belief about the launch** (decision 28 of the review after
+    the red CI of ``56c672c``): a program that is not there now cannot be compared by identity, and
+    what a path leads to changes after. This refuses the configuration somebody can see is wrong
+    today; what decides a launch is asked at the launch (``ela.tools.programs.Programs``). A
+    ``ValueError`` whose sentence names both variables: a check of the whole configuration, with
+    no field to point at."""
+    for entry in terminal:
+        if same_program("/" + entry, program):
+            raise ValueError(
+                f"{VAULT_VARIABLE} ({program}) is also a program of {TERMINAL_VARIABLE} "
+                f"(/{entry}). The vault's program is launched by the vault's adapter alone, with "
+                "its closed list of commands; a program of the terminal is launched with the "
+                f"arguments of a plan. Take it out of {TERMINAL_VARIABLE}."
+            )
+
+
 def refuse_the_profile(
     profile: Path, *, tree: Path, home: Path, theirs: Mapping[str, Path]
 ) -> None:
@@ -1044,6 +1074,15 @@ class Settings(BaseModel):
                 home=Path.home(),
                 theirs={what: own[what] for what in ("the workspace", "the capture store")},
             )
+        return self
+
+    @model_validator(mode="after")
+    def _a_vault_program_that_is_not_the_terminal_s(self) -> Settings:
+        """The vault's program is not one of the terminal's (M13.9c, ADR 0066 §3): only the
+        vault's adapter launches it, with its closed list of commands."""
+        program = self.accounts.vault_program
+        if program is not None:
+            refuse_the_vault_program(program, self.terminal.programs)
         return self
 
     def _ela_s_own(self) -> dict[str, Path]:

@@ -73,9 +73,14 @@ def test_the_capability_is_the_one_the_spec_writes() -> None:
     )
     ids = [one.id for one in production_catalogue().specs()]
     assert ids[ids.index(BROWSER_GUIDED) - 1] == "browser.act", "after the two of ADR 0052"
-    assert all(
-        later.endswith(("_as_you", ".login")) for later in ids[ids.index(BROWSER_GUIDED) + 1 :]
-    )
+    later = ids[ids.index(BROWSER_GUIDED) + 1 :]
+    # After the session come the capabilities of the browser with the profile — and, since
+    # M13.13, the files from the browser, two of which are the empty browser's (ADR 0066; the
+    # clash S6 of its SPEC).
+    assert [one for one in later if not one.endswith(("_as_you", ".login"))] == [
+        "browser.download",
+        "browser.upload",
+    ]
 
 
 def test_an_empty_list_of_sites_is_an_answer_for_the_session_too() -> None:

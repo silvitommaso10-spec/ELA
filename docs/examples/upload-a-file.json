@@ -1,0 +1,37 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M13.13 per un CARICAMENTO (GETTING_STARTED, sezione 30, passi 5 e",
+    "7): il file che lo script della prova scrive sotto lo scope, dato alla pagina di prova di",
+    "testpages.eviltester.com — scelta da Tommaso il 2026-11-02; la pagina dice di sé che non tiene il",
+    "file. `browser.upload` è HIGH: chiede a ogni uso. La domanda nomina il percorso intero del file,",
+    "la sua dimensione e la sua impronta sha256, com'erano quando è stata fatta: un file cambiato fra",
+    "la domanda e il sì non parte (`browser.file_changed`). ELA dà alla pagina i byte e il nome, mai",
+    "il percorso. Quella pagina manda il file da sé appena il campo lo riceve: per questo il piano non",
+    "ha `click`, e il testo atteso è quello che lei mostra, per quattro secondi dal gesto.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "caricare un file sul sito della prova",
+  "steps": [
+    {
+      "id": "c0de1a28-0000-4b00-8a00-000000001313",
+      "goal": "caricare il file che lo script della prova ha scritto",
+      "required_capabilities": [
+        "browser.upload"
+      ],
+      "arguments": {
+        "site": "testpages.eviltester.com",
+        "path": "/pages/files/file-upload/",
+        "file": "ELA/prova-m13.13/da-caricare.txt",
+        "file_field": "#fileinput",
+        "expect_text": "Upload successful!",
+        "purpose": "la prova a mano dei file dal browser"
+      },
+      "risk": "HIGH",
+      "expected_result": "la pagina del sito conferma il caricamento",
+      "success_conditions": [
+        "browser.expect_visible"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}
