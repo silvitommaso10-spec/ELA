@@ -23,12 +23,15 @@ from typing import Any
 
 import pytest
 
-from ela.providers.anthropic.models import HAIKU_5_5, MODELS
+from ela.providers.anthropic.models import HAIKU_5_5
 from tests.domain.examples import HAIKU_4_5_ID
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "prova_m14_1.py"
 PLACEHOLDER = re.compile(r"<[^>\s][^>]*>")
+CALLED_ON_2026_10_07 = frozenset({"claude-opus-5-5", "claude-sonnet-5-5", HAIKU_4_5_ID})
+"""The models the proof called on the day it was made, as §23 records them (M14.6b): written here
+and dated, not read from ``MODELS`` — the list has changed since, and the record has not."""
 HERE = "6c38f1c5-6cda-5680-8a7a-4f061588deed"
 PC = "5ddae87a-0000-4000-8000-000000000001"
 
@@ -152,14 +155,14 @@ def test_every_line_of_the_scripts_kinds_is_in_its_vocabulary() -> None:
             if block.kind == "guarda":
                 module.base.sign_of(block)  # raises on a line outside the vocabulary
     for _, line in lines_of("costo"):
-        assert line.removesuffix(module.ON_A_NODE).strip() in MODELS, line
+        assert line.removesuffix(module.ON_A_NODE).strip() in CALLED_ON_2026_10_07, line
 
 
 def test_the_three_models_of_the_profiles_are_each_called() -> None:
     """Decision 16: Opus 5.5, Sonnet 5.5 and Haiku with the pinned id, each with its cost read."""
     called = {line for number, line in lines_of("costo") if number == 4}
 
-    assert called == {"claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-4-5-20251001"}
+    assert called == CALLED_ON_2026_10_07
 
 
 def test_the_ctrl_c_is_said_after_the_claim_is_seen_and_before_the_silence_is_checked() -> None:

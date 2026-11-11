@@ -35,7 +35,7 @@ def _refuse(model: Model, message: str) -> UnsupportedRequestError:
 
 def _output_tokens(value: object, model: Model, default: int) -> int:
     if value is None:
-        return min(default, model.max_output_tokens)
+        return default
     if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
         raise _refuse(model, f"{MAX_OUTPUT_TOKENS} must be a positive integer")
     if value > model.max_output_tokens:
@@ -48,8 +48,6 @@ def _output_tokens(value: object, model: Model, default: int) -> int:
 
 
 def _effort(value: object, model: Model) -> str:
-    if not model.supports_effort:
-        raise _refuse(model, f"{model.id} does not support {EFFORT}")
     if value not in EFFORT_LEVELS:
         raise _refuse(model, f"{EFFORT} must be one of {list(EFFORT_LEVELS)}")
     return str(value)

@@ -166,14 +166,15 @@ PROVIDER_USAGE: Final = ProviderUsage(
 )
 
 WORST_CASE: Final = WorstCase(
-    amount=Decimal("0.216384"),
+    amount=Decimal("0.508192"),
     currency="USD",
-    model="claude-haiku-4-5-20251001",
-    input_tokens=195_904,
+    model="claude-haiku-5-5",
+    input_tokens=995_904,
     output_tokens=4_096,
 )
-"""The most one call to Haiku 4.5 can cost with 4096 tokens out: the window less the output in,
-the output out (M14.1, ADR 0057 §2)."""
+"""The most one call to Haiku 5.5 can cost with 4096 tokens out: the window less the output in,
+the output out, at the tier the window reaches (M14.1, ADR 0057 §2; ADR 0067 §2). It was Haiku 4.5's
+until M14.6b, which took that model out of the list."""
 
 HAIKU_4_5_ID: Final = "claude-haiku-4-5-20251001"
 """The id of Haiku 4.5 as the world still writes it — a row of October in a real database, a route

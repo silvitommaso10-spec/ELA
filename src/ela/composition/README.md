@@ -16,6 +16,10 @@ dentro uno di loro.
   `carried` rifiuta un tool da verificare sul nodo costruito senza il suo verifier. Le regole della
   radice sono quelle del Core, in un testo solo (`refuse_the_root`), con l'elenco derivato da ciò che
   il nodo usa per esistere.
+- `routes.py`: la tabella delle rotte letta contro i modelli del provider, all'avvio (M14.6b, ADR 0067):
+  `default_route_model`, il modello che la rotta di un tipo legge oggi, e `every_route_names_a_model`,
+  che ferma il Core e il nodo — con la stessa funzione — se una rotta ha un profilo a cui nessun modello
+  risponde, nominando la variabile. È una credenza: la difesa resta il rifiuto alla chiamata.
 - `system.py`: `SystemClock` e `UuidGenerator`, le prime implementazioni **di produzione** dei
   port `Clock` e `IdGenerator` — fino a M8.1 esistevano solo i fake, che nessun modulo di
   produzione può importare.

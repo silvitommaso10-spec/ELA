@@ -36,6 +36,12 @@ ogni uso, e in una misura nessuno risponde —, e la sessione lo sa dalla rispos
 lei —, e lo dice. Ciò che spende **è fuori dal libro del tetto di ELA**: la chiave è la stessa, il
 cancello no. La chiave non esce mai da questo processo: non è nell'ambiente, negli argomenti né
 nella cartella della sessione, e lo script lo verifica.
+
+***Dal 2026-11-11*** (M14.6b, ADR 0067): **Haiku 4.5 non è più nel listino di ELA.** La misura è la
+storia del 2026-10-08, e porta da sé, datati, l'id, il profilo e il prezzo di Haiku 4.5 di quel
+giorno, come porta quelli di Haiku 5.5: non li importa dal prodotto. Chi la lancia oggi senza
+``--a-secco`` chiama l'API vera con l'id di Haiku 4.5, fuori da ELA: se l'API gli risponda, dopo la
+data di ritiro della sua pagina, non è misurato.
 """
 
 from __future__ import annotations
@@ -73,7 +79,7 @@ from ela.executive.stops import StopOfTask
 from ela.infrastructure.machine.browser import PlaywrightBrowser
 from ela.permissions.capabilities import PATH_MAX_LENGTH, PATH_PATTERN, SITE_PATTERN
 from ela.ports import NAVIGATION, BrowserError
-from ela.providers.anthropic.models import HAIKU_4_5, MODELS, SONNET_5_5, Model
+from ela.providers.anthropic.models import MODELS, SONNET_5_5, Model
 from ela.providers.anthropic.payload import build_payload
 from ela.providers.anthropic.pricing import PRICES, worst_cost
 from ela.tools.browser import BROWSER_TIMEOUT_SECONDS, boundary, cut, https_origin
@@ -91,6 +97,10 @@ OUTPUT_TOKENS: Final = 8192
 ``max_output_tokens`` per il ciclo."""
 STOP_GRACE_SECONDS: Final = 15
 HAIKU_5_5: Final = "claude-haiku-5-5"
+HAIKU_4_5: Final = "claude-haiku-4-5-20251001"
+"""Haiku 4.5 con l'id fissato, come la misura lo chiamava il 2026-10-08. Fuori dal listino di ELA
+dal 2026-11-11 (M14.6b, ADR 0067): scritto qui, con il suo profilo e il suo prezzo di quel
+giorno."""
 MEASURED_MODELS: Final = (HAIKU_4_5, HAIKU_5_5, SONNET_5_5)
 RULE_MODELS: Final = (HAIKU_4_5, SONNET_5_5)
 """I modelli su cui la regola scritta prima dei numeri legge il fatto (c), come è scritta: Haiku
@@ -131,14 +141,21 @@ HAIKU_5_5_HIGH: Final = Rates(
 """**Il prezzo di Haiku 5.5 nella misura**, dalla pagina dei prezzi letta il 2026-10-08: a fasce per
 la lunghezza del prompt — fino a 100 000 token d'ingresso la bassa, oltre l'alta. **Fuori dal
 listino di ELA**: ``PRICES`` non lo ha, e ``src/`` non si tocca (decisione 20); il file lo dice."""
-HAIKU_5_5_MODEL: Final = Model(
-    HAIKU_5_5, max_output_tokens=128_000, supports_effort=True, context_window=1_000_000
-)
+HAIKU_5_5_MODEL: Final = Model(HAIKU_5_5, max_output_tokens=128_000, context_window=1_000_000)
 """Il profilo di Haiku 5.5, dalla pagina dei modelli letta il 2026-10-08: contesto di un milione,
 uscita 128K, pensiero adattivo, effort di default ``medium``. Fuori da ``MODELS``: serve al
 ``build_payload`` del ciclo."""
+HAIKU_4_5_RATES: Final = Rates(
+    Decimal("1"), Decimal("5"), Decimal("0.1"), Decimal("1.25"), Decimal("2")
+)
+"""**Il prezzo di Haiku 4.5 nella misura**, dalla pagina dei prezzi letta il 2026-10-08: 1 $
+d'ingresso, 5 d'uscita, 0,10 la lettura dalla cache, e la scrittura ai moltiplicatori di quel
+giorno. Era il listino di ELA fino al 2026-11-11; da M14.6b sta qui (ADR 0067)."""
+HAIKU_4_5_MODEL: Final = Model(HAIKU_4_5, max_output_tokens=64_000, context_window=200_000)
+"""Il profilo di Haiku 4.5, dalla pagina dei modelli letta il 2026-10-08: contesto di 200K, uscita
+64K, nessun ``effort`` — e il ciclo non lo manda mai. Fuori da ``MODELS`` dal 2026-11-11."""
 PROFILES: Final = {
-    HAIKU_4_5: MODELS[HAIKU_4_5],
+    HAIKU_4_5: HAIKU_4_5_MODEL,
     HAIKU_5_5: HAIKU_5_5_MODEL,
     SONNET_5_5: MODELS[SONNET_5_5],
 }
@@ -150,9 +167,12 @@ nel file accanto ai numeri; il ciclo non ha strumenti, e non lo paga."""
 
 def rates(model: str | None, fed: int) -> Rates | None:
     """Il prezzo di una chiamata con ``fed`` token d'ingresso: il listino di ELA, con la scrittura
-    in cache dai moltiplicatori della pagina; per Haiku 5.5 la fascia del prezzo della misura."""
+    in cache dai moltiplicatori della pagina; per Haiku 5.5 la fascia del prezzo della misura, e per
+    Haiku 4.5 il prezzo della misura, che il listino non ha più (M14.6b)."""
     if model == HAIKU_5_5:
         return HAIKU_5_5_LOW if fed <= HAIKU_5_5_BOUND else HAIKU_5_5_HIGH
+    if model == HAIKU_4_5:
+        return HAIKU_4_5_RATES
     price = PRICES.get(model or "")
     if price is None:
         return None
@@ -174,11 +194,18 @@ def shown(price: Rates) -> str:
 
 def worst_of(model: str) -> Decimal | None:
     """Il caso peggiore di una chiamata con ``max_tokens`` :data:`OUTPUT_TOKENS`, con la funzione di
-    ADR 0057 §2 sulla finestra intera; per Haiku 5.5 con la fascia alta del prezzo della misura."""
+    ADR 0057 §2 sulla finestra intera; per Haiku 5.5 con la fascia alta del prezzo della misura, e
+    per Haiku 4.5 con il prezzo della misura: ``worst_cost`` non prezza un modello che il listino
+    non ha."""
     if model == HAIKU_5_5:
         high = HAIKU_5_5_HIGH
         window = HAIKU_5_5_MODEL.context_window
         cost = (window - OUTPUT_TOKENS) * high.input + OUTPUT_TOKENS * high.output
+        return cost / Decimal(1_000_000)
+    if model == HAIKU_4_5:
+        window = HAIKU_4_5_MODEL.context_window
+        rate = HAIKU_4_5_RATES
+        cost = (window - OUTPUT_TOKENS) * rate.input + OUTPUT_TOKENS * rate.output
         return cost / Decimal(1_000_000)
     return worst_cost(MODELS[model], output_tokens=OUTPUT_TOKENS)
 

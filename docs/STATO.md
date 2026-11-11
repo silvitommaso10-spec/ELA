@@ -150,6 +150,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.14` | Proposta | Le policy di Tommaso arrivano alle azioni HIGH |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.1` | Implementata | Il tetto di spesa: la chiave di ELA, e un limite che ELA fa rispettare |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.1b` | Implementata | La docstring del tetto dice il secondo tetto giusto: il limite dell'organizzazione |
+| 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.1c` | Proposta | Il caso peggiore senza prezzo: un ramo e un rifiuto che nessun produttore raggiunge |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.2` | Implementata | Il Planner: ELA scrive i piani da sola |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.3` | Implementata | Il browser guidato dal modello: da una frase, il modello guarda la pagina e sceglie il gesto dopo |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.4` | Proposta | Il computer guidato dal modello: lo schermo, con il meccanismo di M14.3 |
@@ -177,8 +178,8 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **66** | `docs/adr/NNNN-*.md` |
-| Milestone | **98, di cui 79 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| ADR scritti | **67** | `docs/adr/NNNN-*.md` |
+| Milestone | **99, di cui 79 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **73** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **15** | `pyproject.toml` |
 | Port | **36** | i `Protocol` di `src/ela/ports.py` |
@@ -723,6 +724,9 @@ cambiano. In quest'ordine:
 
 **M14.6b** — Haiku 4.5 esce dal listino — sta **fuori dalla fila**, con una condizione: si fa prima della prossima
 rilettura del listino, entro il 2026-11-28 (5.12).
+***Annotato il 2026-11-11*** (risposta 30 della review della SPEC di M14.6b): **M14.1c** — il caso peggiore senza
+prezzo, un ramo e un rifiuto che nessun produttore raggiunge — è registrata **fuori dalla fila**, senza una condizione
+([`milestones/M14.1c.md`](milestones/M14.1c.md)): decide se il ramo esce o trova il suo produttore.
 
 **La Fase 14 comincia prima che la Fase 13 sia chiusa**, e le voci delle due fasi lo dicono, con la
 ragione (5.11 e 5.12). ***Annotato il 2026-10-02***: **M9.7** (ogni blocco della guida che mostra un'uscita della CLI

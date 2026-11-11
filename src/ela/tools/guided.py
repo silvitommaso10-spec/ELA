@@ -96,6 +96,7 @@ from ela.ports import (
 )
 from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool
 from ela.tools.browser import SELECTOR_GRAMMAR
+from ela.tools.model import placed
 from ela.tools.verify import COMMON_FAILURE_CODES, VERIFICATION_ARGUMENTS_INVALID, Verifier
 
 __all__ = [
@@ -517,7 +518,8 @@ class BrowserGuidedTool(Tool):
             )
         )
         if isinstance(one, ErrorMetadata):
-            return Outcome({}, one.code, one.message)
+            refused = placed(one, task_type, None)
+            return Outcome({}, refused.code, refused.message)
         if one.amount is not None and max_cost < one.amount:
             return Outcome(
                 {},

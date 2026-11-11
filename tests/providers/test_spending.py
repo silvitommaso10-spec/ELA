@@ -30,11 +30,11 @@ from ela.ports import (
 from ela.providers.anthropic import pricing
 from ela.providers.anthropic.errors import ORGANIZATION_LIMIT_PREFIX, WORKSPACE_LIMIT_PREFIX
 from ela.providers.anthropic.models import (
-    HAIKU_4_5,
     HAIKU_5_5,
     MODELS,
     OPUS_5_5,
     PROFILES,
+    SMALLEST_OUTPUT_TOKENS,
     SONNET_5_5,
 )
 from tests.providers.support import (
@@ -78,7 +78,7 @@ async def test_the_worst_case_of_a_plain_request() -> None:
         ("planning", OPUS_5_5, Decimal("4.065536")),
         ("balanced", SONNET_5_5, Decimal("2.032768")),
         ("routine", HAIKU_5_5, Decimal("0.508192")),
-        (HAIKU_4_5, HAIKU_4_5, Decimal("0.216384")),
+        (HAIKU_5_5, HAIKU_5_5, Decimal("0.508192")),
     ],
 )
 async def test_the_worst_case_is_the_profiles_model(hint: str, model: str, amount: Decimal) -> None:
@@ -92,8 +92,8 @@ async def test_the_worst_case_is_the_profiles_model(hint: str, model: str, amoun
 
 @given(
     hint=st.sampled_from([None, *sorted(PROFILES), *sorted(MODELS)]),
-    asked=st.one_of(st.none(), st.integers(min_value=1, max_value=64_000)),
-    default=st.integers(min_value=1, max_value=128_000),
+    asked=st.one_of(st.none(), st.integers(min_value=1, max_value=SMALLEST_OUTPUT_TOKENS)),
+    default=st.integers(min_value=1, max_value=SMALLEST_OUTPUT_TOKENS),
 )
 @hypothesis_settings(max_examples=60, deadline=None)
 def test_the_output_side_is_the_max_tokens_the_payload_carries(

@@ -4,6 +4,7 @@
   il **quattordicesimo** codice del vocabolario chiuso. La riga è nella tabella di §7; il
   resto dell'ADR — gli otto esiti di §9 compresi — non cambia.
   **ADR 0057 §3, §10 e §11** (M14.1): i modelli di §4 e i profili di §5 sono i 5.5, con Haiku all'id fissato; la cache di §6 è il 5% dell'input su Opus 5.5, e il listino si riverifica ogni 30 giorni; §7 ha un quindicesimo codice, `provider.spend_limit`; §8 ritenta solo il `429` di frequenza e il `529`, non il `429` del tetto del livello.
+  **Rivista da ADR 0067 (M14.6b)** il 2026-11-11: §3 e §5 — il budget di default sta sotto l'uscita del modello più piccolo del listino, derivata, e nessun taglio per modello; `effort` lo prendono tutti i modelli, e il rifiuto «solo su un modello che lo supporta» è uscito (ADR 0067 §1, §5).
 - **Data:** 2026-09-07
 - **Riferimenti spec:** §25, §26, §29, §32, §33, §50, §51, §57, §64
 
@@ -63,6 +64,9 @@ Nessun `UNKNOWN`: un provider che non sa dire di essere utilizzabile non è util
 | `ELA_ANTHROPIC_MAX_RETRIES` | `int` in `[0, 10]` | `2` | quanti ritentativi, non quante chiamate |
 | `ELA_ANTHROPIC_MAX_OUTPUT_TOKENS` | `int > 0`, ≤ max del modello | `4096` | budget di output di chi non ne chiede uno |
 
+*Dal 2026-11-11 (M14.6b, ADR 0067 §5) la riga di `ELA_ANTHROPIC_MAX_OUTPUT_TOKENS` dice «≤ l'uscita del modello più piccolo
+del listino, derivata»: il default sta in ogni modello, e nessun taglio per modello lo riduce.*
+
 Il client SDK è costruito **solo** se la chiave c'è, e sempre con `api_key=` esplicito. La ragione
 non è di stile: l'SDK, senza `api_key`, cerca da sé `ANTHROPIC_API_KEY`, poi `ANTHROPIC_AUTH_TOKEN`,
 poi un profilo OAuth scritto su disco da `ant auth login`, poi la federazione di identità. Su una
@@ -114,6 +118,10 @@ rispondere con impostazioni diverse da quelle chieste, senza traccia (§33).
 Il corpo mandato è esattamente: `model`, `max_tokens`, un messaggio utente con `input`, `system`
 se ci sono `instructions`, `output_config.effort` se richiesto. Niente `thinking` (adattivo è ciò
 che si ottiene omettendolo), niente campionamento, niente streaming, tool, cache o beta.
+
+*Dal 2026-11-11 (M14.6b, ADR 0067 §5) `effort` lo prendono tutti i modelli del listino: «solo su un modello che lo
+supporta» non è più una condizione, e il rifiuto che la teneva è uscito dal codice. I profili di oggi sono quelli di
+ADR 0067 §1.*
 
 ### 6. Il costo è una **stima**, in `Decimal`, e `None` quando non si sa
 

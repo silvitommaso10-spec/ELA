@@ -3954,6 +3954,14 @@ Così si chiudono le due verifiche che M12.4 aveva lasciato a questa milestone (
 > worst case            0.516384 USD, claude-haiku-5-5, up to 991808 tokens in and 8192 out
 > ```
 
+> ***Dal 2026-11-11 (M14.6b, [ADR 0067](adr/0067-three-models.md))*** Haiku 4.5 non è più nel listino. I blocchi qui
+> sotto restano la registrazione della prova del 2026-10-07, e **la prova non si rifà**: `scripts/prova_m14_1.py` lo
+> legge da questa sezione — le righe del costo nominano `claude-haiku-4-5-20251001`, che il listino non ha — e si ferma
+> prima di ogni chiamata e prima di toccare qualcosa, dicendolo. Fino a quel giorno chi la lanciava faceva chiamate
+> vere, chiedeva il PC e cambiava due volte il tetto nel `.env` prima di avere FALLITO ai blocchi di Haiku 4.5. Uno step
+> o una rotta che nomina quell'id oggi ha la risposta della sezione 31: il caso peggiore non si sa dire, e il cancello
+> nega la chiamata prima della domanda, con la ragione che dice dove l'id è scritto.
+
 **Da M14.1 nessuna chiamata che spende parte senza un tetto** ([ADR 0057](adr/0057-spending-cap.md)). Il tetto è una
 riga del `.env` del Core, in dollari come il listino e la console:
 

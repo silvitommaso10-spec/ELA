@@ -1,7 +1,7 @@
 """How ``build`` names the model a policy of ``browser.guided`` is born under (M13.12; decision 16).
 
 The terms of ``browser.guided`` carry the model its default route reads today, and
-:func:`~ela.composition.root.default_route_model` is what reads it: from the routing table and the
+:func:`~ela.composition.routes.default_route_model` is what reads it: from the routing table and the
 provider's profiles, without the network and without the key. A route the table does not know, or a
 profile no model answers, is ``undeclared`` — no policy is born under it.
 
@@ -20,21 +20,23 @@ from datetime import date, timedelta
 import pytest
 
 from ela.composition import Ela
-from ela.composition.root import default_route_model
+from ela.composition.routes import default_route_model
 from ela.permissions import (
     BROWSER_GUIDED,
     BROWSER_GUIDED_AS_YOU,
     GUIDED_ROUTE,
     UNDECLARED_MODEL,
 )
-from ela.providers.anthropic.models import HAIKU_5_5
+from ela.providers.anthropic.models import HAIKU_5_5, SONNET_5_5
 from ela.routing import DEFAULT_ROUTES, Route, RoutePolicy
 from tests.docs import test_adr_provider as price_list
+from tests.domain.examples import HAIKU_4_5_ID
 
 ACCOUNTS_PATH = price_list.PRICELIST_PATH.with_name("0063-browser-with-your-accounts.md")
 DUE = re.compile(r"una persona,? entro il \**(\d{4}-\d{2}-\d{2})")
-"""How the two ADRs write the day: «una persona entro il …» in ADR 0061, «una persona, entro il
-**…**» in ADR 0063 §6. A dated note that keeps a day gone by says it otherwise."""
+"""How the two ADRs write the day: «una persona entro il …» in ADR 0067 (in ADR 0061 until
+M14.6b), «una persona, entro il **…**» in ADR 0063 §6. A dated note that keeps a day gone by says it
+otherwise."""
 
 NAMED_HERE = "claude-haiku-5-5"
 """The model of the route, **written here and not read from the provider's own constant**: a
@@ -44,7 +46,7 @@ read the policy again (the re-read of the round)."""
 
 def due_by(pricelist: str) -> date:
     """The day the price list — and the provider's policy with it — is read again by: the date of
-    ADR 0061 §1 plus the days after which the reminder of ``test_adr_provider`` fails, both read
+    ADR 0067 §1 plus the days after which the reminder of ``test_adr_provider`` fails, both read
     where they are kept and neither copied here (2026-10-29)."""
     return price_list.documented_price_check(pricelist) + timedelta(
         days=price_list.MAX_PRICE_AGE_DAYS
@@ -57,7 +59,7 @@ def reread(due: date) -> str:
         "the model of the route a guided session runs on is not the one this test names. Whoever "
         "changes it re-reads the provider's policy for that model — how long it keeps what a "
         "session sends, and who may read it — and dates it in ADR 0063 §6; then names the new "
-        f"model here. The re-reading goes with the price list's (ADR 0061): a person, by {due}"
+        f"model here. The re-reading goes with the price list's (ADR 0067): a person, by {due}"
     )
 
 
@@ -67,10 +69,10 @@ REREAD = reread(due_by(price_list.pricelist_text()))
 
 
 def places(pricelist: str, accounts: str) -> dict[str, str]:
-    """The three places that name the day: §1 and the consequences of ADR 0061, §6 of ADR 0063."""
+    """The three places that name the day: §1 and the consequences of ADR 0067, §6 of ADR 0063."""
     return {
-        "ADR 0061 §1": pricelist.split("### 1.", 1)[1].split("### 2.", 1)[0],
-        "ADR 0061, «Conseguenze»": pricelist.split("## Conseguenze", 1)[1],
+        "ADR 0067 §1": pricelist.split("### 1.", 1)[1].split("### 2.", 1)[0],
+        "ADR 0067, «Conseguenze»": pricelist.split("## Conseguenze", 1)[1],
         "ADR 0063 §6": accounts.split("### 6.", 1)[1].split("### 7.", 1)[0],
     }
 
@@ -106,7 +108,7 @@ def test_the_sentence_says_where_the_policy_is_dated_and_by_when_it_is_read_agai
     pricelist = price_list.pricelist_text()
     accounts = ACCOUNTS_PATH.read_text(encoding="utf-8")
 
-    assert "ADR 0063 §6" in REREAD and "ADR 0061" in REREAD
+    assert "ADR 0063 §6" in REREAD and "ADR 0067" in REREAD
     assert "provider's policy" in REREAD
     assert REREAD.endswith(f"by {due_by(pricelist)}")
     assert due_problem(pricelist, accounts) is None
@@ -129,14 +131,14 @@ def test_a_day_the_adrs_do_not_derive_is_found(monkeypatch: pytest.MonkeyPatch) 
 
     in_section_1 = pricelist.replace("2027-01-31.\n### 2.", "2026-11-07.\n### 2.")
     assert (due_problem(in_section_1, accounts) or "").startswith(
-        "ADR 0061 §1 names ['2026-11-07']"
+        "ADR 0067 §1 names ['2026-11-07']"
     )
     consequences = "## Conseguenze\n- lo rilegge una persona entro il "
     in_the_consequences = pricelist.replace(
         f"{consequences}2027-01-31", f"{consequences}2026-11-07"
     )
     assert (due_problem(in_the_consequences, accounts) or "").startswith(
-        "ADR 0061, «Conseguenze» names ['2026-11-07']"
+        "ADR 0067, «Conseguenze» names ['2026-11-07']"
     )
     gone_by = accounts.replace("2027-01-31", "2026-11-07")
     assert (due_problem(pricelist, gone_by) or "").startswith("ADR 0063 §6 names ['2026-11-07']")
@@ -147,13 +149,20 @@ def test_a_day_the_adrs_do_not_derive_is_found(monkeypatch: pytest.MonkeyPatch) 
 
     monkeypatch.setattr(price_list, "MAX_PRICE_AGE_DAYS", 10)
     assert due_by(pricelist) == date(2027, 1, 11)
-    assert (due_problem(pricelist, accounts) or "").startswith("ADR 0061 §1 names ['2027-01-31']")
+    assert (due_problem(pricelist, accounts) or "").startswith("ADR 0067 §1 names ['2027-01-31']")
 
 
 def test_a_route_the_table_does_not_know_is_undeclared() -> None:
     without = {name: route for name, route in DEFAULT_ROUTES.items() if name != GUIDED_ROUTE}
 
     assert default_route_model(RoutePolicy(without), GUIDED_ROUTE) == UNDECLARED_MODEL
+
+
+def test_without_a_task_type_it_is_the_model_of_the_default_route() -> None:
+    """M14.6b: the startup check reads the default route with the same function."""
+    assert default_route_model(RoutePolicy(), None) == SONNET_5_5
+    pinned = Route(providers=("anthropic",), profile=HAIKU_4_5_ID)
+    assert default_route_model(RoutePolicy(DEFAULT_ROUTES, pinned), None) == UNDECLARED_MODEL
 
 
 def test_a_profile_no_model_answers_is_undeclared() -> None:
