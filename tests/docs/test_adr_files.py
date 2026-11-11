@@ -74,7 +74,7 @@ def test_it_is_accepted_by_the_proof_of_its_branch_with_the_file_and_the_commit(
 def test_the_adrs_it_revises_say_so_on_their_state_line_and_no_other_does() -> None:
     listed = revised_by_the_list()
 
-    assert listed == {"0047", "0052", "0063", "0064"}
+    assert listed == {"0047", "0052", "0063", "0064", "0065"}
     assert listed == revised_by_their_state(written())
 
 
@@ -292,3 +292,56 @@ def test_the_door_says_two_things_and_the_rule_names_them() -> None:
     for word in (*DOOR_BEHAVIOURS, DOOR_COMMAND, FILE_GIVING_CALL):
         assert f"`{word}`" in text, word
     assert BYTES_KEY == "buffer"
+
+
+THE_DEBT = (
+    "### 10. Un debito datato: il debito di ADR 0065 §6, ridichiarato — "
+    "un processo del browser lasciato su ubuntu da un test non identificato"
+)
+CHARGED_TO = (
+    "**Debito a carico di M13.11, la milestone del browser sul PC**, dichiarato il **2026-11-11**"
+)
+OLD_ROW = (
+    "| ADR 0065 §6 — un processo del browser lasciato su ubuntu da un test non identificato "
+    "| 2026-10-14 | di M13.13, la milestone dei file dal browser | ridichiarato in ADR 0066 §10 |"
+)
+NEW_ROW = (
+    "| ADR 0066 §10 — il debito di ADR 0065 §6, ridichiarato — un processo del browser lasciato "
+    "su ubuntu da un test non identificato | 2026-11-11 | di M13.11, la milestone del browser sul "
+    "PC | **aperto** |"
+)
+RUN = re.compile(r"^\| (\d+) \| `([0-9a-f]{7})` \| (\d+) \| .+ \| (\d+) \|$", re.MULTILINE)
+"""A row of the count: its number, the commit, the run of the CI, and the errors of the fixture."""
+
+
+def test_the_debt_of_adr_0065_changes_hands_with_its_count_and_who_inherits_it_says_so() -> None:
+    """Decisions 21, 45 and 52 of M13.13, and the rule its document carries since 2026-11-02,
+    written before any run: with fewer than eight complete runs of the ubuntu job the debt is not
+    paid, it changes hands. The section is a dated debt whose heading says which debt it
+    redeclares — the form STATO reads —; it carries the count run by run, closed at the last
+    complete run before the commit that writes it — the run of the commit the proof passed on —,
+    and the number it says is the number of its rows, none with an error of the fixture and fewer
+    than eight; it carries the rule the count goes on with; the milestone it is charged to names it
+    among what it inherits, with that rule; and STATO says it of both rows — the old one no longer
+    open, the new one open."""
+    text = adr_text()
+
+    assert THE_DEBT in text
+    section = text.split(THE_DEBT, 1)[1].split("\n### ", 1)[0]
+    assert CHARGED_TO in section
+    runs = RUN.findall(section)
+    assert [int(number) for number, _, _, _ in runs] == list(range(1, len(runs) + 1))
+    assert 0 < len(runs) < 8, "eight clean runs pay the debt: then this section is another one"
+    assert all(errors == "0" for _, _, _, errors in runs)
+    assert f"**{len(runs)} giri completi**" in section, "the count it says is the one of its rows"
+    assert f"`{runs[-1][1]}`" == PROVEN_AT, (
+        "the count closes at the run of the commit the proof passed on"
+    )
+    assert "**il conto continua**" in section and "**Un caso che" in section
+    assert "tests/scripts/test_generate_stato.py" in section
+    inherits = (ROOT / "docs" / "milestones" / "M13.11.md").read_text(encoding="utf-8")
+    inherited = inherits.split("## Che cosa eredita", 1)[1].split("\n## ", 1)[0]
+    assert "ADR 0066 §10" in inherited and "ADR 0065 §6" in inherited
+    assert "il conto continua" in inherited
+    stato = (ROOT / "docs" / "STATO.md").read_text(encoding="utf-8")
+    assert OLD_ROW in stato and NEW_ROW in stato

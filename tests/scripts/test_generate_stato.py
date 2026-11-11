@@ -229,6 +229,92 @@ def test_the_line_of_the_debt_below_is_not_borrowed_by_the_one_above(
         generate_stato.dated_debts(tmp_path)
 
 
+REDECLARING = """# ADR
+
+## 10. Un debito datato: il debito di ADR 0001 §3, ridichiarato — qualcosa non torna ancora
+
+**Debito a carico di chi viene dopo**, dichiarato il **2026-11-10**.
+"""
+
+
+def test_a_debt_another_adr_redeclares_is_neither_open_nor_paid_and_names_where(
+    tmp_path: Path, generate_stato: ModuleType
+) -> None:
+    """Decisions 21 and 52 of M13.13: the third state, born with the redeclaration it is for. A
+    debt whose owner ended without paying it is charged to somebody else **in a dated debt of
+    another ADR**, whose heading says so: the old row stops being open — its owner is done — and
+    names the section that carries it now, and the new row is the open one."""
+    write(tmp_path / "docs" / "adr" / "0001-uno.md", DEBT)
+    write(tmp_path / "docs" / "adr" / "0002-due.md", REDECLARING)
+
+    old, new = sorted(generate_stato.dated_debts(tmp_path), key=lambda debt: debt.adr)
+
+    assert not old.open and old.paid_by is None
+    assert old.redeclared_in == "ADR 0002 §10"
+    assert new.open and (new.adr, new.section, new.charged) == ("0002", "10", "di chi viene dopo")
+    rendered = generate_stato.render_debts(generate_stato.dated_debts(tmp_path))
+    first, second = rendered.splitlines()[2:]
+    assert first.startswith("| ADR 0002 §10 ") and first.endswith("| **aperto** |")
+    assert second.startswith("| ADR 0001 §3 ")
+    assert second.endswith("| ridichiarato in ADR 0002 §10 |")
+
+
+def test_a_sentence_that_says_redeclared_outside_the_heading_of_a_dated_debt_redeclares_nothing(
+    tmp_path: Path, generate_stato: ModuleType
+) -> None:
+    """The cheapest way to close a debt would be to write that somebody else has it: the
+    redeclaration counts only as the heading of a section that **is** a dated debt — with its own
+    payer and its own date, or the generator refuses it. Not as a sentence in a section that is not
+    one, nor as a sentence in the body of one that is: the ADR that writes it here has a dated debt
+    of its own, about something else."""
+    write(tmp_path / "docs" / "adr" / "0001-uno.md", DEBT)
+    write(
+        tmp_path / "docs" / "adr" / "0002-due.md",
+        "# ADR\n\n## 5. Un debito datato: un'altra cosa\n\n"
+        "**Debito a carico di qualcuno**, dichiarato il **2026-11-10**.\n\n"
+        "Il debito di ADR 0001 §3, ridichiarato a carico di qualcuno.\n\n"
+        "## 10. Altro\n\nIl debito di ADR 0001 §3, ridichiarato a carico di qualcuno.\n",
+    )
+
+    debts = {(debt.adr, debt.section): debt for debt in generate_stato.dated_debts(tmp_path)}
+
+    assert set(debts) == {("0001", "3"), ("0002", "5")}
+    assert debts["0001", "3"].open and debts["0001", "3"].redeclared_in is None
+
+
+def test_an_adr_cannot_redeclare_its_own_debt(tmp_path: Path, generate_stato: ModuleType) -> None:
+    """As for a payment: an ADR that moved its own debt further down its own page would have
+    closed it by writing."""
+    own = DEBT.replace(
+        "## 4. Altro\n",
+        "## 4. Un debito datato: il debito di ADR 0001 §3, ridichiarato\n\n"
+        "**Debito a carico di un altro**, dichiarato il **2026-11-10**.\n",
+    )
+    write(tmp_path / "docs" / "adr" / "0001-uno.md", own)
+
+    first, second = generate_stato.dated_debts(tmp_path)
+
+    assert first.open and second.open
+    assert first.redeclared_in is None and second.redeclared_in is None
+
+
+def test_a_debt_redeclared_and_then_paid_is_paid(
+    tmp_path: Path, generate_stato: ModuleType
+) -> None:
+    """The payment is the last word: the row says who paid, not where the debt had moved."""
+    write(tmp_path / "docs" / "adr" / "0001-uno.md", DEBT)
+    write(tmp_path / "docs" / "adr" / "0002-due.md", REDECLARING)
+    write(
+        tmp_path / "docs" / "adr" / "0003-tre.md",
+        "# ADR\n\n## 2. Il debito di ADR 0001 §3, saldato\n\nEcco.\n",
+    )
+
+    old = next(debt for debt in generate_stato.dated_debts(tmp_path) if debt.adr == "0001")
+
+    assert not old.open and old.paid_by == "ADR 0003 §2"
+    assert "| saldato da ADR 0003 §2 |" in generate_stato.render_debts([old])
+
+
 # ----------------------------------------------------------------------------------------
 # The spec nobody has cited yet
 # ----------------------------------------------------------------------------------------

@@ -20,6 +20,7 @@
   e la riga resta su `4490e15` (la decisione 58 (e) di M13.10, rivista apertamente in questo punto solo). **Il caso
   di §6 si è mostrato a `35ce5fa`**, e la causa misurata sta in quel test; il pagamento del debito aspetta la
   domanda 89 di M13.10, perché la forma che STATO legge vuole un ADR diverso da questo.
+  **Rivista da ADR 0066 (M13.13)** il 2026-11-11: §6, il debito non è più a carico di M13.13 — sul suo branch i giri completi del job ubuntu, tutti senza un errore del fixture, sono sei, meno degli otto che la regola scritta prima dei numeri chiedeva per pagarlo — e passa di mano, a carico di M13.11, con il conto che continua (ADR 0066 §10).
 - **Data:** 2026-10-14
 - **Riferimenti spec:** §19, §33, §57
 - **Milestone:** [M13.10](../milestones/M13.10.md)

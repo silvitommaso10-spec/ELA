@@ -1059,7 +1059,9 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   finale dei giri (decisione 43 della review dopo la CI rossa di `0bc3278`). La milestone resta `Proposta` fino alla
   prova, come le tre riparazioni del suo branch. ***Annotato il 2026-11-11, più tardi***: **fatta**, con la prova a
   mano passata sul Mac a `ead73aa`, l'ultimo commit del branch — 42 passati al primo giro —, e ADR 0066 è Accettata
-  (decisione 51): la conferma del sito, che dura quattro secondi, l'ha vista il verifier, con i due browser.
+  (decisione 51): la conferma del sito, che dura quattro secondi, l'ha vista il verifier, con i due browser. **Il
+  debito di ADR 0065 §6 è ridichiarato a carico di M13.11** (ADR 0066 §10): sei giri puliti su otto, e il conto
+  continua (decisioni 45 e 52).
 - **M13.9b — la pagina d'errore del browser non è un altro sito** (§19, §33; ADR 0064 §4). **Registrata il
   2026-10-14** dalla review dell'implementazione di M13.10 (decisione 57): con il confine dell'origine del sito,
   un sito che non risponde al login — il browser mostra la sua pagina d'errore, `chrome-error://chromewebdata/` —
@@ -1311,6 +1313,12 @@ data, con chi lo paga, e con la difesa più piccola possibile: un test che si ac
 Il criterio è di ADR 0025 §1; la forma è di ADR 0035 §7, che è anche il primo ad essere stato
 pagato da chi doveva.
 
+***Annotato il 2026-11-11*** (M13.13, decisioni 21, 43 e 52 del suo branch): un debito ha **tre stati**. Oltre ad
+**aperto** e **saldato da**, **ridichiarato in**: chi doveva pagarlo ha finito senza pagarlo, e il debito è a carico di
+un altro, in una sezione che è a sua volta un debito datato — con la sua data e il suo pagatore — di un altro ADR, la
+cui intestazione dice quale debito porta. La riga vecchia non è più aperta e dice dove guardare; quella aperta è la
+nuova. Un pagamento resta l'ultima parola. Il primo è il debito di ADR 0065 §6, ridichiarato in ADR 0066 §10.
+
 <!-- generato da scripts/generate_stato.py: i debiti datati -->
 
 | Debito | Dichiarato | A carico | Stato |
@@ -1320,7 +1328,7 @@ pagato da chi doveva.
 | ADR 0048 §9 — il terminale su un nodo, ridichiarato | 2026-09-25 | di M13.7 | **aperto** |
 | ADR 0048 §10 — il residuo di Linux del terminale, ridichiarato | 2026-09-25 | di M13.7 | **aperto** |
 | ADR 0063 §12 — il costo dei test di M13.9, sopra la soglia di ADR 0052 §16 | 2026-10-13 | di M9.5, la milestone sulla disciplina della suite | **aperto** |
-| ADR 0065 §6 — un processo del browser lasciato su ubuntu da un test non identificato | 2026-10-14 | di M13.13, la milestone dei file dal browser | **aperto** |
+| ADR 0066 §10 — il debito di ADR 0065 §6, ridichiarato — un processo del browser lasciato su ubuntu da un test non identificato | 2026-11-11 | di M13.11, la milestone del browser sul PC | **aperto** |
 | ADR 0035 §7 — i numeri in coda a `CONSTANTS` non contano più niente | 2026-09-09 | della milestone sulla disciplina della suite | saldato da ADR 0036 §10 |
 | ADR 0036 §12 — `PROVIDER_CALLED` non lo scrive nessuno | 2026-09-10 | di chi aggiungerà il prossimo `AuditEventType` | saldato da ADR 0037 §14 |
 | ADR 0044 §8 — il battito di `local`, e la prima vista che l'ha reso visibile | 2026-09-20 | della Fase 13 | saldato da ADR 0048 §2 |
@@ -1329,6 +1337,7 @@ pagato da chi doveva.
 | ADR 0052 §15 — il «ferma» a metà di uno step del browser | 2026-09-29 | di M6.3c | saldato da ADR 0054 §11 |
 | ADR 0053 §2 — il runner della CI, da fissare entro il 2026-10-19 | 2026-09-30 | di M6.3c | saldato da ADR 0054 §1 |
 | ADR 0054 §16 — il passo 8 della prova a mano, entro domenica 2026-10-04 | 2026-10-02 | del giro di domenica della prova di M6.3c, su `main` | saldato da ADR 0055 §7 |
+| ADR 0065 §6 — un processo del browser lasciato su ubuntu da un test non identificato | 2026-10-14 | di M13.13, la milestone dei file dal browser | ridichiarato in ADR 0066 §10 |
 
 <!-- fine del blocco generato: i debiti datati -->
 

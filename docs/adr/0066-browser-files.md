@@ -17,6 +17,9 @@
   sull'ultimo commit del branch (decisione 11 del branch). *`ead73aa` era l'ultimo commit del branch quando la prova è
   girata: dopo, per la decisione 50, il branch porta solo `docs/`, `tests/` e `scripts/generate_stato.py`, che né `src/`
   né gli script della prova importano (decisione 43) — niente di ciò che la prova esercita.*
+  ***Annotato il 2026-11-11, più tardi*** (decisione 52): **§10, il debito di ADR 0065 §6 ridichiarato a carico di
+  M13.11**, con il conto chiuso a sei giri su otto, è scritto dopo l'accettazione, nel commit che scrive l'esito; con lui
+  la riga rivista di ADR 0065 §6, in «Righe riviste», e il suo marchio sulla riga «Stato:» di ADR 0065 (decisione 44).
 - **Data:** 2026-11-03
 - **Riferimenti spec:** §19, §33, §57, §58, §65
 - **Milestone:** [M13.13](../milestones/M13.13.md), con [M13.9b](../milestones/M13.9b.md),
@@ -278,6 +281,54 @@ chiamata sola —, quindi il tool sa due cose: prima di quella chiamata il gesto
 **può esserlo stato**. Da lì conta come fatto (`gestures: 1`), e il messaggio dice «may have been made»: un gesto
 avvenuto non si riferisce mai come non avvenuto, e uno che non è avvenuto non si dice avvenuto.
 
+### 10. Un debito datato: il debito di ADR 0065 §6, ridichiarato — un processo del browser lasciato su ubuntu da un test non identificato
+
+**Debito a carico di M13.11, la milestone del browser sul PC**, dichiarato il **2026-11-11**, dalla regola che
+`docs/milestones/M13.13.md` porta dal 2026-11-02, scritta prima di qualunque giro della CI di questo branch (decisione 5
+della SPEC di M13.13), e dalle decisioni 21, 43, 45 e 52 del branch. *Scritta dopo l'accettazione di questo ADR*, nel
+commit che scrive l'esito, perché la decisione 52 vuole il debito alla fine.
+
+**La regola.** Si contano i giri completi del job ubuntu del branch — pytest arrivato al suo riepilogo —, ciascuno con
+il suo commit e il suo run id. Con almeno otto, e nessuno con un errore del fixture `nothing_left_behind`, questo ADR
+avrebbe pagato il debito di ADR 0065 §6. Con meno, il debito passa di mano. **Il conto si chiude all'ultimo giro completo
+prima del commit che scrive l'esito**, e il giro di quel commit non conta per sé stesso (decisione 52). **Non si pusha e
+non si rilancia niente per fare numero.**
+
+**Il conto, chiuso al giro di `ead73aa`**: **6 giri completi**, nessuno con un errore di quel fixture. Il caso non si è
+mostrato, e i giri non sono otto: **il debito è ridichiarato**, a carico di M13.11.
+
+| # | Commit | Run | Il riepilogo di pytest su ubuntu | Errori del fixture |
+|---|---|---|---|---|
+| 1 | `5808ae5` | 41521638859 | 12057 passed, 158 skipped | 0 |
+| 2 | `56c672c` | 41640819100 | 3 failed, 12110 passed, 163 skipped — rosso per tre test nuovi di M13.9b senza lo `skipif` del Mac | 0 |
+| 3 | `89efd0e` | 42855676471 | 12162 passed, 168 skipped | 0 |
+| 4 | `0bc3278` | 42903358334 | 1 failed, 12358 passed, 202 skipped — rosso per un test nuovo di M13.13, il conto delle domande al confine (decisione 41) | 0 |
+| 5 | `7f6a494` | 42928151682 | 12358 passed, 202 skipped | 0 |
+| 6 | `ead73aa` | 42935507350 | 12460 passed, 202 skipped | 0 |
+
+Un giro, quello di `e072864` (41639384898), è stato annullato dal push successivo prima del riepilogo: non conta. Il
+registro, giro per giro, con i log, è in `.git/m13.13-reference/ci/giri.txt`.
+
+**La regola, per M13.11** (decisione 45). Lo paga con la stessa regola, e **il conto continua**: il caso e la sua
+riparazione sono gli stessi. Ogni giro completo del job ubuntu senza errori del fixture conta fra gli otto, con il suo
+commit e il suo run id — **su questo branch dopo il commit che porta questa sezione, il cui giro è il primo che conta per
+M13.11, o sul branch di M13.11** —; con otto, l'ADR di M13.11 paga il debito, con la frase che STATO legge. **Un caso che
+si mostra ferma e azzera**: ci si ferma senza rilanciare, si scrive il test rosso dalla riga che il fixture stampa, si
+ripara, e il conto riparte dal commit della riparazione.
+
+**Che cosa si sa**, com'è nella risposta 90 di M13.10: la causa è stata **trovata nel fixture `window`** (decisioni 84–86
+di M13.10) e **riparata a `95874bd`**; **non è verificata su Linux**. **La difesa più piccola resta il fixture stesso**
+(ADR 0065 §6): ciò che trova prima che un test cominci lo nomina con la riga di comando intera e con il test che girava
+prima su quel worker.
+
+`docs/STATO.md` conosce da questa sezione un terzo stato di un debito, oltre ad aperto e saldato: **ridichiarato in** —
+letto dall'intestazione di una sezione che è a sua volta un debito datato, di un altro ADR, con la frase «il debito di
+ADR NNNN §N, ridichiarato» (`scripts/generate_stato.py`, con i suoi test in `tests/scripts/test_generate_stato.py`). Una
+frase così fuori da un'intestazione di debito non sposta niente, un ADR non ridichiara un debito suo, e un pagamento è
+l'ultima parola. Il terzo stato nasce con la ridichiarazione per cui serve, nello stesso commit (decisione 43).
+`tests/docs/test_adr_files.py` tiene questa sezione nella forma che STATO legge, il suo conto, e che il documento di
+M13.11 la nomini fra ciò che eredita.
+
 ### Ciò che questo ADR dichiara e non risolve
 
 1. **Il risultato di un gesto dice la pagina del browser se è già lì quando il tool guarda** (§1): un gesto non aspetta
@@ -317,6 +368,7 @@ con la sezione di questo ADR a cui guardare.
 - **ADR 0047** §9 — le righe del verifier e del tool di `terminal.run` guadagnano `terminal.vault_program`: riscritte per intero qui (§3).
 - **ADR 0064** §4 — la riga «nessun confine ammette un indirizzo che non è di un sito»: la pagina d'errore del browser è chiesta al confine per l'indirizzo che il browser ha provato a raggiungere; `about:blank` e `blob:` restano fuori (§1). E §1, §2 — «non impedisce a una pagina di caricare da altri siti» e la riga «ogni altra richiesta di quella pagina … parte» non valgono per una pagina che tiene un file (§7).
 - **ADR 0052** §4, §5, §7 — per le quattro capability dei file lo scope è il file e il sito è il confine del tool, che lo rifiuta prima della domanda; la domanda nomina il file, e il sito ha campi suoi (§4, §5).
+- **ADR 0065** §6 — il debito del processo del browser lasciato su ubuntu non è più a carico di M13.13: sei giri puliti su otto, e passa di mano, con il conto che continua, a M13.11 (§10).
 
 Le altre conseguenze:
 
