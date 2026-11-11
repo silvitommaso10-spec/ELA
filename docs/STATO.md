@@ -140,13 +140,13 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.7` | Proposta | Il terminale su un nodo: il Job Object, e `argv` che su Windows diventa una stringa |
 | 13 — Il permesso prima dell'azione | `M13.8` | Proposta | Un file che vive su una macchina: quale disco, e chi lo dice |
 | 13 — Il permesso prima dell'azione | `M13.9` | Implementata | Il browser con i tuoi account: un Chrome di ELA che dura, e le password che restano in Bitwarden |
-| 13 — Il permesso prima dell'azione | `M13.9b` | Proposta | La pagina d'errore del browser non è un altro sito |
-| 13 — Il permesso prima dell'azione | `M13.9c` | Proposta | Solo l'adapter del vault lancia il programma del vault |
+| 13 — Il permesso prima dell'azione | `M13.9b` | Implementata | La pagina d'errore del browser non è un altro sito |
+| 13 — Il permesso prima dell'azione | `M13.9c` | Implementata | Solo l'adapter del vault lancia il programma del vault |
 | 13 — Il permesso prima dell'azione | `M13.10` | Implementata | Più passi e i file: una sessione del browser fra gli step, una sequenza di gesti, e i file che entrano ed escono |
-| 13 — Il permesso prima dell'azione | `M13.10b` | Proposta | La domanda a occhio del login, nella prova di M13.10, chiede ciò che non mostra |
+| 13 — Il permesso prima dell'azione | `M13.10b` | Implementata | La domanda a occhio del login, nella prova di M13.10, chiede ciò che non mostra |
 | 13 — Il permesso prima dell'azione | `M13.11` | Proposta | Il browser sul PC: le capacità di M13.9 e M13.10 sul nodo Windows, e il verdetto che torna in busta |
 | 13 — Il permesso prima dell'azione | `M13.12` | Implementata | Le policy di §59: una policy che Tommaso si crea rende autonoma un'azione `MEDIUM`, a partire da `browser.guided` |
-| 13 — Il permesso prima dell'azione | `M13.13` | Proposta | I file dal browser: uno scaricamento è un `fs.write`, un caricamento un `fs.read` |
+| 13 — Il permesso prima dell'azione | `M13.13` | Implementata | I file dal browser: uno scaricamento è un `fs.write`, un caricamento un `fs.read` |
 | 13 — Il permesso prima dell'azione | `M13.14` | Proposta | Le policy di Tommaso arrivano alle azioni HIGH |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.1` | Implementata | Il tetto di spesa: la chiave di ELA, e un limite che ELA fa rispettare |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.1b` | Implementata | La docstring del tetto dice il secondo tetto giusto: il limite dell'organizzazione |
@@ -178,7 +178,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **66** | `docs/adr/NNNN-*.md` |
-| Milestone | **98, di cui 75 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **98, di cui 79 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **73** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **15** | `pyproject.toml` |
 | Port | **36** | i `Protocol` di `src/ela/ports.py` |
@@ -257,6 +257,8 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
   ***Annotato il 2026-11-02***: registrata **M13.14** — le policy di Tommaso arrivano alle azioni `HIGH` —, dalla sua
   decisione di quel giorno (5.14). Fino a lei la frase qui sopra sul livello `HIGH`, che nessuna policy raggiunge, resta
   vera.
+  ***Annotato il 2026-11-11***: **M13.13 è fatta**, con le tre riparazioni del suo branch — M13.9b, M13.9c e M13.10b
+  —: la prova a mano è passata sul Mac a `ead73aa`, e [ADR 0066](adr/0066-browser-files.md) è Accettata.
   L'ordine e le condizioni stanno nella voce 5.11, e la fila che attraversa le fasi nella 5.10.
 - **Fase 12 — i nodi. È chiusa** (2026-09-20, con M12.5). ELA ha smesso di essere un processo su
   una macchina e di essere usabile solo davanti a quella macchina: un'identità provabile per un
@@ -707,7 +709,8 @@ cambiano. In quest'ordine:
 
 1. **M13.13**, i file dal browser: **la prossima**, con M13.9b sul suo branch prima del suo codice
    (***annotato il 2026-11-03***, risposta 18 della review delle SPEC del branch `m13.13-i-file-dal-browser`: sullo
-   stesso branch, nell'ordine, M13.9b, **M13.9c**, M13.10b, M13.13);
+   stesso branch, nell'ordine, M13.9b, **M13.9c**, M13.10b, M13.13; ***annotato il 2026-11-11***: **fatte**, con la
+   prova a mano passata a `ead73aa`, e ADR 0066 è Accettata: il merge lo fa Tommaso, e la prossima è M13.14);
 2. **M13.14**, le policy di Tommaso arrivano alle azioni `HIGH` (5.14);
 3. **M13.11**, il browser sul PC;
 4. **M14.7**, il lavoro su un progetto di Tommaso con una sessione di Claude Code (5.7);
@@ -819,7 +822,8 @@ M13.1d → M13.9 → M13.10 → M13.11 → M13.5 → M13.7 → M13.8**; dopo M13
 2026-10-08***: fatta, con la prova a mano passata. ***Annotato il 2026-10-09***: **M13.12**, le policy di §59, viene dopo
 M14.3 e prima di M13.9 — qui sotto, «Chi apre la milestone delle policy di §59». ***Annotato il 2026-10-10***: fatta, con
 la prova a mano passata.) ***Annotato il 2026-11-02*** (la fila rivista, 5.10): ciò che resta della fase è **M13.13 →
-M13.14 → M13.11 → M13.5 → M13.7 → M13.8**, con M14.7 fra M13.11 e M13.5, e M14.4 fra M13.5 e M13.7. La fila intera, con
+M13.14 → M13.11 → M13.5 → M13.7 → M13.8**, con M14.7 fra M13.11 e M13.5, e M14.4 fra M13.5 e M13.7. (***Annotato il
+2026-11-11***: M13.13 è fatta, con la prova a mano passata.) La fila intera, con
 M6.3c in testa, sta nella 5.10. M13.6 resta fuori dalla
 fila, con la sua condizione. **La Fase 14 comincia prima che la Fase 13 sia chiusa**, e la ragione è di
 Tommaso: **tutto ciò che vuole dal browser e dal computer control passa da un modello che guarda e
@@ -1053,25 +1057,32 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   prova a mano**, che è la sezione 30 della guida con `scripts/prova_m13_13.py`. Il sito scelto è
   `testpages.eviltester.com`. **Il debito di ADR 0065 §6 si decide alla fine del branch**, dopo la prova, con il conto
   finale dei giri (decisione 43 della review dopo la CI rossa di `0bc3278`). La milestone resta `Proposta` fino alla
-  prova, come le tre riparazioni del suo branch.
+  prova, come le tre riparazioni del suo branch. ***Annotato il 2026-11-11, più tardi***: **fatta**, con la prova a
+  mano passata sul Mac a `ead73aa`, l'ultimo commit del branch — 42 passati al primo giro —, e ADR 0066 è Accettata
+  (decisione 51): la conferma del sito, che dura quattro secondi, l'ha vista il verifier, con i due browser.
 - **M13.9b — la pagina d'errore del browser non è un altro sito** (§19, §33; ADR 0064 §4). **Registrata il
   2026-10-14** dalla review dell'implementazione di M13.10 (decisione 57): con il confine dell'origine del sito,
   un sito che non risponde al login — il browser mostra la sua pagina d'errore, `chrome-error://chromewebdata/` —
   è raccontato `browser.left_site`, una diagnosi falsa; verificato con il finto. **Sul branch di M13.13, prima del
   suo codice**; non entra nella testa del merge di M13.10 ([`milestones/M13.9b.md`](milestones/M13.9b.md)).
+  ***Annotato il 2026-11-11***: **fatta**, con la prova a mano del branch passata a `ead73aa`; le sue «Righe riviste»
+  sono in ADR 0066, Accettata.
 - **M13.9c — solo l'adapter del vault lancia il programma del vault** (§33, §58, §65; ADR 0063 §2). **Registrata il
   2026-11-03** dalla review delle SPEC del branch `m13.13-i-file-dal-browser` (risposta 18): la lista chiusa dei comandi
   di Bitwarden è una difesa che `terminal.run` scavalca, se il programma del vault è dichiarato fra i programmi del
   terminale. All'avvio una configurazione così non parte, per identità e non per nome, e una regola d'architettura dice
   che solo l'adapter del vault riceve e lancia `ELA_VAULT_PROGRAM`. **Sul branch di M13.13, dopo M13.9b e prima di
-  M13.10b** ([`milestones/M13.9c.md`](milestones/M13.9c.md)).
+  M13.10b** ([`milestones/M13.9c.md`](milestones/M13.9c.md)). ***Annotato il 2026-11-11***: **fatta**, con il
+  controllo anche al lancio (`terminal.vault_program`, decisione 28) e la prova a mano del branch passata a `ead73aa`;
+  la regola 72 è in ADR 0066, Accettata.
 - **M13.10b — la domanda a occhio del login, nella prova di M13.10, chiede ciò che non mostra** (§63). **Registrata il
   2026-10-29** dalla review dopo la prova passata di M13.10 (decisione 77): la domanda `4.occhio` della sezione 29
   chiedeva della risposta del modello «nel file», e né il file né lo schermo la portavano; un blocco `schermo` con i
   risultati della sessione prima della domanda, la domanda senza ciò che l'occhio non vede, un test dei documenti che
   deriva la regola, e il test che ELA non scrive mai nel vault, nominato o scritto. **Fuori dalla fila**: si ripara
   prima che un altro script della prova parta da `scripts/prova_m13_10.py`; non entra nella testa del merge di M13.10
-  ([`milestones/M13.10b.md`](milestones/M13.10b.md)).
+  ([`milestones/M13.10b.md`](milestones/M13.10b.md)). ***Annotato il 2026-11-11***: **fatta**, prima che lo script di
+  M13.13 nascesse; la prova a mano del branch, passata a `ead73aa`, è la prima fatta con la sua regola.
 - **M13.11 — il browser sul PC** (§19, §56). **Registrata il 2026-09-30**: le capacità di M13.9 e M13.10
   sul nodo Windows, con il verifier sul nodo e il verdetto in busta (ADR 0048 §7); rivede la decisione 1
   di M13.4. **Condizione d'ingresso: una misura sul PC** di che cosa lo Smart App Control lascia partire

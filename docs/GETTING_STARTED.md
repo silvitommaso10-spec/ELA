@@ -7010,7 +7010,10 @@ Dopo il passo 5 ELA è ferma, e la prova finisce lì: ELA si riavvia a mano, com
 > **Scritta con l'implementazione il 10 novembre 2026** (`milestones/M13.13.md`, decisione 10 della SPEC e risposte 22 e
 > 23 della sua review), e `tests/docs/test_prova_m13_13.py` tiene lo script allineato a questa sezione. La si fa **sul
 > Mac, senza il PC**, sul branch di M13.13, con lo script `scripts/prova_m13_13.py`. **Nessun login e nessun vault**: i
-> due siti della prova non vogliono un account.
+> due siti della prova non vogliono un account. **Fatta da Tommaso il 2026-11-11 sul branch**, a `ead73aa`, sul Mac:
+> passata, 42 PASSATI al primo giro, nessun FALLITO, nessun no, nessun SALTATO
+> (`~/Downloads/prova-m13.13-20261111-124909.txt`); [ADR 0066](adr/0066-browser-files.md) è Accettata, e com'è andata è
+> in `milestones/M13.13.md`, «La prova a mano, il 2026-11-11 — passata».
 
 Da M13.13 ELA **scarica un file** da un sito dentro la cartella che le hai dichiarato, e **dà a un sito un file** di
 quella cartella. Quattro capability, tutte `HIGH` — chiedono **a ogni uso**, e nessuna policy le copre —:
