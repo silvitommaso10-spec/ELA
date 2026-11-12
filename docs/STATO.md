@@ -135,6 +135,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.4d` | Proposta | Lo shell del browser vuoto gira senza il sandbox di Chromium |
 | 13 — Il permesso prima dell'azione | `M13.4e` | Implementata | Alla chiusura di ELA nessuno aspetta il browser, e il processo può non uscire |
 | 13 — Il permesso prima dell'azione | `M13.4f` | Implementata | Il confine del browser: i tool guardano dove la pagina è, e il cancello guarda le richieste del browser invece di rifarle |
+| 13 — Il permesso prima dell'azione | `M13.4g` | Proposta | Il click che apre un'altra pagina, con il browser del profilo: un'azione che a volte non dice la sua pagina |
 | 13 — Il permesso prima dell'azione | `M13.5` | Proposta | Computer control: il muro dichiarato prima di cominciare |
 | 13 — Il permesso prima dell'azione | `M13.6` | Proposta | Spostare un lavoro già in corso: il ripiazzamento, quando due capability sanno dichiararsi ripetibili |
 | 13 — Il permesso prima dell'azione | `M13.7` | Proposta | Il terminale su un nodo: il Job Object, e `argv` che su Windows diventa una stringa |
@@ -179,7 +180,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **67** | `docs/adr/NNNN-*.md` |
-| Milestone | **99, di cui 80 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **100, di cui 80 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **73** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **15** | `pyproject.toml` |
 | Port | **36** | i `Protocol` di `src/ela/ports.py` |
@@ -713,7 +714,9 @@ cambiano. In quest'ordine:
    stesso branch, nell'ordine, M13.9b, **M13.9c**, M13.10b, M13.13; ***annotato il 2026-11-11***: **fatte**, con la
    prova a mano passata a `ead73aa`, e ADR 0066 è Accettata: il merge lo fa Tommaso, e la prossima è M13.14);
 2. **M13.14**, le policy di Tommaso arrivano alle azioni `HIGH` (5.14);
-3. **M13.11**, il browser sul PC;
+3. **M13.11**, il browser sul PC (***annotato il 2026-11-12***, decisione 36 della review dopo la CI rossa di `a5a74fd`
+   sul branch di M14.6b: **prima di lei [M13.4g](milestones/M13.4g.md)**, registrata, `Proposta` — il click che apre
+   un'altra pagina, con il browser del profilo, che a volte non dice la sua pagina —);
 4. **M14.7**, il lavoro su un progetto di Tommaso con una sessione di Claude Code (5.7);
 5. **M13.5**, con la condizione d'ingresso invariata (5.11);
 6. **M14.4**, il computer guidato dal modello, subito dopo M13.5;

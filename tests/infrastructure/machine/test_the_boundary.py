@@ -54,7 +54,7 @@ from typing import Any
 import pytest
 from playwright.async_api import async_playwright
 
-from ela.domain import ExecutionStatus
+from ela.domain import ExecutionResult, ExecutionStatus
 from ela.infrastructure.machine import browser as adapter
 from ela.infrastructure.machine.account import AccountChrome
 from ela.infrastructure.machine.browser import PlaywrightBrowser, _descendants, _listed
@@ -790,6 +790,17 @@ async def test_a_read_of_a_page_that_opens_another_by_itself_succeeds_and_says_s
     assert found.address == off.origin + "/x?k=1" and off.requests == []
 
 
+def why_not(result: ExecutionResult) -> str:
+    """What a step that did not succeed said — its status, its code, its message —, for the
+    assertion that comes before anything is read of its output: a failed action shows its reason,
+    not a ``KeyError`` on a field it never wrote (decision 35 of M14.6b; the red of ``a5a74fd`` on
+    the macOS runner, and two of a hundred on the Mac, were that ``KeyError``)."""
+    error = result.error
+    if error is None:
+        return f"{result.status.value}, without an error"
+    return f"{result.status.value}: {error.code}: {error.message}"
+
+
 @pytest.mark.parametrize(
     ("way", "said", "unsaid"),
     [
@@ -826,12 +837,13 @@ async def test_a_click_that_opens_another_page_is_said_by_the_step_and_by_its_ve
     arguments = {**arguments, "expect_text": "Grazie", "purpose": "x"}
 
     result = await tool.execute(decision(BROWSER_ACT), arguments, FakeStop())
+    assert result.status is ExecutionStatus.SUCCEEDED, why_not(result)
     await another(browser, str(result.output["page"]))
     (failure,) = await BrowserActVerifier(browser, 0.2).verify(
         [BROWSER_EXPECT_VISIBLE], arguments, result
     )
 
-    assert result.status is ExecutionStatus.SUCCEEDED and result.output["gestures"] == 1
+    assert result.output["gestures"] == 1
     assert result.output[ANOTHER_PAGE] in {off.origin, ASKED_FOR_NOTHING}
     assert failure.code == BROWSER_ANOTHER_PAGE
     assert said in failure.message and unsaid not in failure.message
