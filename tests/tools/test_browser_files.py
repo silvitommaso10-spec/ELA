@@ -101,7 +101,15 @@ from ela.tools.browser_files import (
     FileDownloadedVerifier,
     UploadVerifier,
 )
-from ela.tools.fs import IO_ERROR, NO_ROOT, OVERWRITE_MISMATCH, FsReadTool, FsWriteTool
+from ela.tools.fs import (
+    ELA_S_OWN,
+    HARD_LINK,
+    IO_ERROR,
+    NO_ROOT,
+    OVERWRITE_MISMATCH,
+    FsReadTool,
+    FsWriteTool,
+)
 from ela.tools.paths import (
     PATH_INVALID,
     PATH_IS_DIRECTORY,
@@ -151,10 +159,22 @@ def root(tmp_path: Path) -> Path:
 
 
 def download(
-    browser: FakeBrowser, folder: Path, *, profile: bool = False
+    browser: FakeBrowser,
+    folder: Path,
+    *,
+    profile: bool = False,
+    protected: dict[str, Path] | None = None,
 ) -> BrowserDownloadTool | AccountDownloadTool:
     kind = AccountDownloadTool if profile else BrowserDownloadTool
-    return kind(folder, SITES, browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages())  # type: ignore[arg-type]
+    return kind(  # type: ignore[arg-type]
+        folder,
+        SITES,
+        browser,
+        CLOCK,
+        FakeIdGenerator(),
+        protected={} if protected is None else protected,
+        pages=FakeTaskPages(),
+    )
 
 
 def upload(
@@ -222,7 +242,7 @@ async def test_a_download_refuses_what_fs_write_refuses(
     if leads_to is not None:
         (folder / "ELA" / "prova" / "vero.bin").write_bytes(b"c'era")
         (folder / "ELA" / "link.bin").symlink_to(folder / leads_to)
-    as_a_write = await FsWriteTool(folder, CLOCK, FakeIdGenerator()).prospect(
+    as_a_write = await FsWriteTool(folder, CLOCK, FakeIdGenerator(), protected={}).prospect(
         {"path": file, "body": "", "overwrite": False}
     )
 
@@ -243,6 +263,41 @@ async def test_overwrite_is_an_assertion_on_the_world_both_ways(
     prospect = await download(FakeBrowser(), folder).prospect(with_(DOWNLOAD, overwrite=overwrite))
 
     assert prospect.refusal is not None and prospect.refusal.code == OVERWRITE_MISMATCH
+
+
+@pytest.mark.parametrize("profile", [False, True], ids=["empty", "as-you"])
+@pytest.mark.parametrize("what", ["ela_s_own", "hard_link"])
+async def test_a_download_refuses_what_ela_uses_to_exist_and_a_file_with_two_names(
+    tmp_path: Path, profile: bool, what: str
+) -> None:
+    """A download is a write (M13.14, ADR 0068): the list of the places no write reaches, and a
+    file with more than one name, refused before the question and before the gesture — the
+    browser never opened, nothing arrived."""
+    folder = root(tmp_path)
+    landing = folder / "ELA" / "prova" / "scaricato.bin"
+    protected: dict[str, Path] = {}
+    arguments = DOWNLOAD
+    if what == "ela_s_own":
+        protected["the database"] = folder / "ELA" / "prova"
+        code = ELA_S_OWN
+    else:
+        landing.write_bytes(b"c'era")
+        os.link(landing, folder / "ELA" / "secondo.bin")
+        arguments = with_(DOWNLOAD, overwrite=True)
+        code = HARD_LINK
+    browser = (FakeAccountBrowser if profile else FakeBrowser)(FakePage(download=BYTES))
+    tool = download(browser, folder, profile=profile, protected=protected)
+
+    asked = await tool.prospect(arguments)
+    result = await tool.execute(
+        decision(BROWSER_DOWNLOAD_AS_YOU if profile else BROWSER_DOWNLOAD), arguments, FakeStop()
+    )
+
+    assert asked.refusal is not None and asked.refusal.code == code
+    assert result.error is not None and result.error.code == code
+    assert code in tool.error_codes
+    assert browser.opened == [] and browser.downloads == []
+    assert not landing.exists() or landing.read_bytes() == b"c'era"
 
 
 async def test_without_a_root_nothing_is_asked(tmp_path: Path) -> None:
@@ -649,6 +704,7 @@ async def test_a_download_closes_first_the_page_its_task_keeps(tmp_path: Path) -
         FakeBrowser(FakePage(download=BYTES)),
         CLOCK,
         FakeIdGenerator(),
+        protected={},
         pages=pages,
     )
 
@@ -717,6 +773,7 @@ async def test_a_download_whose_time_runs_out_says_so_and_counts_its_gesture(
         browser,
         CLOCK,
         FakeIdGenerator(),
+        protected={},
         pages=FakeTaskPages(),
     )
 

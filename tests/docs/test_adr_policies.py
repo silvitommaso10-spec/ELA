@@ -13,6 +13,7 @@ import inspect
 import re
 import tomllib
 from pathlib import Path
+from typing import Final
 
 import pytest
 
@@ -38,14 +39,20 @@ from tests.docs.test_adr_cli import coded_commands, commands_after_0062
 from tests.docs.test_adr_composition import coded_routes, routes_after_0062
 from tests.docs.test_adr_guardian import Parameter
 from tests.docs.test_adr_placement import _rules_up_to
+from tests.docs.test_adr_planner import contracts_up_to
 
 ROOT = Path(__file__).resolve().parents[2]
 ADR_PATH = ROOT / "docs" / "adr" / "0062-policies.md"
 ROW = re.compile(r"^\| (\d+) \| `(\w+)` \| (.+) \|$")
 TERMS_ROW = re.compile(
     r"^\| `(?P<capability>[\w.]+)` \| (?P<limits>[^|]+) \| (?P<uncovered>[^|]+) \| "
-    r"(?P<free>[^|]+) \| `(?P<route>\w+)` \|$"
+    r"(?P<free>[^|]+) \| (?:`(?P<route>\w+)`|—) \|$"
 )
+GAPS_OF_0062: Final = ["REVOKED", "EXPIRED", "TERMS", "SITE", "LIMIT", "ARGUMENT"]
+CHECKS_OF_0062: Final = ["CATALOGUE", "ADMITS", "SCOPE", "LIMITS", "DAYS"]
+"""ADR 0062's two tables as they were the day it was accepted: since M13.14 the predicate and the
+birth are ADR 0068's (§5), and ``tests/docs/test_adr_policies_on_high.py`` compares them with the
+code. This ADR keeps what it decided, which is history."""
 SIGNATURE = re.compile(
     r"```python\n(def authorization_from_policy\(.*?\) -> Authorization: \.\.\.)\n```", re.S
 )
@@ -68,18 +75,18 @@ def numbered(text: str) -> list[tuple[int, str]]:
     ]
 
 
-def documented_gaps(text: str) -> list[Gap]:
+def documented_gaps(text: str) -> list[str]:
     rows = [(n, name) for n, name in numbered(text) if name in Gap.__members__]
     assert rows, "ADR 0062 must contain the table of the gaps"
     assert [n for n, _ in rows] == list(range(1, len(rows) + 1)), "rows are numbered from 1"
-    return [Gap(name) for _, name in rows]
+    return [name for _, name in rows]
 
 
-def documented_checks(text: str) -> list[PolicyCheck]:
+def documented_checks(text: str) -> list[str]:
     rows = [(n, name) for n, name in numbered(text) if name in PolicyCheck.__members__]
     assert rows, "ADR 0062 must contain the table of the checks"
     assert [n for n, _ in rows] == list(range(1, len(rows) + 1)), "rows are numbered from 1"
-    return [PolicyCheck(name) for _, name in rows]
+    return [name for _, name in rows]
 
 
 def names(cell: str) -> tuple[str, ...]:
@@ -92,7 +99,7 @@ def documented_terms(text: str) -> dict[str, tuple[tuple[str, ...], ...]]:
             names(match["limits"]),
             names(match["uncovered"]),
             names(match["free"]),
-            (match["route"],),
+            (match["route"] or "",),
         )
         for line in text.splitlines()
         if (match := TERMS_ROW.match(line))
@@ -150,23 +157,32 @@ CODED_CONSTANTS = {
 }
 
 
-def test_the_gaps_are_the_predicate_s_in_its_order() -> None:
-    assert documented_gaps(adr_text()) == list(GAPS)
+def test_the_gaps_are_the_ones_of_that_day_and_still_the_predicate_s_in_their_order() -> None:
+    """The six of that day, and every one of them still a gap of the predicate, in the same order
+    among today's: ADR 0068 added two between them, it took none away."""
+    assert documented_gaps(adr_text()) == GAPS_OF_0062
+    assert [gap for gap in GAPS if gap in GAPS_OF_0062] == GAPS_OF_0062
 
 
-def test_the_checks_of_the_birth_are_the_function_s_in_its_order() -> None:
-    assert documented_checks(adr_text()) == list(POLICY_CHECKS)
-    assert set(documented_checks(adr_text())) == set(PolicyCheck)
+def test_the_checks_of_the_birth_are_the_ones_of_that_day_in_the_function_s_order() -> None:
+    assert documented_checks(adr_text()) == CHECKS_OF_0062
+    assert [check for check in POLICY_CHECKS if check in CHECKS_OF_0062] == CHECKS_OF_0062
 
 
 def test_the_declarations_are_the_catalogue_s() -> None:
-    """ADR 0062's table, and since M13.9 the row ADR 0063 adds in the same form: together they
-    are every capability that declares terms."""
+    """ADR 0062's table, the row ADR 0063 adds in the same form since M13.9, and the three rows of
+    ADR 0068 since M13.14: together they are every capability that declares terms."""
     accounts = ADR_PATH.with_name("0063-browser-with-your-accounts.md").read_text(encoding="utf-8")
-    here, later = documented_terms(adr_text()), documented_terms(accounts)
+    high = ADR_PATH.with_name("0068-policies-on-high.md").read_text(encoding="utf-8")
+    here, later, latest = (
+        documented_terms(adr_text()),
+        documented_terms(accounts),
+        documented_terms(high),
+    )
 
     assert set(here) == {BROWSER_GUIDED} and not set(here) & set(later)
-    assert here | later == coded_terms()
+    assert not (set(here) | set(later)) & set(latest)
+    assert here | later | latest == coded_terms()
 
 
 def test_the_signature_and_the_constants_are_the_code_s() -> None:
@@ -179,9 +195,9 @@ def test_a_drifted_table_signature_or_constant_is_detected() -> None:
     swapped = text.replace("| 1 | `REVOKED` |", "| 1 | `EXPIRED` |", 1).replace(
         "| 2 | `EXPIRED` |", "| 2 | `REVOKED` |", 1
     )
-    assert swapped != text and documented_gaps(swapped) != list(GAPS)
+    assert swapped != text and documented_gaps(swapped) != GAPS_OF_0062
     dropped = re.sub(r"^\| 5 \| `DAYS` \|.*\n", "", text, count=1, flags=re.M)
-    assert dropped != text and set(documented_checks(dropped)) != set(PolicyCheck)
+    assert dropped != text and documented_checks(dropped) != CHECKS_OF_0062
     with pytest.raises(AssertionError, match="numbered"):
         documented_gaps(text.replace("| 6 | `ARGUMENT` |", "| 7 | `ARGUMENT` |", 1))
     widened = text.replace("| `task_type` |", "| — |", 1)
@@ -217,7 +233,7 @@ def test_the_conseguenze_count_the_totals_as_this_adr_saw_them() -> None:
     assert "**sessantasei**" in text
     assert len(_rules_up_to(66)) == 66 <= len(RULES)
     assert set(_rules_up_to(66)) - set(_rules_up_to(65)) == {"a-policy-is-born-at-its-route"}
-    assert "**quindici**" in text and len(contracts) == 15
+    assert "**quindici**" in text and len(contracts_up_to(15)) == 15 <= len(contracts)
     assert "**trentatré**" in text
     assert (
         len(tuple(p for p in port_protocols() if p.__name__ not in ACCOUNT_PORTS | STEPS_PORTS))

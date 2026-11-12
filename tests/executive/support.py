@@ -25,7 +25,7 @@ from ela.devices import (
     period_of,
     score,
 )
-from ela.devices.local import LOCAL_DEVICE_NAME
+from ela.devices.local import LOCAL_DEVICE_ID, LOCAL_DEVICE_NAME
 from ela.domain import (
     Approval,
     ApprovalStatus,
@@ -616,7 +616,9 @@ def world(
     # capability together with its real tool (M13.2: ``terminal.run``, which the test catalogue
     # does not hold and whose tool reads nothing but its own specification's arguments).
     registry = FakeCapabilityRegistry(CATALOGUE if catalogue is None else tuple(catalogue))
-    guardian = PermissionGuardian(registry, clock, ids, audit)
+    # The Core is ``local``, as the composition hands it over (M13.14, ADR 0068): a policy that
+    # covers only the Core covers a step of this world's node, and none of a remote one.
+    guardian = PermissionGuardian(registry, clock, ids, audit, core=LOCAL_DEVICE_ID)
     fakes = fake_tools(clock, ids, failing)
     tool_registry = FakeToolRegistry(fakes.values() if tools is None else tools)
     checkers = fake_verifiers()

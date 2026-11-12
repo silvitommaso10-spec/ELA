@@ -220,13 +220,15 @@ def test_consuming_rules_match_every_table_of_the_adrs() -> None:
 
 
 def test_the_tables_that_state_a_consumption_are_the_ones_expected() -> None:
-    """Three today: ADR 0013 §6, the row ADR 0045 §3 added, and the row of the session's cover in
-    ADR 0063 §1. A fourth is found by the glob."""
+    """Four today: ADR 0013 §6, the row ADR 0045 §3 added, the row of the session's cover in
+    ADR 0063 §1, and the row of a ``HIGH`` that declares terms in ADR 0068 §1. A fifth is found by
+    the glob."""
     holding = [name for name, text in adr_documents() if CONSUMING_HEADER in text.splitlines()]
     assert holding == [
         "0013-executor.md",
         "0045-filesystem-and-high.md",
         "0063-browser-with-your-accounts.md",
+        "0068-policies-on-high.md",
     ]
 
 

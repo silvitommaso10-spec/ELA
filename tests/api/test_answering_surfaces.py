@@ -289,6 +289,7 @@ async def test_the_sentences_are_the_ones_the_capabilities_write(tmp_path: Path)
         vault=an_open_door(tmp_path),
         not_now=any_moment,
         pages=FakeTaskPages(),
+        protected={},
     )
     arguments = {
         FS_READ: {"path": "ELA/c.md", "purpose": "x"},

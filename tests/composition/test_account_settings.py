@@ -281,14 +281,15 @@ def test_what_the_volume_says_of_two_spellings_is_believed_on_every_system(
     """The same refusal with **the volume's answer handed by the test**: on a volume that tells
     the cases of a name apart — the runner's — the test above has nothing to confuse and does not
     run, and the line that believes the volume would be one no test of that system reaches (the
-    CI of 2026-10-11, where the gate of the coverage said so)."""
-    from ela.composition import settings as module
+    CI of 2026-10-11, where the gate of the coverage said so). The comparison lives in
+    ``ela.tools.paths`` since M13.14, one for the start-up and for a write."""
+    from ela.tools import paths as module
 
     installed = tmp_path / "Site-Packages" / "ela"
     installed.mkdir(parents=True)
     monkeypatch.setattr(ela, "__file__", str(installed / "__init__.py"))
     monkeypatch.setattr(
-        module, "_same_folder", lambda one, other: str(one).casefold() == str(other).casefold()
+        module, "same_folder", lambda one, other: str(one).casefold() == str(other).casefold()
     )
 
     message = refused(
@@ -301,7 +302,7 @@ def test_what_the_volume_says_of_two_spellings_is_believed_on_every_system(
 def test_two_paths_are_one_folder_when_the_volume_says_so_and_never_when_one_names_nothing(
     tmp_path: Path,
 ) -> None:
-    from ela.composition.settings import _same_folder
+    from ela.tools.paths import same_folder as _same_folder
 
     real = tmp_path / "real"
     real.mkdir()
@@ -391,8 +392,8 @@ def test_the_profile_is_among_what_ela_uses_to_exist_only_when_it_is_declared(
 ) -> None:
     profile = tmp_path / "profile"
 
-    without = loaded(monkeypatch, tmp_path)._ela_s_own()
-    declared = loaded(monkeypatch, tmp_path, **{PROFILE: str(profile)})._ela_s_own()
+    without = loaded(monkeypatch, tmp_path).ela_s_own()
+    declared = loaded(monkeypatch, tmp_path, **{PROFILE: str(profile)}).ela_s_own()
 
     assert profile.resolve() not in without.values()
     assert set(declared) - set(without) == {f"the profile of ELA's browser ({PROFILE})"}

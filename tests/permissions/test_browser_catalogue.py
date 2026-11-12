@@ -2,7 +2,8 @@
 
 ``browser.read`` is ``LOW``: inside the declared sites it is allowed without a question — unless a
 step asks for one —, outside it is denied with ``Rule.SCOPE``. ``browser.act`` is ``HIGH``: a
-question at every use, and no standing grant reaches it. The site is the one scoped argument, and a
+question at every use unless a policy of yours for ``browser.act`` covers the site (M13.14, ADR
+0068). The site is the one scoped argument, and a
 site outside the grammar is denied with ``Rule.ARGUMENTS`` before the scope is read (census C1): a
 site is a host name, not a path, and ``example.com/x`` must not pass as «inside» ``example.com``.
 """
@@ -129,14 +130,30 @@ def test_no_site_declared_denies_every_call() -> None:
     assert decide(BROWSER_ACT, ACT, sites=()) == (PermissionOutcome.DENIED, Rule.SCOPE.value)
 
 
-def test_an_action_asks_at_every_use() -> None:
+def test_an_action_asks_unless_a_policy_covers_it() -> None:
+    """The row of a ``HIGH`` that declares terms, «approval unless policy» (M13.14, ADR 0068):
+    without a policy of its own an action asks, as it always did."""
     outcome, rule = decide(BROWSER_ACT, ACT)
 
-    assert (outcome, rule) == (PermissionOutcome.REQUIRES_APPROVAL, Rule.APPROVAL_EVERY_USE.value)
+    assert (outcome, rule) == (
+        PermissionOutcome.REQUIRES_APPROVAL,
+        Rule.APPROVAL_UNLESS_POLICY.value,
+    )
 
 
-def test_a_standing_grant_does_not_reach_an_action() -> None:
-    """§59's policies widen, and HIGH is the level they never reach (ADR 0045 §3)."""
-    outcome, _ = decide(BROWSER_ACT, ACT, authorization=grant(browser_act(SITES)))
+def test_a_policy_of_its_own_on_its_site_reaches_an_action() -> None:
+    """§59's policies widen, and since M13.14 a ``HIGH`` that declares terms is among what they
+    reach (ADR 0068): the policy of ``browser.act`` on the site allows, without a question."""
+    outcome, rule = decide(BROWSER_ACT, ACT, authorization=grant(browser_act(SITES)))
 
-    assert outcome is not PermissionOutcome.ALLOWED
+    assert (outcome, rule) == (PermissionOutcome.ALLOWED, Rule.APPROVAL_UNLESS_POLICY.value)
+
+
+def test_a_policy_of_its_own_on_another_site_does_not_reach_an_action() -> None:
+    """The scope of the policy is the boundary: a site of the catalogue outside it is not
+    covered, and the executor never hands it over — handed over, it is an incoherence."""
+    policy = grant(browser_act(SITES), scope=("example.com",))
+
+    outcome, rule = decide(BROWSER_ACT, ACT, authorization=policy)
+
+    assert (outcome, rule) == (PermissionOutcome.DENIED, Rule.AUTHORIZATION_MISMATCH.value)

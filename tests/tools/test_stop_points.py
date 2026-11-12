@@ -322,7 +322,7 @@ def _voice_online(tmp_path: Path) -> Subject:
 def _fs_write(tmp_path: Path) -> Subject:
     root = tmp_path / "files"
     root.mkdir()
-    tool = FsWriteTool(root, FakeClock(FS_NOW), FakeIdGenerator())
+    tool = FsWriteTool(root, FakeClock(FS_NOW), FakeIdGenerator(), protected={})
     return Subject(
         tool,
         fs_decision(FS_WRITE),
@@ -462,7 +462,15 @@ def _a_download(tmp_path: Path, *, profile: bool) -> Subject:
     browser = (FakeAccountBrowser if profile else FakeBrowser)(FakePage(download=GIVEN))
     made = AccountDownloadTool if profile else BrowserDownloadTool
     return Subject(
-        made(root, SITES, browser, FakeClock(), FakeIdGenerator(), pages=FakeTaskPages()),  # type: ignore[arg-type]
+        made(  # type: ignore[arg-type]
+            root,
+            SITES,
+            browser,
+            FakeClock(),
+            FakeIdGenerator(),
+            protected={},
+            pages=FakeTaskPages(),
+        ),
         browser_decision(BROWSER_DOWNLOAD_AS_YOU if profile else BROWSER_DOWNLOAD),
         {
             "site": ACT["site"],

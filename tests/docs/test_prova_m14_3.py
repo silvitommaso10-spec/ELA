@@ -1070,9 +1070,10 @@ def test_a_child_that_is_not_a_gesture_fails(real: Real) -> None:
 
 
 def test_a_denial_by_the_rule_the_line_names_passes(real: Real) -> None:
-    """The rule is read in the audit: the act that asked is denied by the user's no, under the row
-    of a question at every use."""
-    proof = family_on(real, real.refused, "browser.act DENIED APPROVAL_EVERY_USE")
+    """The rule is read in the audit: the act that asked is denied by the user's no, under its row —
+    since M13.14 the row of a ``HIGH`` that declares policy terms (ADR 0068 §1), which asks when no
+    policy of the gesture's capability covers it."""
+    proof = family_on(real, real.refused, "browser.act DENIED APPROVAL_UNLESS_POLICY")
 
     assert proof.report.ok, proof.report.lines
 
@@ -1091,7 +1092,7 @@ def test_a_denial_whose_rule_the_audit_does_not_say_fails(real: Real) -> None:
     proof = family_on(
         real,
         session,
-        "browser.act DENIED APPROVAL_EVERY_USE",
+        "browser.act DENIED APPROVAL_UNLESS_POLICY",
         **{f"/audit?task_id={one}": silent},
     )
 

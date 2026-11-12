@@ -12,15 +12,26 @@ import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 import pytest
 from click.testing import Result
 from typer.testing import CliRunner
 
+from ela.api.schemas import PreviewOut
 from ela.cli import client, policies
 from ela.cli.app import app as ela_app
-from ela.domain import AuthorizationId, CapabilityId
+from ela.domain import (
+    Actor,
+    ActorKind,
+    AuditEvent,
+    AuditEventId,
+    AuditEventType,
+    AuthorizationId,
+    CapabilityId,
+    TaskId,
+)
 from ela.permissions import PolicyRequest, authorization_from_policy
 from ela.providers.anthropic.models import HAIKU_5_5
 from tests.api.guided import MAX_COST, Guided, Script, guided
@@ -138,13 +149,13 @@ async def test_a_refusal_is_a_failure_with_the_reason(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     async with a_cli(monkeypatch, tmp_path) as (_, runner):
-        high = await invoke(
+        program = await invoke(
             runner,
             "policy",
             "create",
-            "browser.act",
+            "terminal.run",
             "--scope",
-            "httpbin.org",
+            "bin/echo",
             "--days",
             "1",
             "--confirm",
@@ -155,8 +166,10 @@ async def test_a_refusal_is_a_failure_with_the_reason(
             "--confirm",
         )
 
-    assert high.exit_code != 0
-    assert "no policy reaches a HIGH" in plain(high.output)
+    assert program.exit_code != 0
+    out = " ".join(plain(program.output).split())
+    assert "policy.refused" in out and "terminal.run launches a program the plan chooses" in out
+    assert "and only you create one" in out
     assert cheap.exit_code != 0
     assert "guided.cap_below_one_call" in plain(cheap.output)
 
@@ -223,3 +236,126 @@ def test_a_short_id_that_names_two_policies_is_refused_and_a_whole_id_is_itself(
         policies.resolved("3f2a1b2c", two)
     assert policies.resolved(first, two) == first
     assert policies.resolved("3f2a1b2c-0000-4000-8000-00000000000", two) is None
+
+
+# ----------------------------------------------------------------------------------------
+# M13.14 (ADR 0068): the uses, the preview at closed world, the list, a policy without a model
+# ----------------------------------------------------------------------------------------
+
+MARKED: dict[str, Any] = {
+    "capability": "marked.capability",
+    "description": "DESCRIPTION-1",
+    "risk": "RISK-2",
+    "does": "DOES-3",
+    "goes": "GOES-4",
+    "scope": ["ELA/uno", "ELA/due"],
+    "resolved": ["/root/ELA/uno", None],
+    "limits": {"LIMIT-5": "VALUE-5"},
+    "days": 6,
+    "expires_at": "EXPIRES-7",
+    "uses": "USES-8",
+    "on_the_core": "CORE-9",
+    "model": "MODEL-10",
+    "sends": "SENDS-11",
+    "one_call": "ONE-CALL-12",
+    "cost": "COST-13",
+    "never": ["NEVER-14", "NEVER-15"],
+}
+"""A preview with a mark in every field: what the CLI must print, field by field."""
+
+SHOWN: dict[str, tuple[str, ...]] = {
+    "capability": ("marked.capability",),
+    "description": ("DESCRIPTION-1",),
+    "risk": ("RISK-2",),
+    "does": ("DOES-3",),
+    "goes": ("GOES-4",),
+    "scope": ("ELA/uno", "ELA/due"),
+    "resolved": ("ELA/uno = /root/ELA/uno",),
+    "limits": ("LIMIT-5=VALUE-5",),
+    "days": ("in 6 day(s)",),
+    "expires_at": ("EXPIRES-7",),
+    "uses": ("USES-8",),
+    "on_the_core": ("CORE-9",),
+    "model": ("MODEL-10",),
+    "sends": ("SENDS-11",),
+    "one_call": ("ONE-CALL-12",),
+    "cost": ("COST-13",),
+    "never": ("NEVER-14", "NEVER-15"),
+}
+
+
+def test_the_preview_prints_every_field_of_the_route_s_answer() -> None:
+    """Proposal 13 and answer 20, at closed world: a field the route adds to its preview and the
+    command does not print fails here — the preview is a question, and the CLI creates."""
+    text = " ".join(policies._preview_text(MARKED).split())
+
+    assert set(SHOWN) == set(PreviewOut.model_fields) == set(MARKED)
+    for field, marks in SHOWN.items():
+        for mark in marks:
+            assert mark in text, (field, mark)
+
+
+async def test_a_policy_with_no_model_is_created_from_the_command_line(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Defect 16: the preview of a capability that calls no model says ``None``, and the command
+    sends back what it showed — a ``422`` until M13.14."""
+    async with a_cli(monkeypatch, tmp_path) as (g, runner):
+        (Path(g.ela.settings.filesystem.root) / "ELA" / "uno").mkdir(parents=True)
+        made = await invoke(
+            runner, "policy", "create", "fs.write", "--scope", "ELA/uno", "--days", "1",
+            "--uses", "2", "--confirm",
+        )  # fmt: skip
+        (policy,) = (await g.client.get("/policies")).json()["policies"]
+
+    out = " ".join(plain(made.output).split())
+    assert made.exit_code == 0, made.output
+    assert f"created policy {policy['short']}" in out
+    assert "at most 2 uses" in out and "writes and overwrites any file in these folders" in out
+    assert policy["max_uses"] == 2 and policy["capability"] == "fs.write"
+
+
+async def test_list_says_the_level_the_uses_and_the_last_actions(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Criterion 19: the level, «N of M» or «N, no limit», and under the table the last actions."""
+    async with a_cli(monkeypatch, tmp_path) as (g, runner):
+        (Path(g.ela.settings.filesystem.root) / "ELA" / "uno").mkdir(parents=True)
+        await invoke(runner, *CREATE, "--confirm")
+        await invoke(
+            runner, "policy", "create", "fs.write", "--scope", "ELA/uno", "--days", "1",
+            "--uses", "4", "--confirm",
+        )  # fmt: skip
+        listed = {
+            one["capability"]: one for one in (await g.client.get("/policies")).json()["policies"]
+        }
+        write = listed["fs.write"]
+        await g.ela.authorizations.consume(
+            AuthorizationId(UUID(write["id"])), now=g.ela.clock.now()
+        )
+        await g.ela.audit.append(
+            AuditEvent(
+                id=AuditEventId(g.ela.ids.new_uuid()),
+                created_at=g.ela.clock.now(),
+                event_type=AuditEventType.TOOL_EXECUTED,
+                actor=Actor(kind=ActorKind.SYSTEM, id="test"),
+                summary="execute",
+                task_id=TaskId(UUID("3a4d7002-0000-4000-8000-000000000001")),
+                capability_id=CapabilityId("fs.write"),
+                authorization_id=AuthorizationId(UUID(write["id"])),
+                payload={"status": "SUCCEEDED", "targets": ["ELA/uno/a.md"]},
+            )
+        )
+        shown = await invoke(runner, "policy", "list")
+
+    out = plain(shown.output)
+    assert shown.exit_code == 0, shown.output
+    rows = {line.split()[0]: line for line in out.splitlines() if line.split()}
+    assert "HIGH" in rows[write["short"]].split() and "1 of 4" in rows[write["short"]]
+    guided_row = rows[listed["browser.guided"]["short"]]
+    assert "MEDIUM" in guided_row.split() and "0, no limit" in guided_row
+    flat = " ".join(out.split())
+    assert f"policy {write['short']}, its last actions:" in flat
+    assert "task 3a4d7002 fs.write SUCCEEDED" in flat and "ELA/uno/a.md" in flat
+    assert f"policy {listed['browser.guided']['short']}, its last actions" not in flat
+    assert "fs.write: no limit to set; never covered: —" in flat

@@ -17,7 +17,6 @@ from ela.permissions import (
     BROWSER_GUIDED_AS_YOU,
     BROWSER_LOGIN,
     BROWSER_READ_AS_YOU,
-    POLICY_VERSION,
     production_catalogue,
 )
 from ela.ports import PROFILE_PROCESS, PROFILE_WINDOW, AccountBrowser
@@ -42,6 +41,7 @@ from tests.docs.test_adr_browser import CODE, TOOL_ROW, VERIFIER_ROW, codes
 from tests.docs.test_adr_cli import coded_commands
 from tests.docs.test_adr_composition import coded_routes
 from tests.docs.test_adr_placement import _rules_up_to
+from tests.docs.test_adr_planner import contracts_up_to
 from tests.tools.guided import a_room, a_session
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -75,7 +75,7 @@ def test_the_conseguenze_count_the_totals_as_this_adr_saw_them() -> None:
         "a-secret-is-opened-only-by-an-adapter",
         "the-profile-s-folder-is-its-adapter-s",
     }
-    assert "**quindici**" in text and len(contracts) == 15
+    assert "**quindici**" in text and len(contracts_up_to(15)) == 15 <= len(contracts)
     assert (
         "**trentacinque**" in text
         and len(tuple(p for p in port_protocols() if p.__name__ not in STEPS_PORTS)) == 35
@@ -88,8 +88,10 @@ def test_the_conseguenze_count_the_totals_as_this_adr_saw_them() -> None:
     assert "**sei**" in text and len(Kind) == 6
 
 
-def test_the_version_of_the_policy_is_the_one_this_adr_gives_it() -> None:
-    assert f"`POLICY_VERSION` diventa `{POLICY_VERSION}`" in adr_text()
+def test_the_version_of_the_policy_is_the_one_this_adr_gave_it() -> None:
+    """The version of that day, written as it was: since M13.14 the constant is ADR 0068's, and its
+    own test asserts it (``tests/docs/test_adr_policies_on_high.py``)."""
+    assert "`POLICY_VERSION` diventa `v0.3`" in adr_text()
 
 
 # ----------------------------------------------------------------------------------------

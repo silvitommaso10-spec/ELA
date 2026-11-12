@@ -25,6 +25,8 @@ from tests.architecture.rules import (
     EXECUTE_METHOD,
     EXECUTOR_MODULE,
     GRANT_METHOD,
+    LAUNCHER_HOLDERS,
+    LAUNCHER_PORT,
     ORM_PACKAGE,
     PATHS_MODULE,
     PERMISSIONS_ALLOWED_EXTERNAL,
@@ -260,6 +262,14 @@ def test_the_route_of_the_policies_and_the_executor_really_do_what_rule_66_watch
     executor = (PACKAGE_ROOT / EXECUTOR_MODULE).read_text(encoding="utf-8")
     assert f"_authorizations.{GRANT_METHOD}(" in executor
     assert f"{APPROVAL_FACTORY}(" in executor
+
+
+def test_the_terminal_and_the_registry_really_hold_what_rule_74_watches() -> None:
+    """Rule 74 would hold vacuously if nobody in ``ela.tools`` named the launcher: the terminal's
+    module takes it in its tool's constructor, and the registry hands it over (M13.14, ADR 0068)."""
+    for holder in sorted(LAUNCHER_HOLDERS):
+        text = (PACKAGE_ROOT / holder).read_text(encoding="utf-8")
+        assert f"launcher: {LAUNCHER_PORT}" in text, holder
 
 
 def test_the_planner_rule_63_reads_is_a_module_with_names() -> None:

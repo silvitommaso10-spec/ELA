@@ -62,6 +62,13 @@ def contracts() -> list[dict[str, object]]:
     return found
 
 
+def contracts_up_to(highest: int) -> list[dict[str, object]]:
+    """The contracts whose number — the start of their name, «15. …» — is at most ``highest``: what
+    an ADR counted the day it was written, as ``_rules_up_to`` does for the rules (M13.14: the
+    sixteenth is ADR 0068's)."""
+    return [one for one in contracts() if int(str(one["name"]).split(".", 1)[0]) <= highest]
+
+
 def test_the_conseguenze_count_the_rules_the_contracts_the_ports_the_routes_and_the_commands() -> (
     None
 ):
@@ -76,7 +83,7 @@ def test_the_conseguenze_count_the_rules_the_contracts_the_ports_the_routes_and_
         "the-planner-names-no-device",
     }
     assert "**quindici**" in text
-    assert len(contracts()) == 15
+    assert len(contracts_up_to(15)) == 15 <= len(contracts())
     assert "**trenta**" in text
     assert (
         len(

@@ -16,6 +16,7 @@ of this file died there, before any test ran.
 
 from __future__ import annotations
 
+import os
 import platform
 import subprocess
 from pathlib import Path
@@ -26,6 +27,7 @@ from ela.composition.settings import refuse_the_root
 from ela.domain import ExecutionStatus
 from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeStop
 from ela.tools import FS_CONTENT_MATCHES, FS_WRITE, FsReadTool, FsWriteTool, FsWriteVerifier
+from ela.tools.fs import HARD_LINK
 from tests.domain.examples import EXECUTION_RESULT
 from tests.tools.support import allowed
 
@@ -39,7 +41,7 @@ def root(tmp_path: Path) -> Path:
 
 
 async def test_a_write_puts_on_the_disk_exactly_the_bytes_of_the_body(root: Path) -> None:
-    tool = FsWriteTool(root, FakeClock(), FakeIdGenerator())
+    tool = FsWriteTool(root, FakeClock(), FakeIdGenerator(), protected={})
 
     result = await tool.execute(
         allowed(FS_WRITE), {"path": "ELA/a.md", "body": "a\nb\n", "overwrite": False}, FakeStop()
@@ -47,6 +49,26 @@ async def test_a_write_puts_on_the_disk_exactly_the_bytes_of_the_body(root: Path
 
     assert result.status is ExecutionStatus.SUCCEEDED
     assert (root / "ELA" / "a.md").read_bytes() == b"a\nb\n"
+
+
+async def test_a_file_with_two_names_on_ntfs_is_not_overwritten(root: Path) -> None:
+    """M13.14 (ADR 0068; answer 31 of the review of its SPEC): a hard link on NTFS — what
+    ``os.link`` makes there — is counted by ``os.lstat``, and the node's ``fs.write`` refuses to
+    overwrite a file with more than one name, ``path.hard_link``, leaving both names as they were.
+    The count is asserted first: the refusal rests on what Windows reports."""
+    first = root / "ELA" / "uno.md"
+    first.write_bytes(b"prima")
+    os.link(first, root / "ELA" / "due.md")
+    tool = FsWriteTool(root, FakeClock(), FakeIdGenerator(), protected={})
+
+    names = os.lstat(first).st_nlink
+    result = await tool.execute(
+        allowed(FS_WRITE), {"path": "ELA/uno.md", "body": "dopo", "overwrite": True}, FakeStop()
+    )
+
+    assert names == 2, f"Windows reports {names} names for a file with two"
+    assert result.error is not None and result.error.code == HARD_LINK
+    assert first.read_bytes() == (root / "ELA" / "due.md").read_bytes() == b"prima"
 
 
 async def test_a_read_returns_exactly_the_bytes_on_the_disk(root: Path) -> None:

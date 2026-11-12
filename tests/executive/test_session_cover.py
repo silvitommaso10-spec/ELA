@@ -7,12 +7,13 @@ it to the Guardian only for the capability the session's own capability declares
 
 So: an open session's read runs with no question, no grant born and none spent; a session that is
 over covers nothing, and the same read asks; an ``act`` of the session asks as it always did,
-because no session covers a row that asks at every use; and a plan no session wrote never reaches
-the room at all.
+because no session covers a ``HIGH`` — since M13.14 only a policy of the gesture's own capability
+does (ADR 0068) —; and a plan no session wrote never reaches the room at all.
 """
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
 from ela.domain import (
@@ -30,10 +31,11 @@ from ela.domain import (
     TaskState,
     TaskStep,
 )
+from ela.executive import ASKED
 from ela.permissions import Rule, browser_act, browser_read
 from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeTool
 from tests.executive.support import OK, World, fake_verifier, grant_for, world
-from tests.permissions.policy_support import GUIDED, GUIDED_ARGS, MODEL
+from tests.permissions.policy_support import GUIDED, GUIDED_ARGS, MODEL, policy_for
 
 SITES = ("posta.example", "video.example")
 READ: CapabilitySpec = browser_read(SITES).model_copy(
@@ -228,8 +230,10 @@ async def test_the_room_is_asked_when_the_step_is_decided_and_a_closed_session_c
 
 
 async def test_an_act_of_the_session_asks_as_it_always_did() -> None:
-    """``HIGH`` asks at every use. The executor does not hand the room's word to the Guardian for
-    a capability the session does not declare it covers: the act **asks**, and is not denied."""
+    """A ``HIGH`` with no policy of its own asks (M13.14, ADR 0068: «approval unless policy»). The
+    executor does not hand the room's word to the Guardian for a capability the session does not
+    declare it covers: the act **asks**, is not denied, and the line «why I ask» says no policy of
+    yours is there for the gesture — the session's own does not count (proposal 10)."""
     room = Room()
     w = a_world(room)
     session = await a_session(w, room)
@@ -238,9 +242,33 @@ async def test_an_act_of_the_session_asks_as_it_always_did() -> None:
     execution = await w.execute(child.id, step.id)
 
     assert execution.decision.outcome is PermissionOutcome.REQUIRES_APPROVAL
-    assert execution.decision.metadata["rule"] == Rule.APPROVAL_EVERY_USE.value
+    assert execution.decision.metadata["rule"] == Rule.APPROVAL_UNLESS_POLICY.value
     assert execution.approval is not None
+    assert list(execution.approval.metadata[ASKED]["why"]) == ["no policy of yours for browser.act"]
     assert w.tool(ACT.id).calls == ()
+
+
+async def test_an_act_of_the_session_under_a_policy_of_the_gesture_runs_without_a_question() -> (
+    None
+):
+    """Proposal 10, the other direction: a policy of ``browser.act`` on the site covers the
+    gesture of a session — the policy of the gesture, never the session's — and spends one use;
+    the step's ``within`` still narrows (ADR 0060)."""
+    room = Room()
+    w = a_world(room)
+    session = await a_session(w, room)
+    child, step = await a_gesture(w, session, ACT, ACT_ARGS)
+    policy = policy_for(ACT, scope=("posta.example",), created_at=w.now - timedelta(hours=1))
+    await w.store.grant(policy)
+
+    execution = await w.execute(child.id, step.id)
+
+    assert execution.decision.outcome is PermissionOutcome.ALLOWED
+    assert execution.decision.metadata["rule"] == Rule.APPROVAL_UNLESS_POLICY.value
+    assert execution.decision.reason == f"browser.act is covered by policy {policy.id}"
+    assert execution.approval is None
+    assert await w.store.uses(policy.id) == 1
+    assert w.tool(ACT.id).calls != ()
 
 
 async def test_a_plan_no_session_wrote_never_reaches_the_room() -> None:

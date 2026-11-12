@@ -10,6 +10,7 @@ import os
 import platform
 import re
 import stat
+import sys
 from pathlib import Path
 
 import pytest
@@ -22,6 +23,7 @@ from ela.composition import (
     NodeSettings,
     build_node,
 )
+from ela.composition import settings as composition_settings
 from ela.composition.node import (
     ACL_SINCE,
     NodeWorld,
@@ -30,7 +32,12 @@ from ela.composition.node import (
     mkdir_applies_the_acl,
     online_player,
 )
-from ela.composition.settings import _ela_source_tree
+from ela.composition.settings import (
+    ELA_S_HOME,
+    PYTHON_ENVIRONMENT,
+    PYTHON_INSTALLATION,
+    _ela_source_tree,
+)
 from ela.domain import OperatingSystem
 from ela.infrastructure.machine import (
     AFPLAY,
@@ -51,12 +58,14 @@ from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeSpeech
 from ela.tools import (
     DIRECTORY_MODE,
     FS_READ_TOOL_NAME,
+    FS_WRITE,
     FS_WRITE_TOOL_NAME,
     VERIFIED_ON_THE_NODE,
     VOICE_ONLINE_TOOL_NAME,
     VOICE_TOOL_NAME,
     FsReadTool,
     FsReadVerifier,
+    FsWriteTool,
     ToolRegistry,
     VerifierRegistry,
 )
@@ -590,6 +599,51 @@ def test_a_root_that_holds_the_env_the_node_read_stops_it(
 
     with pytest.raises(ValidationError, match=re.escape("the .env ELA read")):
         rooted(tmp_path / "state", tmp_path / "home")
+
+
+@pytest.mark.parametrize(
+    ("where", "what"),
+    [
+        ("the home", ELA_S_HOME),
+        ("prefix", PYTHON_ENVIRONMENT),
+        ("base_prefix", PYTHON_INSTALLATION),
+    ],
+)
+def test_a_root_that_holds_the_home_or_the_python_of_the_node_stops_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, where: str, what: str
+) -> None:
+    """M13.14 (ADR 0068; answers 27 and 32 of the review of its SPEC): ELA's home and the Python
+    the node runs on are the node's own too — injected, so no place of this machine is named."""
+    chosen = tmp_path / "chosen"
+    (chosen / "python").mkdir(parents=True)
+    if where == "the home":
+        monkeypatch.setattr(composition_settings, "ela_home", lambda: chosen / ".ela")
+    else:
+        monkeypatch.setattr(sys, where, str(chosen / "python"))
+
+    with pytest.raises(ValidationError, match=re.escape(what)):
+        rooted(tmp_path / "state", chosen)
+
+
+def test_the_node_s_list_has_no_vault_and_is_the_one_its_tool_that_writes_is_handed(
+    tmp_path: Path,
+) -> None:
+    """A node has no vault: its list names its secret, its home, its tree, its Python — and the
+    ``fs.write`` it builds refuses exactly those places."""
+    (tmp_path / "files").mkdir()
+    config = rooted(tmp_path / "state", tmp_path / "files")
+    own = config.own()
+    writer = build_node(config, speech=FakeSpeech()).tools.get(FS_WRITE)
+
+    assert set(own) >= {
+        "the folder a node keeps its secret in",
+        ELA_S_HOME,
+        "ELA's own source tree",
+        PYTHON_ENVIRONMENT,
+        PYTHON_INSTALLATION,
+    }
+    assert not any("vault" in what for what in own)
+    assert isinstance(writer, FsWriteTool) and dict(writer.protected) == own
 
 
 def test_a_root_that_is_a_link_or_is_not_there_stops_it(tmp_path: Path) -> None:

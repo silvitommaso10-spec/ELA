@@ -95,7 +95,9 @@ def test_the_rule_has_a_name_of_its_own_and_the_policy_changed_its_version() -> 
 
     assert Rule.SESSION not in set(RISK_POLICY.values()), "no row of the table is this rule"
     assert Rule.SESSION is not Rule.APPROVAL_UNLESS_AUTHORIZED
-    assert POLICY_VERSION == "v0.3"
+    # ``v0.3`` since M13.9, for this rule; ``v0.4`` since M13.14, for the row of a ``HIGH`` that
+    # declares terms (ADR 0068): the version moves with every way to allow it learns.
+    assert POLICY_VERSION == "v0.4"
 
 
 def test_without_the_room_s_word_the_same_read_asks(h: Harness) -> None:
@@ -282,7 +284,7 @@ async def test_the_audit_names_the_session_that_covered(h: Harness) -> None:
     (event,) = await h.audit.read()
     assert event.payload["rule"] == "SESSION"
     assert event.payload["session"] == str(SESSION_STEP)
-    assert event.payload["policy"] == "v0.3"
+    assert event.payload["policy"] == "v0.4"
     assert event.decision_id == decision.id and event.authorization_id is None
 
 

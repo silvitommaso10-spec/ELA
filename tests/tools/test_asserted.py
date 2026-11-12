@@ -38,7 +38,7 @@ def nowhere(tmp_path: Path) -> Path:
 async def test_a_write_asserts_the_plan_s_overwrite_in_the_tool_s_words(
     nowhere: Path, overwrite: bool, does: str
 ) -> None:
-    tool = FsWriteTool(nowhere, FakeClock(), FakeIdGenerator())
+    tool = FsWriteTool(nowhere, FakeClock(), FakeIdGenerator(), protected={})
 
     asserted = await tool.asserted({"path": "ELA/prova.md", "body": "x", "overwrite": overwrite})
 
@@ -64,7 +64,7 @@ async def test_the_grammar_refuses_before_the_question_on_every_machine(
 ) -> None:
     for asked in (
         await FsReadTool(nowhere, FakeClock(), FakeIdGenerator()).asserted({"path": path}),
-        await FsWriteTool(nowhere, FakeClock(), FakeIdGenerator()).asserted(
+        await FsWriteTool(nowhere, FakeClock(), FakeIdGenerator(), protected={}).asserted(
             {"path": path, "body": "x", "overwrite": False}
         ),
     ):
@@ -79,7 +79,9 @@ async def test_the_grammar_refuses_before_the_question_on_every_machine(
 async def test_arguments_of_the_wrong_shape_are_refused_without_a_disk(
     nowhere: Path, arguments: dict[str, object]
 ) -> None:
-    asked = await FsWriteTool(nowhere, FakeClock(), FakeIdGenerator()).asserted(arguments)
+    asked = await FsWriteTool(nowhere, FakeClock(), FakeIdGenerator(), protected={}).asserted(
+        arguments
+    )
 
     assert asked.refusal is not None and asked.refusal.code == ARGUMENTS_INVALID
     read = await FsReadTool(nowhere, FakeClock(), FakeIdGenerator()).asserted({"path": 3})

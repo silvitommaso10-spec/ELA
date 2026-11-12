@@ -88,8 +88,15 @@ async def test_the_preview_names_what_is_approved_and_writes_nothing(
     assert shown["one_call"] == "0.516384 USD"
     assert "reservation" in shown["cost"] and "0.516384 USD" in shown["cost"]
     assert shown["never"][0].startswith("every call of a capability that asks at every use")
-    assert "browser.act" in shown["never"][0]
+    asking = shown["never"][0].split(": ", 1)[1].split(", ")
+    # Since M13.14 a gesture asks unless a policy of its own capability covers it (ADR 0068): it is
+    # no longer among the capabilities that ask at every use; the terminal is.
+    assert "terminal.run" in asking and "browser.act" not in asking
     assert any("task_type" in line for line in shown["never"])
+    # The fields of M13.14, for a MEDIUM that declares no words: its level, nothing resolved.
+    assert shown["risk"] == "MEDIUM" and shown["does"] is None and shown["goes"] is None
+    assert shown["resolved"] == [None, None]
+    assert shown["uses"] == "no limit of uses" and shown["on_the_core"] == ""
     assert stored == ()
     assert len(after) == len(before), "the preview writes nothing"
 
@@ -114,9 +121,19 @@ async def test_the_creation_saves_the_policy_and_writes_who_created_it(
     assert policy["created_by"]["name"] == "the command line on the Core"
     assert [one["id"] for one in listed["policies"]] == [policy["id"]]
     by_capability = {one["capability"]: one for one in listed["admitting"]}
-    assert set(by_capability) == {"browser.guided", "browser.guided_as_you"}, (
-        "the two sessions, each a capability of its own: a policy of one is not the other's"
-    )
+    # The two sessions, each a capability of its own — a policy of one is not the other's —, and
+    # since M13.14 the three HIGH that declare their terms (ADR 0068).
+    assert set(by_capability) == {
+        "browser.guided",
+        "browser.guided_as_you",
+        "fs.write",
+        "browser.act",
+        "browser.act_as_you",
+    }
+    assert by_capability["fs.write"]["risk"] == "HIGH"
+    assert by_capability["fs.write"]["on_the_core"] is True
+    assert by_capability["browser.act"]["on_the_core"] is False
+    assert by_capability["browser.guided"]["does"] is None
     admitting = by_capability["browser.guided"]
     assert [limit["name"] for limit in admitting["limits"]] == ["max_cost_usd", "looks", "seconds"]
     assert admitting["uncovered"] == ["task_type"]
@@ -127,6 +144,8 @@ async def test_the_creation_saves_the_policy_and_writes_who_created_it(
     assert event.payload["limits"] == {"max_cost_usd": MAX_COST, "looks": "10", "seconds": "600"}
     assert event.task_id is None and event.step_id is None
     assert POLICY_PROSPECT not in str(event.payload), "the sentence of the prospect is never saved"
+    assert event.payload["uses"] is None
+    assert policy["max_uses"] is None and policy["remaining"] is None
 
 
 CORE: Final = Identity(Kind.CORE)
@@ -136,11 +155,17 @@ CORE: Final = Identity(Kind.CORE)
 @pytest.mark.parametrize(
     ("body", "check", "fragment"),
     [
-        ({**POLICY, "capability": "browser.act"}, PolicyCheck.ADMITS, "no policy reaches a HIGH"),
         (
-            {**POLICY, "capability": "fs.write", "scope": ["ELA"]},
+            {**POLICY, "capability": "terminal.run", "scope": ["bin/echo"]},
             PolicyCheck.ADMITS,
-            "no policy reaches a HIGH",
+            "terminal.run launches a program the plan chooses: a program can read the Core's "
+            "token and create a policy, and only you create one",
+        ),
+        (
+            {**POLICY, "capability": "browser.login", "scope": ["httpbin.org"]},
+            PolicyCheck.ADMITS,
+            "browser.login is HIGH and declares no terms: only a grant born from an approval "
+            "covers it",
         ),
         (
             {**POLICY, "scope": ["www.google.com"]},
@@ -149,12 +174,24 @@ CORE: Final = Identity(Kind.CORE)
         ),
         ({**POLICY, "days": 91}, PolicyCheck.DAYS, "a policy lives from 1 to 90 days"),
         (
+            {**POLICY, "uses": 0},
+            PolicyCheck.USES,
+            "the uses of a policy are none, for no limit, or a whole number from 1 up, not 0",
+        ),
+        (
             {**POLICY, "limits": {"max_cost_usd": "1"}},
             PolicyCheck.LIMITS,
             "the limits of browser.guided are",
         ),
     ],
-    ids=["browser.act", "fs.write", "a-site-outside", "ninety-one-days", "missing-limits"],
+    ids=[
+        "terminal.run",
+        "browser.login",
+        "a-site-outside",
+        "ninety-one-days",
+        "no-uses",
+        "missing-limits",
+    ],
 )
 async def test_a_refused_creation_is_a_422_and_writes_nothing(
     monkeypatch: pytest.MonkeyPatch,

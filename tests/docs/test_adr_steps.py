@@ -43,6 +43,7 @@ from tests.docs.guided_ports import STEPS_PORTS, before_the_files
 from tests.docs.test_adr_cli import coded_commands
 from tests.docs.test_adr_composition import coded_routes
 from tests.docs.test_adr_placement import _rules_up_to
+from tests.docs.test_adr_planner import contracts_up_to
 
 ROOT = Path(__file__).resolve().parents[2]
 ADR_PATH = ROOT / "docs" / "adr" / "0065-browser-steps.md"
@@ -273,7 +274,7 @@ def test_the_conseguenze_count_the_totals_as_this_adr_saw_them() -> None:
     assert "**settantuno**" in text
     assert len(_rules_up_to(71)) == 71 <= len(RULES)
     assert set(_rules_up_to(71)) - set(_rules_up_to(70)) == {THE_RULE}
-    assert "**quindici**" in text and len(contracts) == 15
+    assert "**quindici**" in text and len(contracts_up_to(15)) == 15 <= len(contracts)
     assert "**trentasei**" in text and len(tuple(port_protocols())) == 36
     assert {port.__name__ for port in port_protocols()} >= STEPS_PORTS == {"TaskPages"}
     assert "**settantadue**" in text and len(coded_routes()) == 72

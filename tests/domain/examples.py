@@ -79,6 +79,7 @@ from ela.domain import (
     PlanId,
     PolicyBounds,
     PolicyTerms,
+    PolicyWords,
     PowerSource,
     PrivacyLevel,
     ProviderRequest,
@@ -428,6 +429,11 @@ POLICY_TERMS: Final = PolicyTerms(
 POLICY_BOUNDS: Final = PolicyBounds(terms=POLICY_TERMS, limits={"budget": "1.10"})
 """The limits of a policy and the terms they were born under (M13.12)."""
 
+POLICY_WORDS: Final = PolicyWords(
+    does="writes any file in these folders", goes="into these folders, and is not taken back"
+)
+"""What the preview of a policy says it does and where it goes (M13.14, ADR 0068)."""
+
 COVERED: Final = Covered(
     capability_id=CapabilityId("browser.read_as_you"),
     input_schema={"type": "object", "properties": {"site": {"type": "string"}}},
@@ -731,6 +737,7 @@ EXAMPLES: Final[dict[type[BaseModel], BaseModel]] = {
         SINGLE_USE_AUTHORIZATION,
         POLICY_TERMS,
         POLICY_BOUNDS,
+        POLICY_WORDS,
         COVERED,
         SESSION_COVER,
         AUDIT_EVENT,
