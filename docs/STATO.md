@@ -182,10 +182,10 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **67** | `docs/adr/NNNN-*.md` |
+| ADR scritti | **68** | `docs/adr/NNNN-*.md` |
 | Milestone | **103, di cui 80 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
-| Regole di architettura | **73** | `RULES` in `tests/architecture/` |
-| Contratti import-linter | **15** | `pyproject.toml` |
+| Regole di architettura | **74** | `RULES` in `tests/architecture/` |
+| Contratti import-linter | **16** | `pyproject.toml` |
 | Port | **36** | i `Protocol` di `src/ela/ports.py` |
 | Capability di produzione | **22** | `production_catalogue()` |
 | Rotte dell'API | **72** | i `router` di `ela.api` |
@@ -228,7 +228,8 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
   e scrive file in una cartella che l'utente dichiara — `ELA_FS_ROOT` e `ELA_FS_SCOPE`, due righe
   senza default, perché un confine che ELA sceglie per te è un confine che non ha deciso nessuno —
   e il livello **`HIGH` esiste davvero**: non è più un diniego, è un'approvazione per ogni uso che
-  nessuna policy permanente di §59 raggiunge. Con **M13.2** esegue anche i programmi che l'utente
+  nessuna policy permanente di §59 raggiunge (***annotato il 2026-11-12***: da M13.14 una policy raggiunge una `HIGH` che
+  dichiara i suoi termini, ADR 0068 — il livello non si abbassa). Con **M13.2** esegue anche i programmi che l'utente
   dichiara — `ELA_TERMINAL_PROGRAMS`, relativi a `/`, `[]` ammessa —: un comando è `argv`, il figlio
   riceve un ambiente chiuso e nasce in un gruppo suo, e la domanda nomina ciò che girerà. Con
   **M13.3** (2026-09-26, ADR 0048) l'azione viaggia: `fs.read` e `fs.write` vanno a un nodo che ha
@@ -333,7 +334,7 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
 
 | Fase | Documenti che la nominano |
 |---|---|
-| 15 | 21 |
+| 15 | 22 |
 | 16 | 1 |
 
 <!-- fine del blocco generato: le fasi che un documento nomina -->
@@ -1188,7 +1189,10 @@ il 2026-10-10***: **il percorso c'è** — M13.12 è fatta, con la prova a mano 
 0045 §3)», una policy che Tommaso crea **può coprire anche un'azione `HIGH`**, con uno scope stretto, dei tetti e una scadenza; `CRITICAL` resta
 fuori, e nessuna policy copre un'azione che tocca il sistema di sicurezza di ELA. **Il resto di questa voce resta**: il
 livello non si abbassa mai, e una policy la crea solo Tommaso. Fino a M13.14, che lo costruisce, il codice è quello di
-ADR 0062, e nessuna policy raggiunge una `HIGH`.
+ADR 0062, e nessuna policy raggiunge una `HIGH`. ***Annotato il 2026-11-12***: M13.14 lo costruisce — ADR 0068, Proposta
+fino alla prova a mano —: `fs.write`, `browser.act` e `browser.act_as_you` dichiarano i loro termini e leggono la riga
+`APPROVAL_UNLESS_POLICY`; `terminal.run`, il login e le quattro capability dei file chiedono a ogni uso, fino a M13.16 e
+M13.15.
 
 *Perché nessun ADR:* è una scelta d'ordine e di perimetro — quale milestone, quando, che cosa
 eredita, che cosa resta fuori — e nessuna riga di codice la contiene. Le parti tecniche prendono il
@@ -1232,7 +1236,9 @@ dopo M13.11 e prima di M13.5, quindi prima di M14.4; **M14.6b** sta fuori dalla 
   nome di Tommaso chiede ogni volta; «cercare» è navigare, un `browser.read`. È lavoro agentico (5.7).
   ***Rivisto apertamente da Tommaso il 2026-11-02*** (5.14): «mandare qualcosa a nome di Tommaso chiede ogni volta»
   resta vero **salvo una sua policy che lo copra**, con uno scope stretto — un sito, un contatto —, dei tetti e una
-  scadenza. Lo costruisce M13.14; fino a lei, chiede ogni volta.
+  scadenza. Lo costruisce M13.14; fino a lei, chiede ogni volta. ***Annotato il 2026-11-12***: costruito da M13.14 per
+  `browser.act` e `browser.act_as_you` (ADR 0068), con i confini che Tommaso sceglie — i siti, gli usi se li mette, una
+  scadenza sempre —; il login e i file dal browser con M13.15.
   **Dopo M14.2**, e non aspetta M13.9: le pagine pubbliche non vogliono il login, e WhatsApp Web, che lo
   vuole, passa nella prova a mano di M13.9. ***Annotato il 2026-10-10***: nella prova a mano di **M13.10**
   (decisione 37 della review della SPEC di M13.9). ***Annotato il 2026-10-15***: ne esce anche lì, finché la causa

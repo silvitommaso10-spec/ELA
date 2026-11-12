@@ -1,4 +1,5 @@
-"""The rows of the Guardian's table, and who admits a policy of §59 (ADR 0011 §3; M13.12, ADR 0062).
+"""The rows of the Guardian's table, and who admits a policy of §59 (ADR 0011 §3; M13.12, ADR 0062;
+M13.14, ADR 0068).
 
 :data:`RISK_POLICY` and its predicates lived in ``guardian.py`` until M13.12. They moved here, in a
 module that imports nothing but the domain, because two more places read them: the catalogue, which
@@ -6,6 +7,10 @@ refuses a declaration of ``policy_terms`` on a row that does not ask unless auth
 and the module of the policies, which says why a capability admits none (decision 6) — and the
 catalogue cannot import the Guardian without a cycle, since the Guardian imports the catalogue. The
 values did not move, and ``guardian.py`` re-exports every name: it is the same table.
+
+**Since M13.14 the row of a capability is** :func:`row_of`, **not its level alone** (ADR 0068;
+decision 6): a ``HIGH`` that declares policy terms reads a row of its own,
+:attr:`Rule.APPROVAL_UNLESS_POLICY`. :data:`RISK_POLICY` and every level are what they were.
 """
 
 from __future__ import annotations
@@ -15,16 +20,18 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import Final
 
-from ela.domain import CapabilitySpec, RiskLevel
+from ela.domain import CapabilityId, CapabilitySpec, RiskLevel
 
 __all__ = [
     "ASKING_RULES",
+    "LAUNCHES_A_PROGRAM",
     "RISK_POLICY",
     "Rule",
     "asks_at_every_use",
     "no_policy_for",
     "no_session_covers",
     "no_session_of",
+    "row_of",
 ]
 
 
@@ -39,11 +46,21 @@ class Rule(StrEnum):
     ALLOW_WITHIN_SCOPE = "ALLOW_WITHIN_SCOPE"
     APPROVAL_UNLESS_AUTHORIZED = "APPROVAL_UNLESS_AUTHORIZED"
     APPROVAL_EVERY_USE = "APPROVAL_EVERY_USE"
-    """HIGH: a question at every use, and no standing policy of §59 reaches it (M13.1 dec. D, N).
+    """HIGH: a question at every use, and no standing policy of §59 reaches it (M13.1 dec. D, N) —
+    since M13.14 the row of a ``HIGH`` that declares **no** policy terms (ADR 0068).
 
     Not ``APPROVAL_UNLESS_AUTHORIZED``: "unless authorized" would be false for the one row no
     standing authorization can satisfy, and a rule name is what somebody reads in an audit a month
     later (M17.2 dec. K.3, the precedent of a name that lied).
+    """
+    APPROVAL_UNLESS_POLICY = "APPROVAL_UNLESS_POLICY"
+    """A ``HIGH`` that declares policy terms: a question at every use **unless a policy of yours
+    for this capability** covers the call — never a session's cover, and a yes covers one use
+    (M13.14, ADR 0068; decision 6). The level does not move.
+
+    A row of its own, and neither of the two beside it: ``APPROVAL_UNLESS_AUTHORIZED`` is the row
+    a session's cover reaches (ADR 0063 §1), and a ``HIGH`` reading it would be covered by a guided
+    session; ``APPROVAL_EVERY_USE`` would say «every use» of a call that asked nothing.
     """
     DENY = "DENY"
     SCOPE = "SCOPE"
@@ -89,8 +106,15 @@ in production "in the first version", v0.1 was tagged on 2026-09-07 and this wor
 it. ``CRITICAL`` is still denied and has no capability: the day it gets one, that row moves the
 same way this one did, in the open."""
 
+LAUNCHES_A_PROGRAM: Final[frozenset[CapabilityId]] = frozenset({CapabilityId("terminal.run")})
+"""The capabilities that launch a program the plan chooses, with arguments the plan chooses (M13.14,
+ADR 0068; decision 5): no policy covers one. A program launched as the user can read the Core's
+token and create a policy, and only the user creates one. Written here and not in the catalogue,
+which this module does not import; architecture rule 74 keeps the set true — in ``ela.tools`` only
+the terminal's module holds a :class:`~ela.ports.CommandLauncher`."""
+
 ASKING_RULES: Final[frozenset[Rule]] = frozenset(
-    {Rule.APPROVAL_UNLESS_AUTHORIZED, Rule.APPROVAL_EVERY_USE}
+    {Rule.APPROVAL_UNLESS_AUTHORIZED, Rule.APPROVAL_UNLESS_POLICY, Rule.APPROVAL_EVERY_USE}
 )
 """The rows that end in a question when no usable grant covers the call.
 
@@ -98,37 +122,73 @@ Derived from here and never re-listed: a row added to :data:`RISK_POLICY` that a
 once, and the executor reads the same set to know when a decision rests on its grant."""
 
 
-def asks_at_every_use(risk: RiskLevel) -> bool:
-    """Whether this row asks every time and is covered **only** by a grant born from a yes.
+def row_of(capability: CapabilitySpec) -> Rule | None:
+    """The row of ``capability`` — **the one place** that says it (M13.14, ADR 0068; decision 6).
+
+    The row of its level, read from :data:`RISK_POLICY`; and for a ``HIGH`` that declares policy
+    terms and does not launch a program, :attr:`Rule.APPROVAL_UNLESS_POLICY`. Read by the Guardian
+    where it read the level, by :func:`asks_at_every_use`, :func:`no_policy_for`, and through them
+    by the catalogue, the birth of a policy and the executor. A ``CRITICAL`` with terms is still
+    ``DENY``: only the row of ``HIGH`` turns. ``None`` for a level the table does not hold, which
+    the Guardian denies.
+    """
+    rule = RISK_POLICY.get(capability.risk)
+    if (
+        rule is Rule.APPROVAL_EVERY_USE
+        and capability.policy_terms is not None
+        and capability.id not in LAUNCHES_A_PROGRAM
+    ):
+        return Rule.APPROVAL_UNLESS_POLICY
+    return rule
+
+
+def asks_at_every_use(capability: CapabilitySpec) -> bool:
+    """Whether the row of ``capability`` asks every time and is covered **only** by a grant born
+    from a yes.
 
     One definition, read by the Guardian when it judges a grant it was handed and by the executor
     when it chooses which grant to hand over (M13.1 dec. D). Two copies of this rule would be two
     answers to "does this grant cover", which is the thing ADR 0014 §2 exists to prevent — and the
     cheaper of the two mistakes would be a task denied where the user should have been asked.
+    Since M13.14 it takes the capability and not the level (ADR 0068): a ``HIGH`` that declares
+    terms does not ask at every use.
     """
-    return RISK_POLICY.get(risk) is Rule.APPROVAL_EVERY_USE
+    return row_of(capability) is Rule.APPROVAL_EVERY_USE
 
 
 def no_policy_for(capability: CapabilitySpec) -> str | None:
-    """Why a policy of §59 cannot cover ``capability``, or ``None`` if it can (M13.12; decision 6).
+    """Why a policy of §59 cannot cover ``capability``, or ``None`` if it can (M13.12, M13.14;
+    ADR 0062, ADR 0068).
 
-    Three reasons, and they are distinct on purpose: **a row that asks at every use** — or a row
-    above it — is reached by no policy (ADR 0045 §3); **a row that does not ask** needs none; **a
-    row that asks unless authorized** is covered only if the capability declares what a policy must
-    bound, and no milestone has done so yet for every ``MEDIUM`` (decision 1). Read by the
-    catalogue, which refuses a declaration on the first two, and by the birth of a policy.
-
-    One condition for the levels from ``HIGH`` up: a ``CRITICAL`` never reaches it — the catalogue's
-    cap refuses it first —, and a branch of its own would be a branch no test could walk.
+    The reasons are distinct on purpose: **a capability that launches a program** the plan
+    chooses — a program can read the Core's token and create a policy, and only the user creates
+    one (decision 5); **a ``HIGH`` that declares no terms** is covered only by a grant born from a
+    yes; **a row that asks unless authorized** is covered only if the capability declares what a
+    policy must bound; **a row that does not ask** needs none; and **a row that denies** —
+    ``CRITICAL``, terms or not — is covered by nothing. Read by the catalogue, which refuses a
+    declaration where one is given, by the birth of a policy, and by the Guardian, which denies a
+    policy handed over for such a call with the same sentence.
     """
-    rule = RISK_POLICY.get(capability.risk)
+    if capability.id in LAUNCHES_A_PROGRAM:
+        return (
+            f"{capability.id} launches a program the plan chooses: a program can read the Core's "
+            "token and create a policy, and only you create one"
+        )
+    rule = row_of(capability)
+    if rule is Rule.APPROVAL_UNLESS_POLICY:
+        return None
     if rule is Rule.APPROVAL_UNLESS_AUTHORIZED:
         if capability.policy_terms is None:
             return f"no milestone has said what a policy must bound for {capability.id}"
         return None
-    if capability.risk >= RiskLevel.HIGH:
-        return "no policy reaches a HIGH (ADR 0045 §3)"
-    return f"{capability.id} does not ask: it needs no policy"
+    if rule is Rule.APPROVAL_EVERY_USE:
+        return (
+            f"{capability.id} is {capability.risk.value} and declares no terms: only a grant born "
+            "from an approval covers it"
+        )
+    if rule in (Rule.ALLOW, Rule.ALLOW_WITHIN_SCOPE):
+        return f"{capability.id} does not ask: it needs no policy"
+    return f"{capability.id} is {capability.risk.value}: its row denies, and no policy covers it"
 
 
 def no_session_covers(capability: CapabilitySpec) -> str | None:

@@ -11,7 +11,10 @@ permission outcomes (§27, §33) to the Guardian: a model here never decides any
 One pair of functions lives beside the data, and says why at its definition: :func:`visible` and
 :func:`listed`, the one rendering that keeps a surface from being rewritten by what it shows
 (M13.2 dec. 13). Pure, no I/O, and here because this is the leaf the command line and the pages
-both import — rule 28 keeps ``ela.api`` out of the command line.
+both import — rule 28 keeps ``ela.api`` out of the command line. And one more, :func:`ela_home`
+(M13.14, ADR 0068): where ELA's home is, the default of the four places that wrote ``~/.ela`` by
+themselves and one of the places no policy reaches — here because this is the one leaf the tools,
+the persistence and the composition all import. It reads the user's home and touches no disk.
 
 Two shapes live side by side:
 
@@ -28,6 +31,7 @@ from collections.abc import Mapping
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import StrEnum
+from pathlib import Path
 from types import MappingProxyType
 from typing import Annotated, Any, Final, NewType, cast
 from uuid import UUID
@@ -114,6 +118,7 @@ __all__ = [
     "PlanId",
     "PolicyBounds",
     "PolicyTerms",
+    "PolicyWords",
     "PowerSource",
     "PrivacyLevel",
     "ProbeFamily",
@@ -154,6 +159,7 @@ __all__ = [
     "UserIntent",
     "UtcDatetime",
     "WorstCase",
+    "ela_home",
     "is_text",
     "listed",
     "visible",
@@ -1250,6 +1256,12 @@ class PolicyTerms(_DomainModel):
     ``route`` is the task type of the default route of a capability that calls a model, and
     ``model`` the model that route reads today, written by the composition root as the sites are
     (decisions 3c and 16): a policy names one model. Both ``None`` for a capability that calls none.
+
+    ``on_the_core`` says a policy covers only a step placed on the Core (M13.14, ADR 0068; decision
+    10): ``fs.write``'s scope is a folder **of the Core**, and the same path on a node is another
+    file. A term and not a word, because it changes what a policy covers — a capability that
+    stopped declaring it would stop its policies covering by themselves. ``False`` by default,
+    which is what every row saved before M13.14 reads as, and what the two guided sessions declare.
     """
 
     limits: tuple[str, ...]
@@ -1257,6 +1269,22 @@ class PolicyTerms(_DomainModel):
     free: tuple[str, ...] = ()
     route: str | None = None
     model: str | None = None
+    on_the_core: bool = False
+
+
+class PolicyWords(_DomainModel):
+    """What the preview of a policy says ELA will do without asking, in the capability's words
+    (M13.14, ADR 0068; decision 8).
+
+    ``does`` is the act — «writes and overwrites any file in these folders, on the Core» —, and
+    ``goes`` where what it makes goes. **Words, outside** :class:`PolicyTerms`: a sentence corrected
+    must not revoke the user's policies, and what really changes what a call does is the schema,
+    which the closed world of the terms already watches. The catalogue requires both on a ``HIGH``
+    that declares terms: a preview that does not say what ELA will do without asking is not shown.
+    """
+
+    does: str
+    goes: str
 
 
 class Covered(_DomainModel):
@@ -1353,13 +1381,18 @@ class CapabilitySpec(_DomainModel):
     """
     policy_terms: PolicyTerms | None = None
     """What a standing policy of §59 must bound to cover this capability, or ``None``: no policy
-    covers it (M13.12, ADR 0062; decision 1). Declared here, as ``prompt_arguments`` is, and only on
-    a row that asks unless authorized — the catalogue refuses it anywhere else (decision 2)."""
+    covers it (M13.12, ADR 0062; decision 1). Declared here, as ``prompt_arguments`` is, on a row
+    that asks unless authorized or, since M13.14, on a ``HIGH`` that does not launch a program —
+    whose row it turns into «approval unless policy» (ADR 0068); the catalogue refuses it anywhere
+    else."""
     covers: Covered | None = None
     """The capability the reads of this capability's sessions are, or ``None``: its sessions cover
     nothing (M13.9, ADR 0063; decision 29). Declared by the capability of a guided session, and
     only towards a row that asks unless authorized — the catalogue refuses any other, and the
     Guardian denies one all the same."""
+    policy_words: PolicyWords | None = None
+    """What the preview of a policy of this capability says it does and where it goes (M13.14, ADR
+    0068), or ``None``. Required by the catalogue beside the terms of a ``HIGH``."""
     requires_authorization: bool
     metadata: JsonMapping = _json_payload(_METADATA_DESCRIPTION)
 
@@ -2674,3 +2707,17 @@ def listed(items: tuple[str, ...] | list[str]) -> str:
     """
     quoted = (visible(item, lines=False).replace('"', '\\"') for item in items)
     return "[" + ", ".join(f'"{item}"' for item in quoted) + "]"
+
+
+def ela_home() -> Path:
+    """``<home>/.ela``: ELA's home — beside each other the database, the workspace, the captures
+    and the folder a node keeps its secret in, when nobody declared them elsewhere (M13.14, ADR
+    0068; decision 9).
+
+    **One definition**: the four defaults that wrote ``~/.ela`` by themselves read it here, and the
+    list of the places no policy reaches names it whatever those four say — a database moved
+    elsewhere leaves the home where it is. Computed when asked, never at import time: the user's
+    home is read at the call, so a test that moves it moves this. A path and not a folder: nothing
+    is created and nothing is looked at.
+    """
+    return Path.home() / ".ela"

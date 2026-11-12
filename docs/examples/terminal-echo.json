@@ -1,8 +1,9 @@
 {
   "_nota": [
     "Il primo piano della prova a mano di M13.2 (ADR 0047): ELA esegue un programma e ne",
-    "riporta l'uscita. `terminal.run` è HIGH: ELA chiede OGNI VOLTA, e nessuna policy potrà",
-    "coprirlo in anticipo (§59 non raggiunge questo livello).",
+    "riporta l'uscita. `terminal.run` è HIGH: ELA chiede OGNI VOLTA, e nessuna policy lo copre:",
+    "lancia un programma che il piano sceglie, e un programma potrebbe creare una policy, che crei",
+    "solo tu (M13.14, ADR 0068 §2; il terminale sotto policy è M13.16).",
     "`program` è un percorso RELATIVO ALLA RADICE `/`, come il `path` di fs.write è relativo a",
     "ELA_FS_ROOT: `bin/echo` è /bin/echo. Si scrive esattamente come sta in",
     "ELA_TERMINAL_PROGRAMS, e ELA non consulta mai il PATH, né il suo né un altro.",

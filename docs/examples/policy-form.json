@@ -2,7 +2,9 @@
   "_nota": [
     "Il gesto che invia, dentro una sessione coperta (GETTING_STARTED, sezione 27, passo 7): la sessione",
     "su httpbin.org sta nei tetti della policy e parte senza domanda; il gesto che invia il modulo è",
-    "browser.act, HIGH, e chiede comunque: nessuna policy raggiunge un HIGH (ADR 0045 §3). Con un no il",
+    "browser.act, HIGH, e chiede comunque: una policy della sessione non copre mai un gesto. Fino al",
+    "2026-11-12 nessuna policy raggiungeva un HIGH (ADR 0045 §3); da M13.14 un gesto lo copre solo",
+    "una policy della capability del gesto (ADR 0068 §8), che questa prova non ha. Con un no il",
     "gesto è DENIED, e la sessione finisce senza inviarlo. «ELA prova 27» è un MARCATORE.",
     "`max_cost_usd` è il più che la sessione può spendere, scritto come testo: una policy lo copre solo se è al più il tetto della policy, confrontato come numero (1.1 e 1.10 sono lo stesso tetto).",
     "Questa chiave è ignorata dall'API (ADR 0025 §8)."

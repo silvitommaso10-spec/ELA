@@ -21,6 +21,7 @@ import os
 import platform
 import re
 import stat
+import sys
 from collections.abc import Mapping, Sequence
 from datetime import timedelta
 from decimal import Decimal
@@ -43,7 +44,7 @@ import ela
 from ela.composition.errors import ConfigurationError
 from ela.context import ContextSettings
 from ela.devices.settings import DeviceSettings
-from ela.domain import PerformanceClass
+from ela.domain import PerformanceClass, ela_home
 from ela.executive import (
     DEFAULT_APPROVAL_TTL,
     DEFAULT_ASSIGNMENT_CAP,
@@ -69,6 +70,7 @@ from ela.routing import RoutingSettings
 from ela.tombstones import (
     refuse_retired,
 )
+from ela.tools.paths import within
 from ela.tools.programs import same_program
 from ela.tools.settings import (
     CaptureSettings,
@@ -589,6 +591,13 @@ class TerminalSettings(BaseSettings):
 
 SITES_EXAMPLE: Final = '["example.com"]'
 
+LOOPBACK_SUFFIX: Final = ".localhost"
+"""The names a browser sends to this machine (RFC 6761 §6.3; M13.14, ADR 0068, answer 26 of the
+review of its SPEC): ``SITE_PATTERN`` refuses ``localhost`` and admits ``app.localhost``, two
+labels, which Chrome resolves to the loopback. Refused here, in the settings, and not in the
+pattern: the schema of a capability is copied into what a policy was born under, and changing it
+would stop the policies of the user from covering."""
+
 
 class BrowserSettings(BaseSettings):
     """Which sites the browser of ELA may open (M13.4 form E, ADR 0052).
@@ -627,6 +636,12 @@ class BrowserSettings(BaseSettings):
                     f"ELA_BROWSER_SITES: {entry!r} is not a host name. Write the name alone, in "
                     "lower case, such as 'example.com': no https://, no port, no path, and a name "
                     "that is not in ASCII in its punycode form (xn--…)"
+                )
+            if entry.endswith(LOOPBACK_SUFFIX):
+                raise ValueError(
+                    f"ELA_BROWSER_SITES: {entry!r} ends in {LOOPBACK_SUFFIX}, a name kept for this "
+                    "machine: the browser of ELA opens sites of the network, never a page served "
+                    "here — where ELA itself may be listening. Take it out of the list"
                 )
         return self
 
@@ -816,7 +831,7 @@ class NodeSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="ELA_", env_file=".env", extra="ignore")
 
     node_core_url: Annotated[str, Field(min_length=1)] = DEFAULT_NODE_CORE_URL
-    node_state_dir: Path = Path.home() / ".ela"
+    node_state_dir: Path = Field(default_factory=lambda: ela_home())
     """Where the node keeps its id and its secret: beside the database, never inside the workspace.
 
     The workspace is what §23 calls synchronised, and a secret in a folder something may one day
@@ -845,6 +860,11 @@ def refuse_the_root(root: Path, own: Mapping[str, Path]) -> None:
     One text for the Core and for a node, so the two cannot say the rule differently: the list of
     what the root may not touch is each one's own, derived from its settings, and the sentences are
     these. A ``ValueError``, which the settings turn into the message that names the variable.
+
+    **Where a place is, is asked of the volume** (M13.14, ADR 0068; answer 27 of the review of its
+    SPEC): :func:`~ela.tools.paths.within`, in both directions — the root is, holds or lies inside
+    the place. Until M13.14 the comparison was of spellings, and a root written with other capitals
+    than ``~/.ela`` passed on the volume of a Mac, which ignores the case of a name.
     """
     # A junction is a link (M13.3, ADR 0048 §4): ``is_symlink`` does not see one on Windows.
     if root.is_symlink() or root.is_junction():
@@ -863,32 +883,13 @@ def refuse_the_root(root: Path, own: Mapping[str, Path]) -> None:
         )
     resolved = root.resolve()
     for what, place in own.items():
-        if resolved == place or resolved in place.parents or place in resolved.parents:
+        if within(resolved, place) or within(place, resolved):
             raise ValueError(
                 f"ELA_FS_ROOT ({resolved}) and {what} ({place}) contain one another. The "
                 "folder ELA may read and write for you cannot be the one ELA uses to exist: "
                 "fs.write is HIGH, and HIGH is not a permission to edit ELA's own state "
                 "(M13.1). Choose a folder of your own, such as a subfolder of your documents."
             )
-
-
-def _same_folder(one: Path, other: Path) -> bool:
-    """What the volume says: whether two paths name one folder. A path that names nothing is the
-    same as no place."""
-    try:
-        return one.samefile(other)
-    except OSError:
-        return False
-
-
-def _within(folder: Path, place: Path) -> bool:
-    """Whether ``folder`` is ``place`` or lies below it — **by its spelling, and by what the
-    volume says of what is there** (:func:`_same_folder`). The volume of a Mac ignores the case
-    of a name, and resolving a path leaves a spelling as it was written: one folder has more than
-    one spelling there, and a comparison of spellings alone would call a folder typed in lower
-    case a different place."""
-    chain = (folder, *folder.parents)
-    return place in chain or any(_same_folder(part, place) for part in chain)
 
 
 def refuse_the_vault_program(program: str, terminal: Sequence[str]) -> None:
@@ -925,13 +926,13 @@ def refuse_the_profile(
     inside one of the folders of ``home`` whose contents leave the machine, or that holds or sits
     inside one of ``theirs`` (M13.9, decision 35). Every place is compared **resolved**: a folder
     reached through a link is where the link leads. **And where a folder is, is asked of the
-    volume** (:func:`_within`): a spelling is not a place.
+    volume** (:func:`~ela.tools.paths.within`): a spelling is not a place.
 
     A ``ValueError`` whose sentence names the variable: it is a check of the whole configuration,
     and has no field to point at.
     """
     resolved = profile.resolve()
-    if _within(resolved, tree):
+    if within(resolved, tree):
         raise ValueError(
             f"{PROFILE_VARIABLE} ({resolved}) is inside ELA's own source tree ({tree}). The "
             "sessions of your accounts do not live in a folder that a version control system "
@@ -940,14 +941,14 @@ def refuse_the_profile(
         )
     for copied in COPIED_ELSEWHERE:
         place = (home / copied).resolve()
-        if _within(resolved, place):
+        if within(resolved, place):
             raise ValueError(
                 f"{PROFILE_VARIABLE} ({resolved}) is inside ~/{copied}: what is kept there "
                 "leaves this machine, and the sessions of your accounts would leave with it. "
                 "Choose a folder that stays here."
             )
     for what, place in theirs.items():
-        if _within(resolved, place) or _within(place, resolved):
+        if within(resolved, place) or within(place, resolved):
             raise ValueError(
                 f"{PROFILE_VARIABLE} ({resolved}) and {what} ({place}) contain one another. The "
                 "folder that holds the sessions of your accounts is neither inside a folder ELA "
@@ -982,6 +983,29 @@ def _ela_source_tree() -> Path:
     if (checkout / "pyproject.toml").exists():
         return checkout
     return package.parent
+
+
+ELA_S_HOME: Final = "ELA's home"
+PYTHON_ENVIRONMENT: Final = "the Python environment ELA runs in (sys.prefix)"
+PYTHON_INSTALLATION: Final = "the Python installation ELA runs on (sys.base_prefix)"
+VAULT_PROGRAM_PLACE: Final = f"the program of your vault ({VAULT_PROGRAM_VARIABLE})"
+VAULT_PROGRAM_TARGET: Final = (
+    f"the file the program of your vault leads to ({VAULT_PROGRAM_VARIABLE})"
+)
+"""The names of the places M13.14 added to what ELA uses to exist (ADR 0068; decision 9, answers 27
+and 32 of the review of its SPEC), as the refusal of a root says them."""
+
+
+def _the_python_ela_runs_on() -> dict[str, Path]:
+    """What this process loads its code from besides its own tree (answer 32): the environment it
+    runs in, ``sys.prefix`` — a ``.venv`` —, and the installation it was made from,
+    ``sys.base_prefix``, whose standard library the Guardian loads at the next start.
+
+    **Asked of the process, like the source tree**, and only what the process loads: the program
+    that launches ELA and the others of the ``PATH`` are not here — they are the first of the roads
+    ADR 0068 declares. One function for the Core and for a node, so the two lists cannot name the
+    Python differently."""
+    return {PYTHON_ENVIRONMENT: Path(sys.prefix), PYTHON_INSTALLATION: Path(sys.base_prefix)}
 
 
 class Settings(BaseModel):
@@ -1050,7 +1074,7 @@ class Settings(BaseModel):
         Documents" is on — stops the start-up with a sentence, instead of dying at every call with
         ``path.symlink`` and no explanation.
         """
-        refuse_the_root(self.filesystem.root, self._ela_s_own())
+        refuse_the_root(self.filesystem.root, self.ela_s_own())
         return self
 
     @model_validator(mode="after")
@@ -1061,13 +1085,13 @@ class Settings(BaseModel):
         **What it may not touch is read off the other sections**, as for the root: ELA's source
         tree, the two folders of the home that macOS copies elsewhere, the workspace of §23 and the
         capture store. The root ``fs.read`` may read is not in this list because the profile is in
-        the root's — :meth:`_ela_s_own` —: the validator above has already refused the two that
+        the root's — :meth:`ela_s_own` —: the validator above has already refused the two that
         contain one another, and named both. **Beside the node's secret is allowed**: it is the
         place the guide proposes.
         """
         profile = self.accounts.browser_profile_dir
         if profile is not None:
-            own = self._ela_s_own()
+            own = self.ela_s_own()
             refuse_the_profile(
                 profile,
                 tree=_ela_source_tree(),
@@ -1085,14 +1109,27 @@ class Settings(BaseModel):
             refuse_the_vault_program(program, self.terminal.programs)
         return self
 
-    def _ela_s_own(self) -> dict[str, Path]:
-        """What ELA uses to exist, read off the settings that already name it."""
+    def ela_s_own(self) -> dict[str, Path]:
+        """What ELA uses to exist, read off the settings that already name it and off the process:
+        the places the root may not touch, and **the places no write of ELA reaches**, under a yes
+        or under a policy (M13.1 dec. F; M13.14, ADR 0068, decision 9). Public since M13.14: the
+        composition hands this list to the tools that write.
+
+        Since M13.14 it holds also **ELA's home** (:func:`~ela.domain.ela_home`), whatever the
+        sections say — a database moved elsewhere leaves the home where it is —; **the Python ELA
+        runs on**, ``sys.prefix`` and ``sys.base_prefix`` (answer 32 of the review of its SPEC);
+        and **the program of the vault**, when it is declared: the name it is written with, and the
+        file it leads to when that is another one. Every place is resolved, the program's name
+        only up to its folder — a link is a place of its own, and what it leads to is another.
+        """
         state = self.node.node_state_dir.expanduser().absolute().resolve()
         places = {
             "the workspace": self.workspace.workspace_dir,
             "the capture store": self.captures.capture_dir,
             "the audio ELA sweeps at start-up": speech_dir_beside(self.captures.capture_dir),
             "the folder a node keeps its secret in": state,
+            ELA_S_HOME: ela_home(),
+            **_the_python_ela_runs_on(),
         }
         # Those that may not be there: a database that is not a file, a ``.env`` nobody wrote, a
         # profile nobody declared. One loop rather than a condition each, so that "it is not
@@ -1106,7 +1143,16 @@ class Settings(BaseModel):
         ):
             if place is not None:
                 places[what] = place
-        return {what: place.expanduser().absolute().resolve() for what, place in places.items()}
+        own = {what: place.expanduser().absolute().resolve() for what, place in places.items()}
+        program = self.accounts.vault_program
+        if program is not None:
+            written = Path(program)
+            named = written.parent.absolute().resolve() / written.name
+            own[VAULT_PROGRAM_PLACE] = named
+            leads = written.resolve()
+            if leads != named:
+                own[VAULT_PROGRAM_TARGET] = leads
+        return own
 
     @classmethod
     def load(cls) -> Settings:
@@ -1207,21 +1253,31 @@ class NodeConfig(BaseModel):
         The folder that holds the node's secret (ADR 0039 §6), the ``.env`` this process read, and
         ELA's source tree when it is reachable: the Core's list less what a node does not have — a
         database, a workspace, the captures. Not a link, and never created by ELA.
+
+        Since M13.14 (ADR 0068; answers 27 and 32 of the review of its SPEC) also **ELA's home**
+        and **the Python the node runs on**, as on the Core; not the vault's program, because a
+        node has no vault. The list is :meth:`own`, which the composition hands to the node's tool
+        that writes.
         """
         root = self.filesystem.root
         if root is None:
             return self
+        refuse_the_root(root, self.own())
+        return self
+
+    def own(self) -> dict[str, Path]:
+        """What the node uses to exist, resolved: the places its root may not touch and no write
+        of the node reaches (M13.3; M13.14, ADR 0068)."""
         own = {
             "the folder a node keeps its secret in": self.node.node_state_dir,
+            ELA_S_HOME: ela_home(),
             "ELA's own source tree": _ela_source_tree(),
+            **_the_python_ela_runs_on(),
         }
         env = env_file()
         if env is not None:
             own["the .env ELA read"] = env
-        refuse_the_root(
-            root, {what: place.expanduser().absolute().resolve() for what, place in own.items()}
-        )
-        return self
+        return {what: place.expanduser().absolute().resolve() for what, place in own.items()}
 
     @classmethod
     def load(cls) -> NodeConfig:

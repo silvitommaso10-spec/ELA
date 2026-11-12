@@ -15,6 +15,8 @@ from typing import Annotated, Final
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from ela.domain import ela_home
+
 __all__ = [
     "CAPTURE_TIMEOUT_IS_MEASURED",
     "DEFAULT_CAPTURE_MAX_BYTES",
@@ -38,7 +40,7 @@ __all__ = [
 
 def default_workspace_dir() -> Path:
     """``<home>/.ela/workspace``: absolute, computed when asked, never at import time."""
-    return Path.home() / ".ela" / "workspace"
+    return ela_home() / "workspace"
 
 
 def speech_dir_beside(captures: Path) -> Path:
@@ -171,7 +173,7 @@ def default_capture_dir() -> Path:
     something may one day sync leaves the machine *without anybody having decided it*. "Nobody
     decided it" is the exact opposite of §57.
     """
-    return Path.home() / ".ela" / "captures"
+    return ela_home() / "captures"
 
 
 class CaptureSettings(BaseSettings):

@@ -33,6 +33,10 @@ parentesi **non si incollano**. `ela task run <id>` si scrive `ela task run 55ed
 | `<la cartella del profilo>` | la cartella in cui il browser di ELA tiene i siti in cui sei entrato | la scegli tu: sul Mac, fuori dal repository e da ciò che si sincronizza (sezione 28) |
 | `<il programma del vault>` | il percorso assoluto del programma `bw` di Bitwarden | dove l'hai installato: `which bw` lo dice (sezione 28) |
 | `<id della policy>` | l'id breve di una policy di §59, i primi otto caratteri del suo id | `ela policy list`, colonna `policy`; nella sezione 27 lo scrive `scripts/prova_m13_12.py`, dalla policy del passo 4 |
+| `<id della policy 2>` | l'id breve della policy che la prova della sezione 32 crea al passo 2 | lo scrive `scripts/prova_m13_14.py`, dalla policy che hai creato al passo 2 |
+| `<id della policy 5>` | l'id breve della policy che la prova della sezione 32 crea al passo 5 | lo scrive `scripts/prova_m13_14.py`, dalla policy che hai creato al passo 5 |
+| `<id della policy 7>` | l'id breve della policy che la prova della sezione 32 crea al passo 7 | lo scrive `scripts/prova_m13_14.py`, dalla policy che hai creato al passo 7 |
+| `<id della policy 8>` | l'id breve della policy che la prova della sezione 32 crea al passo 8 | lo scrive `scripts/prova_m13_14.py`, dalla policy che hai creato al passo 8 |
 | `<id del passo 2>` | l'id del task del passo 2 di §21, nel suo ultimo giro, o della sezione 25, o della sessione della sezione 26 | lo scrive `scripts/prova_m6_3c.py`, o `scripts/prova_m13_1e.py`, o `scripts/prova_m14_3.py`, al posto del segnaposto |
 | `<id del passo 3>` | l'id del task del passo 3 di §21, nel suo ultimo giro, o della sezione 25 | lo scrive `scripts/prova_m6_3c.py`, o `scripts/prova_m13_1e.py`, al posto del segnaposto |
 | `<id del passo 4>` | l'id del task del passo 4 di §21, nel suo ultimo giro, o della sezione 25 | lo scrive `scripts/prova_m6_3c.py`, o `scripts/prova_m13_1e.py`, al posto del segnaposto |
@@ -5768,18 +5772,23 @@ Con `--confirm`, perché una creazione sbagliata creerebbe davvero. Nessuna poli
 sotto il caso peggiore di una chiamata non farebbe partire nessuna sessione; un sito fuori da `ELA_BROWSER_SITES` non è
 nello scope della capability.
 
+***Rivisto il 2026-11-12*** (M13.14, ADR 0068): da M13.14 una policy raggiunge le `HIGH` che dichiarano i loro termini —
+`fs.write`, `browser.act`, `browser.act_as_you` —, e i primi due rifiuti di questo passo, che erano quelli, sono diventati
+`terminal.run`, che lancia un programma, e `browser.login`, una `HIGH` senza termini fino a M13.15. La prova di M13.12 è
+passata il 2026-10-10 con i due di allora.
+
 <!-- prova: 3.comando -->
 ```
-uv run ela policy create browser.act --scope example.com --days 1 --confirm
-uv run ela policy create fs.write --scope notes --days 1 --confirm
+uv run ela policy create terminal.run --scope bin/echo --days 1 --confirm
+uv run ela policy create browser.login --scope example.com --days 1 --confirm
 uv run ela policy create browser.guided --scope www.youtube.com --limit max_cost_usd=0.05 --limit looks=10 --limit seconds=300 --days 1 --confirm
 uv run ela policy create browser.guided --scope www.wikipedia.org --limit max_cost_usd=1.10 --limit looks=10 --limit seconds=300 --days 1 --confirm
 ```
 
 <!-- prova: 3.atteso -->
 ```
-policy.refused: ADMITS: no policy reaches a HIGH
-policy.refused: ADMITS: no policy reaches a HIGH
+policy.refused: ADMITS: terminal.run launches a program the plan chooses:
+policy.refused: ADMITS: browser.login is HIGH and declares no terms:
 policy.would_not_start: guided.cap_below_one_call:
 policy.refused: SCOPE: the scope of a policy of browser.guided
 ```
@@ -7573,6 +7582,515 @@ prenotato invariato
 
 La prova costa **una chiamata a Haiku 5.5**, frazioni di centesimo, con 0,508192 $ prenotati durante la chiamata. Dopo,
 non c'è niente da rimettere com'era: il `.env` non è cambiato.
+
+## 32. Le policy sulle azioni HIGH: la prova a mano di M13.14
+
+> **Scritta con l'implementazione il 2026-11-12** (`milestones/M13.14.md`, la bozza della sezione 32 nella SPEC e le
+> risposte 30 e 34 della sua review), e `tests/docs/test_prova_m13_14.py` tiene lo script allineato a questa sezione,
+> e la cammina con lo script contro un'ELA vera. La si fa **sul Mac, senza il PC**, sul branch di M13.14, con lo script
+> `scripts/prova_m13_14.py`.
+
+Da M13.14 **una policy che crei tu può coprire un'azione `HIGH`**: `fs.write` nelle cartelle che scegli, e un invio con
+`browser.act` o `browser.act_as_you` sui siti che scegli. Dentro i suoi confini ELA la fa **senza chiederti niente**; il
+livello non si abbassa, e ogni azione resta nell'audit, in `ela policy list` e nella console. `terminal.run`, il login e
+le capability dei file dal browser chiedono a ogni uso come prima ([ADR 0068](adr/0068-policies-on-high.md)). Una policy
+può avere **un tetto agli usi**, `--uses N`: senza, gli usi non hanno limite; una policy che li ha finiti è
+**`EXHAUSTED`**, fra le finite, e non si revoca: non c'è niente da togliere. **Una policy di `fs.write` copre solo uno step
+che gira sul Core**, e **l'anteprima nomina, accanto a ogni cartella che scrivi, la cartella intera sul tuo disco**: ciò
+che approvi è quella.
+
+**Il limite «ELA non crea policy da sola» è vero quanto le cartelle e i siti che scegli** (ADR 0068): un file scritto in
+una cartella che il tuo sistema lancia, o un invio su un sito dove vive il codice di ELA, sono strade che la policy non
+chiude. Scegli cartelle che non tengono programmi, e siti dove un invio come te è ciò che vuoi.
+
+**Che cosa serve**: `ELA_FS_ROOT` e `ELA_FS_SCOPE` come nella sezione 15 — lo scope `ELA`, che ammette
+`ELA/prova-m13.14/` —; in `ELA_BROWSER_SITES` `httpbin.org` e `testpages.eviltester.com`, come nella sezione 30; il
+profilo del browser dichiarato, e nessuno che lo tiene; **nessuna policy viva** di `fs.write`, `browser.act` o
+`browser.act_as_you` — se ce n'è una la prova si ferma e la nomina, perché cambierebbe ciò che i passi misurano —; ed ELA
+**riavviata dal branch**. **Nessuna chiamata al modello**: i piani sono scritti a mano, in `docs/examples/`, e la prova
+non spende niente. **Lo script non tocca il `.env`, il database né `ela serve`**, e scrive solo dentro
+`ELA/prova-m13.14/`, sotto la tua radice. **Le policy le crei tu**: lo script te ne mostra l'anteprima e chiede «crei la
+policy?»; senza il tuo sì non ne nasce nessuna.
+
+Lo script stampa **PASSATO**, **FALLITO**, **SALTATO** o **FERMATO** per ogni passo, e scrive tutto in
+`~/Downloads/prova-m13.14-<data>.txt`, **con `~` al posto della tua home**: la cartella intera la mostra solo lo schermo.
+Delle sezioni 27 e 30 usa `comando`, `atteso`, `occhio`, `schermo`, `no`, `perché`, `nessuna`, `crea`, `policy`,
+`console` e `file`, con queste parole:
+
+- **`crea`**: lancia la riga del blocco **senza `--confirm`**: fuori da un terminale l'anteprima si stampa e non si crea
+  niente — lo script lo controlla —; poi chiede «crei la policy?». Con un «s» rilancia la riga con `--confirm`, e la policy
+  diventa `<id della policy N>`, con N il numero del passo; con un «n» la prova si ferma — **FERMATO** —.
+- **`policy`**: lo stato della policy, i suoi usi, il tetto agli usi e quante ultime azioni dice, da
+  `GET /policies?all=true`: «`<id della policy 2> LIVE usi 2 senza limite azioni 2`», «`… usi 1 di 1 …`».
+- **`perché`**: la riga `why I ask` della domanda del task del passo dice ciò che il blocco dice.
+- **`no`**: ti mostra la domanda del task, e con il tuo sì a dire no la nega.
+- **`nessuna`**: nessuna policy viva. Se ce n'è una — un rifiuto che ha creato davvero —, lo script la revoca e il passo
+  è **FALLITO**.
+- **`console`**: ti chiede di aprire la vista delle policy della console sul Mac.
+- **`file`**: un file sotto la radice dichiarata — c'è, con i suoi byte e i permessi `600` —, o è `assente`.
+- **`schermo`**: l'uscita dei suoi comandi sullo schermo soltanto: l'anteprima con la cartella intera.
+
+**Se la prova si ferma a metà** — un FALLITO che la chiude, un FERMATO, un `Ctrl-C` —, lo script **revoca prima di uscire
+le policy che la prova ha creato e sono ancora vive**, e lo dice: una prova lasciata a metà non lascia sull'ELA vera una
+policy `HIGH` viva. Le policy della prova durano comunque un giorno. E toglie, sempre, i due link che ha messo nella
+cartella della prova.
+
+```
+uv run python scripts/prova_m13_14.py
+```
+
+### 1. Prima
+
+Lo script controlla, e stampa **PASSATO** per ciascuno: il Mac è sull'ultimo commit del branch su `origin`, con l'albero
+pulito; ELA risponde, e gira dal codice del branch — l'anteprima dell'API ha `resolved` —; la radice e lo scope ammettono
+`ELA/prova-m13.14/`; i due siti sono dichiarati; il profilo è libero; nessuna policy viva delle tre. Poi prepara la
+cartella della prova: toglie i file che una prova di prima ha lasciato, **solo quelli dei suoi piani**, e si ferma se ci
+trova altro; crea `uno/`, `due/` e `tre/`, in `uno/` un link `fuori` che porta a `tre/`, e un link `sorgente` che porta
+all'albero di ELA. **Se qualcosa manca, la prova si ferma lì** — **FERMATO** —, con ciò che manca.
+
+### 2. Una policy di `fs.write` su due cartelle, senza tetto agli usi
+
+Lo script ti mostra l'anteprima, sullo schermo: leggila per intero prima di dire sì. Poi una scrittura in `uno/` e una in
+`due/` partono **senza domanda**, e la policy dice due usi e le due azioni.
+
+<!-- prova: 2.schermo -->
+```
+uv run ela policy create fs.write --scope ELA/prova-m13.14/uno --scope ELA/prova-m13.14/due --days 1
+```
+
+<!-- prova: 2.occhio -->
+```
+Qui sopra, sullo schermo, l'anteprima dice HIGH, che ELA «writes and overwrites any file in these folders, on the Core», e accanto a ciascuna delle due cartelle scritte la cartella intera sul tuo disco, sotto la tua radice; poi «no limit of uses», la scadenza di domani, «only a step that runs on the Core: a step on a node asks» e ciò che la policy non copre mai. Le due cartelle intere sono quelle che vuoi approvare?
+```
+
+<!-- prova: 2.crea -->
+```
+uv run ela policy create fs.write --scope ELA/prova-m13.14/uno --scope ELA/prova-m13.14/due --days 1
+```
+
+<!-- prova: 2.policy -->
+```
+<id della policy 2> LIVE usi 0 senza limite azioni 0
+```
+
+<!-- prova: 2.comando -->
+```
+uv run ela task create "Scrivi il file della prova nella cartella uno." --json
+uv run ela task plan <id> --file docs/examples/policy-high-uno.json
+uv run ela task run <id>
+```
+
+<!-- prova: 2.atteso -->
+```
+outcome completed
+```
+
+<!-- prova: 2.comando -->
+```
+uv run ela task show <id>
+```
+
+<!-- prova: 2.atteso -->
+```
+policy <id della policy 2>
+```
+
+<!-- prova: 2.comando -->
+```
+uv run ela task create "Scrivi il file della prova nella cartella due." --json
+uv run ela task plan <id> --file docs/examples/policy-high-due.json
+uv run ela task run <id>
+```
+
+<!-- prova: 2.atteso -->
+```
+outcome completed
+```
+
+<!-- prova: 2.file -->
+```
+ELA/prova-m13.14/uno/prova.md 30 600
+ELA/prova-m13.14/due/prova.md 30 600
+```
+
+<!-- prova: 2.comando -->
+```
+uv run ela policy list
+```
+
+<!-- prova: 2.atteso -->
+```
+<id della policy 2> fs.write HIGH
+policy <id della policy 2>, its last actions:
+fs.write SUCCEEDED
+fs.write SUCCEEDED
+```
+
+<!-- prova: 2.policy -->
+```
+<id della policy 2> LIVE usi 2 senza limite azioni 2
+```
+
+### 3. Fuori, chiede; attraverso un link, si ferma
+
+Una scrittura in `tre/`, che la policy non nomina: **chiede**, e la domanda dice perché; di' no. Poi una scrittura in
+`uno/fuori/`: il percorso scritto sta nella policy, quello sul disco no — `fuori` è un link a `tre/` —, e lo step
+**fallisce con `path.symlink` senza spendere un uso** e senza scrivere niente. Non è una domanda: un sì a ciò che il tool
+rifiuterebbe non serve.
+
+<!-- prova: 3.comando -->
+```
+uv run ela task create "Scrivi il file della prova nella cartella tre." --json
+uv run ela task plan <id> --file docs/examples/policy-high-tre.json
+uv run ela task run <id>
+```
+
+<!-- prova: 3.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 3.comando -->
+```
+uv run ela approvals
+```
+
+<!-- prova: 3.atteso -->
+```
+capability fs.write
+why I ask
+```
+
+<!-- prova: 3.perché -->
+```
+a value of path is not among those of policy <id della policy 2>
+```
+
+<!-- prova: 3.no -->
+```
+uv run ela task deny <id> --approval <approval-id>
+```
+
+<!-- prova: 3.comando -->
+```
+uv run ela task create "Scrivi attraverso il link della cartella uno." --json
+uv run ela task plan <id> --file docs/examples/policy-high-fuori.json
+uv run ela task run <id>
+```
+
+<!-- prova: 3.atteso -->
+```
+outcome failed
+reason fail: EXECUTING -> FAILED (path.symlink:
+```
+
+<!-- prova: 3.file -->
+```
+ELA/prova-m13.14/tre/prova.md assente
+ELA/prova-m13.14/tre/oltre-il-link.md assente
+```
+
+<!-- prova: 3.policy -->
+```
+<id della policy 2> LIVE usi 2 senza limite azioni 2
+```
+
+### 4. La revoca
+
+Dal Terminale. Poi una scrittura in `uno/` **chiede di nuovo**, e la domanda dice che la policy è revocata; di' no.
+
+<!-- prova: 4.comando -->
+```
+uv run ela policy revoke <id della policy 2>
+```
+
+<!-- prova: 4.atteso -->
+```
+revoked policy <id della policy 2>
+```
+
+<!-- prova: 4.policy -->
+```
+<id della policy 2> REVOKED usi 2 senza limite azioni 2
+```
+
+<!-- prova: 4.comando -->
+```
+uv run ela task create "Scrivi nella cartella uno dopo la revoca." --json
+uv run ela task plan <id> --file docs/examples/policy-high-revocata.json
+uv run ela task run <id>
+```
+
+<!-- prova: 4.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 4.perché -->
+```
+policy <id della policy 2> was revoked on
+```
+
+<!-- prova: 4.no -->
+```
+uv run ela task deny <id> --approval <approval-id>
+```
+
+<!-- prova: 4.file -->
+```
+ELA/prova-m13.14/uno/dopo-la-revoca.md assente
+```
+
+### 5. Un tetto agli usi
+
+Una policy di un uso solo su `uno/`. La prima scrittura parte senza domanda; la seconda **chiede**, e la domanda dice che
+la policy ha speso il suo uso; di' no. **La policy è finita**, `EXHAUSTED`: non la revochi, non c'è niente da togliere.
+
+<!-- prova: 5.crea -->
+```
+uv run ela policy create fs.write --scope ELA/prova-m13.14/uno --days 1 --uses 1
+```
+
+<!-- prova: 5.policy -->
+```
+<id della policy 5> LIVE usi 0 di 1 azioni 0
+```
+
+<!-- prova: 5.comando -->
+```
+uv run ela task create "Scrivi nella cartella uno con la policy di un uso." --json
+uv run ela task plan <id> --file docs/examples/policy-high-un-uso.json
+uv run ela task run <id>
+```
+
+<!-- prova: 5.atteso -->
+```
+outcome completed
+```
+
+<!-- prova: 5.file -->
+```
+ELA/prova-m13.14/uno/con-un-uso.md 33 600
+```
+
+<!-- prova: 5.comando -->
+```
+uv run ela task create "Scrivi nella cartella uno oltre l'uso della policy." --json
+uv run ela task plan <id> --file docs/examples/policy-high-oltre.json
+uv run ela task run <id>
+```
+
+<!-- prova: 5.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 5.perché -->
+```
+policy <id della policy 5> was used 1 of its 1 times
+```
+
+<!-- prova: 5.no -->
+```
+uv run ela task deny <id> --approval <approval-id>
+```
+
+<!-- prova: 5.file -->
+```
+ELA/prova-m13.14/uno/oltre-l-uso.md assente
+```
+
+<!-- prova: 5.policy -->
+```
+<id della policy 5> EXHAUSTED usi 1 di 1 azioni 1
+```
+
+### 6. Due policy che non nascono
+
+Con `--confirm`, perché una creazione sbagliata creerebbe davvero. **`terminal.run` non ha policy**: lancia un programma,
+e un programma potrebbe leggere il gettone del Core e crearne una. E una policy di `fs.write` su `sorgente`, il link della
+prova che porta all'albero di ELA, **non nasce**: la cartella sul disco sta fuori dalla tua radice. Che un posto protetto
+in sé — l'albero di ELA, il database, il `.env`, `~/.ela` — fermi una policy lo prova la suite.
+
+<!-- prova: 6.comando -->
+```
+uv run ela policy create terminal.run --scope bin/echo --days 1 --confirm
+uv run ela policy create fs.write --scope ELA/prova-m13.14/sorgente --days 1 --confirm
+```
+
+<!-- prova: 6.atteso -->
+```
+policy.refused: ADMITS: terminal.run launches a program the plan chooses: a program can read the Core's token and create a policy, and only you create one
+policy.would_not_start: path.outside_root:
+```
+
+<!-- prova: 6.nessuna -->
+```
+nessuna policy viva
+```
+
+### 7. Un invio come te, coperto, e uno fuori
+
+Una policy di `browser.act_as_you` su `httpbin.org`: il modulo di prova di `httpbin.org` parte **senza domanda**, con il
+browser dei tuoi account. Un gesto su `testpages.eviltester.com`, che la policy non nomina, **chiede**; di' no: non parte.
+Il modulo è quello della sezione 28; il sito fuori è quello della sezione 30.
+
+<!-- prova: 7.schermo -->
+```
+uv run ela policy create browser.act_as_you --scope httpbin.org --days 1
+```
+
+<!-- prova: 7.occhio -->
+```
+Qui sopra, sullo schermo, l'anteprima dice HIGH, che ELA «makes any submission on these sites as you, in the browser that keeps your accounts», con httpbin.org, «what it sends goes to these sites in your name, and is not taken back», e la scadenza di domani?
+```
+
+<!-- prova: 7.crea -->
+```
+uv run ela policy create browser.act_as_you --scope httpbin.org --days 1
+```
+
+<!-- prova: 7.comando -->
+```
+uv run ela task create "Compila e invia il modulo di prova di httpbin.org come me." --json
+uv run ela task plan <id> --file docs/examples/policy-high-as-you.json
+uv run ela task run <id>
+```
+
+<!-- prova: 7.atteso -->
+```
+outcome completed
+```
+
+<!-- prova: 7.comando -->
+```
+uv run ela task show <id>
+```
+
+<!-- prova: 7.atteso -->
+```
+policy <id della policy 7>
+```
+
+<!-- prova: 7.comando -->
+```
+uv run ela task create "Un gesto come me su testpages.eviltester.com." --json
+uv run ela task plan <id> --file docs/examples/policy-high-as-you-fuori.json
+uv run ela task run <id>
+```
+
+<!-- prova: 7.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 7.perché -->
+```
+a value of site is not among those of policy <id della policy 7>
+```
+
+<!-- prova: 7.no -->
+```
+uv run ela task deny <id> --approval <approval-id>
+```
+
+### 8. Un invio nel browser vuoto, coperto, e uno fuori
+
+Lo stesso con `browser.act`, il browser vuoto di ELA: il modulo di `httpbin.org` senza domanda, un gesto su
+`testpages.eviltester.com` che chiede; di' no.
+
+<!-- prova: 8.crea -->
+```
+uv run ela policy create browser.act --scope httpbin.org --days 1
+```
+
+<!-- prova: 8.comando -->
+```
+uv run ela task create "Compila e invia il modulo di prova di httpbin.org." --json
+uv run ela task plan <id> --file docs/examples/policy-high-act.json
+uv run ela task run <id>
+```
+
+<!-- prova: 8.atteso -->
+```
+outcome completed
+```
+
+<!-- prova: 8.comando -->
+```
+uv run ela task show <id>
+```
+
+<!-- prova: 8.atteso -->
+```
+policy <id della policy 8>
+```
+
+<!-- prova: 8.comando -->
+```
+uv run ela task create "Un gesto su testpages.eviltester.com." --json
+uv run ela task plan <id> --file docs/examples/policy-high-act-fuori.json
+uv run ela task run <id>
+```
+
+<!-- prova: 8.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 8.perché -->
+```
+a value of site is not among those of policy <id della policy 8>
+```
+
+<!-- prova: 8.no -->
+```
+uv run ela task deny <id> --approval <approval-id>
+```
+
+<!-- prova: 8.policy -->
+```
+<id della policy 7> LIVE usi 1 senza limite azioni 1
+<id della policy 8> LIVE usi 1 senza limite azioni 1
+```
+
+### 9. La console
+
+Apri **`/console/policies`** sul Mac, e guarda.
+
+<!-- prova: 9.console -->
+```
+/console/policies
+```
+
+<!-- prova: 9.occhio -->
+```
+Nella vista delle policy della console, le due policy vive dicono «HIGH», che cosa fanno senza chiederti, gli usi — 1, senza limite di usi — e un'azione ciascuna fra le ultime azioni; e fra le finite di recente la policy del passo 5 dice che ha finito gli usi?
+```
+
+### 10. Dopo
+
+Lo script revoca, dal Terminale, le due policy dei passi 7 e 8; poi nessuna policy è viva.
+
+<!-- prova: 10.comando -->
+```
+uv run ela policy revoke <id della policy 7>
+uv run ela policy revoke <id della policy 8>
+```
+
+<!-- prova: 10.atteso -->
+```
+revoked policy <id della policy 7>
+revoked policy <id della policy 8>
+```
+
+<!-- prova: 10.nessuna -->
+```
+nessuna policy viva
+```
+
+La prova non spende niente. Dopo, in `ELA/prova-m13.14/` restano i file dei passi 2 e 5, che la prova dopo toglie da sé;
+i link li ha già tolti lo script.
 
 ## Dove guardare dopo
 

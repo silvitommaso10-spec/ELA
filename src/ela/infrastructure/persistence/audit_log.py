@@ -37,7 +37,7 @@ from ela.audit.chain import (
     link_hash,
     verify_links,
 )
-from ela.domain import AuditEvent, TaskId
+from ela.domain import AuditEvent, AuditEventType, AuthorizationId, TaskId
 from ela.infrastructure.persistence.engine import make_session_factory
 from ela.infrastructure.persistence.mappers import audit_event_to_row, row_to_audit_event
 from ela.infrastructure.persistence.orm import HASHED_COLUMNS, AuditEventRow
@@ -105,6 +105,8 @@ class SqlAuditLog:
         since: datetime | None = None,
         limit: int | None = None,
         newest_first: bool = False,
+        authorization_id: AuthorizationId | None = None,
+        event_type: AuditEventType | None = None,
     ) -> tuple[AuditEvent, ...]:
         """Events in append order, or from the end when ``newest_first`` (M8.3, ADR 0025 §3).
 
@@ -119,6 +121,10 @@ class SqlAuditLog:
             query = query.where(AuditEventRow.task_id == task_id)
         if since is not None:
             query = query.where(AuditEventRow.created_at >= since)
+        if authorization_id is not None:
+            query = query.where(AuditEventRow.authorization_id == authorization_id)
+        if event_type is not None:
+            query = query.where(AuditEventRow.event_type == event_type.value)
         if limit is not None:
             query = query.limit(limit)
         async with self._sessions() as session:

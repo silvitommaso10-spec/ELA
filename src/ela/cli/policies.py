@@ -1,8 +1,9 @@
 """``ela policy``: create, list and revoke the policies of §59 (M13.12, ADR 0062; decision 9).
 
-A policy is Tommaso's own standing yes for a capability that admits one: its scope — for
-``browser.guided`` the sites —, a limit per call for every one the capability declares, and an end
-in days, from 1 to 90, with no default. ``create`` shows the preview first, which names what is
+A policy is your own standing yes for a capability that admits one: its scope — the sites, or for
+``fs.write`` the folders —, a limit per call for every one the capability declares, an end in days,
+from 1 to 90, with no default, and since M13.14 the uses, ``--uses``, none for no limit (ADR
+0068). ``create`` shows the preview first, which names what is
 approved; **in a terminal** it asks «Create this policy? (s/N)», and only «s», «si» or «sì» creates;
 **out of a terminal and without** ``--confirm`` it shows and does not create — the way the script of
 the hand test asks before creating, since its ``run`` captures what a command prints.
@@ -56,14 +57,32 @@ def _limits(written: Sequence[str]) -> dict[str, str]:
     return limits
 
 
+def _scope_text(scope: Sequence[str], resolved: Sequence[str | None]) -> str:
+    """Each entry of the scope as written, and beside it the place as the Core's disk names it,
+    whole, where the tool resolves one (answer 20 of the review of the SPEC of M13.14) — in the
+    visible borders of :func:`~ela.domain.listed`, since a folder may hold any character (M13.2,
+    decision 12)."""
+    return listed(
+        [
+            entry if place is None else f"{entry} = {place}"
+            for entry, place in zip(scope, resolved, strict=True)
+        ]
+    )
+
+
 def _preview_text(shown: Mapping[str, Any]) -> str:
     rows = fields(
         [
+            ("level", shown["risk"]),
             ("capability", shown["capability"]),
             ("what", shown["description"]),
-            ("sites", listed(shown["scope"])),
+            ("does, without asking", shown["does"]),
+            ("goes", shown["goes"]),
+            ("scope", _scope_text(shown["scope"], shown["resolved"])),
             ("limits", ", ".join(f"{name}={value}" for name, value in shown["limits"].items())),
+            ("uses", shown["uses"]),
             ("expires", f"in {shown['days']} day(s), at {shown['expires_at']}"),
+            ("where", shown["on_the_core"] or None),
             ("model", shown["model"]),
             ("sends", shown["sends"] or None),
             ("one call", shown["one_call"] or None),
@@ -87,6 +106,9 @@ def create(
         typer.Option("--limit", help="a limit per call, name=value: see ela policy list"),
     ] = None,
     days: Annotated[int | None, typer.Option("--days", help="how long it lives: 1 to 90")] = None,
+    uses: Annotated[
+        int | None, typer.Option("--uses", help="how many uses at most; none for no limit")
+    ] = None,
     confirm: Annotated[bool, typer.Option("--confirm", help="create without asking")] = False,
     as_json: Json = False,
 ) -> None:
@@ -96,6 +118,7 @@ def create(
         "scope": list(scope or ()),
         "limits": _limits(limit or ()),
         "days": days,
+        "uses": uses,
     }
     with client.connect() as api:
         shown = api.post("/policies/preview", body)
@@ -112,18 +135,37 @@ def create(
     emit(made, as_json, f"created policy {made['short']}")
 
 
+def _uses(one: Mapping[str, Any]) -> str:
+    """«3 of 10», or «3, no limit» (M13.14, ADR 0068)."""
+    if one["max_uses"] is None:
+        return f"{one['uses']}, no limit"
+    return f"{one['uses']} of {one['max_uses']}"
+
+
 def _row(one: Mapping[str, Any]) -> Sequence[Any]:
     who = one["created_by"]
     return (
         one["short"],
         one["capability"],
+        one["risk"],
         listed(one["scope"]),
         ", ".join(f"{name}={value}" for name, value in one["limits"].items()),
         one["expires_at"],
-        one["uses"],
+        _uses(one),
         f"{who.get('name') or who['identity']} ({who.get('role') or '—'}) at {one['created_at']}",
         one["state"],
     )
+
+
+def _recent(one: Mapping[str, Any]) -> str:
+    """The last actions of a policy, one per line: when, the task, the capability, how it ended,
+    its targets — read from the audit by the route (M13.14, ADR 0068; decision 13)."""
+    lines = [
+        f"  {action['at']} task {action['task'] or '—'} {action['capability'] or '—'} "
+        f"{action['status']} {listed([str(target) for target in action['targets']]) or '—'}"
+        for action in one["recent"]
+    ]
+    return f"policy {one['short']}, its last actions:\n" + "\n".join(lines)
 
 
 @app.command("list")
@@ -139,19 +181,37 @@ def list_policies(
         payload = api.get("/policies", client.query(all="true" if everything else None))
     policies = (
         table(
-            ("policy", "capability", "sites", "limits", "expires", "uses", "created by", "state"),
+            (
+                "policy",
+                "capability",
+                "level",
+                "scope",
+                "limits",
+                "expires",
+                "uses",
+                "created by",
+                "state",
+            ),
             [_row(one) for one in payload["policies"]],
         )
         if payload["policies"]
         else "no policy"
     )
-    admitting = "\n".join(
-        f"{terms['capability']}: --limit "
-        + ", --limit ".join(f"{limit['name']}=…" for limit in terms["limits"])
-        + f"; never covered: {', '.join(terms['uncovered']) or '—'}"
-        for terms in payload["admitting"]
-    )
+    acted = [_recent(one) for one in payload["policies"] if one["recent"]]
+    if acted:
+        policies = "\n\n".join([policies, *acted])
+    admitting = "\n".join(_bounds(terms) for terms in payload["admitting"])
     emit(payload, as_json, f"{policies}\n\nwhat a policy must bound:\n{admitting}")
+
+
+def _bounds(terms: Mapping[str, Any]) -> str:
+    """What a policy of one capability must bound: its limits, or «no limit to set» for one that
+    declares none (M13.14, ADR 0068) — and what it never covers."""
+    limits = ", ".join(f"--limit {limit['name']}=…" for limit in terms["limits"])
+    return (
+        f"{terms['capability']}: {limits or 'no limit to set'}; "
+        f"never covered: {', '.join(terms['uncovered']) or '—'}"
+    )
 
 
 def resolved(given: str, policies: Sequence[Mapping[str, Any]]) -> str | None:

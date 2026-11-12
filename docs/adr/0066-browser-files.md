@@ -20,6 +20,7 @@
   ***Annotato il 2026-11-11, più tardi*** (decisione 52): **§10, il debito di ADR 0065 §6 ridichiarato a carico di
   M13.11**, con il conto chiuso a sei giri su otto, è scritto dopo l'accettazione, nel commit che scrive l'esito; con lui
   la riga rivista di ADR 0065 §6, in «Righe riviste», e il suo marchio sulla riga «Stato:» di ADR 0065 (decisione 44).
+  **Rivista da ADR 0068 (M13.14)** il 2026-11-12: §4 — le quattro capability dei file chiedono a ogni uso fino a M13.15, non più «fino a M13.14» (ADR 0068).
 - **Data:** 2026-11-03
 - **Riferimenti spec:** §19, §33, §57, §58, §65
 - **Milestone:** [M13.13](../milestones/M13.13.md), con [M13.9b](../milestones/M13.9b.md),

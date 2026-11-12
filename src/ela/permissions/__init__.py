@@ -121,12 +121,13 @@ from ela.permissions.policies import (
     authorization_from_policy,
     never_covered,
     prospect_arguments,
+    scope_is_a_list,
     short_id,
     shortfall,
     state_of,
     why_lines,
 )
-from ela.permissions.rows import no_policy_for
+from ela.permissions.rows import LAUNCHES_A_PROGRAM, no_policy_for, row_of
 from ela.permissions.scope import scope_covers, targets_of, within_scope
 
 __all__ = [
@@ -162,6 +163,7 @@ __all__ = [
     "FS_READ",
     "FS_WRITE",
     "GAPS",
+    "LAUNCHES_A_PROGRAM",
     "GUARDIAN_ACTOR",
     "GUIDED_ROUTE",
     "Gap",
@@ -234,10 +236,12 @@ __all__ = [
     "model_complete",
     "never_covered",
     "no_policy_for",
+    "row_of",
     "perception_capture_screen",
     "perception_listen",
     "production_catalogue",
     "prospect_arguments",
+    "scope_is_a_list",
     "scope_covers",
     "short_id",
     "shortfall",

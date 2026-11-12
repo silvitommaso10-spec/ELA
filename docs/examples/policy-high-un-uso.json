@@ -1,0 +1,29 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M13.14 (sezione 32, passo 5): la scrittura che spende l'unico uso",
+    "della policy creata con --uses 1. Parte senza domanda.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "scrivere nella cartella uno con la policy di un uso",
+  "steps": [
+    {
+      "id": "c0de1a32-0000-4b00-8a00-000000000006",
+      "goal": "scrivere nella cartella uno con la policy di un uso",
+      "required_capabilities": [
+        "fs.write"
+      ],
+      "arguments": {
+        "path": "ELA/prova-m13.14/uno/con-un-uso.md",
+        "body": "ELA prova 32, l'uso della policy\n",
+        "overwrite": false,
+        "purpose": "la prova a mano delle policy sulle azioni HIGH"
+      },
+      "risk": "HIGH",
+      "expected_result": "il file c'è, con il testo della prova",
+      "success_conditions": [
+        "fs.file_exists"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}

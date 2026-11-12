@@ -37,6 +37,7 @@ from ela.domain import (
     AssignmentId,
     AssignmentState,
     AuditEvent,
+    AuditEventType,
     Authorization,
     AuthorizationId,
     CapabilityId,
@@ -442,6 +443,8 @@ class FakeAuditLog:
         since: datetime | None = None,
         limit: int | None = None,
         newest_first: bool = False,
+        authorization_id: AuthorizationId | None = None,
+        event_type: AuditEventType | None = None,
     ) -> tuple[AuditEvent, ...]:
         check_limit(limit)
         source = reversed(self._events) if newest_first else self._events
@@ -450,6 +453,8 @@ class FakeAuditLog:
             for event in source
             if (task_id is None or event.task_id == task_id)
             and (since is None or event.created_at >= since)
+            and (authorization_id is None or event.authorization_id == authorization_id)
+            and (event_type is None or event.event_type is event_type)
         )
         return tuple(selected)[:limit]
 
@@ -950,6 +955,7 @@ class GuardianCall(NamedTuple):
     authorization_uses: int
     author: PlanAuthor | None = None
     session: SessionCover | None = None
+    device_id: DeviceId | None = None
 
 
 class FakePermissionGuardian:
@@ -983,6 +989,7 @@ class FakePermissionGuardian:
         authorization_uses: int = 0,
         author: PlanAuthor | None = None,
         session: SessionCover | None = None,
+        device_id: DeviceId | None = None,
     ) -> PermissionDecision:
         self.calls = (
             *self.calls,
@@ -995,6 +1002,7 @@ class FakePermissionGuardian:
                 authorization_uses,
                 author,
                 session,
+                device_id,
             ),
         )
         outcome = self._outcomes.get(capability.id)
@@ -1885,6 +1893,11 @@ class FakeTool:
         executor gave back of the question, with the yes."""
         self.prospects = Prospect() if prospect is None else prospect
         self.assertions = Prospect()
+        self.places: Prospect = Prospect()
+        """What :meth:`prospect_place` answers (M13.14): nothing to refuse, by default — a test
+        that wants a place refused sets it."""
+        self.looked_at: tuple[str, ...] = ()
+        """Every place :meth:`prospect_place` was asked about, in order."""
         self.bound: WorstCase | ErrorMetadata | None = None
 
     @property
@@ -1915,6 +1928,12 @@ class FakeTool:
         """What the call asserts without looking (M13.3): whatever the test set, empty by
         default — and never what :attr:`prospects` says, so a test sees which one was asked."""
         return self.assertions
+
+    async def prospect_place(self, place: str) -> Prospect:
+        """Whether a call could start in ``place`` (M13.14): whatever the test set in
+        :attr:`places`, and the place is remembered in :attr:`looked_at`."""
+        self.looked_at = (*self.looked_at, place)
+        return self.places
 
     async def worst_case(self, arguments: JsonMapping) -> WorstCase | ErrorMetadata | None:
         """What the test set in :attr:`bound`: ``None`` — a tool that spends nothing — by default

@@ -454,6 +454,17 @@ source_modules = ["ela.executive"]
 forbidden_modules = ["ela.context"]
 
 [[tool.importlinter.contracts]]
+name = "16. ela.tools ed ela.executive non importano ela.api: una policy nasce alla sua rotta, e solo l'utente la crea (ADR 0068)"
+type = "forbidden"
+# M13.14 (proposta 12 della SPEC; ADR 0068). La regola 66 legge i nomi: un tool o l'executor che
+# importasse le funzioni della rotta delle policy e le chiamasse con un'identità CORE costruita a
+# mano non la farebbe scattare. Questo chiude la porta dall'altra parte. Due sorgenti e non una:
+# un contratto col solo ela.executive, o col solo ela.tools, si confonderebbe con il 15 e con l'11
+# nei test che li trovano per struttura. Indiretto incluso: nessuna catena.
+source_modules = ["ela.tools", "ela.executive"]
+forbidden_modules = ["ela.api"]
+
+[[tool.importlinter.contracts]]
 name = "13. nessuno importa ela.cli: la CLI è un client, non una libreria (ADR 0024 §7)"
 type = "forbidden"
 # La seconda clausola della regola 28. Una CLI che qualcuno importa è una CLI diventata libreria

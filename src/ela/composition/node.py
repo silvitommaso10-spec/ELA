@@ -367,6 +367,9 @@ def build_node(
         voice_id=config.elevenlabs.elevenlabs_voice_id,
         model=config.elevenlabs.elevenlabs_model,
         fs_root=config.filesystem.root,
+        # What the node uses to exist (M13.14, ADR 0068): its root was checked against it, and no
+        # write of the node reaches it.
+        protected=config.own(),
     )
     verifiers = node_verifiers(config.filesystem.root)
     carried(tools, verifiers)

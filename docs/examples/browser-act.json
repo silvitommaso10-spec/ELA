@@ -2,7 +2,8 @@
   "_nota": [
     "Il piano della prova a mano di M13.4 per un'azione con un EFFETTO FUORI DALLA MACCHINA:",
     "ELA compila il modulo di prova di httpbin.org e lo invia. `browser.act` è HIGH: chiede OGNI",
-    "VOLTA, e nessuna policy potrà coprirlo in anticipo (§59 non raggiunge questo livello).",
+    "VOLTA, salvo una policy tua di browser.act sul sito: dal 2026-11-12 (M13.14, ADR 0068) §59",
+    "raggiunge una HIGH che dichiara i termini, e questo è uno di loro (GETTING_STARTED, sezione 32).",
     "La domanda nomina il sito, l'indirizzo per intero, i gesti — il campo e il valore, il bottone —,",
     "il testo atteso, il tempo, e dice che il browser è vuoto: il sito vede un visitatore, non te.",
     "httpbin.org rimanda indietro ciò che riceve e non tiene niente; è comunque un invio vero.",

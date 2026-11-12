@@ -29,6 +29,7 @@ forward through the loopback can be seen by eye.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Annotated, Final
 from urllib.parse import parse_qsl
 from uuid import UUID
@@ -60,7 +61,7 @@ from ela.api.deps import ElaDep, IdentityDep, RunningDep
 from ela.api.devices import list_devices
 from ela.api.errors import ApiError
 from ela.api.nodes import enrolled
-from ela.api.policies import created, policies_of, preview_of, revoked_policy
+from ela.api.policies import created, ended_of, policies_of, preview_of, revoked_policy
 from ela.api.results import read_results
 from ela.api.schemas import (
     ApprovalOut,
@@ -96,6 +97,7 @@ from ela.domain import (
     listed,
     visible,
 )
+from ela.permissions import PolicyState
 from ela.ports import (
     PROFILE_PROCESS,
     PROFILE_WINDOW,
@@ -801,13 +803,17 @@ async def _live(ela: ElaDep, id: UUID) -> TaskDetail:
 # The policies of §59 (M13.12, ADR 0062): the fifth view
 # ----------------------------------------------------------------------------------------
 
-NO_POLICIES: Final = "Nessuna policy viva: ogni azione MEDIUM ti chiede il sì, una volta per volta."
-SITES_STAY: Final = (
-    "I siti di una policy restano sul Mac: crearne una si fa da lì. Revocarla si fa anche da qui."
+NO_POLICIES: Final = (
+    "Nessuna policy viva: ogni azione MEDIUM o HIGH ti chiede il sì, una volta per volta."
 )
-"""Decision 18 of the review: a policy has no task, so no level — its sites are ``LOCAL_ONLY``
-content, and a console under a narrower ceiling neither shows them nor creates. It revokes: that
-takes away, it does not widen."""
+NO_ENDED: Final = "Nessuna policy finita negli ultimi trenta giorni."
+SITES_STAY: Final = (
+    "I siti e le cartelle di una policy restano sul Mac: crearne una si fa da lì. Revocarla si fa "
+    "anche da qui."
+)
+"""Decision 18 of the review: a policy has no task, so no level — its sites, its folders and the
+targets of its actions are ``LOCAL_ONLY`` content, and a console under a narrower ceiling neither
+shows them nor creates. It revokes: that takes away, it does not widen."""
 
 
 class PolicyOutOfReachError(ApiError):
@@ -829,11 +835,18 @@ async def policies(ela: ElaDep, identity: IdentityDep) -> Response:
     """The live policies, with «Revoca» for each, and the form of a new one — derived from the
     catalogue and the declaration, read through the route (rule 55)."""
     listed = await policies_of(ela, everything=False)
+    ended = await ended_of(ela)
     seen = _sites_seen(identity)
+    live = listed.policies
     rows = (
-        pages.joined(_policy(one, seen) for one in listed.policies)
-        if listed.policies
+        pages.joined(_policy(one, seen) for one in live)
+        if live
         else pages.fragment(HERE, "notice", text=NO_POLICIES)
+    )
+    finished = (
+        pages.joined(_policy(one, seen) for one in ended)
+        if ended
+        else pages.fragment(HERE, "notice", text=NO_ENDED)
     )
     forms = (
         pages.joined(_policy_form(terms) for terms in listed.admitting)
@@ -846,17 +859,54 @@ async def policies(ela: ElaDep, identity: IdentityDep) -> Response:
         sheets=WHERE,
         nav=_nav(),
         rows=rows,
+        ended=finished,
         forms=forms,
         ceiling=_ceiling(identity),
     )
 
 
+ENDED: Final[Mapping[str, str]] = {
+    PolicyState.REVOKED.value: "revocata",
+    PolicyState.EXPIRED.value: "scaduta",
+    PolicyState.EXHAUSTED.value: "ha finito gli usi",
+}
+"""How the console says a policy ended (M13.14, ADR 0068; answer 30 of the review)."""
+
+
+def _uses(one: PolicyOut) -> str:
+    """«3 di 10, ne restano 7», or «3, senza limite di usi» (M13.14, ADR 0068)."""
+    if one.max_uses is None:
+        return f"{one.uses}, senza limite di usi"
+    return f"{one.uses} di {one.max_uses}, ne restano {one.remaining}"
+
+
+def _actions(one: PolicyOut, seen: bool) -> str:
+    """Its last actions, the most recent first: when, the task, how it ended, and the targets —
+    ``LOCAL_ONLY`` content, kept silent under a narrower ceiling, which says so."""
+    if not one.recent:
+        return "nessuna"
+    return "; ".join(
+        f"{when(action.at)}, task {action.task or '—'}, {action.status}"
+        + (
+            f", {listed([str(target) for target in action.targets])}"
+            if seen and action.targets
+            else ("" if seen else ", i bersagli restano sul Mac")
+        )
+        for action in one.recent
+    )
+
+
 def _policy(one: PolicyOut, seen: bool) -> pages.Markup:
-    """One live policy: what it covers, until when, how often it served, who created it."""
+    """One policy: its level and what it does without asking, what it covers, until when, its
+    uses and its last actions, who created it — and «Revoca» while it is live."""
     who = one.created_by.name or one.created_by.identity
+    live = one.state == PolicyState.LIVE.value
     pairs = [
+        *([] if live else [pages.fragment(HERE, "pair", key="Stato", value=ENDED[one.state])]),
+        pages.fragment(HERE, "pair", key="Livello", value=one.risk),
+        pages.fragment(HERE, "pair", key="Che cosa fa senza chiederti", value=one.does or "—"),
         pages.fragment(
-            HERE, "pair", key="Siti", value=listed(one.scope) if seen else "restano sul Mac"
+            HERE, "pair", key="Ambito", value=listed(one.scope) if seen else "resta sul Mac"
         ),
         pages.fragment(
             HERE,
@@ -866,7 +916,8 @@ def _policy(one: PolicyOut, seen: bool) -> pages.Markup:
         ),
         pages.fragment(HERE, "pair", key="Modello", value=one.model or "—"),
         pages.fragment(HERE, "pair", key="Scade", value=when(one.expires_at)),
-        pages.fragment(HERE, "pair", key="Usi", value=str(one.uses)),
+        pages.fragment(HERE, "pair", key="Usi", value=_uses(one)),
+        pages.fragment(HERE, "pair", key="Ultime azioni", value=_actions(one, seen)),
         pages.fragment(
             HERE,
             "pair",
@@ -880,7 +931,7 @@ def _policy(one: PolicyOut, seen: bool) -> pages.Markup:
         capability=one.capability,
         short=one.short,
         pairs=pages.joined(pairs),
-        revoke=pages.fragment(HERE, "policy-revoke", id=one.id),
+        revoke=pages.fragment(HERE, "policy-revoke", id=one.id) if live else pages.joined([]),
     )
 
 
@@ -892,6 +943,7 @@ def _policy_form(terms: TermsOut) -> pages.Markup:
         "policy-form",
         capability=terms.capability,
         description=terms.description,
+        words=terms.risk if terms.does is None else f"{terms.risk}: {terms.does}",
         sites=pages.joined(pages.fragment(HERE, "policy-site", site=one) for one in terms.scope),
         limits=pages.joined(
             pages.fragment(
@@ -926,8 +978,18 @@ def _request_of(body: bytes) -> dict[str, object]:
             key.removeprefix("limit-"): value for key, value in pairs if key.startswith("limit-")
         },
         "days": fields.get("days", ""),
+        "uses": _number(fields.get("uses", "")),
         "model": fields.get("model", ""),
     }
+
+
+def _number(written: str) -> object:
+    """The uses as the form writes them: empty is ``None`` — no limit —, a whole number its
+    integer, and anything else the text itself, which the schema refuses."""
+    stripped = written.strip()
+    if not stripped:
+        return None
+    return int(stripped) if stripped.lstrip("-").isdigit() else stripped
 
 
 @router.post("/policies/preview")
@@ -952,10 +1014,27 @@ async def policy_preview(request: Request, ela: ElaDep, identity: IdentityDep) -
     )
 
 
+def _scope_of(shown: PreviewOut) -> str:
+    """Each entry as written, and beside it the place as the Core's disk names it, whole (answer
+    20 of the review of the SPEC of M13.14): what is approved names what counts — in the visible
+    borders of :func:`~ela.domain.listed`, since a folder may hold any character."""
+    return listed(
+        [
+            entry if place is None else f"{entry} = {place}"
+            for entry, place in zip(shown.scope, shown.resolved, strict=True)
+        ]
+    )
+
+
 def _preview_pairs(shown: PreviewOut) -> pages.Markup:
     return pages.joined(
         [
-            pages.fragment(HERE, "pair", key="Siti", value=listed(shown.scope)),
+            pages.fragment(HERE, "pair", key="Livello", value=shown.risk),
+            pages.fragment(
+                HERE, "pair", key="Che cosa fa senza chiederti", value=shown.does or "—"
+            ),
+            pages.fragment(HERE, "pair", key="Dove va", value=shown.goes or "—"),
+            pages.fragment(HERE, "pair", key="Ambito", value=_scope_of(shown)),
             pages.fragment(
                 HERE,
                 "pair",
@@ -968,6 +1047,8 @@ def _preview_pairs(shown: PreviewOut) -> pages.Markup:
                 key="Scade",
                 value=f"fra {shown.days} giorni, il {when(shown.expires_at)}",
             ),
+            pages.fragment(HERE, "pair", key="Usi", value=shown.uses),
+            pages.fragment(HERE, "pair", key="Dove gira", value=shown.on_the_core or "—"),
             pages.fragment(HERE, "pair", key="Modello", value=shown.model or "—"),
             pages.fragment(HERE, "pair", key="Che cosa esce", value=shown.sends or "—"),
             pages.fragment(HERE, "pair", key="Una chiamata", value=shown.one_call or "—"),
@@ -983,6 +1064,7 @@ def _hidden(body: PolicyIn, shown: PreviewOut) -> pages.Markup:
         *(("scope", one) for one in body.scope),
         *((f"limit-{name}", value) for name, value in body.limits.items()),
         ("days", str(body.days)),
+        *((("uses", str(body.uses)),) if body.uses is not None else ()),
         ("model", shown.model or ""),
     ]
     return pages.joined(

@@ -1,0 +1,31 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M13.14 (sezione 32, passo 3): una scrittura in uno/fuori/, un link che",
+    "lo script ha messo in uno/ e che porta a tre/. Il percorso scritto sta dentro la policy, quello",
+    "risolto no: lo step FALLISCE con path.symlink prima di spendere un uso, e niente è scritto in tre/",
+    "(ADR 0068 §6). Non diventa una domanda: un sì a ciò che il tool rifiuterebbe non serve.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "scrivere attraverso il link della cartella uno",
+  "steps": [
+    {
+      "id": "c0de1a32-0000-4b00-8a00-000000000004",
+      "goal": "scrivere attraverso il link della cartella uno",
+      "required_capabilities": [
+        "fs.write"
+      ],
+      "arguments": {
+        "path": "ELA/prova-m13.14/uno/fuori/oltre-il-link.md",
+        "body": "ELA prova 32, attraverso il link\n",
+        "overwrite": false,
+        "purpose": "la prova a mano delle policy sulle azioni HIGH"
+      },
+      "risk": "HIGH",
+      "expected_result": "il file c'è, con il testo della prova",
+      "success_conditions": [
+        "fs.file_exists"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}

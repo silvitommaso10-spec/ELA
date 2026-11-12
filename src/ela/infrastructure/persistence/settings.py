@@ -7,17 +7,17 @@ under the user's home, created on first use.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from ela.domain import ela_home
 
 __all__ = ["PersistenceSettings", "default_db_url"]
 
 
 def default_db_url() -> str:
     """``sqlite:///<home>/.ela/ela.db``: absolute, computed when asked, never at import time."""
-    return f"sqlite:///{(Path.home() / '.ela' / 'ela.db').as_posix()}"
+    return f"sqlite:///{(ela_home() / 'ela.db').as_posix()}"
 
 
 class PersistenceSettings(BaseSettings):

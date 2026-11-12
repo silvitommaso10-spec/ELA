@@ -69,8 +69,10 @@ from ela.permissions.rows import (
     RISK_POLICY,
     Rule,
     asks_at_every_use,
+    no_policy_for,
     no_session_covers,
     no_session_of,
+    row_of,
 )
 from ela.permissions.scope import scope_covers, targets_of
 from ela.ports import AuditLog, CapabilityRegistryPort, Clock, IdGenerator, NotFoundError
@@ -87,8 +89,12 @@ __all__ = [
     "Rule",
 ]
 
-POLICY_VERSION: Final = "v0.3"
+POLICY_VERSION: Final = "v0.4"
 """Which policy produced a decision; recorded in every decision and every audit event.
+
+**``v0.4`` since M13.14** (ADR 0068; decision 6): a ``HIGH`` that declares policy terms reads a row
+of its own, ``APPROVAL_UNLESS_POLICY``, and a policy of yours covers it — a Guardian that allows
+what it could not, under a table with one row more.
 
 **``v0.3`` since M13.9** (ADR 0063; decision 29): the Guardian learnt a third way to allow a row
 that asks unless authorized — the cover of an open guided session, under a rule of its own —, and
@@ -149,7 +155,12 @@ class PermissionGuardian:
         audit: AuditLog,
         *,
         decision_ttl: timedelta = DEFAULT_DECISION_TTL,
+        core: DeviceId | None = None,
     ) -> None:
+        """``core`` is the id of the Core among the devices (M13.14, ADR 0068): the composition
+        hands it over, because ``ela.permissions`` cannot import ``ela.devices``. ``None`` — no
+        Core known — means no step is on the Core, and a policy that covers only the Core covers
+        nothing: the fail-safe of §33."""
         if decision_ttl <= timedelta(0):
             raise ValueError(f"decision_ttl must be positive, not {decision_ttl}")
         self._registry = registry
@@ -157,6 +168,7 @@ class PermissionGuardian:
         self._ids = ids
         self._audit = audit
         self._decision_ttl = decision_ttl
+        self._core = core
 
     # ----------------------------------------------------------------------------------
     # The port: decide
@@ -173,6 +185,7 @@ class PermissionGuardian:
         authorization_uses: int = 0,
         author: PlanAuthor | None = None,
         session: SessionCover | None = None,
+        device_id: DeviceId | None = None,
     ) -> PermissionDecision:
         """Decide about one call; never raises for anything that happens inside the evaluation.
 
@@ -183,6 +196,11 @@ class PermissionGuardian:
         ``author`` is who wrote the plan of ``step``, and ``session`` the room's word about an
         open guided session (M13.9, ADR 0063; decision 29): together they are what covers a
         ``MEDIUM`` read that session's model wrote, with no grant. Nothing else reads them.
+
+        ``device_id`` is where the step is placed (M13.14, ADR 0068; decision 10), and **one rule
+        reads it, only to take away**: a policy whose terms say ``on_the_core`` does not cover a
+        step that is not on the Core — on a node, or where nobody said. It never allows anything
+        the Core would not (ADR 0019 §4, revised openly).
         """
         now = self._clock.now()
         decision_id = DecisionId(self._ids.new_uuid())
@@ -197,6 +215,7 @@ class PermissionGuardian:
                 now,
                 author,
                 session,
+                device_id is not None and device_id == self._core,
             )
         except Exception as error:  # the fail-safe of §33: doubt is DENIED, never an exception
             verdict = _Verdict(
@@ -250,6 +269,7 @@ class PermissionGuardian:
         now: datetime,
         author: PlanAuthor | None,
         session: SessionCover | None,
+        on_the_core: bool,
     ) -> _Verdict:
         # 1. Catalogue: the specification must be the registered one (ADR 0011 §2).
         try:
@@ -297,8 +317,9 @@ class PermissionGuardian:
                 targets,
             )
 
-        # 4. The policy row (ADR 0011 §3): the denials of the table come before any question.
-        rule = RISK_POLICY.get(risk)
+        # 4. The policy row (ADR 0011 §3): the denials of the table come before any question. The
+        #    row of the capability, not of its level alone (M13.14, ADR 0068): ``row_of``.
+        rule = row_of(registered)
         if rule is None or rule is Rule.DENY:
             return _Verdict(
                 PermissionOutcome.DENIED,
@@ -335,7 +356,15 @@ class PermissionGuardian:
         #     not (ADR 0011 §6). The Guardian never ignores a fact it was handed.
         if authorization is not None:
             mismatch = _mismatch(
-                authorization, registered, task, step, targets, authorization_uses, arguments, now
+                authorization,
+                registered,
+                task,
+                step,
+                targets,
+                authorization_uses,
+                arguments,
+                now,
+                on_the_core,
             )
             if mismatch is not None:
                 return _Verdict(
@@ -392,7 +421,9 @@ class PermissionGuardian:
                 risk,
                 targets,
             )
-        unusable = _unusable(authorization, authorization_uses, now, registered, arguments)
+        unusable = _unusable(
+            authorization, authorization_uses, now, registered, arguments, on_the_core
+        )
         if unusable is not None:
             return _Verdict(
                 PermissionOutcome.REQUIRES_APPROVAL,
@@ -486,11 +517,11 @@ class PermissionGuardian:
         targets do. If the audit log refuses the event the exception escapes and the decision is
         not returned: a decision that was not recorded does not exist.
 
-        ``device_id`` is the node the call is about (ADR 0019 §4): it reaches the audit event and
-        **nothing else**. :meth:`decide` does not take it and no rule of ADR 0011 reads it — a
-        node that could change an outcome would be a second permission axis, weaker than this one
-        and outside it, which is the mirror of why risk stays out of the orchestrator's score
-        (ADR 0017 §4).
+        ``device_id`` is the node the call is about (ADR 0019 §4): it reaches the audit event, and
+        since M13.14 **one rule of** :meth:`decide`, **only to take away** (ADR 0068; decision 10):
+        a policy that covers only the Core does not cover a step elsewhere. A node that could
+        *grant* would be a second permission axis, weaker than this one and outside it — the
+        reason of ADR 0019 §4, which still holds: this one can only deny a cover.
         """
         decision = self.decide(
             capability,
@@ -501,6 +532,7 @@ class PermissionGuardian:
             authorization_uses=authorization_uses,
             author=author,
             session=session,
+            device_id=device_id,
         )
         targets = decision.metadata["targets"]
         payload: dict[str, JsonValue] = {
@@ -548,6 +580,7 @@ def _mismatch(
     uses: int,
     arguments: JsonMapping,
     now: datetime,
+    on_the_core: bool,
 ) -> str | None:
     """Why ``authorization`` does not *cover* this call, or ``None`` if it does (ADR 0011 §6).
 
@@ -557,9 +590,10 @@ def _mismatch(
 
     **For a grant born from a yes**, then, a scope that does not cover the targets. **For a policy
     of §59** (``approval_id`` ``None``), the row first — no policy reaches a row that asks at every
-    use (ADR 0045 §3), and the reason names it — and then the half of the one predicate that says
-    *covers* (M13.12, ADR 0062; decision 4): the terms, the sites, the limits one at a time, the
-    arguments no policy covers. The other half, *usable*, is :func:`_unusable`'s.
+    use, and the reason is :func:`~ela.permissions.rows.no_policy_for`'s, the sentence of the
+    catalogue and of the birth (M13.14, ADR 0068) — and then the half of the one predicate that
+    says *covers* (M13.12, ADR 0062; decision 4): the terms, the place, the sites, the limits one at
+    a time, the arguments no policy covers. The other half, *usable*, is :func:`_unusable`'s.
     """
     if authorization.capability_id != spec.id:
         return f"authorization {authorization.id} is for {authorization.capability_id}"
@@ -576,12 +610,11 @@ def _mismatch(
                 f"cover targets {_describe(targets)}"
             )
         return None
-    if asks_at_every_use(spec.risk):
-        return (
-            f"authorization {authorization.id} is a standing policy (§59) and {spec.id} is "
-            f"{spec.risk.value}: only a grant born from an approval covers it"
-        )
-    found = shortfall(authorization, spec, arguments, now=now, gaps=UNCOVERED)
+    if asks_at_every_use(spec):
+        return f"authorization {authorization.id} is a standing policy (§59): {no_policy_for(spec)}"
+    found = shortfall(
+        authorization, spec, arguments, now=now, on_the_core=on_the_core, gaps=UNCOVERED
+    )
     return None if found is None else found.reason
 
 
@@ -591,15 +624,25 @@ def _unusable(
     now: datetime,
     spec: CapabilitySpec,
     arguments: JsonMapping,
+    on_the_core: bool,
 ) -> str | None:
     """Why a covering ``authorization`` cannot be used now — revoked, expired (closed bound, ADR
     0005 §2-bis) or exhausted — or ``None`` if it can. Not an incoherence: the normal "ask" of §62.
 
-    For a policy of §59 the revocation and the expiry are the other half of the one predicate
-    (M13.12, decision 4): revoked means not usable, so the step asks and is never denied.
+    For a policy of §59 the revocation, the expiry and — since M13.14 — the uses spent are the
+    other half of the one predicate (M13.12, decision 4): not usable, so the step asks and is
+    never denied.
     """
     if authorization.approval_id is None:
-        found = shortfall(authorization, spec, arguments, now=now, gaps=UNUSABLE)
+        found = shortfall(
+            authorization,
+            spec,
+            arguments,
+            now=now,
+            uses=uses,
+            on_the_core=on_the_core,
+            gaps=UNUSABLE,
+        )
         if found is not None:
             return found.reason
     elif authorization.expires_at is not None and authorization.expires_at <= now:

@@ -6,6 +6,7 @@
   della sessione e 16–23 della review, in `docs/milestones/M13.12.md`), e riletta lo stesso giorno dalla review del
   riepilogo (decisioni 24–27).
   **Riletta da ADR 0063 (M13.9)** il 2026-10-11: §1: il mondo chiuso dei termini si estende a `covers` — una policy nata prima smette di coprire il giorno in cui cambia lo schema della capability coperta (ADR 0063 §1).
+  **Rivista da ADR 0068 (M13.14)** il 2026-11-12: §1, §2, §3, §4, §5, §7, §12 — le righe della dichiarazione, gli usi e `USES`, le ragioni di `ADMITS`, i gap `EXHAUSTED` ed `ELSEWHERE`, il diniego di una `HIGH` e `POLICY_VERSION` `v0.4`, la «partirebbe» per luogo, e il gesto coperto solo da una policy della sua capability (ADR 0068 §3, §5, §6, §8).
 - **Data:** 2026-10-09
 - **Riferimenti spec:** §19, §27, §29, §30, §32, §33, §57, §59, §62
 - **Milestone:** M13.12

@@ -35,9 +35,10 @@ import hashlib
 import mimetypes
 import os
 import stat
-from collections.abc import Coroutine
+from collections.abc import Coroutine, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, ClassVar, Final
 
 from ela.domain import (
@@ -311,17 +312,25 @@ class BrowserDownloadTool(_BrowserTool):
         clock: Clock,
         ids: IdGenerator,
         *,
+        protected: Mapping[str, Path],
         name: str = BROWSER_DOWNLOAD_TOOL_NAME,
         pages: TaskPages,
         capability_id: CapabilityId = BROWSER_DOWNLOAD,
     ) -> None:
         super().__init__(capability_id, browsing, browser, clock, ids, name=name, pages=pages)
         self._root = resolve_workspace(root)
+        # What ELA uses to exist (M13.14, ADR 0068): a download is a write, and no write reaches it.
+        self._protected: Mapping[str, Path] = MappingProxyType(dict(protected))
 
     @property
     def root(self) -> Path:
         """The resolved root: ``ELA_FS_ROOT``, never created here."""
         return self._root
+
+    @property
+    def protected(self) -> Mapping[str, Path]:
+        """What ELA uses to exist, named: ``fs.write``'s list, and no download reaches it."""
+        return self._protected
 
     def _gestures(self, arguments: JsonMapping, site: str, address: str) -> Outcome | _Call:
         file, overwrite, click = (
@@ -366,7 +375,9 @@ class BrowserDownloadTool(_BrowserTool):
             looked = await self._installed(task) or looked
         if isinstance(looked, Outcome):
             return _refusal(looked, self.name)
-        refused, target = looked_for_a_write(self._root, looked.file, looked.overwrite)
+        refused, target = looked_for_a_write(
+            self._root, looked.file, looked.overwrite, protected=self._protected
+        )
         if refused is not None or target is None:
             return _refusal(refused or Outcome({}, IO_ERROR, "the file was not judged"), self.name)
         does = OVERWRITES_BY_DOWNLOAD if target.exists else CREATES_BY_DOWNLOAD
@@ -382,7 +393,9 @@ class BrowserDownloadTool(_BrowserTool):
         looked = self._looked(arguments)
         if isinstance(looked, Outcome):
             return looked
-        refused, _ = looked_for_a_write(self._root, looked.file, looked.overwrite)
+        refused, _ = looked_for_a_write(
+            self._root, looked.file, looked.overwrite, protected=self._protected
+        )
         if refused is not None:
             return refused
         return await self._ran(self._of(looked, decision), stop)
@@ -614,6 +627,7 @@ class AccountDownloadTool(_OnTheProfile, BrowserDownloadTool):
         clock: Clock,
         ids: IdGenerator,
         *,
+        protected: Mapping[str, Path],
         name: str = BROWSER_DOWNLOAD_AS_YOU_TOOL_NAME,
         pages: TaskPages,
     ) -> None:
@@ -624,6 +638,7 @@ class AccountDownloadTool(_OnTheProfile, BrowserDownloadTool):
             browser,
             clock,
             ids,
+            protected=protected,
             name=name,
             pages=pages,
             capability_id=BROWSER_DOWNLOAD_AS_YOU,

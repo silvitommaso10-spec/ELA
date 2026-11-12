@@ -3,9 +3,20 @@
   <div class="ela-stack ela-stack--tight">
     <p class="ela-title">{capability}</p>
     <p class="ela-caption">{description}</p>
-    <p class="ela-eyebrow">Siti</p>
+    <p class="ela-caption">{words}</p>
+    <p class="ela-eyebrow">Ambito</p>
     {sites}
+    <div class="ela-field">
+      <label class="ela-field__label" for="policy-place-{capability}">Un'altra voce</label>
+      <input class="ela-field__input" id="policy-place-{capability}" name="scope">
+      <p class="ela-field__help">Una voce dentro una di quelle qui sopra, come una cartella sotto quella dichiarata.</p>
+    </div>
     {limits}
+    <div class="ela-field">
+      <label class="ela-field__label" for="policy-uses-{capability}">Usi</label>
+      <input class="ela-field__input" id="policy-uses-{capability}" name="uses" type="number" min="1">
+      <p class="ela-field__help">Vuoto vuol dire senza limite di usi; un numero, quante volte al più.</p>
+    </div>
     <div class="ela-field">
       <label class="ela-field__label" for="policy-days-{capability}">Giorni</label>
       <input class="ela-field__input" id="policy-days-{capability}" name="days" type="number" min="{days_min}" max="{days_max}" required>
