@@ -13,6 +13,11 @@ settings, the backoff and the sentences that did not change are still read from 
 
 **Since M14.6 the price list is ADR 0061's** (§1 there): Haiku 5.5 with its two tiers, the cache
 of Sonnet 5.5, the profiles and the date. The codes and the default stay ADR 0057's.
+
+**Since M14.6b it is ADR 0067's** (§1 there): the three models without Haiku 4.5, four rows, the
+profiles, and the day a person read the pages again. The column ``effort`` stays, and it is read
+against the payload: ELA no longer asks a model whether it takes ``effort``, so a row «no» would be
+a model that wants back the refusal M14.6b took out.
 """
 
 from __future__ import annotations
@@ -47,6 +52,7 @@ from ela.ports import (
     PROVIDER_UNSUPPORTED_PARAMETER,
 )
 from ela.providers.anthropic.models import DEFAULT_MODEL, MODELS, PROFILES, model_for_hint
+from ela.providers.anthropic.payload import build_payload
 from ela.providers.anthropic.pricing import PRICES, TIERS
 from ela.providers.anthropic.provider import BACKOFF_BASE_SECONDS, BACKOFF_CAP_SECONDS
 from ela.providers.anthropic.settings import (
@@ -58,17 +64,19 @@ from ela.providers.anthropic.settings import (
 from ela.tombstones import (
     RETIRED_SETTINGS,
 )
+from tests.providers.support import request
 
 ADR_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0020-provider-anthropic.md"
 SPENDING_PATH = ADR_PATH.with_name("0057-spending-cap.md")
-PRICELIST_PATH = ADR_PATH.with_name("0061-haiku-5-5.md")
+PRICELIST_PATH = ADR_PATH.with_name("0067-three-models.md")
 PROFILES_HEADING = "#### I profili"
 MODEL_ROW = re.compile(
     r"^\| Claude [\w.\s]+ \| `([\w.-]+)` \| \S+ \| (\d+) \| (—|fino a \d+|oltre \d+) "
     r"\| ([\d,]+) \| ([\d,]+) \| ([\d,]+) \| (sì|no) \|$"
 )
-"""A row of the price list of ADR 0061: a model and a tier — ``—`` for a model with one price,
-``fino a N`` and ``oltre N`` for the two tiers of a model priced by the length of the prompt."""
+"""A row of the price list of ADR 0067, in the form of ADR 0061: a model and a tier — ``—`` for a
+model with one price, ``fino a N`` and ``oltre N`` for the two tiers of a model priced by the length
+of the prompt."""
 HINT_ROW = re.compile(r"^\| ((?:`\w+`(?:, )?)+) \| `([\w.-]+)` \|$")
 ERROR_ROW = re.compile(r"^\| (.+) \| (.+) \| `(provider\.\w+)` \| (\*\*sì\*\*|no) \|$")
 SETTING_ROW = re.compile(r"^\| `(ELA_\w+)` \| (.+) \| `?([\w.-]+)`? \| (.+) \|$")
@@ -93,12 +101,12 @@ def spending_text() -> str:
 
 
 def pricelist_text() -> str:
-    """ADR 0061, where the models, the prices, the profiles and the date are today (M14.6)."""
+    """ADR 0067, where the models, the prices, the profiles and the date are today (M14.6b)."""
     return PRICELIST_PATH.read_text(encoding="utf-8")
 
 
 def profiles_section() -> str:
-    """ADR 0061's table of the profiles, alone: its row shape is also the shape of a column an
+    """ADR 0067's table of the profiles, alone: its row shape is also the shape of a column an
     earlier ADR adds, so the hints are read under their heading and nowhere else."""
     text = pricelist_text()
     start = text.index(PROFILES_HEADING)
@@ -133,7 +141,7 @@ def documented_models(
         )
         _, _, tiers = rows.setdefault(model_id, (int(match.group(2)), match.group(7) == "sì", []))
         tiers.append(tier)
-    assert rows, "ADR 0061 must contain the model table"
+    assert rows, "ADR 0067 must contain the model table"
     return rows
 
 
@@ -142,7 +150,12 @@ def test_the_model_table_matches_the_code() -> None:
     assert set(rows) == set(MODELS) == set(PRICES)
     for model_id, (max_output, effort, tiers) in rows.items():
         assert MODELS[model_id].max_output_tokens == max_output
-        assert MODELS[model_id].supports_effort is effort
+        assert effort, (
+            f"ADR 0067 §1 says {model_id} does not take effort: ELA no longer refuses effort to "
+            "any model (M14.6b), and a model without it wants back the refusal M14.6b took out"
+        )
+        sent = build_payload(request(parameters={"effort": "high"}), MODELS[model_id], 1)
+        assert sent["output_config"] == {"effort": "high"}, model_id
         base, *above = tiers
         assert base[0] in {"—"} | {f"fino a {bound}" for bound, _ in TIERS.get(model_id, ())}
         assert (PRICES[model_id].input, PRICES[model_id].output, PRICES[model_id].cache_read) == (
@@ -160,18 +173,18 @@ def documented_price_check(text: str) -> date:
     match = next(
         (CHECKED_ON.match(line) for line in text.splitlines() if CHECKED_ON.match(line)), None
     )
-    assert match is not None, "ADR 0061 §1 must say when the prices were last checked"
+    assert match is not None, "ADR 0067 §1 must say when the prices were last checked"
     return date.fromisoformat(match.group(1))
 
 
 def price_check_problem(checked: date, today: date) -> str | None:
     """Why this price check is not good enough, or ``None`` if it is (review of M7.1)."""
     if checked > today:
-        return f"ADR 0061 §1 says the prices were checked on {checked}, which is in the future"
+        return f"ADR 0067 §1 says the prices were checked on {checked}, which is in the future"
     age = (today - checked).days
     if age > MAX_PRICE_AGE_DAYS:
         return (
-            f"the Anthropic prices in ADR 0061 §1 were last checked {age} days ago ({checked}). "
+            f"the Anthropic prices in ADR 0067 §1 were last checked {age} days ago ({checked}). "
             "Re-verify them on platform.claude.com/docs/en/about-claude/pricing, update the table "
             "and ela/providers/anthropic/pricing.py if they changed, then update the date there."
         )
@@ -209,11 +222,8 @@ def test_an_old_or_impossible_price_check_is_detected() -> None:
 def test_the_cache_read_rate_of_the_adr_is_the_code_s_model_by_model() -> None:
     """The ADR states the rule in words; the code states it in numbers, model by model. ADR 0020 §6
     said a tenth on all three; ADR 0057 §3 gave Opus a twentieth; the page of 2026-10-08 gives
-    Sonnet 5.5 a twentieth too (ADR 0061)."""
-    assert (
-        "il 5% dell'input su Opus 5.5 e Sonnet 5.5, il 10% su Haiku 4.5 e Haiku 5.5"
-        in pricelist_text()
-    )
+    Sonnet 5.5 a twentieth too (ADR 0061); since M14.6b the sentence has no Haiku 4.5 (ADR 0067)."""
+    assert "il 5% dell'input su Opus 5.5 e Sonnet 5.5, il 10% su Haiku 5.5" in pricelist_text()
     twentieth = {"claude-opus-5-5", "claude-sonnet-5-5"}
     for model_id, price in PRICES.items():
         share = 20 if model_id in twentieth else 10

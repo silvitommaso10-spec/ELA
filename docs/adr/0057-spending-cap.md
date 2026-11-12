@@ -13,6 +13,9 @@
   di §3 sono quelli di ADR 0061 §1, con Haiku 5.5 nel profilo economico e la lettura dalla cache di Sonnet 5.5 a 0,10 $.
   **Riletta da ADR 0060 (M14.3)** il 2026-10-09: il cancello di §6 sta anche nel gateway di una sessione guidata, con
   il bilancio della sessione, e chiude a zero la prenotazione di una chiamata fermata prima di agire (ADR 0060 §2).
+  **Rivista da ADR 0067 (M14.6b)** il 2026-11-11: §2 — i casi peggiori di oggi sono quelli di ADR 0067
+  §2, senza Haiku 4.5; un id fuori dal listino è `provider.unknown_model_hint`, negato prima della prenotazione, e la
+  risposta dice dove sta (ADR 0067 §3).
 - **Data:** 2026-10-06
 - **Riferimenti spec:** §25, §26, §30, §32, §33, §57, §63, §64
 - **Milestone:** M14.1
@@ -91,6 +94,9 @@ di una chiamata è
 | Opus 5.5 | 4,065536 $ |
 | Sonnet 5.5 | 2,032768 $ |
 | Haiku 4.5 | 0,216384 $ |
+
+*Dal 2026-11-11 (M14.6b) i casi peggiori di oggi sono quelli di ADR 0067 §2: questa tabella è la storia del 2026-10-06, e
+Haiku 4.5 non è più nel listino.*
 
 e con un tetto di 30 $ stanno in volo al più sette chiamate a Opus. **La misura per rivederlo è lo usage di un mese**: i
 token d'ingresso veri delle chiamate di ELA, confrontati con i byte dell'input che le ha fatte — non una credenza sul

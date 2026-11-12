@@ -36,6 +36,15 @@ I segnaposto sono ``<id>`` — il task del passo — e ``<approval-id>``, la sua
 il PC, il ``Ctrl-C``, il riavvio del Core. La riga finale è quella di M6.3c: «La prova è passata»
 solo senza FALLITO, senza SALTATO e con ogni GUARDATO un sì. Tutto va anche nel file, in
 ``~/Downloads``.
+
+***Dal 2026-11-11*** (M14.6b, risposta 20 della review della SPEC): **la prova è la registrazione
+del 2026-10-07, e non si rifà.** Le righe ``costo`` di §23 nominano Haiku 4.5, che il listino di ELA
+non ha più, e ``main()`` se ne accorge prima di ogni chiamata e prima di toccare qualcosa — nemmeno
+il file dell'uscita —: si ferma e lo dice. La condizione è derivata dalla sezione e da ``MODELS``,
+non da un flag, e non scatta all'import, perché altri script importano questo. *Dal 2026-10-08 al
+2026-11-11 chi la lanciava faceva chiamate vere, chiedeva il PC e cambiava due volte il tetto nel*
+``.env`` *prima di avere FALLITO ai blocchi di Haiku 4.5 dei passi 4–7: il profilo economico era già
+Haiku 5.5.*
 """
 
 from __future__ import annotations
@@ -56,6 +65,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import prova_m6_3c as base  # noqa: E402 — a sibling in scripts/, which is not a package
 
 from ela.cli.client import Unreachable  # noqa: E402
+from ela.providers.anthropic.models import MODELS  # noqa: E402
 
 ROOT = base.ROOT
 GUIDE = base.GUIDE
@@ -554,6 +564,31 @@ def keyed() -> bool:
     return bool(base.Api().get("/diagnostics")["providers"].get("anthropic") == "AVAILABLE")
 
 
+RECORDED: Final = "2026-10-07"
+"""The day the proof was made: what §23 records (M14.6b, decision 20)."""
+
+
+def models_gone(todo: Mapping[int, Sequence[base.Block]]) -> list[str]:
+    """The models the ``costo`` lines of the section name and the list no longer has, sorted."""
+    named = {
+        line.removesuffix(ON_A_NODE).strip()
+        for blocks in todo.values()
+        for block in blocks
+        if block.kind == "costo"
+        for line in block.lines
+    }
+    return sorted(named - set(MODELS))
+
+
+def gone_from_the_list(gone: Sequence[str]) -> str:
+    """What ``main()`` says when the section names a model the list no longer has."""
+    return (
+        f"La prova di M14.1 non parte: la sezione 23 nomina {', '.join(gone)}, che il listino di "
+        f"ELA non ha più (M14.6b). La prova è la registrazione del {RECORDED}, e non si rifà: "
+        "nessuna chiamata fatta, nessun tetto cambiato, nessun file scritto."
+    )
+
+
 def default_out() -> Path:
     return Path.home() / "Downloads" / f"prova-m14.1-{datetime.now():%Y%m%d-%H%M%S}.txt"
 
@@ -564,6 +599,10 @@ def main(argv: Sequence[str] | None = None, ask: base.Ask = input) -> int:
     arguments = parser.parse_args(argv)
     out = arguments.out or default_out()
     todo = base.steps(base.blocks(GUIDE.read_text(encoding="utf-8"), HEADING))
+    gone = models_gone(todo)
+    if gone:
+        print(gone_from_the_list(gone))
+        return 1
     with out.open("w", encoding="utf-8") as written:
         report = base.Report(written)
         report.say(f"La prova a mano di M14.1, {datetime.now():%Y-%m-%d %H:%M:%S}")

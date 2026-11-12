@@ -34,13 +34,14 @@ from tests.docs.guided_ports import ACCOUNT_PORTS, GUIDED_PORTS, STEPS_PORTS
 from tests.docs.test_adr_cli import coded_commands, commands_after_0061
 from tests.docs.test_adr_composition import coded_routes, routes_after_0057
 from tests.docs.test_adr_placement import _rules_up_to
+from tests.docs.test_adr_three_models import ADR_PATH as TODAY_PATH
+from tests.docs.test_adr_three_models import WORST_ROW
 
 ROOT = Path(__file__).resolve().parents[2]
 ADR_DIR = ROOT / "docs" / "adr"
 ADR_PATH = ADR_DIR / "0057-spending-cap.md"
 STATO = ROOT / "docs" / "STATO.md"
 INDEX_ROW = re.compile(r"^\| \[0057\]\(0057-spending-cap\.md\) \| (.+?) \| (.+?) \|$", re.MULTILINE)
-WORST_ROW = re.compile(r"^\| (Opus 5\.5|Sonnet 5\.5|Haiku 4\.5) \| ([\d,]+) \$ \|$", re.MULTILINE)
 REVISED = (
     "0020-provider-anthropic.md",
     "0021-started-protocol-and-model-complete.md",
@@ -114,21 +115,19 @@ def test_the_four_sentences_of_a_denial_are_the_gate_s_with_their_codes() -> Non
 
 
 def test_the_table_of_the_worst_cases_is_the_price_list_s() -> None:
-    """Decision 1: the three costs are a declared constraint, and they are the code's numbers."""
+    """Decision 1: the costs are a declared constraint, and they are the code's numbers. Since
+    M14.6b (decision 4) the table of today is ADR 0067 §2, read at the default output; the table of
+    §2 here is the history of 2026-10-06, with Haiku 4.5 in it."""
     rows = {
-        name: Decimal(amount.replace(",", ".")) for name, amount in WORST_ROW.findall(adr_text())
-    }
-    ids = {
-        "Opus 5.5": "claude-opus-5-5",
-        "Sonnet 5.5": "claude-sonnet-5-5",
-        "Haiku 4.5": "claude-haiku-4-5-20251001",
+        model: Decimal(amount.replace(",", "."))
+        for model, output, amount in WORST_ROW.findall(TODAY_PATH.read_text(encoding="utf-8"))
+        if int(output) == DEFAULT_MAX_OUTPUT_TOKENS
     }
 
-    assert set(rows) == set(ids)
-    for name, amount in rows.items():
-        model = MODELS[ids[name]]
-        assert worst_cost(model, output_tokens=DEFAULT_MAX_OUTPUT_TOKENS) == amount, name
-    assert dollars(rows["Opus 5.5"]) == "4.065536"
+    assert set(rows) == set(MODELS)
+    for model, amount in rows.items():
+        assert worst_cost(MODELS[model], output_tokens=DEFAULT_MAX_OUTPUT_TOKENS) == amount, model
+    assert dollars(rows["claude-opus-5-5"]) == "4.065536"
 
 
 def test_the_adrs_it_revises_say_so_on_their_state_line() -> None:

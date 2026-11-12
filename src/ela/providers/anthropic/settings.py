@@ -23,7 +23,7 @@ from typing import Annotated, Final
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from ela.providers.anthropic.models import LARGEST_OUTPUT_TOKENS
+from ela.providers.anthropic.models import SMALLEST_OUTPUT_TOKENS
 from ela.tombstones import (
     refuse_retired,
 )
@@ -88,16 +88,16 @@ class AnthropicSettings(BaseSettings):
         return self
 
     @model_validator(mode="after")
-    def _budget_fits_a_model(self) -> AnthropicSettings:
-        """A default budget larger than **any** model can produce is a misconfiguration.
+    def _budget_fits_every_model(self) -> AnthropicSettings:
+        """A default budget the smallest model cannot produce is a misconfiguration (M14.6b).
 
-        Not "larger than the default model": there is no configured default model any more, and a
-        budget above one model but within another is clamped per model when the payload is built
-        (``payload.build_payload``), which is a smaller model answering, not an error.
+        The default is sent to whichever model a route chooses, so it must fit every one: held
+        under the smallest output of the list, derived, it does, and the payload sends it without a
+        clamp (ADR 0067, revising ADR 0020 §3).
         """
-        if self.anthropic_max_output_tokens > LARGEST_OUTPUT_TOKENS:
+        if self.anthropic_max_output_tokens > SMALLEST_OUTPUT_TOKENS:
             raise ValueError(
                 f"anthropic_max_output_tokens {self.anthropic_max_output_tokens} exceeds "
-                f"the {LARGEST_OUTPUT_TOKENS} tokens the largest model can produce"
+                f"the {SMALLEST_OUTPUT_TOKENS} tokens the smallest model can produce"
             )
         return self

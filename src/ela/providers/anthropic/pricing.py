@@ -1,9 +1,10 @@
 """What a call costs, estimated from the tokens it used (§32 "provider usage metadata").
 
-Prices are per million tokens, in USD, from the official pricing table read on **2026-10-08**
-(M14.6); ADR 0061 carries the same numbers — it revises ADR 0057 §3, read on 2026-10-06, which
-revised ADR 0020 §6 — and ``tests/docs/test_adr_provider.py`` keeps the two equal. They are a
-**stima**: the invoice is Anthropic's, this is what ELA believes it spent.
+Prices are per million tokens, in USD, from the official pricing table; ADR 0067 carries the same
+numbers, with the day a person last read the page — it revises ADR 0061 §1, which revised ADR 0057
+§3 and ADR 0020 §6 — and ``tests/docs/test_adr_provider.py`` keeps the two equal. They are a
+**stima**: the invoice is Anthropic's, this is what ELA believes it spent. A model that left the
+table is not priced again: what was spent on it is read as it was written (M14.6b).
 
 Since M14.6 a model can have **tiers**: Haiku 5.5 "is priced by prompt length: a prompt of over
 100,000 tokens pays higher prices". :data:`PRICES` keeps the price of a short prompt, :data:`TIERS`
@@ -24,7 +25,7 @@ from decimal import ROUND_CEILING, Decimal
 from types import MappingProxyType
 from typing import Final
 
-from ela.providers.anthropic.models import HAIKU_4_5, HAIKU_5_5, OPUS_5_5, SONNET_5_5, Model
+from ela.providers.anthropic.models import HAIKU_5_5, OPUS_5_5, SONNET_5_5, Model
 
 __all__ = ["CURRENCY", "PRICES", "TIERS", "Price", "estimate_cost", "price_for", "worst_cost"]
 
@@ -40,7 +41,7 @@ to zero would make a long series of cheap calls look free."""
 @dataclass(frozen=True, slots=True)
 class Price:
     """Dollars per million tokens, for one tier. ``cache_read`` is 5% of ``input`` on Opus 5.5 and
-    Sonnet 5.5, 10% on Haiku 4.5 and Haiku 5.5 (the pricing page, 2026-10-08)."""
+    Sonnet 5.5, 10% on Haiku 5.5 (the pricing page, 2026-10-08)."""
 
     input: Decimal
     output: Decimal
@@ -52,7 +53,6 @@ PRICES: Final[Mapping[str, Price]] = MappingProxyType(
         OPUS_5_5: Price(Decimal("4"), Decimal("20"), Decimal("0.2")),
         SONNET_5_5: Price(Decimal("2"), Decimal("10"), Decimal("0.1")),
         HAIKU_5_5: Price(Decimal("0.10"), Decimal("0.50"), Decimal("0.01")),
-        HAIKU_4_5: Price(Decimal("1"), Decimal("5"), Decimal("0.1")),
     }
 )
 """Each model's price for a short prompt — the only price of a model without :data:`TIERS`."""

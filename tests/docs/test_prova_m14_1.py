@@ -23,11 +23,15 @@ from typing import Any
 
 import pytest
 
-from ela.providers.anthropic.models import MODELS
+from ela.providers.anthropic.models import HAIKU_5_5
+from tests.domain.examples import HAIKU_4_5_ID
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "prova_m14_1.py"
 PLACEHOLDER = re.compile(r"<[^>\s][^>]*>")
+CALLED_ON_2026_10_07 = frozenset({"claude-opus-5-5", "claude-sonnet-5-5", HAIKU_4_5_ID})
+"""The models the proof called on the day it was made, as §23 records them (M14.6b): written here
+and dated, not read from ``MODELS`` — the list has changed since, and the record has not."""
 HERE = "6c38f1c5-6cda-5680-8a7a-4f061588deed"
 PC = "5ddae87a-0000-4000-8000-000000000001"
 
@@ -151,14 +155,14 @@ def test_every_line_of_the_scripts_kinds_is_in_its_vocabulary() -> None:
             if block.kind == "guarda":
                 module.base.sign_of(block)  # raises on a line outside the vocabulary
     for _, line in lines_of("costo"):
-        assert line.removesuffix(module.ON_A_NODE).strip() in MODELS, line
+        assert line.removesuffix(module.ON_A_NODE).strip() in CALLED_ON_2026_10_07, line
 
 
 def test_the_three_models_of_the_profiles_are_each_called() -> None:
     """Decision 16: Opus 5.5, Sonnet 5.5 and Haiku with the pinned id, each with its cost read."""
     called = {line for number, line in lines_of("costo") if number == 4}
 
-    assert called == {"claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-4-5-20251001"}
+    assert called == CALLED_ON_2026_10_07
 
 
 def test_the_ctrl_c_is_said_after_the_claim_is_seen_and_before_the_silence_is_checked() -> None:
@@ -169,6 +173,52 @@ def test_the_ctrl_c_is_said_after_the_claim_is_seen_and_before_the_silence_is_ch
     assert kinds.index("tace") < kinds.index("aspetta")
     (look,) = [block for block in marked()[6] if block.kind == "guarda"]
     assert look.lines == ["risultato STARTED su un nodo"]
+
+
+def never(*_: object, **__: object) -> Any:
+    raise AssertionError("the proof went past the check of its models")
+
+
+def test_a_section_that_names_a_model_the_list_has_not_stops_before_anything(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Decision 20 of M14.6b: §23 names the id of Haiku 4.5 in its ``costo`` lines, and ``MODELS``
+    no longer has it. ``main()`` stops before the world is asked anything — no call, no cap, no
+    file — and says that the proof is the record of 2026-10-07. Derived from the section and the
+    list, not from a flag: the section as it stands is the case."""
+    module = script()
+    monkeypatch.setattr(module, "preconditions", never)
+    monkeypatch.setattr(module.base, "Api", never)
+    out = tmp_path / "prova.txt"
+
+    code = module.main(["--out", str(out)], ask=never)
+
+    printed = capsys.readouterr().out
+    assert code == 1
+    assert HAIKU_4_5_ID in printed
+    assert "la registrazione del 2026-10-07" in printed
+    assert not out.exists()
+
+
+def test_a_section_with_the_models_of_today_goes_on_to_the_world(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The other value: the section with the models of today goes on, to the check of step 1."""
+    module = script()
+    today = tmp_path / "GETTING_STARTED.md"
+    today.write_text(guide().replace(HAIKU_4_5_ID, HAIKU_5_5), encoding="utf-8")
+    monkeypatch.setattr(module, "GUIDE", today)
+    asked: list[object] = []
+
+    def the_world(report: object) -> bool:
+        asked.append(report)
+        return False
+
+    monkeypatch.setattr(module, "preconditions", the_world)
+
+    module.main(["--out", str(tmp_path / "prova.txt")], ask=never)
+
+    assert len(asked) == 1
 
 
 def test_the_file_is_in_downloads_with_the_name_of_the_milestone() -> None:

@@ -26,6 +26,7 @@ from types import MappingProxyType
 from typing import Final
 
 from ela.composition.errors import ConfigurationError
+from ela.composition.routes import every_route_names_a_model
 from ela.composition.settings import NodeConfig
 from ela.composition.system import PowerReading, SystemClock, UuidGenerator, power_reading
 from ela.devices import UnsupportedOperatingSystemError, operating_system
@@ -297,12 +298,16 @@ def build_node(
     # thing to break, which is why criterion 12 makes it fail with a reason.
     providers = ProviderRegistry((anthropic_provider(the_clock, ids, settings=config.anthropic),))
     try:
-        router = ModelRouter(config.routing.policy(), providers)
+        policy = config.routing.policy()
+        router = ModelRouter(policy, providers)
     except RoutingError as wrong:
         raise ConfigurationError(
             f"ELA_MODEL_ROUTES cannot be used ({wrong.code}): {wrong}. On a node it must be the "
             "same table the Core has, or every call the node answers fails verification."
         ) from wrong
+    # The Core's check, with the Core's function (M14.6b, decision 21): a node whose ``.env`` pins
+    # a model the list no longer has stops here, instead of refusing every call it is given.
+    every_route_names_a_model(policy)
 
     # Beside the node's own state and never inside a workspace — a node has none — for the reason
     # ADR 0029 §1 gives about ``ELA_CAPTURE_DIR``: private working files of ELA go where nothing

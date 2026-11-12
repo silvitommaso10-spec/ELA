@@ -50,7 +50,8 @@ def world(**fields: Any) -> Any:
 # --- the price list ------------------------------------------------------------------------------
 
 
-def test_a_call_costs_what_elas_price_list_says() -> None:
+def test_a_call_of_haiku_4_5_costs_what_the_page_of_2026_10_08_said() -> None:
+    """The measure's own price of Haiku 4.5, dated: ELA's list no longer has it (M14.6b)."""
     plain = call(model=HAIKU, input_tokens=1000, output_tokens=100)
     assert plain.nocache == (1000 * Decimal(1) + 100 * Decimal(5)) / MILLION
     assert plain.billed == plain.nocache

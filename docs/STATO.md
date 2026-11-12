@@ -135,6 +135,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.4d` | Proposta | Lo shell del browser vuoto gira senza il sandbox di Chromium |
 | 13 — Il permesso prima dell'azione | `M13.4e` | Implementata | Alla chiusura di ELA nessuno aspetta il browser, e il processo può non uscire |
 | 13 — Il permesso prima dell'azione | `M13.4f` | Implementata | Il confine del browser: i tool guardano dove la pagina è, e il cancello guarda le richieste del browser invece di rifarle |
+| 13 — Il permesso prima dell'azione | `M13.4g` | Proposta | Il click che apre un'altra pagina, con il browser del profilo: un'azione che a volte non dice la sua pagina |
 | 13 — Il permesso prima dell'azione | `M13.5` | Proposta | Computer control: il muro dichiarato prima di cominciare |
 | 13 — Il permesso prima dell'azione | `M13.6` | Proposta | Spostare un lavoro già in corso: il ripiazzamento, quando due capability sanno dichiararsi ripetibili |
 | 13 — Il permesso prima dell'azione | `M13.7` | Proposta | Il terminale su un nodo: il Job Object, e `argv` che su Windows diventa una stringa |
@@ -150,12 +151,13 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.14` | Proposta | Le policy di Tommaso arrivano alle azioni HIGH |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.1` | Implementata | Il tetto di spesa: la chiave di ELA, e un limite che ELA fa rispettare |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.1b` | Implementata | La docstring del tetto dice il secondo tetto giusto: il limite dell'organizzazione |
+| 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.1c` | Proposta | Il caso peggiore senza prezzo: un ramo e un rifiuto che nessun produttore raggiunge |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.2` | Implementata | Il Planner: ELA scrive i piani da sola |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.3` | Implementata | Il browser guidato dal modello: da una frase, il modello guarda la pagina e sceglie il gesto dopo |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.4` | Proposta | Il computer guidato dal modello: lo schermo, con il meccanismo di M14.3 |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.5` | Proposta | Il contesto nel Planner: che cosa ELA sa della giornata, nel prompt che scrive un piano |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.6` | Implementata | Haiku 5.5 nel listino: due fasce di prezzo, il caso peggiore che le conosce, e il profilo economico al modello nuovo |
-| 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.6b` | Proposta | Haiku 4.5 esce dal listino: il modello che nessun profilo nomina, e le due prove che poggiano solo su di lui |
+| 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.6b` | Implementata | Haiku 4.5 esce dal listino: il modello che nessun profilo nomina, e le due prove che poggiano solo su di lui |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.7` | Proposta | Il lavoro su un progetto: una sessione di Claude Code in un worktree, e il diff che si approva prima del branch |
 | 15 — *senza nome* | `M15.2` | Proposta | Le skill: un lavoro già riuscito, salvato con il suo verifier, da cui il Planner riparte |
 | 17 — Design | `M17.1` | Implementata | Il Design System: l'identità minima, e le regole che ogni superficie di ELA eredita |
@@ -177,8 +179,8 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **66** | `docs/adr/NNNN-*.md` |
-| Milestone | **98, di cui 79 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| ADR scritti | **67** | `docs/adr/NNNN-*.md` |
+| Milestone | **100, di cui 80 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **73** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **15** | `pyproject.toml` |
 | Port | **36** | i `Protocol` di `src/ela/ports.py` |
@@ -712,7 +714,9 @@ cambiano. In quest'ordine:
    stesso branch, nell'ordine, M13.9b, **M13.9c**, M13.10b, M13.13; ***annotato il 2026-11-11***: **fatte**, con la
    prova a mano passata a `ead73aa`, e ADR 0066 è Accettata: il merge lo fa Tommaso, e la prossima è M13.14);
 2. **M13.14**, le policy di Tommaso arrivano alle azioni `HIGH` (5.14);
-3. **M13.11**, il browser sul PC;
+3. **M13.11**, il browser sul PC (***annotato il 2026-11-12***, decisione 36 della review dopo la CI rossa di `a5a74fd`
+   sul branch di M14.6b: **prima di lei [M13.4g](milestones/M13.4g.md)**, registrata, `Proposta` — il click che apre
+   un'altra pagina, con il browser del profilo, che a volte non dice la sua pagina —);
 4. **M14.7**, il lavoro su un progetto di Tommaso con una sessione di Claude Code (5.7);
 5. **M13.5**, con la condizione d'ingresso invariata (5.11);
 6. **M14.4**, il computer guidato dal modello, subito dopo M13.5;
@@ -722,7 +726,10 @@ cambiano. In quest'ordine:
 10. **M17.4**, il redesign, alla fine.
 
 **M14.6b** — Haiku 4.5 esce dal listino — sta **fuori dalla fila**, con una condizione: si fa prima della prossima
-rilettura del listino, entro il 2026-11-28 (5.12).
+rilettura del listino, entro il 2026-11-28 (5.12). ***Annotato il 2026-11-12***: **fatta**, entro la condizione (5.12).
+***Annotato il 2026-11-11*** (risposta 30 della review della SPEC di M14.6b): **M14.1c** — il caso peggiore senza
+prezzo, un ramo e un rifiuto che nessun produttore raggiunge — è registrata **fuori dalla fila**, senza una condizione
+([`milestones/M14.1c.md`](milestones/M14.1c.md)): decide se il ramo esce o trova il suo produttore.
 
 **La Fase 14 comincia prima che la Fase 13 sia chiusa**, e le voci delle due fasi lo dicono, con la
 ragione (5.11 e 5.12). ***Annotato il 2026-10-02***: **M9.7** (ogni blocco della guida che mostra un'uscita della CLI
@@ -1225,7 +1232,10 @@ dopo M13.11 e prima di M13.5, quindi prima di M14.4; **M14.6b** sta fuori dalla 
   nomina da M14.6, dal 2026-11-01 il libro del mese non ha prenotazioni di ottobre, e la data di ritiro della sua pagina è
   passata. **Fuori dalla fila**, con una condizione: si fa prima della prossima rilettura del listino, **entro il
   2026-11-28** ([`milestones/M14.6b.md`](milestones/M14.6b.md)). Fino a lei, la riga di M14.6 qui sopra — Haiku 4.5 nel
-  listino senza profilo — resta vera.
+  listino senza profilo — resta vera. ***Annotato il 2026-11-12***: **M14.6b è fatta**, entro la condizione — Haiku 4.5
+  è uscito dal listino, la prova a mano è passata a `e41b8a8`, e [ADR 0067](adr/0067-three-models.md) è Accettata —, e
+  la riga di M14.6 qui sopra non è più vera: il listino ha tre modelli, riletti il 2026-11-11, e la prossima rilettura è
+  entro il 2026-12-11.
 
 **La Fase 14 comincia prima che la Fase 13 sia chiusa** (Tommaso e il revisore, 2026-09-30): dopo M6.3c,
 M13.1c e M13.1d, e prima di M13.9. La fila intera sta nella 5.10, e la voce della Fase 13, la 5.11, lo

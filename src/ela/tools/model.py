@@ -52,6 +52,7 @@ from ela.ports import (
     PROVIDER_ERROR_CODES,
     PROVIDER_NO_OUTPUT,
     PROVIDER_UNAVAILABLE,
+    PROVIDER_UNKNOWN_MODEL_HINT,
     ROUTING_ERROR_CODES,
     Clock,
     IdGenerator,
@@ -71,6 +72,7 @@ __all__ = [
     "MODEL_TOOL_NAME",
     "ROUTING_ARGUMENTS",
     "ModelCompleteTool",
+    "placed",
     "routing_arguments",
 ]
 
@@ -124,6 +126,33 @@ def routing_arguments(arguments: JsonMapping) -> tuple[str | None, str | None] |
         values.append(given)
     task_type, model_hint = values
     return task_type, model_hint
+
+
+ROUTES_VARIABLE: Final = "ELA_MODEL_ROUTES"
+DEFAULT_ROUTE_VARIABLE: Final = "ELA_MODEL_DEFAULT_ROUTE"
+"""Where a route's profile is written: the two variables of the routing table (ADR 0022 §8). Named
+here and not imported, because ``ela.tools`` does not import ``ela.routing`` (ADR 0022 §2)."""
+
+
+def placed(error: ErrorMetadata, task_type: str | None, model_hint: str | None) -> ErrorMetadata:
+    """``error`` with where its hint is written, when the provider says it names no model.
+
+    The provider knows the hint and not where it came from; the tool knows both (M14.6b, decisions
+    6 and 7). The router chose the step's ``model_hint`` when there was one, else the profile of
+    the route of ``task_type``, else the profile of the default route (ADR 0022 §3) — and the
+    message says which, after the provider's words. Same code, same ``retryable``, same
+    ``tool_name``: nobody decides by reading the message (ADR 0023 §10). Every other error passes
+    as it came.
+    """
+    if error.code != PROVIDER_UNKNOWN_MODEL_HINT:
+        return error
+    if model_hint:
+        where = "it is the step's model_hint"
+    elif task_type is not None:
+        where = f"it is the profile of the route of task type {task_type!r} ({ROUTES_VARIABLE})"
+    else:
+        where = f"it is the profile of the default route ({DEFAULT_ROUTE_VARIABLE})"
+    return error.model_copy(update={"message": f"{error.message}: {where}"})
 
 
 QUOTED_REQUEST_ID: Final = UUID(int=0)
@@ -204,7 +233,9 @@ class ModelCompleteTool(Tool):
         provider's bound instead of its answer (M14.1, ADR 0057).
 
         A refusal on the way — arguments, route, provider — is an error with the code the run
-        would fail with: a call that cannot be bounded is a call that is not made.
+        would fail with: a call that cannot be bounded is a call that is not made. A hint that
+        names no model is refused here and only here — :meth:`_run` never meets one, because the
+        gate asks this first (M14.6b) — and the refusal says where the hint is written.
         """
         prepared = self._prepared(arguments, QUOTED_REQUEST_ID)
         if isinstance(prepared, Outcome):
@@ -214,7 +245,11 @@ class ModelCompleteTool(Tool):
                 tool_name=self.name,
             )
         provider, request, _ = prepared
-        return await provider.worst_case(request)
+        bound = await provider.worst_case(request)
+        routing = routing_arguments(arguments)
+        if isinstance(bound, ErrorMetadata) and routing is not None:
+            return placed(bound, *routing)
+        return bound
 
     def _prepared(
         self, arguments: JsonMapping, request_id: UUID

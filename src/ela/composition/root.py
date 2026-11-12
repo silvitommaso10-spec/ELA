@@ -24,6 +24,7 @@ from urllib.parse import urlsplit
 
 from ela.audit.verifier import AuditVerifier
 from ela.composition.errors import ConfigurationError
+from ela.composition.routes import default_route_model, every_route_names_a_model
 from ela.composition.settings import Settings, env_file
 from ela.composition.system import (
     PowerReading,
@@ -98,7 +99,6 @@ from ela.infrastructure.persistence import (
 from ela.perception import PerceptionCore
 from ela.permissions import (
     GUIDED_ROUTE,
-    UNDECLARED_MODEL,
     PermissionGuardian,
     production_catalogue,
 )
@@ -126,11 +126,10 @@ from ela.ports import (
     Vault,
 )
 from ela.providers.anthropic import anthropic_gateway, anthropic_provider
-from ela.providers.anthropic.models import model_for_hint
 from ela.providers.elevenlabs import ElevenLabsVoice
 from ela.providers.ntfy import NtfyBell
 from ela.providers.registry import ProviderRegistry
-from ela.routing import ModelRouter, RoutePolicy
+from ela.routing import ModelRouter
 from ela.tasks.engine import LIVE_STATES, TaskEngine
 from ela.tools import (
     BROWSER_TIMEOUT_SECONDS,
@@ -668,22 +667,6 @@ def _window_trail(
     return ended
 
 
-def default_route_model(policy: RoutePolicy, task_type: str) -> str:
-    """The model the default route of ``task_type`` reads today (M13.12, ADR 0062; decision 16).
-
-    Read from the routing table and the provider's profiles, without the network and without the
-    key: the same answer the tool gets when it asks the provider for the worst case of one call. A
-    task type the table does not know, or a profile no model answers, is :data:`UNDECLARED_MODEL`:
-    no policy can be born under it, because the tool's prospect would refuse first.
-    """
-    try:
-        route = policy.route_for(task_type)
-    except RoutingError:
-        return UNDECLARED_MODEL
-    model = model_for_hint(route.profile)
-    return UNDECLARED_MODEL if model is None else model.id
-
-
 async def build(
     settings: Settings,
     *,
@@ -789,6 +772,10 @@ async def build(
                 f"ELA_MODEL_ROUTES cannot be used ({wrong.code}): {wrong}. Unset it to fall back "
                 "to the routing table of spec §25."
             ) from wrong
+        # A route whose profile no model answers stops ELA here, with the variable named — the
+        # ``.env`` that pinned a model the list no longer has (M14.6b, ADR 0067). A belief: the
+        # defence is the refusal at the call, which the provider gives and the gate obeys.
+        every_route_names_a_model(policy)
 
         # The scope of ``workspace.write_note`` and the life of a decision are configuration
         # since M8.3 (ADR 0025 §5, §6): the catalogue and the Guardian have always accepted them,

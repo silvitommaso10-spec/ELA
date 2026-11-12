@@ -5,6 +5,10 @@ The defence §2 asked for, in the form of ADR 0035 §7, turned round by M6.3c (A
 the runner warned about. Now the Linux runner is a written Ubuntu version and none of those actions
 is left; the day one of them comes back — a merge, a revert — the debt is owed again, and the test
 below says so.
+
+**A run that started always finishes** (``CLAUDE.md``, decision 2 of M14.6b, from decision 26 of
+M13.13): ``cancel-in-progress`` is ``false``. Until 2026-11-11 it was ``true``, and on 2026-11-03 a
+push cancelled a run that would have been red — a verification nobody saw.
 """
 
 from __future__ import annotations
@@ -28,6 +32,14 @@ OWED = (
 WRITTEN_UBUNTU = re.compile(r"os: \[ubuntu-\d{2}\.\d{2}, macos-latest\]")
 """The matrix of ``make check`` with Linux as a version, not a label (ADR 0053 §1)."""
 
+CANCEL_IN_PROGRESS = re.compile(r"^\s*cancel-in-progress:\s*(.*?)\s*$", re.MULTILINE)
+"""Every ``cancel-in-progress`` of the workflow, with its value as the file writes it."""
+
+
+def cancelling(workflow: str) -> list[str]:
+    """The values of ``cancel-in-progress`` other than ``false``: each, a run a push cancels."""
+    return [value for value in CANCEL_IN_PROGRESS.findall(workflow) if value != "false"]
+
 
 def owed(workflow: str) -> list[str]:
     """The parts of the debt the workflow still carries."""
@@ -50,6 +62,25 @@ def test_bringing_back_one_part_of_the_debt_owes_it_again() -> None:
     assert owed(moving) == [OWED[0]]
     assert WRITTEN_UBUNTU.search(moving) is None
     assert owed(old_checkout) == [OWED[1]]
+
+
+def test_a_run_that_started_always_finishes() -> None:
+    workflow = CI.read_text(encoding="utf-8")
+
+    assert CANCEL_IN_PROGRESS.findall(workflow) == ["false"]
+    assert cancelling(workflow) == []
+
+
+def test_a_push_that_cancels_a_run_is_found() -> None:
+    """The negative case: ``true``, or an expression that is ``true`` on some branch, cancels."""
+    workflow = CI.read_text(encoding="utf-8")
+    written = "cancel-in-progress: false"
+    on_branches = "${{ github.ref != 'refs/heads/main' }}"
+
+    assert cancelling(workflow.replace(written, "cancel-in-progress: true")) == ["true"]
+    assert cancelling(workflow.replace(written, f"cancel-in-progress: {on_branches}")) == [
+        on_branches
+    ]
 
 
 def test_the_adr_charges_the_debt_to_m6_3c_with_its_deadline() -> None:

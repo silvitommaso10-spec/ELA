@@ -1,10 +1,11 @@
 """ADR 0061 (M14.6): Haiku 5.5 in the price list, and what it names is what the code has.
 
-The price list, the profiles, the date and the shares of the cache are read by
-``test_adr_provider``, which reads them from this ADR since M14.6; this file holds what is only
-this ADR's: the table of its worst cases, the revisions it writes on ADR 0057 and on M14.1, the
-state it is in — «Proposta» until the proof of M14.3, which has the step that checks it, and
-Accettata since it passed —, and the field it adds to the usage.
+The price list, the profiles, the date and the shares of the cache were read by
+``test_adr_provider`` from this ADR from M14.6 to M14.6b, and are ADR 0067's since; this file holds
+what is only this ADR's: its worst cases held to the function — today's, which are ADR 0067's since
+M14.6b —, the revisions it writes on ADR 0057 and on M14.1, the state it is in — «Proposta» until
+the proof of M14.3, which has the step that checks it, and Accettata since it passed —, and the
+field it adds to the usage.
 """
 
 from __future__ import annotations
@@ -14,15 +15,15 @@ from decimal import Decimal
 from pathlib import Path
 
 from ela.domain import ProviderUsage
-from ela.providers.anthropic.models import HAIKU_4_5, HAIKU_5_5, MODELS, PROFILES
-from ela.providers.anthropic.pricing import PRICES, worst_cost
+from ela.providers.anthropic.models import HAIKU_5_5, MODELS, PROFILES
+from ela.providers.anthropic.pricing import worst_cost
+from tests.docs.test_adr_three_models import ADR_PATH as TODAY_PATH
+from tests.docs.test_adr_three_models import WORST_ROW
 
 ROOT = Path(__file__).resolve().parents[2]
 ADR_DIR = ROOT / "docs" / "adr"
 ADR_PATH = ADR_DIR / "0061-haiku-5-5.md"
 INDEX_ROW = re.compile(r"^\| \[0061\]\(0061-haiku-5-5\.md\) \| (.+?) \| (.+?) \|$", re.MULTILINE)
-WORST_ROW = re.compile(r"^\| (Haiku 5\.5|Haiku 4\.5) \| (\d+) \| ([\d,]+) \$ \|$", re.MULTILINE)
-IDS = {"Haiku 5.5": HAIKU_5_5, "Haiku 4.5": HAIKU_4_5}
 
 
 def adr_text() -> str:
@@ -34,24 +35,21 @@ def status_of(text: str) -> str:
 
 
 def test_the_table_of_the_worst_cases_is_the_function_s() -> None:
-    """Criterion 3: the numbers of the table are computed by ``worst_cost``, not by hand."""
-    rows = WORST_ROW.findall(adr_text())
+    """Criterion 3: the numbers of the table are computed by ``worst_cost``, not by hand. Since
+    M14.6b (decision 4) the table of today is ADR 0067 §2, which has a row for every model of the
+    list; the table of §4 here is the history of 2026-10-08, with Haiku 4.5 in it."""
+    rows = WORST_ROW.findall(TODAY_PATH.read_text(encoding="utf-8"))
 
-    assert {(name, int(output)) for name, output, _ in rows} == {
-        ("Haiku 5.5", 4096),
-        ("Haiku 5.5", 8192),
-        ("Haiku 4.5", 4096),
-        ("Haiku 4.5", 8192),
-    }
-    for name, output, amount in rows:
+    assert rows
+    for model, output, amount in rows:
         expected = Decimal(amount.replace(",", "."))
-        assert worst_cost(MODELS[IDS[name]], output_tokens=int(output)) == expected, name
+        assert worst_cost(MODELS[model], output_tokens=int(output)) == expected, model
 
 
-def test_haiku_4_5_stays_in_the_list_and_no_profile_names_it() -> None:
-    """Criterion 5: its open reservations still have a price, and the cheap profile is Haiku 5.5."""
-    assert HAIKU_4_5 in MODELS and HAIKU_4_5 in PRICES
-    assert HAIKU_4_5 not in PROFILES.values()
+def test_the_sentence_that_kept_haiku_4_5_is_history_and_the_cheap_profile_is_haiku_5_5() -> None:
+    """Criterion 5 was true for the month: Haiku 4.5 stayed in the list, with no profile. Since
+    M14.6b it is out of the list (ADR 0067 §1), and the sentence stays here with its dated note."""
+    flat = " ".join(adr_text().split())
     assert {hint for hint, model in PROFILES.items() if model == HAIKU_5_5} == {
         "fast",
         "cheap",
@@ -59,7 +57,8 @@ def test_haiku_4_5_stays_in_the_list_and_no_profile_names_it() -> None:
         "extraction",
         "routine",
     }
-    assert "**Haiku 4.5 resta nel listino**" in " ".join(adr_text().split())
+    assert "**Haiku 4.5 resta nel listino**" in flat
+    assert "Haiku 4.5 non resta nel listino, il mese di cui parla è passato" in flat
 
 
 def test_it_was_accepted_with_the_proof_of_m14_3(shown: str = "2026-10-09") -> None:

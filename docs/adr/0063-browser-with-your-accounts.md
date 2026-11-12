@@ -754,6 +754,20 @@ nomina il 29 ottobre sono Claude Mythos 5, Mythos 5.1, Fable 5 e Fable 5.1 («sh
 un modello delle rotte di ELA. **I termini del contratto non sono stati riletti**: restano citati, e non letti per intero.
 La scadenza della prossima rilettura, che sta con quella del listino (ADR 0061 §1), passa dal 2026-11-07 al 2026-11-28.
 
+***Riletta il 2026-11-11*** (M14.6b, con il listino di ADR 0067 §1). Tommaso ha letto i tre articoli nel suo Chrome e ne
+ha portato il testo copiato al revisore, che l'ha confrontato riga per riga con la sezione «Che cosa rilegge Tommaso» di
+`docs/milestones/M14.6b.md`, per i tre modelli 5.5 delle rotte:
+
+| La pagina | Le frasi della tabella | La data che mostra il 2026-11-11 |
+|---|---|---|
+| `privacy.claude.com/en/articles/7996866` | le tre ci sono, uguali | «July 1, 2026» |
+| `privacy.claude.com/en/articles/15425996` | le quattro ci sono, uguali | nessuna data assoluta: «Updated this week»; la regola, dice la pagina, è in vigore dal June 9, 2026 |
+| `privacy.claude.com/en/articles/7996868` | la frase sull'addestramento è uguale | «August 19, 2026» |
+
+L'articolo dei modelli «covered» non nomina nessuno dei tre modelli 5.5; il suo elenco è cambiato, e oggi nomina Claude
+Fable 5.2, 5.1 e 5 e Claude Mythos 5.2, 5.1 e 5. **I termini del contratto non sono stati riletti.** La scadenza della
+prossima rilettura passa dal 2026-11-28 al 2026-12-11, con quella del listino, che da M14.6b è ADR 0067 §1.
+
 **La frase sull'addestramento non sta più dove ADR 0060 §8 l'aveva letta**: sull'articolo della conservazione,
 oggi, non c'è nessuna frase sull'addestramento — tre letture, due dell'11 ottobre con uno strumento che
 riassume e una terza lo stesso giorno, che ha chiesto le frasi fra virgolette —; sta nelle due pagine delle
@@ -763,8 +777,9 @@ ultime due righe, ed è citata da lì. **ADR 0060 §8 si legge con questa tabell
 una pagina che cambia, e una copia a mano sarebbe sbagliata il giorno dopo. Ciò che ELA tiene è il modello
 della rotta nei termini di una policy, e **il test che lo tiene dice, nel messaggio con cui fallisce, che chi
 cambia il modello della rotta rilegge la policy del fornitore** per quel modello e la ridata qui. **La
-rilettura sta con quella del listino** (ADR 0061): una persona, entro il **2026-11-28**. *Fino alla rilettura del
-2026-10-29, sotto la tabella, era il 2026-11-07.*
+rilettura sta con quella del listino** (ADR 0067): una persona, entro il **2026-12-11**. *Fino alla rilettura del
+2026-11-11 era il 2026-11-28, e il listino era ADR 0061; fino a quella del 2026-10-29, sotto la tabella, era il
+2026-11-07.*
 
 *Come è stata letta*: con uno strumento che scarica la pagina e ne riporta le frasi che gli si chiedono, non
 con il testo intero davanti; le frasi fra virgolette sono quelle che lo strumento ha riportato. **Questo ADR

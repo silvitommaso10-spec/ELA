@@ -10,11 +10,11 @@ import pytest
 
 from ela.providers.anthropic.models import (
     DEFAULT_MODEL,
-    HAIKU_4_5,
     HAIKU_5_5,
     MODELS,
     OPUS_5_5,
     PROFILES,
+    SMALLEST_OUTPUT_TOKENS,
     SONNET_5_5,
     model_for_hint,
 )
@@ -94,15 +94,23 @@ async def test_the_output_budget_can_be_asked_for() -> None:
     assert client is not None and client.messages.calls[0]["max_tokens"] == 800
 
 
-async def test_the_default_budget_never_exceeds_what_the_model_can_produce() -> None:
-    """Haiku 4.5, named by its id since no profile names it (M14.6), produces at most 64 000."""
+@pytest.mark.parametrize("model", sorted(MODELS))
+async def test_the_default_budget_fits_every_model(model: str) -> None:
+    """M14.6b (decision 8): the default budget is held under the smallest output of the list when
+    the settings are read, so every model receives it as it is — there is no clamp. With the largest
+    default the settings accept, each model of ``MODELS`` is sent that ``max_tokens``, never more
+    than it can produce. That the smallest and not the largest holds it is not measurable today:
+    the three models produce the same 128 000 (ADR 0067)."""
     provider, client = make_provider(
-        answer(model=HAIKU_4_5), provider_settings=settings(anthropic_max_output_tokens=64_000)
+        answer(model=model),
+        provider_settings=settings(anthropic_max_output_tokens=SMALLEST_OUTPUT_TOKENS),
     )
 
-    await provider.complete(request(model_hint=HAIKU_4_5))
+    await provider.complete(request(model_hint=model))
 
-    assert client is not None and client.messages.calls[0]["max_tokens"] == 64_000
+    assert client is not None
+    assert client.messages.calls[0]["max_tokens"] == SMALLEST_OUTPUT_TOKENS
+    assert MODELS[model].max_output_tokens >= SMALLEST_OUTPUT_TOKENS
 
 
 @pytest.mark.parametrize("value", [0, -1, "800", 1.5, True])
@@ -141,18 +149,6 @@ async def test_an_invalid_effort_is_refused() -> None:
 
     assert result.error is not None
     assert "effort" in result.error.message
-
-
-async def test_effort_on_a_model_that_has_none_is_refused() -> None:
-    """Haiku 4.5 answers a 400 to ``effort``: ELA knows that before spending a round trip. No
-    profile names it since M14.6; a route can still pin it by its id."""
-    provider, client = make_provider()
-
-    result = await provider.complete(request(model_hint=HAIKU_4_5, parameters={"effort": "high"}))
-
-    assert result.error is not None
-    assert HAIKU_4_5 in result.error.message
-    assert client is not None and client.messages.calls == []
 
 
 def test_the_allowlist_is_exactly_two_keys() -> None:

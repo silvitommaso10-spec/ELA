@@ -11,8 +11,8 @@ from ela.domain import ProviderStatus
 from ela.providers.anthropic import AnthropicSettings, anthropic_provider
 from ela.providers.anthropic.models import (
     DEFAULT_MODEL,
-    LARGEST_OUTPUT_TOKENS,
     OPUS_5_5,
+    SMALLEST_OUTPUT_TOKENS,
     SONNET_5_5,
 )
 from ela.providers.anthropic.settings import (
@@ -141,23 +141,22 @@ def test_an_impossible_retry_count_is_refused(monkeypatch: pytest.MonkeyPatch, v
         AnthropicSettings(_env_file=None)
 
 
-def test_a_budget_larger_than_any_model_can_produce_is_refused(
+def test_a_budget_the_smallest_model_cannot_produce_is_refused(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """With no configured model, the guard is the largest model there is: past it the budget asks
-    for something nobody can give (ADR 0022 §8)."""
-    monkeypatch.setenv("ELA_ANTHROPIC_MAX_OUTPUT_TOKENS", str(LARGEST_OUTPUT_TOKENS + 1))
-    with pytest.raises(ValidationError, match="largest model"):
+    """The default goes to whichever model a route chooses, so it must fit every one (M14.6b,
+    ADR 0067): past the smallest output of the list it is a misconfiguration, and ELA does not
+    start. Nothing clamps it later."""
+    monkeypatch.setenv("ELA_ANTHROPIC_MAX_OUTPUT_TOKENS", str(SMALLEST_OUTPUT_TOKENS + 1))
+    with pytest.raises(ValidationError, match=f"the {SMALLEST_OUTPUT_TOKENS} tokens the smallest"):
         AnthropicSettings(_env_file=None)
 
 
-def test_a_budget_one_model_cannot_produce_is_accepted_and_clamped_later(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """100k is more than Haiku's 64k and less than Opus's 128k: it is not a misconfiguration, it
-    is a default that ``build_payload`` clamps per model (``tests/providers/test_mapping.py``)."""
-    monkeypatch.setenv("ELA_ANTHROPIC_MAX_OUTPUT_TOKENS", "100000")
-    assert AnthropicSettings(_env_file=None).anthropic_max_output_tokens == 100_000
+def test_a_budget_every_model_can_produce_is_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The edge: the smallest output of the list is a default every model receives as it is
+    (``tests/providers/test_mapping.py``)."""
+    monkeypatch.setenv("ELA_ANTHROPIC_MAX_OUTPUT_TOKENS", str(SMALLEST_OUTPUT_TOKENS))
+    assert AnthropicSettings(_env_file=None).anthropic_max_output_tokens == SMALLEST_OUTPUT_TOKENS
 
 
 def test_unknown_variables_are_ignored(monkeypatch: pytest.MonkeyPatch) -> None:

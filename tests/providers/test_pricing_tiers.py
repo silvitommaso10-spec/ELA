@@ -14,7 +14,7 @@ from decimal import Decimal
 import pytest
 
 from ela.providers.anthropic import pricing
-from ela.providers.anthropic.models import HAIKU_4_5, HAIKU_5_5, MODELS, OPUS_5_5, SONNET_5_5
+from ela.providers.anthropic.models import HAIKU_5_5, MODELS, OPUS_5_5, SONNET_5_5
 from ela.providers.anthropic.pricing import (
     PRICES,
     TIERS,
@@ -30,14 +30,12 @@ HIGH = Price(Decimal("0.50"), Decimal("2.50"), Decimal("0.05"))
 
 
 def test_haiku_5_5_has_the_profile_the_models_page_gives() -> None:
-    """``claude-haiku-5-5``: a window of a million tokens, 128K out, ``effort`` accepted."""
+    """``claude-haiku-5-5``: a window of a million tokens, 128K out. That it takes ``effort``, as
+    every model of the list does since M14.6b, is the column of ADR 0067 §1, which
+    ``tests/docs/test_adr_three_models.py`` reads against the payload."""
     model = MODELS[HAIKU_5_5]
     assert HAIKU_5_5 == "claude-haiku-5-5"
-    assert (model.context_window, model.max_output_tokens, model.supports_effort) == (
-        1_000_000,
-        128_000,
-        True,
-    )
+    assert (model.context_window, model.max_output_tokens) == (1_000_000, 128_000)
 
 
 def test_the_two_tiers_are_the_prices_of_the_page() -> None:
@@ -54,7 +52,7 @@ def test_the_tier_is_the_one_of_the_prompt_s_input_tokens(tokens: int, expected:
 
 
 def test_a_model_with_one_price_has_it_at_every_length() -> None:
-    for model in (OPUS_5_5, SONNET_5_5, HAIKU_4_5):
+    for model in (OPUS_5_5, SONNET_5_5):
         assert price_for(model, 0) == price_for(model, 999_999) == PRICES[model]
 
 

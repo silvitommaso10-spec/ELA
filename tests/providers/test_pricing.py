@@ -8,7 +8,14 @@ from decimal import Decimal
 import pytest
 
 from ela.providers.anthropic import pricing
-from ela.providers.anthropic.models import HAIKU_4_5, HAIKU_5_5, MODELS, OPUS_5_5, SONNET_5_5, Model
+from ela.providers.anthropic.models import (
+    HAIKU_5_5,
+    MODELS,
+    OPUS_5_5,
+    SONNET_5_5,
+    Model,
+    model_for_hint,
+)
 from ela.providers.anthropic.pricing import (
     CURRENCY,
     PRICES,
@@ -17,6 +24,7 @@ from ela.providers.anthropic.pricing import (
     estimate_cost,
     worst_cost,
 )
+from tests.domain.examples import HAIKU_4_5_ID
 
 
 @pytest.mark.parametrize(
@@ -25,7 +33,7 @@ from ela.providers.anthropic.pricing import (
         # 1000 input + 400 output, priced per million: e.g. (1000×$4 + 400×$20) / 1_000_000.
         (OPUS_5_5, Decimal("0.012")),
         (SONNET_5_5, Decimal("0.006")),
-        (HAIKU_4_5, Decimal("0.003")),
+        (HAIKU_5_5, Decimal("0.0003")),
     ],
 )
 def test_a_thousand_in_and_four_hundred_out(model: str, expected: Decimal) -> None:
@@ -52,7 +60,7 @@ def test_an_unknown_model_has_no_price_and_no_zero() -> None:
 
 
 def test_a_small_call_is_not_rounded_down_to_free() -> None:
-    cost = estimate_cost(HAIKU_4_5, input_tokens=3, output_tokens=1, cached_input_tokens=None)
+    cost = estimate_cost(HAIKU_5_5, input_tokens=3, output_tokens=1, cached_input_tokens=None)
     assert cost is not None and cost > 0
 
 
@@ -63,6 +71,14 @@ def test_money_is_decimal_not_float() -> None:
         assert isinstance(price.cache_read, Decimal)
 
 
+def test_the_id_of_haiku_4_5_the_world_still_holds_names_no_model_of_the_list() -> None:
+    """M14.6b (decision 5): out of ``MODELS`` and ``PRICES``, and no tombstone — the id a real
+    database and a real ``.env`` may still hold is a hint that names nothing, like any other."""
+    assert HAIKU_4_5_ID not in MODELS
+    assert HAIKU_4_5_ID not in PRICES
+    assert model_for_hint(HAIKU_4_5_ID) is None
+
+
 def test_every_model_ela_uses_has_a_price() -> None:
     assert set(PRICES) == set(MODELS)
     assert CURRENCY == "USD"
@@ -70,10 +86,9 @@ def test_every_model_ela_uses_has_a_price() -> None:
 
 def test_the_cache_read_rate_is_a_twentieth_on_the_5_5_models_and_a_tenth_on_haiku() -> None:
     """The pricing page of 2026-10-08 (M14.6): Opus 5.5 and Sonnet 5.5 read their cache at 0.05×,
-    Haiku 4.5 and both tiers of Haiku 5.5 at 0.1×."""
+    both tiers of Haiku 5.5 at 0.1×."""
     assert PRICES[OPUS_5_5].cache_read == PRICES[OPUS_5_5].input / 20
     assert PRICES[SONNET_5_5].cache_read == PRICES[SONNET_5_5].input / 10 / 2
-    assert PRICES[HAIKU_4_5].cache_read == PRICES[HAIKU_4_5].input / 10
     for price in (PRICES[HAIKU_5_5], *(tier for _, tier in TIERS[HAIKU_5_5])):
         assert price.cache_read == price.input / 10
 
@@ -81,10 +96,11 @@ def test_the_cache_read_rate_is_a_twentieth_on_the_5_5_models_and_a_tenth_on_hai
 @pytest.mark.parametrize(
     ("model", "expected"),
     [
-        # (window − 4096) × input + 4096 × output, per million: the numbers of ADR 0057.
+        # (window − 4096) × input + 4096 × output, per million: the numbers of ADR 0067 §2, at the
+        # tier the window reaches.
         (OPUS_5_5, Decimal("4.065536")),
         (SONNET_5_5, Decimal("2.032768")),
-        (HAIKU_4_5, Decimal("0.216384")),
+        (HAIKU_5_5, Decimal("0.508192")),
     ],
 )
 def test_the_worst_case_fills_the_window_with_input_and_the_budget_with_output(
@@ -96,12 +112,12 @@ def test_the_worst_case_fills_the_window_with_input_and_the_budget_with_output(
 def test_the_worst_case_is_never_below_a_call_that_fits_the_window() -> None:
     """Any split of the window under the budget costs no more than the worst case: the bound holds
     because an output token costs more than an input one."""
-    model = MODELS[HAIKU_4_5]
+    model = MODELS[HAIKU_5_5]
     worst = worst_cost(model, output_tokens=4_096)
     assert worst is not None
     for output in (0, 1, 2_048, 4_096):
         cost = estimate_cost(
-            HAIKU_4_5,
+            HAIKU_5_5,
             input_tokens=model.context_window - output,
             output_tokens=output,
             cached_input_tokens=None,
@@ -111,16 +127,16 @@ def test_the_worst_case_is_never_below_a_call_that_fits_the_window() -> None:
 
 def test_a_model_with_no_price_has_no_worst_case() -> None:
     """``None`` is not ``0``: with a cap, a call nobody can bound is a call that is not made."""
-    unknown = Model("gpt-4", max_output_tokens=4_096, supports_effort=False, context_window=8_192)
+    unknown = Model("gpt-4", max_output_tokens=4_096, context_window=8_192)
     assert worst_cost(unknown, output_tokens=1_000) is None
 
 
 def test_the_worst_case_is_rounded_up(monkeypatch: pytest.MonkeyPatch) -> None:
     """A bound rounded down is not a bound: what lies beyond the eighth decimal goes up.
 
-    Today's prices are whole dollars per million and never reach the ninth decimal, so the price
-    that does is the test's own."""
+    Today's prices never reach the ninth decimal, so the price that does is the test's own — on a
+    model of the list, Opus 5.5, which has no tiers (M14.6b: no ``Model`` of the test's own). Its
+    window at that price is 0.000000333 USD, and up is 0.00000034."""
     third = Price(Decimal("0.000000333"), Decimal("0.000000333"), Decimal("0"))
-    monkeypatch.setattr(pricing, "PRICES", {HAIKU_4_5: third})
-    model = Model(HAIKU_4_5, max_output_tokens=3, supports_effort=False, context_window=3)
-    assert worst_cost(model, output_tokens=1) == Decimal("0.00000001")
+    monkeypatch.setattr(pricing, "PRICES", {OPUS_5_5: third})
+    assert worst_cost(MODELS[OPUS_5_5], output_tokens=1) == Decimal("0.00000034")
