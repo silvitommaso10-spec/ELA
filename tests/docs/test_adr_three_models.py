@@ -132,15 +132,35 @@ def test_the_startup_refusal_it_quotes_is_the_composition_s() -> None:
 # ----------------------------------------------------------------------------------------
 
 
-def test_it_is_proposed_until_the_proof_of_its_branch() -> None:
-    """Decision 14: Proposta until the proof of section 31 passes on the last commit of the
-    branch, and then Accettata with a commit of its own."""
+PROOF_FILE = "`~/Downloads/prova-m14.6b-20261112-021100.txt`"
+PROVEN_AT = "`e41b8a8`"
+
+
+def test_it_is_accepted_by_the_proof_of_its_branch_with_the_file_and_the_commit() -> None:
+    """Decision 14 and answers 31 and 33: Accettata with a commit of its own once the proof of
+    section 31 passed on the last commit of the branch — the file of the proof and that commit on
+    the state line, and who saw what. Proposta until then, and the line still says so."""
     (row,) = INDEX_ROW.findall((ADR_DIR / "README.md").read_text(encoding="utf-8"))
     said = " ".join(status_of(adr_text()).split())
 
-    assert row[1] == "Proposta"
-    assert said.startswith("Proposta il **2026-11-11**")
+    assert row[1] == "Accettata"
+    assert said.startswith("Accettata il **2026-11-12**")
     assert "la sezione 31 di `docs/GETTING_STARTED.md`" in said
+    assert PROOF_FILE in said and PROVEN_AT in said
+    assert "l'`occhio` del passo 3 Tommaso, e la risposta è stata sì" in said
+    assert "il rifiuto all'avvio solo la suite" in said
+    assert "Proposta il **2026-11-11**" in said
+
+
+def test_what_the_proof_saw_and_did_not_is_written_with_who_saw_it() -> None:
+    """Answers 28, 31 and 32: §7 says what the proof saw — the task of October was there —,
+    what only the suite proves, the ``.env`` of the Mac, and that the PC has not been looked at."""
+    said = " ".join(section(adr_text(), 7).split())
+
+    assert "***Com'è andata, il 2026-11-12***" in said
+    assert "**il task di ottobre c'era**: `3a4d7002`, del 2026-10-07" in said
+    assert "hanno stampato 0 e 0" in said
+    assert "**Il PC non è ancora stato guardato**" in said
 
 
 def revised_by_the_list() -> set[str]:

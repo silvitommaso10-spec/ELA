@@ -74,7 +74,7 @@ cambia, si scrive un nuovo ADR che sostituisce il precedente.
 | [0064](0064-browser-boundary.md) | Il confine del browser: guardare, non rifare | Accettata |
 | [0065](0065-browser-steps.md) | Il browser a più passi: ogni elemento aspettato, ciò che il sì ha nominato, la pagina che dura fra gli step, il login chiesto dal modello | Accettata |
 | [0066](0066-browser-files.md) | I file dal browser, e la pagina del browser che non è un sito | Accettata |
-| [0067](0067-three-models.md) | Il listino senza Haiku 4.5: tre modelli, un id che non nomina niente, e un budget che sta in ogni modello | Proposta |
+| [0067](0067-three-models.md) | Il listino senza Haiku 4.5: tre modelli, un id che non nomina niente, e un budget che sta in ogni modello | Accettata |
 
 ## Template
 

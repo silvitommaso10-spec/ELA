@@ -1,11 +1,15 @@
 # 0067. Il listino senza Haiku 4.5: tre modelli, un id che non nomina niente, e un budget che sta in ogni modello
 
-- **Stato:** Proposta il **2026-11-11**, con l'implementazione di M14.6b sul branch `m14.6b-haiku-4-5-fuori-dal-listino`,
-  dal prompt di Tommaso dell'11 novembre (decisioni 1–17) e dalla review della SPEC dello stesso giorno (risposte 18–24),
-  in `docs/milestones/M14.6b.md`. Diventa Accettata con un commit suo quando la prova a mano della sezione 31 di
-  `docs/GETTING_STARTED.md` è passata sull'ultimo commit del branch (decisione 14). **Le «Righe riviste» che questo ADR
-  porta sono scritte**, ciascuna con il suo marchio sulla riga «Stato:» dell'ADR che rivede — ADR 0020, ADR 0057,
-  ADR 0061.
+- **Stato:** Accettata il **2026-11-12**, con un commit suo (decisione 14 del prompt, risposte 31 e 33): la prova a
+  mano della sezione 31 di `docs/GETTING_STARTED.md` è passata sul Mac a `e41b8a8`, l'ultimo commit del branch su
+  `origin`, con l'albero pulito (`~/Downloads/prova-m14.6b-20261112-021100.txt`: 14 PASSATI al primo giro, 0 FALLITI,
+  nessun no, 0 SALTATI). **Chi ha visto che cosa** (§7): i passi 1–4 lo script, con l'API e la CLI sul database vero;
+  l'`occhio` del passo 3 Tommaso, e la risposta è stata sì; il sì del passo 4 lo script, lanciato da Tommaso; il rifiuto
+  all'avvio solo la suite. **Le «Righe riviste» che questo ADR porta sono scritte**, ciascuna con il suo marchio sulla
+  riga «Stato:» dell'ADR che rivede — ADR 0020, ADR 0057, ADR 0061. Proposta il **2026-11-11**, con l'implementazione di
+  M14.6b sul branch `m14.6b-haiku-4-5-fuori-dal-listino`, dal prompt di Tommaso dell'11 novembre (decisioni 1–17) e
+  dalla review della SPEC dello stesso giorno (risposte 18–30), in `docs/milestones/M14.6b.md`, per diventare Accettata
+  con un commit suo quando la prova fosse passata sull'ultimo commit del branch.
 - **Data:** 2026-11-11
 - **Riferimenti spec:** §25, §26, §30
 - **Milestone:** [M14.6b](../milestones/M14.6b.md)
@@ -184,6 +188,21 @@ database né `ela serve`. **Chi vede che cosa**: la ragione del diniego al passo
 resto lo confronta lo script con l'API. **Il rifiuto all'avvio lo prova solo la suite.** **Il task di ottobre non è una
 precondizione che ferma** (risposta 28): se il database non ne ha uno, il suo passo è SALTATO con la ragione scritta, e la
 prova continua; che cosa la prova ha visto e che cosa no, questo ADR lo scrive quando diventa Accettata.
+
+***Com'è andata, il 2026-11-12*** (risposta 31): la prova è passata a `e41b8a8`, 14 PASSATI al primo giro. **Che cosa si
+è visto**, e chi l'ha visto:
+
+| Passo | Che cosa | Chi |
+|---|---|---|
+| 1 | il commit e l'albero pulito; ELA risponde; la chiave, il tetto, almeno 0,508192 $ nel mese | lo script |
+| 2 | `ela spend` risponde; **il task di ottobre c'era**: `3a4d7002`, del 2026-10-07, su `claude-haiku-4-5-20251001`, con il costo scritto, 0,000335 $; la CLI dice il modello e il costo che l'API dice, e `ela task show` non ha né modello né costo | lo script, con l'API e la CLI sul database vero |
+| 3 | il piano di §3 negato, con la ragione intera — «this call cannot be bounded: provider.unknown_model_hint: no model for hint 'claude-haiku-4-5-20251001': it is the step's model_hint» —; lo speso e il prenotato uguali; la ragione guardata sullo schermo | lo script; l'`occhio` Tommaso, e la risposta è stata sì |
+| 4 | la domanda di 0,508192 $ su `claude-haiku-5-5`; il sì; la chiamata vera, 0,0000297 $, uguale alla fascia bassa del listino ricalcolata; lo speso cresciuto del costo, il prenotato uguale | lo script, lanciato da Tommaso, che dà anche il sì |
+
+**Che cosa non si è visto**: il rifiuto all'avvio di una rotta del `.env` e il rifiuto alla chiamata della sessione guidata
+li prova solo la suite. **Il `.env` del Mac**, il 2026-11-12: i due comandi della SPEC hanno stampato 0 e 0, quindi
+nessuna rotta e nessuna variabile dell'ambiente fissavano Haiku 4.5 (risposta 32). **Il PC non è ancora stato
+guardato**: si guarda, con il comando in PowerShell della SPEC, prima del suo `git pull` di `main` con M14.6b.
 
 ## Alternative considerate
 
