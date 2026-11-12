@@ -327,7 +327,7 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
 
 | Fase | Documenti che la nominano |
 |---|---|
-| 15 | 19 |
+| 15 | 20 |
 | 16 | 1 |
 
 <!-- fine del blocco generato: le fasi che un documento nomina -->
@@ -1312,6 +1312,12 @@ suoi confini e una fine. È la forma che la 5.11 dà alle `MEDIUM` — «mai abb
   portata (risposta 8 del 2026-11-02). Il dettaglio è in M13.14, nella sezione «(d)». Vale anche per M14.7, sul repository di ELA.
 - **(e) Una policy su un'azione `HIGH` ha uno scope stretto** — un sito, un contatto, una cartella —, **dei tetti e una
   scadenza**, e l'anteprima nomina ciò che ELA farà senza chiedere. Le forme le decide la SPEC.
+  ***Rivisto da Tommaso il 2026-11-12*** (M13.14, decisione 2 del suo prompt), con le sue parole: «voglio che ELA possa
+  avere qualsiasi policy che io voglia […] il limite irrevocabile è che ELA non può creare policy da sola, quindi non
+  mettiamo limiti». Una policy su un'azione `HIGH` ha **i confini che Tommaso sceglie** — lo scope una lista di quante
+  voci vuole, il tetto agli usi facoltativo, vuoto per «senza limite» —, **una scadenza sempre**, da 1 a 90 giorni, e
+  l'anteprima nomina ciò che ELA farà senza chiedere. (a), (b), (c) e (d) restano: sono ciò che rende vero quel limite.
+  La revisione datata è nella SPEC di [`milestones/M13.14.md`](milestones/M13.14.md).
 
 *Perché nessun ADR:* è una decisione di prodotto e di perimetro — fin dove arriva un sì dato prima — e nessuna riga di
 codice la contiene ancora. La parte tecnica prende l'ADR di M13.14, come le `MEDIUM` hanno preso ADR 0062 con M13.12.
