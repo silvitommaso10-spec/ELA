@@ -148,6 +148,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.11` | Proposta | Il browser sul PC: le capacità di M13.9 e M13.10 sul nodo Windows, e il verdetto che torna in busta |
 | 13 — Il permesso prima dell'azione | `M13.12` | Implementata | Le policy di §59: una policy che Tommaso si crea rende autonoma un'azione `MEDIUM`, a partire da `browser.guided` |
 | 13 — Il permesso prima dell'azione | `M13.13` | Implementata | I file dal browser: uno scaricamento è un `fs.write`, un caricamento un `fs.read` |
+| 13 — Il permesso prima dell'azione | `M13.13b` | Proposta | Uno scaricamento interrotto che a volte lascia il suo file a metà |
 | 13 — Il permesso prima dell'azione | `M13.14` | Proposta | Le policy di Tommaso arrivano alle azioni HIGH |
 | 13 — Il permesso prima dell'azione | `M13.15` | Proposta | Le policy di Tommaso arrivano al login e ai file dal browser |
 | 13 — Il permesso prima dell'azione | `M13.16` | Proposta | Il terminale sotto le policy di Tommaso, con un confine dimostrato |
@@ -183,7 +184,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **68** | `docs/adr/NNNN-*.md` |
-| Milestone | **103, di cui 80 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **104, di cui 80 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **74** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **16** | `pyproject.toml` |
 | Port | **36** | i `Protocol` di `src/ela/ports.py` |
@@ -729,7 +730,10 @@ cambiano. In quest'ordine:
    policy arrivano al login e ai file dal browser, il secondo pezzo del taglio —, e poi M13.4g; la fila è **M13.14,
    M13.15, M13.4g, M13.11**, e se il test di M13.4g torna rosso in un giro M13.4g passa davanti. **M13.16** — il
    terminale sotto le policy, con un confine dimostrato — è registrata **fuori dalla fila**
-   ([`milestones/M13.16.md`](milestones/M13.16.md));
+   ([`milestones/M13.16.md`](milestones/M13.16.md)); ***annotato il 2026-11-12***, più tardi (il `make check` rosso a
+   `4b0b11c` sul branch di M13.14): registrata **[M13.13b](milestones/M13.13b.md)**, `Proposta` — uno scaricamento
+   interrotto che a volte lascia il suo file a metà —, accanto a M13.4g e con la sua regola: se il suo test torna rosso
+   in un giro, passa davanti;
 3. **M13.11**, il browser sul PC (***annotato il 2026-11-12***, decisione 36 della review dopo la CI rossa di `a5a74fd`
    sul branch di M14.6b: **prima di lei [M13.4g](milestones/M13.4g.md)**, registrata, `Proposta` — il click che apre
    un'altra pagina, con il browser del profilo, che a volte non dice la sua pagina —);
