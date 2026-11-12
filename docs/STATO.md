@@ -156,7 +156,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.4` | Proposta | Il computer guidato dal modello: lo schermo, con il meccanismo di M14.3 |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.5` | Proposta | Il contesto nel Planner: che cosa ELA sa della giornata, nel prompt che scrive un piano |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.6` | Implementata | Haiku 5.5 nel listino: due fasce di prezzo, il caso peggiore che le conosce, e il profilo economico al modello nuovo |
-| 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.6b` | Proposta | Haiku 4.5 esce dal listino: il modello che nessun profilo nomina, e le due prove che poggiano solo su di lui |
+| 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.6b` | Implementata | Haiku 4.5 esce dal listino: il modello che nessun profilo nomina, e le due prove che poggiano solo su di lui |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.7` | Proposta | Il lavoro su un progetto: una sessione di Claude Code in un worktree, e il diff che si approva prima del branch |
 | 15 — *senza nome* | `M15.2` | Proposta | Le skill: un lavoro già riuscito, salvato con il suo verifier, da cui il Planner riparte |
 | 17 — Design | `M17.1` | Implementata | Il Design System: l'identità minima, e le regole che ogni superficie di ELA eredita |
@@ -179,7 +179,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **67** | `docs/adr/NNNN-*.md` |
-| Milestone | **99, di cui 79 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **99, di cui 80 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **73** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **15** | `pyproject.toml` |
 | Port | **36** | i `Protocol` di `src/ela/ports.py` |
@@ -723,7 +723,7 @@ cambiano. In quest'ordine:
 10. **M17.4**, il redesign, alla fine.
 
 **M14.6b** — Haiku 4.5 esce dal listino — sta **fuori dalla fila**, con una condizione: si fa prima della prossima
-rilettura del listino, entro il 2026-11-28 (5.12).
+rilettura del listino, entro il 2026-11-28 (5.12). ***Annotato il 2026-11-12***: **fatta**, entro la condizione (5.12).
 ***Annotato il 2026-11-11*** (risposta 30 della review della SPEC di M14.6b): **M14.1c** — il caso peggiore senza
 prezzo, un ramo e un rifiuto che nessun produttore raggiunge — è registrata **fuori dalla fila**, senza una condizione
 ([`milestones/M14.1c.md`](milestones/M14.1c.md)): decide se il ramo esce o trova il suo produttore.
@@ -1229,7 +1229,10 @@ dopo M13.11 e prima di M13.5, quindi prima di M14.4; **M14.6b** sta fuori dalla 
   nomina da M14.6, dal 2026-11-01 il libro del mese non ha prenotazioni di ottobre, e la data di ritiro della sua pagina è
   passata. **Fuori dalla fila**, con una condizione: si fa prima della prossima rilettura del listino, **entro il
   2026-11-28** ([`milestones/M14.6b.md`](milestones/M14.6b.md)). Fino a lei, la riga di M14.6 qui sopra — Haiku 4.5 nel
-  listino senza profilo — resta vera.
+  listino senza profilo — resta vera. ***Annotato il 2026-11-12***: **M14.6b è fatta**, entro la condizione — Haiku 4.5
+  è uscito dal listino, la prova a mano è passata a `e41b8a8`, e [ADR 0067](adr/0067-three-models.md) è Accettata —, e
+  la riga di M14.6 qui sopra non è più vera: il listino ha tre modelli, riletti il 2026-11-11, e la prossima rilettura è
+  entro il 2026-12-11.
 
 **La Fase 14 comincia prima che la Fase 13 sia chiusa** (Tommaso e il revisore, 2026-09-30): dopo M6.3c,
 M13.1c e M13.1d, e prima di M13.9. La fila intera sta nella 5.10, e la voce della Fase 13, la 5.11, lo

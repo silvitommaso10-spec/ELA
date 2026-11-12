@@ -7421,7 +7421,10 @@ prova li toglie da sé, al passo 1.
 
 > **Scritta con l'implementazione l'11 novembre 2026** (`milestones/M14.6b.md`, la bozza della SPEC e le risposte 24 e 28
 > della sua review), e `tests/docs/test_prova_m14_6b.py` tiene lo script allineato a questa sezione. La si fa **sul Mac,
-> senza il PC**, sul branch di M14.6b, con lo script `scripts/prova_m14_6b.py`.
+> senza il PC**, sul branch di M14.6b, con lo script `scripts/prova_m14_6b.py`. **Fatta da Tommaso il 2026-11-12 sul
+> branch**, a `e41b8a8`, sul Mac: passata, 14 PASSATI al primo giro, nessun FALLITO, nessun no, nessun SALTATO
+> (`~/Downloads/prova-m14.6b-20261112-021100.txt`); [ADR 0067](adr/0067-three-models.md) è Accettata, e com'è andata è
+> in `milestones/M14.6b.md`, «La prova a mano, il 2026-11-12 — passata».
 
 Da M14.6b **Haiku 4.5 non è nel listino di ELA** ([ADR 0067](adr/0067-three-models.md)): nessun profilo lo nominava da
 M14.6, e ora nemmeno la tabella dei modelli e dei prezzi. Per ELA il suo id è un suggerimento che non nomina niente: **un
