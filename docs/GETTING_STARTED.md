@@ -7588,7 +7588,10 @@ non c'è niente da rimettere com'era: il `.env` non è cambiato.
 > **Scritta con l'implementazione il 2026-11-12** (`milestones/M13.14.md`, la bozza della sezione 32 nella SPEC e le
 > risposte 30 e 34 della sua review), e `tests/docs/test_prova_m13_14.py` tiene lo script allineato a questa sezione,
 > e la cammina con lo script contro un'ELA vera. La si fa **sul Mac, senza il PC**, sul branch di M13.14, con lo script
-> `scripts/prova_m13_14.py`.
+> `scripts/prova_m13_14.py`. **Fatta da Tommaso il 2026-11-13 sul branch**, a `75d1167`, sul Mac: passata, 57 PASSATI
+> al primo giro, nessun FALLITO, nessun no, nessun SALTATO (`~/Downloads/prova-m13.14-20261113-131344.txt`);
+> [ADR 0068](adr/0068-policies-on-high.md) è Accettata, e com'è andata è in `milestones/M13.14.md`, «La prova a mano, il
+> 2026-11-13 — passata».
 
 Da M13.14 **una policy che crei tu può coprire un'azione `HIGH`**: `fs.write` nelle cartelle che scegli, e un invio con
 `browser.act` o `browser.act_as_you` sui siti che scegli. Dentro i suoi confini ELA la fa **senza chiederti niente**; il
