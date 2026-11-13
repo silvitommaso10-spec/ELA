@@ -185,6 +185,50 @@ def test_a_revised_adr_that_does_not_say_so_is_found() -> None:
     assert revised_by_their_state(texts) == listed - {silent}
 
 
+PROOF_FILE = "`~/Downloads/prova-m13.14-20261113-131344.txt`"
+PROVEN_AT = "`75d1167`"
+PROOF_HEADING = "### La prova a mano, il 2026-11-13"
+
+
+def proof_section() -> str:
+    """The section that says how the proof went, up to the next heading, its line breaks as
+    spaces."""
+    after = adr_text().split(PROOF_HEADING, 1)[1]
+    return " ".join(re.split(r"^#{2,3} ", after, maxsplit=1, flags=re.M)[0].split())
+
+
+def test_it_is_accepted_by_the_proof_of_its_branch_with_the_file_and_the_commit() -> None:
+    """Decisions 37 and 40 after the proof: Accettata with a commit of its own once the proof of
+    section 32 passed on the last commit of the branch — the file of the proof and that commit on
+    the state line, and who saw what. Proposta until then, and the line still says so."""
+    said = " ".join(status_of(adr_text()).split())
+
+    assert said.startswith("Accettata il **2026-11-13**")
+    assert "la sezione 32 di `docs/GETTING_STARTED.md`" in said
+    assert PROOF_FILE in said and PROVEN_AT in said
+    assert "57 PASSATI al primo giro, 0 FALLITI, nessun no, 0 SALTATI" in said
+    assert "i tre sguardi Tommaso" in said
+    assert "i quattro «crei la policy?» e i cinque no Tommaso" in said
+    assert "il verifier, non Tommaso" in said
+    assert "il rifiuto di un posto protetto in sé solo la suite" in said
+    assert "Proposta il **2026-11-12**" in said
+
+
+def test_what_the_proof_saw_and_did_not_is_written_with_who_saw_it() -> None:
+    """Decisions 37, 38 and 39: the section says step by step what the proof saw and who saw it,
+    what only the suite proves, the ``.env`` of the Mac, that the PC has not been looked at, and
+    that the three remarks of the file of the proof go to M13.15."""
+    said = proof_section()
+
+    assert "**57 PASSATI al primo giro, 0 FALLITI, 0 GUARDATI con un no, 0 SALTATI.**" in said
+    for policy in ("`17ec60e7`", "`8385bdc6`", "`810e2a4e`", "`779c73cb`"):
+        assert policy in said, policy
+    assert "**Che cosa non si è visto**" in said
+    assert "`ELA_FS_ROOT` è la cartella Documents di Tommaso" in said
+    assert "**Il PC non è ancora stato guardato**" in said
+    assert "[M13.15](../milestones/M13.15.md)" in said
+
+
 def test_the_index_names_it_with_its_state() -> None:
     index = (ADR_DIR / "README.md").read_text(encoding="utf-8")
     found = INDEX_ROW.findall(index)

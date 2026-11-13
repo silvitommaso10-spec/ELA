@@ -1,8 +1,16 @@
 # 0068. Le policy di chi usa ELA arrivano alle azioni HIGH
 
-- **Stato:** Proposta il **2026-11-12**, con il codice di M13.14 (`docs/milestones/M13.14.md`, la SPEC e la review
-  della SPEC, risposte 18–36). Si accetta con un commit suo dopo la prova a mano della sezione 32 di
-  `docs/GETTING_STARTED.md`, con `scripts/prova_m13_14.py`.
+- **Stato:** Accettata il **2026-11-13**, con un commit suo (decisioni 37 e 40 dopo la prova): la prova a mano della
+  sezione 32 di `docs/GETTING_STARTED.md` è passata sul Mac a `75d1167`, l'ultimo commit del branch su `origin`, con
+  l'albero pulito (`~/Downloads/prova-m13.14-20261113-131344.txt`: 57 PASSATI al primo giro, 0 FALLITI, nessun no, 0
+  SALTATI). **Chi ha visto che cosa** («La prova a mano, il 2026-11-13», qui sotto): i passi meccanici lo script,
+  sull'ELA vera; i tre sguardi Tommaso — l'anteprima di `fs.write` con le due cartelle intere, l'anteprima di
+  `browser.act_as_you`, la console —, e la risposta è stata sì tutte e tre le volte; i quattro «crei la policy?» e i
+  cinque no Tommaso; il testo atteso dei due invii su `httpbin.org` il verifier, non Tommaso; il rifiuto di un posto
+  protetto in sé solo la suite. **Le «Righe riviste» che questo ADR porta sono scritte**, ciascuna con il suo marchio
+  sulla riga «Stato:» dell'ADR che rivede. Proposta il **2026-11-12**, con il codice di M13.14
+  (`docs/milestones/M13.14.md`, la SPEC e la review della SPEC, risposte 18–36), per diventare Accettata con un commit
+  suo dopo la prova a mano della sezione 32, con `scripts/prova_m13_14.py`.
 
 ## Contesto
 
@@ -308,6 +316,38 @@ E il resto:
 - **Un'altra copia del repository o un altro `.env` sotto la radice** non sono esclusi: il controllo all'avvio legge il
   `.env` e l'albero sorgente di questo processo.
 - **Il login e le quattro capability dei file** chiedono a ogni uso fino a [M13.15](../milestones/M13.15.md).
+
+### La prova a mano, il 2026-11-13
+
+***Com'è andata*** (decisione 37): lanciata da Tommaso alle 13:13 sul Mac, a `75d1167`, l'ultimo commit del branch su
+`origin`, con l'albero pulito, contro l'ELA vera riavviata dal branch (`~/Downloads/prova-m13.14-20261113-131344.txt`):
+**57 PASSATI al primo giro, 0 FALLITI, 0 GUARDATI con un no, 0 SALTATI.** Che cosa si è visto, e chi l'ha visto:
+
+| Passo | Che cosa | Chi |
+|---|---|---|
+| 1 | il commit e l'albero pulito; ELA risponde, dal codice del branch; la radice, lo scope, i due siti, il profilo; nessuna policy viva delle tre capability; la cartella della prova pronta, con i suoi due link | lo script |
+| 2 | l'anteprima di `fs.write` su `uno` e `due`: `HIGH`, ciò che fa senza chiedere, **accanto a ogni voce la cartella intera sotto la radice**, «no limit of uses», la scadenza, «only a step that runs on the Core: a step on a node asks» e ciò che non copre mai; la policy `17ec60e7`; due scritture senza domanda, ciascuna con il suo file `600`; la policy a 2 usi e 2 azioni | l'anteprima sullo schermo Tommaso, sì; il «crei la policy?» Tommaso; il resto lo script |
+| 3 | una scrittura nella cartella `tre`, fuori dallo scope: la domanda, «a value of path is not among those of policy 17ec60e7», e il no; una scrittura attraverso il link della cartella `uno`: lo step fallisce con `path.symlink`, niente sul disco, **e la policy resta a 2 usi** — la prospettiva prima della spesa (§6) | il no Tommaso; il resto lo script |
+| 4 | la revoca di `17ec60e7`; una scrittura dopo: la domanda, «policy 17ec60e7 was revoked on 2026-11-13», e il no; niente sul disco | il no Tommaso; il resto lo script |
+| 5 | la policy `8385bdc6`, di un uso; una scrittura senza domanda; la seconda chiede, «policy 8385bdc6 was used 1 of its 1 times», e il no; la policy `EXHAUSTED`, senza revoca | il «crei la policy?» e il no Tommaso; il resto lo script |
+| 6 | `terminal.run` rifiutato alla nascita, con la ragione del programma, «and only you create one»; una policy di `fs.write` su una cartella che è un link all'albero di ELA non nasce, `path.outside_root`; nessuna policy viva | lo script |
+| 7 | l'anteprima di `browser.act_as_you` su `httpbin.org`; la policy `810e2a4e`; il modulo di `httpbin.org/forms/post` inviato come te, senza domanda, e il testo atteso sulla pagina dopo; un gesto su `testpages.eviltester.com` chiede, «a value of site is not among those of policy 810e2a4e», e il no | l'anteprima sullo schermo Tommaso, sì; il «crei la policy?» e il no Tommaso; il testo atteso il verifier; il resto lo script |
+| 8 | lo stesso con `browser.act`, nel browser vuoto: la policy `779c73cb`, l'invio senza domanda, il gesto fuori che chiede, e il no; le due policy del browser a 1 uso e 1 azione | il «crei la policy?» e il no Tommaso; il testo atteso il verifier; il resto lo script |
+| 9 | la vista delle policy della console: le due vive dicono `HIGH`, che cosa fanno senza chiedere, gli usi e un'azione ciascuna; fra le finite di recente, la policy del passo 5 ha finito gli usi | Tommaso, sì |
+| 10 | la revoca delle due policy del browser; nessuna policy viva | lo script |
+
+**Che cosa non si è visto**: il rifiuto di un posto protetto in sé — al passo 6 la cartella che porta all'albero di ELA
+non nasce già con `path.outside_root`, perché il link esce dalla radice — lo prova solo la suite; e solo la suite prova uno
+step su un nodo, che una policy del Core non copre (§4), e il file con due nomi, `path.hard_link`, anche nella suite del
+nodo su Windows. **Il `.env` del Mac** (decisione 38), letto da Tommaso il 2026-11-12: `ELA_FS_ROOT` è la cartella
+Documents di Tommaso, `ELA_FS_SCOPE` è `ELA`, ed ELA è partita dal branch con quelle righe. **Il PC non è ancora stato
+guardato**: si guarda, con il comando in PowerShell della SPEC, prima del suo `git pull` di `main` con M13.14.
+
+**Tre rilievi del file della prova** (decisione 39) non si riparano qui — dopo la prova cambiano solo i documenti e i
+test —: la frase sola della domanda del passo 5 nomina la revoca di `17ec60e7` e non gli usi finiti di `8385bdc6`, che le
+righe «why I ask» dicono tutte e due; la revoca di una policy di `fs.write` o di un gesto stampa la frase sulle sessioni,
+che è di una policy di sessione guidata; «at most 1 uses» e «in 1 day(s)». Sono punti a cui risponde la SPEC di
+[M13.15](../milestones/M13.15.md), che tocca le stesse superfici.
 
 ## Alternative
 
