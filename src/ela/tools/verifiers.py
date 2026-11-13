@@ -367,7 +367,9 @@ class _FsVerifier(Verifier):
 
     reads_the_machine: ClassVar[bool] = True
     """The disk of this machine: from a node it would read the Core's disk, where a file with the
-    same path may exist — the false positive of ADR 0038 §14. Neither capability travels."""
+    same path may exist — the false positive of ADR 0038 §14. Since ADR 0048 §7 ``fs.write`` travels
+    to a node that has a root, and its verdict comes back in the envelope, read there by the node's
+    own copy of this verifier — never by the Core's (corrected with M13.14)."""
     conditions: ClassVar[frozenset[str]] = frozenset({FS_FILE_EXISTS, FS_CONTENT_MATCHES})
     failure_codes: ClassVar[frozenset[str]] = (
         COMMON_FAILURE_CODES | PATH_CODES | {FS_CONTENT_MISMATCH, FS_UNREADABLE}

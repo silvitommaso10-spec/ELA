@@ -148,7 +148,10 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.11` | Proposta | Il browser sul PC: le capacità di M13.9 e M13.10 sul nodo Windows, e il verdetto che torna in busta |
 | 13 — Il permesso prima dell'azione | `M13.12` | Implementata | Le policy di §59: una policy che Tommaso si crea rende autonoma un'azione `MEDIUM`, a partire da `browser.guided` |
 | 13 — Il permesso prima dell'azione | `M13.13` | Implementata | I file dal browser: uno scaricamento è un `fs.write`, un caricamento un `fs.read` |
-| 13 — Il permesso prima dell'azione | `M13.14` | Proposta | Le policy di Tommaso arrivano alle azioni HIGH |
+| 13 — Il permesso prima dell'azione | `M13.13b` | Proposta | Uno scaricamento interrotto che a volte lascia il suo file a metà |
+| 13 — Il permesso prima dell'azione | `M13.14` | Implementata | Le policy di Tommaso arrivano alle azioni HIGH |
+| 13 — Il permesso prima dell'azione | `M13.15` | Proposta | Le policy di Tommaso arrivano al login e ai file dal browser |
+| 13 — Il permesso prima dell'azione | `M13.16` | Proposta | Il terminale sotto le policy di Tommaso, con un confine dimostrato |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.1` | Implementata | Il tetto di spesa: la chiave di ELA, e un limite che ELA fa rispettare |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.1b` | Implementata | La docstring del tetto dice il secondo tetto giusto: il limite dell'organizzazione |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.1c` | Proposta | Il caso peggiore senza prezzo: un ramo e un rifiuto che nessun produttore raggiunge |
@@ -160,6 +163,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.6b` | Implementata | Haiku 4.5 esce dal listino: il modello che nessun profilo nomina, e le due prove che poggiano solo su di lui |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.7` | Proposta | Il lavoro su un progetto: una sessione di Claude Code in un worktree, e il diff che si approva prima del branch |
 | 15 — *senza nome* | `M15.2` | Proposta | Le skill: un lavoro già riuscito, salvato con il suo verifier, da cui il Planner riparte |
+| 15 — *senza nome* | `M15.3` | Proposta | ELA conosce il nome di chi la usa |
 | 17 — Design | `M17.1` | Implementata | Il Design System: l'identità minima, e le regole che ogni superficie di ELA eredita |
 | 17 — Design | `M17.2` | Implementata | Il Command Center v1: un client dell'API, quattro viste, e la terza identità del registro |
 | 17 — Design | `M17.2b` | Implementata | Un esito finale sparisce dalle superfici che elencano i task |
@@ -179,10 +183,10 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **67** | `docs/adr/NNNN-*.md` |
-| Milestone | **100, di cui 80 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
-| Regole di architettura | **73** | `RULES` in `tests/architecture/` |
-| Contratti import-linter | **15** | `pyproject.toml` |
+| ADR scritti | **68** | `docs/adr/NNNN-*.md` |
+| Milestone | **104, di cui 81 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Regole di architettura | **74** | `RULES` in `tests/architecture/` |
+| Contratti import-linter | **16** | `pyproject.toml` |
 | Port | **36** | i `Protocol` di `src/ela/ports.py` |
 | Capability di produzione | **22** | `production_catalogue()` |
 | Rotte dell'API | **72** | i `router` di `ela.api` |
@@ -225,7 +229,8 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
   e scrive file in una cartella che l'utente dichiara — `ELA_FS_ROOT` e `ELA_FS_SCOPE`, due righe
   senza default, perché un confine che ELA sceglie per te è un confine che non ha deciso nessuno —
   e il livello **`HIGH` esiste davvero**: non è più un diniego, è un'approvazione per ogni uso che
-  nessuna policy permanente di §59 raggiunge. Con **M13.2** esegue anche i programmi che l'utente
+  nessuna policy permanente di §59 raggiunge (***annotato il 2026-11-12***: da M13.14 una policy raggiunge una `HIGH` che
+  dichiara i suoi termini, ADR 0068 — il livello non si abbassa). Con **M13.2** esegue anche i programmi che l'utente
   dichiara — `ELA_TERMINAL_PROGRAMS`, relativi a `/`, `[]` ammessa —: un comando è `argv`, il figlio
   riceve un ambiente chiuso e nasce in un gruppo suo, e la domanda nomina ciò che girerà. Con
   **M13.3** (2026-09-26, ADR 0048) l'azione viaggia: `fs.read` e `fs.write` vanno a un nodo che ha
@@ -310,7 +315,10 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
   momento in cui ELA decide di parlare da sola, e il trascritto che oggi non sopravvive al task
   perché un trascritto è memoria e la memoria è lì. ***Annotato il 2026-11-02***: registrata **M15.2**, le skill — un
   lavoro già riuscito, salvato con il suo verifier, da cui il Planner riparte —, dalla decisione di Tommaso del
-  2026-10-30; è la prima della fase nell'ordine (5.10), e M15.1 resta della wake word (5.6).
+  2026-10-30; è la prima della fase nell'ordine (5.10), e M15.1 resta della wake word (5.6). ***Annotato il
+  2026-11-12*** (risposta 35 della review della SPEC di M13.14): registrata **M15.3** — ELA conosce il nome di chi la
+  usa, da un'impostazione, e lo usa dove gli parla; una ELA senza quel nome parla come oggi —, Proposta, con la sua
+  posizione nella fila non ancora decisa ([`milestones/M15.3.md`](milestones/M15.3.md)).
 - **Le fasi che restano non hanno ancora consegnato niente.** Il blocco qui sotto elenca le fasi
   che un documento del repository nomina e che **nessuna milestone ha ancora cominciato** — nessuna
   delle loro è uscita da `Proposta` —, e ciò che non compare non è dimenticato: è **non ancora
@@ -327,7 +335,7 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
 
 | Fase | Documenti che la nominano |
 |---|---|
-| 15 | 19 |
+| 15 | 22 |
 | 16 | 1 |
 
 <!-- fine del blocco generato: le fasi che un documento nomina -->
@@ -443,6 +451,10 @@ permanenza in attesa di una parola**, e quello non è nessuno dei tre stati che 
 quell'enum è una decisione che si prende con la milestone che la usa, non prima. Va con la Fase 15
 perché «ELA decide da sola di ascoltare» è §34, non §11.
 
+***Annotato il 2026-11-12*** (risposta 35 della review della SPEC di M13.14): Tommaso vuole valutare il
+riconoscimento della sua voce. Lo decide la SPEC di M15.1, e **una voce riconosciuta non vale mai come un sì a
+un'azione che chiede**.
+
 ### 5.7 Chi paga il lavoro agentico
 
 Dalla **Fase 14** il lavoro agentico — coding, ricerca — **non lo fa ELA chiamando il modello**: lo fa
@@ -479,7 +491,9 @@ Claude Code su Haiku 5.5, ogni gesto un task figlio deciso dal Guardian, il sì 
 ELA lavora su un progetto di Tommaso con una sessione di Claude Code, in un worktree suo, e ciò che si approva è il diff,
 prima che tocchi il branch del progetto ([`milestones/M14.7.md`](milestones/M14.7.md)). Per il codice la terza condizione
 torna com'è scritta qui; il push chiede sempre, salvo una policy di M13.14 che lo copra (5.14), e il merge su `main` non lo
-fa mai ELA. La posizione è nella fila della 5.10, dopo M13.11 e prima di M13.5.
+fa mai ELA. La posizione è nella fila della 5.10, dopo M13.11 e prima di M13.5. ***Annotato il 2026-11-13***: M13.14 ha
+lasciato `terminal.run` fuori dalle policy, fino a [M13.16](milestones/M13.16.md): un push con il terminale chiede ogni
+volta.
 
 ### 5.8 Come si paga una sessione
 
@@ -713,7 +727,16 @@ cambiano. In quest'ordine:
    (***annotato il 2026-11-03***, risposta 18 della review delle SPEC del branch `m13.13-i-file-dal-browser`: sullo
    stesso branch, nell'ordine, M13.9b, **M13.9c**, M13.10b, M13.13; ***annotato il 2026-11-11***: **fatte**, con la
    prova a mano passata a `ead73aa`, e ADR 0066 è Accettata: il merge lo fa Tommaso, e la prossima è M13.14);
-2. **M13.14**, le policy di Tommaso arrivano alle azioni `HIGH` (5.14);
+2. **M13.14**, le policy di Tommaso arrivano alle azioni `HIGH` (5.14); ***annotato il 2026-11-12*** (risposte 18 e 19
+   della review della sua SPEC): **subito dopo di lei [M13.15](milestones/M13.15.md)**, registrata, `Proposta` — le
+   policy arrivano al login e ai file dal browser, il secondo pezzo del taglio —, e poi M13.4g; la fila è **M13.14,
+   M13.15, M13.4g, M13.11**, e se il test di M13.4g torna rosso in un giro M13.4g passa davanti. **M13.16** — il
+   terminale sotto le policy, con un confine dimostrato — è registrata **fuori dalla fila**
+   ([`milestones/M13.16.md`](milestones/M13.16.md)); ***annotato il 2026-11-12***, più tardi (il `make check` rosso a
+   `4b0b11c` sul branch di M13.14): registrata **[M13.13b](milestones/M13.13b.md)**, `Proposta` — uno scaricamento
+   interrotto che a volte lascia il suo file a metà —, accanto a M13.4g e con la sua regola: se il suo test torna rosso
+   in un giro, passa davanti; ***annotato il 2026-11-13***: **fatta**, con la prova a mano passata a `75d1167`, e
+   ADR 0068 è Accettata: il merge lo fa Tommaso, e la prossima è M13.15;
 3. **M13.11**, il browser sul PC (***annotato il 2026-11-12***, decisione 36 della review dopo la CI rossa di `a5a74fd`
    sul branch di M14.6b: **prima di lei [M13.4g](milestones/M13.4g.md)**, registrata, `Proposta` — il click che apre
    un'altra pagina, con il browser del profilo, che a volte non dice la sua pagina —);
@@ -830,7 +853,9 @@ M13.1d → M13.9 → M13.10 → M13.11 → M13.5 → M13.7 → M13.8**; dopo M13
 M14.3 e prima di M13.9 — qui sotto, «Chi apre la milestone delle policy di §59». ***Annotato il 2026-10-10***: fatta, con
 la prova a mano passata.) ***Annotato il 2026-11-02*** (la fila rivista, 5.10): ciò che resta della fase è **M13.13 →
 M13.14 → M13.11 → M13.5 → M13.7 → M13.8**, con M14.7 fra M13.11 e M13.5, e M14.4 fra M13.5 e M13.7. (***Annotato il
-2026-11-11***: M13.13 è fatta, con la prova a mano passata.) La fila intera, con
+2026-11-11***: M13.13 è fatta, con la prova a mano passata. ***Annotato il 2026-11-12***: dopo M13.14 vengono
+M13.15 e M13.4g, prima di M13.11; M13.16 sta fuori dalla fila — la 5.10. ***Annotato il 2026-11-13***: M13.14 è
+fatta, con la prova a mano passata.) La fila intera, con
 M6.3c in testa, sta nella 5.10. M13.6 resta fuori dalla
 fila, con la sua condizione. **La Fase 14 comincia prima che la Fase 13 sia chiusa**, e la ragione è di
 Tommaso: **tutto ciò che vuole dal browser e dal computer control passa da un modello che guarda e
@@ -1101,7 +1126,16 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   dalla decisione di Tommaso di quel giorno (5.14): una policy che Tommaso crea può coprire un'azione `HIGH`, e dentro i
   suoi confini ELA la fa senza chiedere; `CRITICAL` resta fuori, e nessuna policy copre un'azione che tocca il sistema di
   sicurezza di ELA. Il suo ADR rivede ADR 0045 §3 e la riga di ADR 0062 §1 che rifiuta la dichiarazione su una `HIGH`.
-  **Dopo M13.13, prima di M13.11** ([`milestones/M13.14.md`](milestones/M13.14.md)).
+  **Dopo M13.13, prima di M13.11** ([`milestones/M13.14.md`](milestones/M13.14.md)). ***Annotato il 2026-11-13***:
+  **fatta**, con la prova a mano passata a `75d1167`, e [ADR 0068](adr/0068-policies-on-high.md) è Accettata.
+- **M13.15 — le policy di Tommaso arrivano al login e ai file dal browser** (§59, §19). **Registrata il 2026-11-12**,
+  dalle risposte 18 e 19 della review della SPEC di M13.14: il secondo pezzo del suo taglio — `browser.login` e le
+  quattro capability dei file —, con un numero suo perché la lettera è di una riparazione. **Subito dopo M13.14, prima
+  di M13.4g e di M13.11** ([`milestones/M13.15.md`](milestones/M13.15.md)).
+- **M13.16 — il terminale sotto le policy di Tommaso, con un confine dimostrato** (§59, §65). **Registrata il
+  2026-11-12**, dalla decisione 5 del prompt di M13.14 e dalla risposta 18: `terminal.run` resta fuori dalle policy
+  finché una SPEC non dimostra un confine che tenga il sistema di sicurezza di ELA fuori dalla portata di un programma.
+  **Fuori dalla fila** ([`milestones/M13.16.md`](milestones/M13.16.md)).
 
 **Che cosa la Fase 13 non porta.**
 
@@ -1164,7 +1198,10 @@ il 2026-10-10***: **il percorso c'è** — M13.12 è fatta, con la prova a mano 
 0045 §3)», una policy che Tommaso crea **può coprire anche un'azione `HIGH`**, con uno scope stretto, dei tetti e una scadenza; `CRITICAL` resta
 fuori, e nessuna policy copre un'azione che tocca il sistema di sicurezza di ELA. **Il resto di questa voce resta**: il
 livello non si abbassa mai, e una policy la crea solo Tommaso. Fino a M13.14, che lo costruisce, il codice è quello di
-ADR 0062, e nessuna policy raggiunge una `HIGH`.
+ADR 0062, e nessuna policy raggiunge una `HIGH`. ***Annotato il 2026-11-12***: M13.14 lo costruisce — ADR 0068, Proposta
+fino alla prova a mano —: `fs.write`, `browser.act` e `browser.act_as_you` dichiarano i loro termini e leggono la riga
+`APPROVAL_UNLESS_POLICY`; `terminal.run`, il login e le quattro capability dei file chiedono a ogni uso, fino a M13.16 e
+M13.15. ***Annotato il 2026-11-13***: la prova a mano di M13.14 è passata, e ADR 0068 è Accettata.
 
 *Perché nessun ADR:* è una scelta d'ordine e di perimetro — quale milestone, quando, che cosa
 eredita, che cosa resta fuori — e nessuna riga di codice la contiene. Le parti tecniche prendono il
@@ -1208,7 +1245,9 @@ dopo M13.11 e prima di M13.5, quindi prima di M14.4; **M14.6b** sta fuori dalla 
   nome di Tommaso chiede ogni volta; «cercare» è navigare, un `browser.read`. È lavoro agentico (5.7).
   ***Rivisto apertamente da Tommaso il 2026-11-02*** (5.14): «mandare qualcosa a nome di Tommaso chiede ogni volta»
   resta vero **salvo una sua policy che lo copra**, con uno scope stretto — un sito, un contatto —, dei tetti e una
-  scadenza. Lo costruisce M13.14; fino a lei, chiede ogni volta.
+  scadenza. Lo costruisce M13.14; fino a lei, chiede ogni volta. ***Annotato il 2026-11-12***: costruito da M13.14 per
+  `browser.act` e `browser.act_as_you` (ADR 0068), con i confini che Tommaso sceglie — i siti, gli usi se li mette, una
+  scadenza sempre —; il login e i file dal browser con M13.15.
   **Dopo M14.2**, e non aspetta M13.9: le pagine pubbliche non vogliono il login, e WhatsApp Web, che lo
   vuole, passa nella prova a mano di M13.9. ***Annotato il 2026-10-10***: nella prova a mano di **M13.10**
   (decisione 37 della review della SPEC di M13.9). ***Annotato il 2026-10-15***: ne esce anche lì, finché la causa
@@ -1227,7 +1266,8 @@ dopo M13.11 e prima di M13.5, quindi prima di M14.4; **M14.6b** sta fuori dalla 
   suo; ciò che si approva è il diff, prima che tocchi il branch del progetto; il push chiede sempre, salvo una policy di
   M13.14 che lo copra; il merge su `main` non lo fa mai ELA; chi paga lo decide la cartella (5.8); sul repository di ELA
   stessa nessuna policy copre ciò che tocca il suo sistema di sicurezza (5.14). È lavoro agentico (5.7). **Dopo M13.11,
-  prima di M13.5** ([`milestones/M14.7.md`](milestones/M14.7.md)).
+  prima di M13.5** ([`milestones/M14.7.md`](milestones/M14.7.md)). ***Annotato il 2026-11-13***: M13.14 ha lasciato
+  `terminal.run` fuori dalle policy, fino a M13.16 (5.7).
 - **M14.6b — Haiku 4.5 esce dal listino** (§25, §30). **Registrata il 2026-11-02** (decisione 5): nessun profilo lo
   nomina da M14.6, dal 2026-11-01 il libro del mese non ha prenotazioni di ottobre, e la data di ritiro della sua pagina è
   passata. **Fuori dalla fila**, con una condizione: si fa prima della prossima rilettura del listino, **entro il
@@ -1285,7 +1325,9 @@ di M14.3) e «`HIGH` resta fuori dalle policy (ADR 0045 §3)» (5.11, «Chi apre
 in quei due posti. La costruisce **M13.14** ([`milestones/M13.14.md`](milestones/M13.14.md)), dopo M13.13 nella fila della
 5.10, e il suo ADR rivede ADR 0045 §3 — «`HIGH` è il livello che non raggiungono» — e la riga di ADR 0062 §1 che rifiuta
 la dichiarazione alla costruzione del catalogo — «no policy reaches a HIGH (ADR 0045 §3)». **Fino a lei il codice è quello
-di oggi**, e nessuna policy raggiunge una `HIGH`.
+di oggi**, e nessuna policy raggiunge una `HIGH`. ***Annotato il 2026-11-13***: M13.14 è fatta, con la prova a mano
+passata, e [ADR 0068](adr/0068-policies-on-high.md) è Accettata: da lei una policy raggiunge `fs.write`, `browser.act` e
+`browser.act_as_you`.
 
 *Perché:* Tommaso vuole decidere una volta, lui, che cosa ELA fa da sola, invece di rispondere ogni volta alla stessa
 domanda. §59 lo prevede — «Puoi modificare liberamente i file dentro questa cartella» è una policy su `fs.write`, che in
@@ -1310,8 +1352,17 @@ suoi confini e una fine. È la forma che la 5.11 dà alle `MEDIUM` — «mai abb
   `terminal.run`**, il cui scope sono i programmi e non i file, e la cui sola difesa è il sì a ogni uso: **resta fuori
   dalle policy** finché la SPEC di M13.14 non dimostra un confine che tenga il sistema di sicurezza fuori dalla sua
   portata (risposta 8 del 2026-11-02). Il dettaglio è in M13.14, nella sezione «(d)». Vale anche per M14.7, sul repository di ELA.
+  ***Annotato il 2026-11-13***: da M13.14 una policy raggiunge una `HIGH`, e ciò che tiene (d) è in ADR 0068 — i posti
+  protetti di §7, a ogni scrittura, e `terminal.run` fuori dalle policy fino a [M13.16](milestones/M13.16.md) —, con le
+  tre strade che una policy non chiude, dichiarate lì: il limite è vero quanto le cartelle e i siti scelti.
 - **(e) Una policy su un'azione `HIGH` ha uno scope stretto** — un sito, un contatto, una cartella —, **dei tetti e una
   scadenza**, e l'anteprima nomina ciò che ELA farà senza chiedere. Le forme le decide la SPEC.
+  ***Rivisto da Tommaso il 2026-11-12*** (M13.14, decisione 2 del suo prompt), con le sue parole: «voglio che ELA possa
+  avere qualsiasi policy che io voglia […] il limite irrevocabile è che ELA non può creare policy da sola, quindi non
+  mettiamo limiti». Una policy su un'azione `HIGH` ha **i confini che Tommaso sceglie** — lo scope una lista di quante
+  voci vuole, il tetto agli usi facoltativo, vuoto per «senza limite» —, **una scadenza sempre**, da 1 a 90 giorni, e
+  l'anteprima nomina ciò che ELA farà senza chiedere. (a), (b), (c) e (d) restano: sono ciò che rende vero quel limite.
+  La revisione datata è nella SPEC di [`milestones/M13.14.md`](milestones/M13.14.md).
 
 *Perché nessun ADR:* è una decisione di prodotto e di perimetro — fin dove arriva un sì dato prima — e nessuna riga di
 codice la contiene ancora. La parte tecnica prende l'ADR di M13.14, come le `MEDIUM` hanno preso ADR 0062 con M13.12.

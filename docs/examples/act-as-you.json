@@ -2,7 +2,8 @@
   "_nota": [
     "Il piano della prova a mano di M13.9 per un GESTO COME TE (GETTING_STARTED, sezione 28, passo 9): il",
     "modulo di prova di httpbin.org, compilato e inviato dal browser di ELA con il profilo.",
-    "`browser.act_as_you` è HIGH: chiede a ogni uso, e nessuna policy né sessione lo copre. Su httpbin.org",
+    "`browser.act_as_you` è HIGH: chiede a ogni uso, e nessuna sessione lo copre; dal 2026-11-12",
+    "(M13.14, ADR 0068) lo copre una policy tua di browser.act_as_you sul sito. Su httpbin.org",
     "non hai un account: il gesto è fatto con il tuo profilo, e il sito rimanda indietro ciò che riceve.",
     "Il valore `ELA prova 9139` è un MARCATORE: sta nella domanda e nel risultato, e non nell'audit.",
     "Questa chiave è ignorata dall'API (ADR 0025 §8)."

@@ -40,6 +40,11 @@ it covers the verifiers).
 
 ``None`` means a regular file is there. Which of these a caller treats as a refusal is the
 caller's: the tool writes over :data:`PATH_MISSING`; the verifier reads only ``None``.
+
+**Where a folder is** (M13.14, ADR 0068): :func:`within` and :func:`same_folder`, the comparison
+of two places by their spelling and by what the volume says. Here and not in the composition, so
+the check of the root at the start-up and the check of a write under a policy are one comparison:
+the composition imports them, and a tool cannot import the composition.
 """
 
 from __future__ import annotations
@@ -64,6 +69,8 @@ __all__ = [
     "classify",
     "is_relative_note_path",
     "resolve_workspace",
+    "same_folder",
+    "within",
 ]
 
 PATH_INVALID: Final = "path.invalid"
@@ -160,6 +167,25 @@ def resolve_workspace(root: Path | str) -> Path:
     created here — the tool creates the directory before resolving it, the verifier never does.
     """
     return Path(root).expanduser().absolute().resolve()
+
+
+def same_folder(one: Path, other: Path) -> bool:
+    """What the volume says: whether two paths name one folder. A path that names nothing is the
+    same as no place."""
+    try:
+        return one.samefile(other)
+    except OSError:
+        return False
+
+
+def within(folder: Path, place: Path) -> bool:
+    """Whether ``folder`` is ``place`` or lies below it — **by its spelling, and by what the
+    volume says of what is there** (:func:`same_folder`). The volume of a Mac ignores the case
+    of a name, and resolving a path leaves a spelling as it was written: one folder has more than
+    one spelling there, and a comparison of spellings alone would call a folder typed in lower
+    case a different place."""
+    chain = (folder, *folder.parents)
+    return place in chain or any(same_folder(part, place) for part in chain)
 
 
 def classify(root: Path, path: str) -> PathProblem | None:

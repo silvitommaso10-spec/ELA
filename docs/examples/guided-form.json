@@ -1,7 +1,8 @@
 {
   "_nota": [
     "Il gesto che chiede, per la prova a mano di M14.3 (GETTING_STARTED, sezione 26, passi 5 e 6): la",
-    "frase vuole un modulo inviato, e un invio è `browser.act`, HIGH, che chiede ogni volta. La",
+    "frase vuole un modulo inviato, e un invio è `browser.act`, HIGH, che chiede ogni volta —",
+    "dal 2026-11-12 (M13.14, ADR 0068) salvo una policy tua di browser.act sul sito. La",
     "domanda arriva sul figlio del gesto, non sulla sessione: la sessione aspetta la tua risposta,",
     "e la durata conta anche l'attesa. Con un no il gesto è DENIED e il modello lo legge; con un",
     "sì il modulo parte. httpbin.org rimanda indietro ciò che riceve e non tiene niente; è",

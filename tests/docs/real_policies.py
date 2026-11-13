@@ -57,8 +57,8 @@ CREATE: Final = (
 )
 """The command of step 4, without ``--confirm``: section 27 writes it on one line."""
 REFUSALS: Final = (
-    ("policy", "create", "browser.act", "--scope", "example.com", "--days", "1", "--confirm"),
-    ("policy", "create", "fs.write", "--scope", "notes", "--days", "1", "--confirm"),
+    ("policy", "create", "terminal.run", "--scope", "bin/echo", "--days", "1", "--confirm"),
+    ("policy", "create", "browser.login", "--scope", "example.com", "--days", "1", "--confirm"),
     (
         *CREATE[:5],
         "--limit",

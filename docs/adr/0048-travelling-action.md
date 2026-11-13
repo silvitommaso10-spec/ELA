@@ -4,6 +4,7 @@
   review. Si è scritta un pezzo per commit, nell'ordine della SPEC; l'esito della misura dei pesi
   (§13) e della deriva dell'orologio (§14) è scritto dopo la prova a mano del 2026-09-26, con i numeri
   presi.
+  **Rivista da ADR 0068 (M13.14)** il 2026-11-12: §11 — «ogni grant di `fs.*` nasce da un sì ed è monouso» resta vero per uno step su un nodo, che una policy non copre mai (ADR 0068 §4).
 - **Data:** 2026-09-25
 - **Riferimenti spec:** §13, §15, §16, §17, §18, §23, §28, §32, §33, §56, §57, §63
 - **Milestone:** M13.3

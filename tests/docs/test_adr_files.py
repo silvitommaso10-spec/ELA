@@ -105,9 +105,10 @@ def test_what_m13_9b_put_in_the_port_is_the_port_s() -> None:
         assert named in text, named
 
 
-def test_the_conseguenze_count_the_totals_of_today() -> None:
-    """The pin on today's totals, taken over from ADR 0065 (M13.9c adds the seventy-second rule,
-    M13.13 the seventy-third and four capabilities): it moves to the ADR that changes them."""
+def test_the_conseguenze_count_the_totals_as_this_adr_saw_them() -> None:
+    """The totals of the day this ADR was written (M13.9c added the seventy-second rule, M13.13 the
+    seventy-third and four capabilities). The pin on today's moved to ADR 0068 (M13.14), which
+    adds the seventy-fourth rule and the sixteenth contract."""
     import tomllib
 
     from ela.api.security import Kind
@@ -117,6 +118,7 @@ def test_the_conseguenze_count_the_totals_of_today() -> None:
     from tests.docs.test_adr_cli import coded_commands
     from tests.docs.test_adr_composition import coded_routes
     from tests.docs.test_adr_placement import _rules_up_to
+    from tests.docs.test_adr_planner import contracts_up_to
 
     text = adr_text().split("## Conseguenze", 1)[1]
     contracts = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"][
@@ -125,12 +127,12 @@ def test_the_conseguenze_count_the_totals_of_today() -> None:
 
     assert "**settantatré**" in text
     assert "**Regola di architettura 72**" in text and "**Regola di architettura 73**" in text
-    assert len(RULES) == 73
-    assert set(RULES) - set(_rules_up_to(71)) == {
+    assert len(_rules_up_to(73)) == 73 <= len(RULES)
+    assert set(_rules_up_to(73)) - set(_rules_up_to(71)) == {
         "the-vault-s-program-is-its-adapter-s",
         "a-file-is-given-as-bytes-and-a-download-is-named",
     }
-    assert "**quindici**" in text and len(contracts) == 15
+    assert "**quindici**" in text and len(contracts_up_to(15)) == 15 <= len(contracts)
     assert "**trentasei**" in text and len(tuple(port_protocols())) == 36
     assert "**settantadue**" in text and len(coded_routes()) == 72
     assert "**trentanove**" in text and len(coded_commands()) == 39
@@ -176,7 +178,9 @@ def test_the_tool_rows_are_the_running_tools() -> None:
         BrowserDownloadTool,
         BrowserUploadTool,
     )
+    from tests.docs.test_adr_policies_on_high import added_codes
 
+    added = added_codes()
     rows = {
         match.group(1): match.groups()
         for line in adr_text().splitlines()
@@ -195,7 +199,8 @@ def test_the_tool_rows_are_the_running_tools() -> None:
         assert class_name == tool.__name__
         assert name == capability.replace(".", "-").replace("_", "-")
         assert (idempotent == "sì") is tool.idempotent
-        assert codes(errors) == tool.error_codes, capability
+        # The two codes of a write ADR 0068 §7 adds (M13.14): this ADR's rows stay as they were.
+        assert codes(errors) | added.get(capability, frozenset()) == tool.error_codes, capability
         assert codes(numbers) == tool.audit_numbers, capability
         assert not tool.relocatable and not tool.continuing
 

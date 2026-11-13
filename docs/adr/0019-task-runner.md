@@ -7,6 +7,7 @@
   chiamata*», «`Run.steps` vuoto è ciò che dice quale dei due è successo» e la riga `DENIED`, e il
   nome del test citato in §3: rivisti da **ADR 0051** (M6.3b) — gli step trattati, e un vuoto che non
   dice chi ha chiuso il task.
+  **Rivista da ADR 0068 (M13.14)** il 2026-11-12: §4 — il nodo entra in una regola del Guardian, una sola e solo per togliere: una policy di una capability che dichiara `on_the_core` non copre uno step su un nodo, né uno di cui nessuno ha detto dove (ADR 0068 §4).
 - **Data:** 2026-09-07
 - **Riferimenti spec:** §13, §14, §15, §17, §18, §27, §32, §33, §63
 - **Milestone:** M6.3

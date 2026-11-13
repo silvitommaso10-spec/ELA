@@ -24,6 +24,7 @@ from pydantic import (
     SecretStr,
     SerializerFunctionWrapHandler,
     StrictBool,
+    StrictInt,
     field_validator,
     model_serializer,
 )
@@ -83,6 +84,7 @@ from ela.executive import ASKED, REPORTABLE, Delivery, Envelope, Verdict, check_
 from ela.tasks.graph import GraphState
 
 __all__ = [
+    "ActionOut",
     "AnswerIn",
     "AnswererOut",
     "AnswererRole",
@@ -1588,8 +1590,9 @@ class BrowserClosedOut(BaseModel):
 
 
 class PolicyIn(BaseModel):
-    """What Tommaso asks for: a capability, the scope — for ``browser.guided`` the sites —, every
-    declared limit in words, and the days, **with no default** (decision 3d)."""
+    """What the user asks for: a capability, the scope — the sites, the folders —, every declared
+    limit in words, the days, **with no default** (decision 3d), and the uses, ``None`` for no
+    limit (M13.14, ADR 0068) — a whole number and never a ``true``, which is a word."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -1597,13 +1600,16 @@ class PolicyIn(BaseModel):
     scope: tuple[str, ...]
     limits: dict[str, str] = Field(default_factory=dict)
     days: int
+    uses: StrictInt | None = None
 
 
 class PolicyConfirmIn(PolicyIn):
-    """The creation: what the preview showed, with the model it named (decision 9). A prospect
-    that now names another model refuses it — what is saved is what was approved."""
+    """The creation: what the preview showed, with the model it named (decision 9) — ``None``, or
+    an empty text, for a capability that calls none (M13.14: the CLI sends what the preview showed,
+    and a ``None`` there was a ``422``). A prospect that now names another model refuses it — what
+    is saved is what was approved."""
 
-    model: str
+    model: str | None
 
 
 class LimitOut(BaseModel):
@@ -1618,10 +1624,15 @@ class LimitOut(BaseModel):
 
 
 class TermsOut(BaseModel):
-    """A capability that admits a policy, and what a policy of it must bound (decision 1)."""
+    """A capability that admits a policy, and what a policy of it must bound (decision 1); since
+    M13.14 its level, what it does and where it goes, and whether it covers only the Core."""
 
     capability: CapabilityId
     description: str
+    risk: str
+    does: str | None
+    goes: str | None
+    on_the_core: bool
     scope: tuple[str, ...]
     limits: tuple[LimitOut, ...]
     uncovered: tuple[str, ...]
@@ -1631,14 +1642,31 @@ class TermsOut(BaseModel):
     days_max: int
 
 
+class ActionOut(BaseModel):
+    """One action done under a policy, read from its ``TOOL_EXECUTED`` (M13.14, ADR 0068; decision
+    13): when, which task — its short id — and step, which capability, how it ended, and its
+    targets, which are ``LOCAL_ONLY`` content like the sites."""
+
+    at: datetime
+    task: str | None
+    step: str | None
+    capability: CapabilityId | None
+    status: str
+    targets: tuple[str | None, ...]
+
+
 class PolicyOut(BaseModel):
     """A policy as a person reads it (decision 9): its capability, its sites, its limits, its end,
     its uses, who created it and when — the name and the role read from the registry at the read,
-    never written into the audit (ADR 0059 §3)."""
+    never written into the audit (ADR 0059 §3). Since M13.14 (ADR 0068) also its level, what it
+    does without asking, its uses with what is left, and its last actions: **derived, never
+    stored**."""
 
     id: UUID
     short: str
     capability: CapabilityId
+    risk: str
+    does: str | None
     scope: tuple[str, ...]
     limits: dict[str, str]
     uncovered: tuple[str, ...]
@@ -1651,6 +1679,12 @@ class PolicyOut(BaseModel):
     uses: int
     """How many times the policy covered a decision and was spent: counted before a session
     starts, so a session refused after the spend — the month's cap — counts too."""
+    max_uses: int | None
+    """How many uses the user gave it, ``None`` for no limit."""
+    remaining: int | None
+    """How many are left, ``None`` for no limit."""
+    recent: tuple[ActionOut, ...]
+    """Its last actions, at most five, the most recent first."""
 
 
 class PoliciesOut(BaseModel):
@@ -1666,10 +1700,25 @@ class PreviewOut(BaseModel):
 
     capability: CapabilityId
     description: str
+    risk: str
+    """The level of the capability (M13.14, ADR 0068): ``HIGH`` is said before anything else."""
+    does: str | None
+    """What ELA will do without asking, in the capability's words; ``None`` where it declares
+    none."""
+    goes: str | None
+    """Where what it makes goes."""
     scope: tuple[str, ...]
+    resolved: tuple[str | None, ...]
+    """For each entry of the scope, the place as the Core's disk names it, whole — the folder of
+    a policy that touches a file —, or ``None`` where the tool resolves nothing (answer 20 of the
+    review of the SPEC of M13.14): what is approved names what counts. ``LOCAL_ONLY``."""
     limits: dict[str, str]
     days: int
     expires_at: datetime
+    uses: str
+    """«at most N uses», or «no limit of uses»."""
+    on_the_core: str
+    """For a policy that covers only the Core, the sentence that says so; empty otherwise."""
     model: str | None
     sends: str
     one_call: str

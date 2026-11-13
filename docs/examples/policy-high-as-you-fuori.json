@@ -1,0 +1,33 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M13.14 (sezione 32, passo 7): un gesto con i tuoi account su",
+    "testpages.eviltester.com, un sito dichiarato che la policy non nomina. Chiede, e la riga «why I",
+    "ask» dice che il sito non è fra quelli della policy. Si risponde no: il gesto non parte. La pagina",
+    "è quella della sezione 30; il gesto — un click sul titolo — non si fa mai.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "un gesto come me su un sito fuori dalla policy",
+  "steps": [
+    {
+      "id": "c0de1a32-0000-4b00-8a00-000000000009",
+      "goal": "un gesto come me su un sito fuori dalla policy",
+      "required_capabilities": [
+        "browser.act_as_you"
+      ],
+      "arguments": {
+        "site": "testpages.eviltester.com",
+        "path": "/pages/files/file-upload/",
+        "fill": [],
+        "click": "h1",
+        "expect_text": "ELA prova 3207",
+        "purpose": "la prova a mano delle policy sulle azioni HIGH"
+      },
+      "risk": "HIGH",
+      "expected_result": "la pagina dopo il gesto mostra il testo atteso",
+      "success_conditions": [
+        "browser.expect_visible"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}

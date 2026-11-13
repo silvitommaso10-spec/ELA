@@ -700,15 +700,18 @@ def select_authorization(
     arguments: Mapping[str, object],
     targets: Sequence[object],
     now: datetime,
+    on_the_core: bool = False,
 ) -> Candidate | None:
     """The grant to hand the Guardian for this call, or ``None`` (ADR 0013 §3). Pure.
 
     A candidate **covers** the call if it was born from a yes when the row demands one (M13.1
     dec. D), is not bound to another task or step, and its scope covers the targets — and, for a
     policy of §59, if the half of the one predicate that says *covers* finds nothing (M13.12, ADR
-    0062; decision 4): the terms, the sites, the limits, the arguments. It is **usable** if not
-    revoked, not expired at ``now`` (closed bound) and not exhausted. ``capability`` is the
-    registered specification, as the Guardian's.
+    0062; decision 4): the terms, the place, the sites, the limits, the arguments. It is **usable**
+    if not revoked, not expired at ``now`` (closed bound) and not exhausted. ``capability`` is the
+    registered specification, as the Guardian's; ``on_the_core`` whether the step is placed on the
+    Core — a policy of a capability that covers only the Core is never handed over for a step
+    elsewhere (M13.14, ADR 0068).
 
     Grants bound to this step come first, then the rest, in store order. The first covering and
     usable candidate wins; failing that, the first covering one (so the Guardian's reason — and
@@ -719,7 +722,7 @@ def select_authorization(
     covering = [
         candidate
         for candidate in candidates
-        if _covers(candidate[0], task, step, targets, capability, arguments, now)
+        if _covers(candidate[0], task, step, targets, capability, arguments, now, on_the_core)
     ]
     covering.sort(key=lambda candidate: 0 if candidate[0].step_id == step.id else 1)
     for candidate in covering:
@@ -736,6 +739,7 @@ def _covers(
     capability: CapabilitySpec,
     arguments: Mapping[str, object],
     now: datetime,
+    on_the_core: bool,
 ) -> bool:
     if grant.task_id is not None and grant.task_id != task.id:
         return False
@@ -743,13 +747,16 @@ def _covers(
         return False
     if grant.approval_id is not None:
         return scope_covers(grant.scope, targets)
-    if asks_at_every_use(capability.risk):
+    if asks_at_every_use(capability):
         # A standing policy of §59 never covers a row that asks at every use (M13.1 dec. D).
         # Read here too, from the same predicate, so that the executor never hands the Guardian a
         # grant it is about to call an incoherence: that would deny the step instead of asking.
         return False
     # The half of the one predicate that says *covers* (M13.12, decision 4): the Guardian's own.
-    return shortfall(grant, capability, arguments, now=now, gaps=UNCOVERED) is None
+    found = shortfall(
+        grant, capability, arguments, now=now, on_the_core=on_the_core, gaps=UNCOVERED
+    )
+    return found is None
 
 
 def _usable(
@@ -757,8 +764,8 @@ def _usable(
 ) -> bool:
     grant, uses = candidate
     if grant.approval_id is None:
-        # Revoked or expired: the half that says *usable* (M13.12, decision 4).
-        if shortfall(grant, capability, arguments, now=now, gaps=UNUSABLE) is not None:
+        # Revoked, expired or exhausted: the half that says *usable* (M13.12, decision 4).
+        if shortfall(grant, capability, arguments, now=now, uses=uses, gaps=UNUSABLE) is not None:
             return False
     elif grant.expires_at is not None and grant.expires_at <= now:
         return False
@@ -979,6 +986,9 @@ class Executor:
         # somebody else's placement leaves no trace (ADR 0026 §3).
         device = ensure_placed(placement, task_id, step_id)
         device_id = device.id
+        # Whether a policy that covers only the Core may cover this step (M13.14, ADR 0068): the
+        # same criterion as the line of D1 below, the id of ``local``.
+        on_the_core = device_id == LOCAL_DEVICE_ID
         # A node that verifies on its own machine is a machine ELA has not looked at: the question
         # names it, and says what the plan asserts instead of what the Core's disk holds (M13.3).
         there: Device | None = None
@@ -1023,7 +1033,7 @@ class Executor:
             author, session = await self._covered(task_id, spec)
             if session is None:
                 authorization, uses = await self._find_authorization(
-                    spec, arguments, targets, task, step, now
+                    spec, arguments, targets, task, step, now, on_the_core
                 )
             else:
                 authorization, uses = None, 0
@@ -1058,12 +1068,28 @@ class Executor:
                 authorization,
                 decision.reason,
                 there=there,
+                on_the_core=on_the_core,
             )
 
         if stop.is_set():
             # The executor's own listening, before the grant (ADR 0054 §3): a task stopped before
             # its tool is called spends no yes and writes no STARTED record.
             return await self._closed_without_acting(task_id, step_id, decision, authorization)
+        if (
+            authorization is not None
+            and authorization.approval_id is None
+            and decision.metadata.get("rule") == Rule.APPROVAL_UNLESS_POLICY.value
+        ):
+            # **A policy is spent only on what would succeed now** (M13.14, ADR 0068; decision 24
+            # of the review): no question was composed, so the tool's prospect — the one ADR 0045
+            # §6-bis reads before a question — is read here, before the use is spent. A refusal
+            # fails the step with the tool's code: no use spent, no tool, nothing written. Only for
+            # a ``HIGH`` under a policy; a guided session covered by one stays as M13.12 made it.
+            prospect = await (
+                tool.prospect(arguments, task.id) if there is None else tool.asserted(arguments)
+            )
+            if prospect.refusal is not None:
+                return await self._fail(task, graph, decision, authorization, prospect.refusal)
         consumed: int | None = None
         if authorization is not None and decision.metadata.get("rule") in _CONSUMING_RULE_VALUES:
             try:
@@ -1081,6 +1107,7 @@ class Executor:
                     authorization,
                     unusable.reason,
                     there=there,
+                    on_the_core=on_the_core,
                 )
             except NotFoundError:
                 vanished = ErrorMetadata(
@@ -1665,7 +1692,9 @@ class Executor:
         and nothing here keeps it. It is handed to the Guardian only for the capability the
         session's own capability declares — an ``act`` of the session is ``HIGH``, no session
         covers it, and handing the word over for it would be an incoherence the Guardian denies:
-        the act **asks**, as it always did. The Guardian checks every part of the fact again.
+        the act **asks**, as it always did — unless a policy of the gesture's own capability covers
+        it, which the search of the grants finds (M13.14, ADR 0068 §8). The Guardian checks every
+        part of the fact again.
         """
         if self._sessions is None:
             return None, None
@@ -1996,6 +2025,7 @@ class Executor:
         task: Task,
         step: TaskStep,
         now: datetime,
+        on_the_core: bool,
     ) -> tuple[Authorization | None, int]:
         """The grant for this call among the capability's, policies of §59 included.
 
@@ -2013,6 +2043,7 @@ class Executor:
             arguments=arguments,
             targets=targets,
             now=now,
+            on_the_core=on_the_core,
         )
         return (None, 0) if selected is None else selected
 
@@ -2032,6 +2063,7 @@ class Executor:
         reason: str,
         *,
         there: Device | None,
+        on_the_core: bool,
     ) -> Execution:
         """Build the request for approval from the decision and let the task wait (ADR 0013 §5).
 
@@ -2082,11 +2114,17 @@ class Executor:
         # here; read at the instant of the decision, so a policy born after it is not named.
         why: tuple[str, ...] | None = None
         if spec.policy_terms is not None:
+            # Each policy with its uses, and the step with its place (M13.14, ADR 0068): the line
+            # says a policy spent its uses, or covers only the Core, from the same predicate.
             why = why_lines(
-                await self._authorizations.for_capability(spec.id),
+                [
+                    (grant, await self._authorizations.uses(grant.id))
+                    for grant in await self._authorizations.for_capability(spec.id)
+                ],
                 spec,
                 arguments,
                 now=decision.created_at,
+                on_the_core=on_the_core,
             )
         targets = approved_targets(decision)
         where = f" on {', '.join(targets)}" if targets else ""

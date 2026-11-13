@@ -1,5 +1,6 @@
-"""The policies of §59 in ``ela.permissions`` (M13.12, ADR 0062): the one predicate, the birth, the
-revocation as a value, and the sentences the question and the preview say. Pure, so exhausted here.
+"""The policies of §59 in ``ela.permissions`` (M13.12, ADR 0062; M13.14, ADR 0068): the one
+predicate, the birth, the revocation as a value, and the sentences the question and the preview
+say. Pure, so exhausted here.
 """
 
 from __future__ import annotations
@@ -9,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from ela.domain import AuthorizationId, CapabilityId, PolicyTerms
+from ela.domain import Authorization, AuthorizationId, CapabilityId, PolicyTerms, PolicyWords
 from ela.permissions import (
     GAPS,
     MAX_DAYS,
@@ -28,17 +29,20 @@ from ela.permissions import (
     PolicyRequest,
     PolicyState,
     authorization_from_policy,
-    browser_act,
+    browser_guided_as_you,
+    browser_login,
     fs_read,
-    fs_write,
     never_covered,
     production_catalogue,
     prospect_arguments,
+    scope_is_a_list,
     short_id,
     shortfall,
     state_of,
+    terminal_run,
     why_lines,
 )
+from ela.testing.fakes import FakeCapabilityRegistry
 from tests.domain.examples import NOW
 from tests.permissions.policy_support import (
     GUIDED,
@@ -69,9 +73,20 @@ def gap(policy: Any = POLICY, arguments: dict[str, Any] | None = None, **kwargs:
 
 
 def test_the_order_of_the_gaps_is_the_one_of_decision_4() -> None:
-    assert GAPS == (Gap.REVOKED, Gap.EXPIRED, Gap.TERMS, Gap.SITE, Gap.LIMIT, Gap.ARGUMENT)
-    assert UNUSABLE == (Gap.REVOKED, Gap.EXPIRED)
-    assert UNCOVERED == (Gap.TERMS, Gap.SITE, Gap.LIMIT, Gap.ARGUMENT)
+    """With the two gaps of M13.14 (ADR 0068), each in its slice: ``EXHAUSTED`` after the expiry,
+    ``ELSEWHERE`` after the terms."""
+    assert GAPS == (
+        Gap.REVOKED,
+        Gap.EXPIRED,
+        Gap.EXHAUSTED,
+        Gap.TERMS,
+        Gap.ELSEWHERE,
+        Gap.SITE,
+        Gap.LIMIT,
+        Gap.ARGUMENT,
+    )
+    assert UNUSABLE == (Gap.REVOKED, Gap.EXPIRED, Gap.EXHAUSTED)
+    assert UNCOVERED == (Gap.TERMS, Gap.ELSEWHERE, Gap.SITE, Gap.LIMIT, Gap.ARGUMENT)
     assert set(UNUSABLE) | set(UNCOVERED) == set(GAPS)
     assert not set(UNUSABLE) & set(UNCOVERED)
 
@@ -277,9 +292,27 @@ def test_the_short_id_is_the_first_eight_characters() -> None:
 
 
 def test_the_state_of_a_policy() -> None:
-    assert state_of(POLICY, NOW) is PolicyState.LIVE
-    assert state_of(revoked(POLICY, NOW), NOW) is PolicyState.REVOKED
-    assert state_of(POLICY.model_copy(update={"expires_at": NOW}), NOW) is PolicyState.EXPIRED
+    assert state_of(POLICY, NOW, uses=0) is PolicyState.LIVE
+    assert state_of(revoked(POLICY, NOW), NOW, uses=0) is PolicyState.REVOKED
+    assert (
+        state_of(POLICY.model_copy(update={"expires_at": NOW}), NOW, uses=0) is PolicyState.EXPIRED
+    )
+
+
+def test_a_policy_whose_uses_are_spent_is_exhausted_and_not_live() -> None:
+    """Answer 30 of the review of the SPEC of M13.14: a policy that can cover nothing any more is
+    not ``LIVE`` — a state of its own, derived, among the ended ones."""
+    three = POLICY.model_copy(update={"max_uses": 3})
+
+    assert state_of(three, NOW, uses=2) is PolicyState.LIVE
+    assert state_of(three, NOW, uses=3) is PolicyState.EXHAUSTED
+    assert state_of(three, NOW, uses=4) is PolicyState.EXHAUSTED
+    assert state_of(POLICY, NOW, uses=10**6) is PolicyState.LIVE, "no limit never exhausts"
+    # In the order of the gaps: revoked, then expired, then exhausted.
+    assert state_of(revoked(three, NOW), NOW, uses=3) is PolicyState.REVOKED
+    assert (
+        state_of(three.model_copy(update={"expires_at": NOW}), NOW, uses=3) is PolicyState.EXPIRED
+    )
 
 
 # ----------------------------------------------------------------------------------------
@@ -287,8 +320,21 @@ def test_the_state_of_a_policy() -> None:
 # ----------------------------------------------------------------------------------------
 
 
+def why(
+    policies: tuple[Authorization, ...],
+    arguments: dict[str, Any] = GUIDED_ARGS,
+    *,
+    uses: int = 0,
+    on_the_core: bool | None = True,
+) -> tuple[str, ...]:
+    """The line of a call of ``browser.guided``, every policy with ``uses`` uses."""
+    return why_lines(
+        [(one, uses) for one in policies], GUIDED, arguments, now=NOW, on_the_core=on_the_core
+    )
+
+
 def test_with_no_policy_the_line_says_so() -> None:
-    assert why_lines((), GUIDED, GUIDED_ARGS, now=NOW) == ("no policy of yours for browser.guided",)
+    assert why(()) == ("no policy of yours for browser.guided",)
 
 
 def test_the_line_names_at_most_three_the_most_recent_first() -> None:
@@ -302,7 +348,7 @@ def test_the_line_names_at_most_three_the_most_recent_first() -> None:
         for n in range(4)
     )
 
-    lines = why_lines(policies, GUIDED, GUIDED_ARGS, now=NOW)
+    lines = why(policies)
 
     assert WHY_MAX == 3
     assert len(lines) == 3
@@ -329,7 +375,7 @@ def test_a_policy_ended_more_than_thirty_days_ago_is_not_named() -> None:
         NOW - timedelta(days=31),
     )
 
-    lines = why_lines((old, recent, revoked_long_ago), GUIDED, GUIDED_ARGS, now=NOW)
+    lines = why((old, recent, revoked_long_ago))
 
     assert lines == (
         f"policy {short_id(recent.id)} expired on {recent.expires_at.date().isoformat()}",
@@ -338,13 +384,11 @@ def test_a_policy_ended_more_than_thirty_days_ago_is_not_named() -> None:
 
 def test_a_policy_born_after_the_decision_is_not_named() -> None:
     later = policy_for(GUIDED, created_at=NOW + timedelta(seconds=1))
-    assert why_lines((later,), GUIDED, GUIDED_ARGS, now=NOW) == (
-        "no policy of yours for browser.guided",
-    )
+    assert why((later,)) == ("no policy of yours for browser.guided",)
 
 
 def test_a_policy_that_covers_says_the_step_asks_again_for_its_own_yes() -> None:
-    lines = why_lines((POLICY,), GUIDED, GUIDED_ARGS, now=NOW)
+    lines = why((POLICY,))
 
     assert lines == (
         f"policy {short_id(POLICY.id)} covers this call: this step asks again for the yes it was "
@@ -358,7 +402,7 @@ def test_no_sentence_of_the_line_names_a_site() -> None:
         revoked(policy_for(GUIDED, tail=920), NOW),
         policy_for(GUIDED, scope=("example.com",), tail=921),
     )
-    for line in why_lines(policies, GUIDED, {**GUIDED_ARGS, "sites": ["httpbin.org"]}, now=NOW):
+    for line in why(policies, {**GUIDED_ARGS, "sites": ["httpbin.org"]}):
         for site in SITES:
             assert site not in line, line
 
@@ -391,18 +435,51 @@ def test_an_optional_free_argument_is_left_out_of_the_prospect() -> None:
     assert set(arguments) == {"places", "budget", "count"}
 
 
+NOT_TAKEN_BACK = "what has left is not taken back: a revocation stops only what comes after"
+
+
 def test_never_covered_names_the_rows_that_ask_at_every_use_and_the_terms() -> None:
+    """Since M13.14 (ADR 0068) the rows that ask at every use are the ``HIGH`` that declare no
+    terms — ``fs.write`` and the two gestures left the list —, a guided session's gestures need a
+    policy of their own — ``browser.guided`` too, whose sessions make ``browser.act`` gestures, and
+    not only the session that declares ``covers`` —, and the last line says what no revocation
+    calls back."""
     catalogue = production_catalogue(sites=SITES, guided_model=MODEL)
 
     said = never_covered(GUIDED, catalogue.specs())
 
-    assert said[0] == (
-        "every call of a capability that asks at every use asks every time: browser.act, "
-        "browser.act_as_you, browser.download, browser.download_as_you, browser.login, "
-        "browser.upload, browser.upload_as_you, fs.write, terminal.run"
+    assert said == (
+        "every call of a capability that asks at every use asks every time: "
+        "browser.download, browser.download_as_you, browser.login, browser.upload, "
+        "browser.upload_as_you, terminal.run",
+        "a call above a limit, or outside the scope, asks",
+        "a call with task_type asks",
+        "a gesture of its sessions asks, unless a policy of the gesture's own capability covers it",
+        NOT_TAKEN_BACK,
     )
-    assert said[1] == "a call above a limit, or outside the scope, asks"
-    assert said[2] == "a call with task_type asks"
+
+
+def test_never_covered_says_a_node_asks_for_a_policy_of_the_core() -> None:
+    catalogue = production_catalogue(sites=SITES, fs_scope="ELA", guided_model=MODEL)
+
+    said = never_covered(catalogue.get(CapabilityId("fs.write")), catalogue.specs())
+
+    assert said[-2:] == (
+        "a step that runs on a node asks: only a step on the Core is covered",
+        NOT_TAKEN_BACK,
+    )
+
+
+def test_never_covered_says_a_gesture_of_a_session_needs_a_policy_of_its_own() -> None:
+    """Proposal 10: a policy of a session covers its reads and never a gesture."""
+    catalogue = production_catalogue(sites=SITES, guided_model=MODEL)
+
+    said = never_covered(browser_guided_as_you(SITES, model=MODEL), catalogue.specs())
+
+    assert said[-2:] == (
+        "a gesture of its sessions asks, unless a policy of the gesture's own capability covers it",
+        NOT_TAKEN_BACK,
+    )
 
 
 # ----------------------------------------------------------------------------------------
@@ -440,6 +517,7 @@ def test_the_checks_run_in_the_order_of_decision_6() -> None:
         PolicyCheck.ADMITS,
         PolicyCheck.SCOPE,
         PolicyCheck.LIMITS,
+        PolicyCheck.USES,
         PolicyCheck.DAYS,
     )
     assert set(POLICY_CHECKS) == set(PolicyCheck)
@@ -469,19 +547,249 @@ def test_a_capability_outside_the_catalogue_is_refused() -> None:
 @pytest.mark.parametrize(
     ("spec", "reason"),
     [
-        (browser_act(SITES), "no policy reaches a HIGH (ADR 0045 §3)"),
-        (fs_write("ELA"), "no policy reaches a HIGH (ADR 0045 §3)"),
+        (
+            browser_login(SITES),
+            "browser.login is HIGH and declares no terms: only a grant born from an approval "
+            "covers it",
+        ),
+        (
+            terminal_run(("git",)),
+            "terminal.run launches a program the plan chooses: a program can read the Core's "
+            "token and create a policy, and only you create one",
+        ),
         (ECHO, "core.echo does not ask: it needs no policy"),
         (fs_read("ELA"), "no milestone has said what a policy must bound for fs.read"),
     ],
-    ids=["browser.act", "fs.write", "core.echo", "fs.read"],
+    ids=["browser.login", "terminal.run", "core.echo", "fs.read"],
 )
-def test_admits_has_three_distinct_reasons(spec: Any, reason: str) -> None:
+def test_admits_has_its_distinct_reasons(spec: Any, reason: str) -> None:
+    """M13.14 (ADR 0068): a ``HIGH`` without terms, the program, a row that does not ask, a
+    ``MEDIUM`` that declares nothing — ``browser.act`` and ``fs.write`` left the refusals, and are
+    born below."""
     catalogue = CapabilityRegistry((spec,))
     found = refused(PolicyRequest(spec.id, ("ELA",), {}, 1), catalogue)
 
     assert found.check is PolicyCheck.ADMITS
     assert found.reason == reason
+
+
+CRITICAL_WITH_TERMS = TERMED.model_copy(
+    update={
+        "id": CapabilityId("finance.pay_termed"),
+        "risk": CRITICAL.risk,
+        "policy_words": PolicyWords(does="pays", goes="away"),
+    }
+)
+"""A ``CRITICAL`` carrying a whole declaration, in a registry that admits it: the mutant natural to
+``row_of`` — a condition ``risk >= HIGH`` — is what it is for (proposal 15)."""
+
+
+def test_a_critical_capability_with_terms_is_refused_at_the_birth() -> None:
+    """Criterion 2 of M13.14: a policy for a ``CRITICAL`` is not born, terms or not."""
+    catalogue = FakeCapabilityRegistry((CRITICAL_WITH_TERMS,))
+    found = refused(
+        PolicyRequest(CRITICAL_WITH_TERMS.id, ("alpha.example",), {"budget": "1", "count": "1"}, 1),
+        catalogue,
+    )
+
+    assert found.check is PolicyCheck.ADMITS
+    assert found.reason == "finance.pay_termed is CRITICAL: its row denies, and no policy covers it"
+
+
+# ----------------------------------------------------------------------------------------
+# The policies of a HIGH (M13.14, ADR 0068): fs.write, browser.act, browser.act_as_you
+# ----------------------------------------------------------------------------------------
+
+HIGH_CATALOGUE = production_catalogue(sites=SITES, fs_scope="ELA", guided_model=MODEL)
+WRITE = HIGH_CATALOGUE.get(CapabilityId("fs.write"))
+ACT = HIGH_CATALOGUE.get(CapabilityId("browser.act"))
+WRITE_ARGS: dict[str, Any] = {
+    "path": "ELA/prova/uno/nota.md",
+    "body": "una riga",
+    "overwrite": False,
+    "purpose": "la prova",
+}
+
+
+@pytest.mark.parametrize(
+    ("capability", "scope"),
+    [("fs.write", ("ELA/prova/uno", "ELA/prova/due")), ("browser.act", ("httpbin.org",))],
+)
+def test_a_policy_of_a_high_is_born_with_no_limit_and_its_terms(
+    capability: str, scope: tuple[str, ...]
+) -> None:
+    grant = born(PolicyRequest(CapabilityId(capability), scope, {}, 2), HIGH_CATALOGUE)
+    spec = HIGH_CATALOGUE.get(CapabilityId(capability))
+
+    assert grant.capability_id == capability and grant.scope == scope
+    assert grant.bounds is not None and grant.bounds.terms == spec.policy_terms
+    assert dict(grant.bounds.limits) == {}
+    assert grant.max_uses is None and grant.expires_at == NOW + timedelta(days=2)
+
+
+def test_the_scope_of_a_high_is_the_one_value_of_each_call() -> None:
+    assert scope_is_a_list(GUIDED) is True
+    assert scope_is_a_list(WRITE) is False and scope_is_a_list(ACT) is False
+
+
+def test_a_policy_of_fs_write_covers_a_write_in_its_folders_on_the_core() -> None:
+    policy = born(PolicyRequest(WRITE.id, ("ELA/prova/uno",), {}, 1), HIGH_CATALOGUE)
+
+    assert shortfall(policy, WRITE, WRITE_ARGS, now=NOW, on_the_core=True) is None
+    outside = {**WRITE_ARGS, "path": "ELA/prova/tre/nota.md"}
+    found = shortfall(policy, WRITE, outside, now=NOW, on_the_core=True)
+    assert found is not None and found.gap is Gap.SITE
+    assert found.reason == f"a value of path is not among those of policy {short_id(policy.id)}"
+
+
+@pytest.mark.parametrize("where", [False, None], ids=["a-node", "not-said"])
+def test_a_policy_of_the_core_does_not_cover_a_step_elsewhere(where: bool | None) -> None:
+    """``ELSEWHERE`` (decision 10): on a node, or where the caller did not say — the fail-safe."""
+    policy = born(PolicyRequest(WRITE.id, ("ELA/prova/uno",), {}, 1), HIGH_CATALOGUE)
+
+    found = shortfall(policy, WRITE, WRITE_ARGS, now=NOW, on_the_core=where)
+
+    assert found is not None and found.gap is Gap.ELSEWHERE
+    assert found.reason == (
+        f"policy {short_id(policy.id)} covers only a step that runs on the Core, and this step is "
+        "not one"
+    )
+    assert gap_of(policy, WRITE, WRITE_ARGS, where, UNCOVERED) is Gap.ELSEWHERE
+    assert gap_of(policy, WRITE, WRITE_ARGS, where, UNUSABLE) is None
+
+
+def test_a_policy_not_of_the_core_covers_a_step_wherever_it_is() -> None:
+    """A gesture's terms do not say ``on_the_core``: the place is not read for it."""
+    policy = born(PolicyRequest(ACT.id, ("httpbin.org",), {}, 1), HIGH_CATALOGUE)
+    act = {
+        "site": "httpbin.org",
+        "path": "/forms/post",
+        "fill": [["#a", "b"]],
+        "click": "#go",
+        "expect_text": "ok",
+        "purpose": "la prova",
+    }
+
+    for where in (True, False, None):
+        assert shortfall(policy, ACT, act, now=NOW, on_the_core=where) is None
+
+
+def gap_of(
+    policy: Authorization,
+    spec: Any,
+    arguments: dict[str, Any],
+    where: bool | None,
+    gaps: Any,
+    uses: int = 0,
+) -> Gap | None:
+    found = shortfall(policy, spec, arguments, now=NOW, uses=uses, on_the_core=where, gaps=gaps)
+    return None if found is None else found.gap
+
+
+def test_a_policy_whose_uses_are_spent_is_exhausted_usable_no() -> None:
+    """``EXHAUSTED``: in the slice that says *usable*, never in the one that says *covers* — the
+    step asks, it is never denied — and its sentence names the policy and the numbers."""
+    policy = POLICY.model_copy(update={"max_uses": 5})
+
+    assert gap_of(policy, GUIDED, GUIDED_ARGS, True, UNUSABLE, uses=4) is None
+    found = shortfall(policy, GUIDED, GUIDED_ARGS, now=NOW, uses=5, gaps=UNUSABLE)
+    assert found is not None and found.gap is Gap.EXHAUSTED
+    assert found.reason == f"policy {short_id(policy.id)} was used 5 of its 5 times"
+    assert gap_of(policy, GUIDED, GUIDED_ARGS, True, UNCOVERED, uses=5) is None
+    assert gap_of(POLICY, GUIDED, GUIDED_ARGS, True, GAPS, uses=10**6) is None
+
+
+def test_each_new_gap_is_first_when_more_than_one_is_found_in_its_order() -> None:
+    """``EXPIRED`` before ``EXHAUSTED``, ``EXHAUSTED`` before ``TERMS``; ``TERMS`` before
+    ``ELSEWHERE``, ``ELSEWHERE`` before ``SITE``."""
+    write = born(PolicyRequest(WRITE.id, ("ELA/prova/uno",), {}, 1), HIGH_CATALOGUE).model_copy(
+        update={"max_uses": 1}
+    )
+    outside = {**WRITE_ARGS, "path": "ELA/prova/tre/nota.md"}
+    ended = write.model_copy(update={"expires_at": NOW})
+
+    assert gap_of(ended, WRITE, outside, False, GAPS, uses=1) is Gap.EXPIRED
+    assert gap_of(write, WRITE, outside, False, GAPS, uses=1) is Gap.EXHAUSTED
+    assert gap_of(write, WRITE, outside, False, GAPS, uses=0) is Gap.ELSEWHERE
+    other_terms = WRITE.model_copy(
+        update={"policy_terms": PolicyTerms(limits=(), free=("body", "overwrite", "purpose"))}
+    )
+    assert gap_of(write, other_terms, outside, False, GAPS, uses=0) is Gap.TERMS
+    assert gap_of(write, WRITE, outside, True, GAPS, uses=0) is Gap.SITE
+    terms_exhausted = gap_of(write, other_terms, outside, False, GAPS, uses=1)
+    assert terms_exhausted is Gap.EXHAUSTED
+
+
+def test_the_line_says_a_policy_spent_its_uses_and_one_of_the_core() -> None:
+    """The line «why I ask» receives every policy with its uses, and the step with its place
+    (M13.14): the same predicate."""
+    spent = POLICY.model_copy(update={"max_uses": 2})
+    assert why((spent,), uses=2) == (f"policy {short_id(POLICY.id)} was used 2 of its 2 times",)
+    write = born(PolicyRequest(WRITE.id, ("ELA/prova/uno",), {}, 1), HIGH_CATALOGUE)
+    on_a_node = why_lines([(write, 0)], WRITE, WRITE_ARGS, now=NOW, on_the_core=False)
+    assert on_a_node == (
+        f"policy {short_id(write.id)} covers only a step that runs on the Core, and this step is "
+        "not one",
+    )
+
+
+def test_an_old_session_policy_without_the_new_terms_still_covers() -> None:
+    """Criterion 21: a policy of M13.9 or M13.12, saved without ``on_the_core``, reads as the
+    declaration of today — its terms default to the same — and covers what it covered, wherever."""
+    stored = POLICY.model_dump(mode="json")
+    assert stored["bounds"] is not None
+    del stored["bounds"]["terms"]["on_the_core"]
+    old = Authorization.model_validate(stored)
+
+    for where in (True, False, None):
+        assert shortfall(old, GUIDED, GUIDED_ARGS, now=NOW, on_the_core=where) is None
+
+
+# ----------------------------------------------------------------------------------------
+# The uses (M13.14, ADR 0068; decision 8, answer 23)
+# ----------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "uses", [0, -1, True, "3", 1.0], ids=["zero", "negative", "true", "text", "float"]
+)
+def test_the_uses_are_none_or_a_whole_number_from_one_and_fail_there(uses: Any) -> None:
+    """Every other check passes: the refusal is ``USES``'s and not an earlier one's."""
+    found = refused(PolicyRequest(GUIDED.id, ("www.youtube.com",), GUIDED_LIMITS, 1, uses=uses))
+
+    assert found.check is PolicyCheck.USES
+    assert found.reason == (
+        f"the uses of a policy are none, for no limit, or a whole number from 1 up, not {uses!r}"
+    )
+
+
+def test_uses_come_after_the_limits_and_before_the_days() -> None:
+    assert (
+        refused(PolicyRequest(GUIDED.id, ("www.youtube.com",), {}, 0, uses=0)).check
+        is PolicyCheck.LIMITS
+    )
+    assert (
+        refused(PolicyRequest(GUIDED.id, ("www.youtube.com",), GUIDED_LIMITS, 0, uses=0)).check
+        is PolicyCheck.USES
+    )
+
+
+@pytest.mark.parametrize("uses", [1, 7, 10**6])
+def test_a_policy_with_uses_is_born_with_them_as_its_max_uses(uses: int) -> None:
+    """Answer 23: the field is one, and a ``MEDIUM`` policy — a session's — has it too: no
+    maximum, the user's boundary."""
+    grant = born(PolicyRequest(GUIDED.id, ("www.youtube.com",), GUIDED_LIMITS, 1, uses=uses))
+
+    assert grant.max_uses == uses
+
+
+def test_a_medium_policy_with_uses_covers_until_they_are_spent() -> None:
+    """Answer 23: the field has a producer on a ``MEDIUM`` too, and the predicate reads it."""
+    grant = born(PolicyRequest(GUIDED.id, ("www.youtube.com",), GUIDED_LIMITS, 1, uses=2))
+
+    assert shortfall(grant, GUIDED, GUIDED_ARGS, now=NOW, uses=1) is None
+    found = shortfall(grant, GUIDED, GUIDED_ARGS, now=NOW, uses=2)
+    assert found is not None and found.gap is Gap.EXHAUSTED
 
 
 def test_a_critical_capability_never_reaches_the_catalogue() -> None:

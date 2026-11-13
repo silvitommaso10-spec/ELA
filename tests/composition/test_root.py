@@ -13,12 +13,21 @@ import platform
 import stat
 from datetime import timedelta
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 
 from ela.composition import ELA_ACTOR, ConfigurationError, Ela, Settings, build
 from ela.devices.local import LOCAL_DEVICE_ID, LOCAL_DEVICE_NAME
-from ela.domain import ActorKind, PermissionOutcome, ProviderStatus
+from ela.domain import (
+    ActorKind,
+    Authorization,
+    AuthorizationId,
+    DeviceId,
+    PermissionOutcome,
+    PolicyBounds,
+    ProviderStatus,
+)
 from ela.infrastructure.machine import UnsupportedScreenCapture
 from ela.permissions import (
     CORE_ECHO,
@@ -467,3 +476,27 @@ def test_the_declared_scope_reaches_the_catalogue_and_the_placeholder_never_does
     for capability in (FS_READ, FS_WRITE):
         assert catalogue.get(capability).scope == ("documenti/ela",)
         assert UNDECLARED_FS_SCOPE not in catalogue.get(capability).scope
+
+
+async def test_the_guardian_knows_which_device_is_the_core(ela: Ela) -> None:
+    """M13.14, ADR 0068 (decision 10): ``ela.permissions`` cannot import ``ela.devices``, so the
+    composition hands the Guardian the id of ``local`` — and a policy of ``fs.write`` covers a step
+    placed there, and not one placed on a node. Checked on decisions, not on a field."""
+    spec = ela.capabilities.get(FS_WRITE)
+    policy = Authorization(
+        id=AuthorizationId(UUID("00000000-0000-4000-8000-000000000901")),
+        created_at=ela.clock.now(),
+        capability_id=FS_WRITE,
+        scope=("ELA/prova",),
+        granted_by="local",
+        expires_at=ela.clock.now() + timedelta(days=1),
+        bounds=PolicyBounds(terms=spec.policy_terms, limits={}),  # type: ignore[arg-type]
+    )
+    arguments = {"path": "ELA/prova/x.md", "body": "b", "overwrite": False, "purpose": "la prova"}
+    node = DeviceId(UUID("00000000-0000-4000-8000-00000000d0e0"))
+
+    here = ela.guardian.decide(spec, arguments, authorization=policy, device_id=LOCAL_DEVICE_ID)
+    there = ela.guardian.decide(spec, arguments, authorization=policy, device_id=node)
+
+    assert here.outcome is PermissionOutcome.ALLOWED
+    assert there.outcome is PermissionOutcome.DENIED

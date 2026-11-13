@@ -26,7 +26,7 @@ from ela.domain import (
     TaskStep,
 )
 from ela.executive import select_authorization
-from ela.permissions import PermissionGuardian, Rule, targets_of
+from ela.permissions import PermissionGuardian, Rule, fs_write, targets_of
 from ela.testing.fakes import FakeAuditLog, FakeCapabilityRegistry, FakeClock, FakeIdGenerator
 from tests.domain.examples import APPROVAL_ID, NOW, TASK, TASK_STEP
 from tests.permissions.policy_support import (
@@ -111,7 +111,9 @@ def test_the_step_s_own_yes_comes_first() -> None:
 
 
 def test_a_policy_for_a_row_that_asks_at_every_use_is_never_handed_over() -> None:
-    high = GUIDED.model_copy(update={"risk": RiskLevel.HIGH})
+    """Re-aimed by M13.14 (proposal 15): a ``HIGH`` **without terms** — the copy that kept the
+    terms would read «approval unless policy» since ``row_of``, and is the twin below."""
+    high = GUIDED.model_copy(update={"risk": RiskLevel.HIGH, "policy_terms": None})
     found = select_authorization(
         ((policy_for(GUIDED), 0),),
         task=TASK,
@@ -122,6 +124,76 @@ def test_a_policy_for_a_row_that_asks_at_every_use_is_never_handed_over() -> Non
         now=NOW,
     )
     assert found is None
+
+
+def test_a_policy_for_a_high_that_declares_terms_is_handed_over() -> None:
+    """The twin (M13.14, ADR 0068): the same ``HIGH`` with the terms its policy was born under
+    reads «approval unless policy», and its covering policy is handed to the Guardian."""
+    high = GUIDED.model_copy(update={"risk": RiskLevel.HIGH})
+    policy = policy_for(GUIDED)
+    found = select_authorization(
+        ((policy, 0),),
+        task=TASK,
+        step=STEP,
+        capability=high,
+        arguments=GUIDED_ARGS,
+        targets=targets_of(GUIDED, GUIDED_ARGS),
+        now=NOW,
+    )
+    assert found == (policy, 0)
+
+
+WRITE = fs_write("ELA")
+WRITE_ARGS: dict[str, Any] = {
+    "path": "ELA/prova/uno/nota.md",
+    "body": "una riga",
+    "overwrite": False,
+    "purpose": "la prova",
+}
+WRITE_STEP: TaskStep = TASK_STEP.model_copy(
+    update={"required_capabilities": (WRITE.id,), "arguments": WRITE_ARGS}
+)
+
+
+def select_write(policy: Authorization, uses: int, on_the_core: bool) -> Any:
+    return select_authorization(
+        ((policy, uses),),
+        task=TASK,
+        step=WRITE_STEP,
+        capability=WRITE,
+        arguments=WRITE_ARGS,
+        targets=targets_of(WRITE, WRITE_ARGS),
+        now=NOW,
+        on_the_core=on_the_core,
+    )
+
+
+def test_a_policy_of_the_core_is_handed_over_only_for_a_step_on_the_core() -> None:
+    """M13.14, decision 10: the executor never hands the Guardian a policy of ``fs.write`` for a
+    step on a node — the Guardian would call it an incoherence and deny instead of asking."""
+    policy = policy_for(WRITE, scope=("ELA/prova/uno",))
+
+    assert select_write(policy, 0, on_the_core=True) == (policy, 0)
+    assert select_write(policy, 0, on_the_core=False) is None
+
+
+def test_a_spent_policy_is_handed_over_so_the_guardian_says_why_it_asks() -> None:
+    """Covering but not usable: the first covering candidate, so the question names its uses."""
+    policy = policy_for(WRITE, scope=("ELA/prova/uno",), max_uses=1)
+
+    assert select_write(policy, 1, on_the_core=True) == (policy, 1)
+    alive = policy_for(WRITE, scope=("ELA/prova/uno",), tail=903)
+    found = select_authorization(
+        ((policy, 1), (alive, 0)),
+        task=TASK,
+        step=WRITE_STEP,
+        capability=WRITE,
+        arguments=WRITE_ARGS,
+        targets=targets_of(WRITE, WRITE_ARGS),
+        now=NOW,
+        on_the_core=True,
+    )
+    assert found == (alive, 0)
 
 
 # ----------------------------------------------------------------------------------------

@@ -39,6 +39,7 @@ from ela.ports import Clock, IdGenerator, NotAllowedError, Prospect, StopPoint, 
 __all__ = [
     "ARGUMENTS_INVALID",
     "FIRST_WRITE",
+    "PLACE_UNSEEN",
     "NotNow",
     "Outcome",
     "Perceiving",
@@ -51,6 +52,10 @@ FIRST_WRITE = "the first write to the disk"
 """The point of no return of a tool that writes a file (M6.3c, ADR 0054 §3): the first ``mkdir``
 of a missing folder, before the file is opened — an existing file is truncated when it is
 opened."""
+
+PLACE_UNSEEN = "tool.place_unseen"
+"""A tool asked whether a call could start in a place, and it cannot look at one (M13.14, ADR
+0068): the default answer of :meth:`Tool.prospect_place`, a refusal and never a «yes»."""
 
 ARGUMENTS_INVALID = "arguments.invalid"
 """An argument is missing or of the wrong type. The Guardian validated the schema already
@@ -212,6 +217,18 @@ class Tool(ABC):
         """What the call asserts, without looking at a machine (M13.3): nothing, unless a tool
         works on a path — the default of :meth:`prospect`, for its reason."""
         return Prospect()
+
+    async def prospect_place(self, place: str) -> Prospect:
+        """**A refusal**, unlike :meth:`prospect` (M13.14, ADR 0068): a tool that has not said how
+        to look at a place has no policy that names one, and a default «it would start» would be
+        a defence that only looks active. The tools a policy of a ``HIGH`` covers override it."""
+        return Prospect(
+            refusal=ErrorMetadata(
+                code=PLACE_UNSEEN,
+                message=f"{self.capability_id} cannot say whether a call could start in a place",
+                tool_name=self.name,
+            )
+        )
 
     async def worst_case(self, arguments: JsonMapping) -> WorstCase | ErrorMetadata | None:
         """``None``: this tool spends nothing (M14.1, ADR 0057).

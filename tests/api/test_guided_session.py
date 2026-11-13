@@ -13,9 +13,10 @@ import json
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
+from httpx import ASGITransport, AsyncClient
 
 from ela.domain import AuditEventType, ExecutionStatus, PlanAuthorKind, StepId, TaskId, TaskState
 from ela.providers.anthropic.models import HAIKU_5_5
@@ -163,9 +164,16 @@ async def test_the_session_s_token_opens_nothing_but_its_own_gateway(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Criterion 1, the last half: the session has no key to send away, and its token is worth
-    nothing outside its own paths, from loopback, while it is open."""
+    nothing outside its own paths, from loopback, while it is open.
+
+    **Each refusal for the reason it claims** (M13.14, proposal 12 of the SPEC): the other session
+    is a real one's path — a UUID —, where the header **is** read and the token is not that
+    session's; and after the end the token is presented from loopback, so the ``401`` is the
+    session being over and not the socket being elsewhere. The counts of ``/diagnostics`` say
+    which refusal it was."""
     tokens: list[str] = []
     elsewhere: list[int] = []
+    reasons: list[dict[str, int]] = []
 
     async def peek(script: Script, plan: Any, host: Any) -> None:
         tokens.append(plan.token)
@@ -173,11 +181,14 @@ async def test_the_session_s_token_opens_nothing_but_its_own_gateway(
         on_a_route = await http.get(
             f"{LOOPBACK}/tasks", headers={"Authorization": f"Bearer {plan.token}"}
         )
+        assert script.app is not None
+        before = dict(script.app.state.refused)
         another = await http.post(
-            f"{LOOPBACK}/sessions/{StepId(TaskId(plan.session))}0/v1/messages",
+            f"{LOOPBACK}/sessions/{StepId(uuid4())}/v1/messages",
             content=b"{}",
             headers={"x-api-key": plan.token},
         )
+        reasons.append(_counted_since(before, script.app.state.refused))
         elsewhere.extend([on_a_route.status_code, another.status_code])
 
     script = Script([peek])
@@ -185,11 +196,16 @@ async def test_the_session_s_token_opens_nothing_but_its_own_gateway(
         task = await planned(g)
         await approved_and_run(g, task)
         (launched,) = g.sessions.launched
-        after = await g.client.post(
-            f"/sessions/{launched[1].session}/v1/messages",
-            content=b"{}",
-            headers={"x-api-key": tokens[0]},
-        )
+        before = dict(g.app.state.refused)
+        async with AsyncClient(
+            transport=ASGITransport(app=g.app, client=("127.0.0.1", 123)), base_url=LOOPBACK
+        ) as here:
+            after = await here.post(
+                f"/sessions/{launched[1].session}/v1/messages",
+                content=b"{}",
+                headers={"x-api-key": tokens[0]},
+            )
+        reasons.append(_counted_since(before, g.app.state.refused))
 
     reservation, plan = launched
     assert SECRET not in json.dumps(
@@ -198,6 +214,14 @@ async def test_the_session_s_token_opens_nothing_but_its_own_gateway(
     assert SECRET not in repr(plan) and SECRET not in repr(reservation)
     assert elsewhere == [401, 401]
     assert after.status_code == 401
+    assert reasons == [{"unknown_credential": 1}, {"unknown_credential": 1}]
+
+
+def _counted_since(before: dict[str, int], now: Any) -> dict[str, int]:
+    """The refusals ``/diagnostics`` counted after ``before``: which reason each ``401`` had."""
+    return {
+        reason: n - before.get(reason, 0) for reason, n in now.items() if n != before.get(reason, 0)
+    }
 
 
 async def test_without_a_cap_the_session_is_denied_before_the_question_and_nothing_leaves(

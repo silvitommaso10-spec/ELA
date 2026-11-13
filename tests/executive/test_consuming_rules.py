@@ -32,6 +32,8 @@ from ela.domain import (
     PermissionOutcome,
     PlanAuthor,
     PlanAuthorKind,
+    PolicyWords,
+    RiskLevel,
     SessionCover,
     Task,
     TaskStep,
@@ -94,6 +96,16 @@ SESSIONS: Final = FakeCapabilityRegistry(
 """The catalogue of the two scenarios of a session's cover: the capability of a session, and the
 ``MEDIUM`` read it declares."""
 
+HIGH_TERMED: Final = TERMED.model_copy(
+    update={
+        "id": CapabilityId("test.high_termed"),
+        "risk": RiskLevel.HIGH,
+        "policy_words": PolicyWords(does="does something of the tests", goes="nowhere"),
+    }
+)
+"""A ``HIGH`` that declares the terms of a policy (M13.14, ADR 0068): its row is «approval unless
+policy», and a standing policy of its own covers it."""
+
 SCENARIOS: Final[dict[Rule, Scenario]] = {
     # Since M13.12 a standing grant covers only a capability that declares the terms of a policy
     # (decision 17 of the review): the grants of SAFE and LOW are born from a yes, in their task and
@@ -107,6 +119,15 @@ SCENARIOS: Final[dict[Rule, Scenario]] = {
     ),
     Rule.APPROVAL_EVERY_USE: Scenario(
         HIGH, ECHO_ARGS, born_of_a_yes(HIGH), step_for(HIGH.id), task=TASK
+    ),
+    # The row of a ``HIGH`` that declares terms (M13.14, ADR 0068): its policy is spent at the use,
+    # as a yes is — the table «Regola | Consuma» of ADR 0068 says «sì».
+    Rule.APPROVAL_UNLESS_POLICY: Scenario(
+        HIGH_TERMED,
+        TERMED_ARGS,
+        grant(HIGH_TERMED),
+        step_for(HIGH_TERMED.id),
+        registry=FakeCapabilityRegistry((HIGH_TERMED,)),
     ),
     Rule.AUTHORIZATION_REQUIRED: Scenario(
         GUARDED_ECHO, ECHO_ARGS, born_of_a_yes(GUARDED_ECHO), step_for(GUARDED_ECHO.id), task=TASK

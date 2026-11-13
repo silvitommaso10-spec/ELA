@@ -23,6 +23,7 @@ from tests.docs.guided_ports import ACCOUNT_PORTS, GUIDED_PORTS, STEPS_PORTS, be
 from tests.docs.test_adr_cli import coded_commands, commands_after_0061
 from tests.docs.test_adr_composition import coded_routes, routes_after_0061
 from tests.docs.test_adr_placement import _rules_up_to
+from tests.docs.test_adr_planner import contracts_up_to
 from tests.tools.test_remote_verification import STAYS, TRAVELS
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -74,7 +75,7 @@ def test_the_conseguenze_count_the_totals_of_their_day() -> None:
     assert "**sessantacinque**" in text
     assert len(_rules_up_to(65)) == 65  # rule 66 is ADR 0062's
     assert set(_rules_up_to(65)) - set(_rules_up_to(64)) == {"who-spends-passes-the-gate"}
-    assert "**quindici**" in text and len(contracts) == 15
+    assert "**quindici**" in text and len(contracts_up_to(15)) == 15 <= len(contracts)
     assert "**trentatré**" in text
     assert (
         len(tuple(p for p in port_protocols() if p.__name__ not in ACCOUNT_PORTS | STEPS_PORTS))

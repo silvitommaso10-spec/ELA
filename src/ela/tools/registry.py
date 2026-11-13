@@ -325,6 +325,7 @@ def production_tools(
     vault: VaultDoor,
     not_now: NotNow,
     pages: TaskPages,
+    protected: Mapping[str, Path],
 ) -> ToolRegistry:
     """What the composition root builds: v0.1's three, plus what the phases after it added.
 
@@ -340,6 +341,10 @@ def production_tools(
     ``pages`` is the room of the pages a task keeps between two of its steps (M13.10, ADR 0065
     §3): mandatory, and the same room for the five tools of the two browsers — one page per task,
     whichever browser it is on.
+
+    ``protected`` is what ELA uses to exist, named and resolved (M13.14, ADR 0068): the tools that
+    write under ``fs_root`` — ``fs.write`` and the two downloads — never reach it. Mandatory, like
+    ``pages``: a registry built without it would write anywhere under the root.
     """
     return ToolRegistry(
         (
@@ -359,7 +364,7 @@ def production_tools(
             # workspace is ELA's own folder, this is the one the user declared with
             # ``ELA_FS_ROOT``, and neither tool ever creates it.
             FsReadTool(fs_root, clock, ids),
-            FsWriteTool(fs_root, clock, ids),
+            FsWriteTool(fs_root, clock, ids, protected=protected),
             # The terminal (M13.2): the programs with the identity of the start-up, the scope of
             # M13.1 for the folder, and the launcher the composition built around the stop signal.
             TerminalRunTool(terminal, launcher, clock, ids),
@@ -394,8 +399,12 @@ def production_tools(
             # The files from the browser (M13.13, ADR 0066): the declared root of ``fs.*`` — a
             # download is judged as a write under it, an upload as a read —, the declared sites,
             # and each browser for its own two. None of the four is a gesture of a guided session.
-            BrowserDownloadTool(fs_root, browsing, browser, clock, ids, pages=pages),
-            AccountDownloadTool(fs_root, browsing, accounts, clock, ids, pages=pages),
+            BrowserDownloadTool(
+                fs_root, browsing, browser, clock, ids, protected=protected, pages=pages
+            ),
+            AccountDownloadTool(
+                fs_root, browsing, accounts, clock, ids, protected=protected, pages=pages
+            ),
             BrowserUploadTool(fs_root, browsing, browser, clock, ids, pages=pages),
             AccountUploadTool(fs_root, browsing, accounts, clock, ids, pages=pages),
         )
@@ -429,6 +438,7 @@ def node_tools(
     voice_id: str | None,
     model: str,
     fs_root: Path | None,
+    protected: Mapping[str, Path],
 ) -> ToolRegistry:
     """What a node runs: the four capabilities that travel (M12.1 D15, M12.2 dec. L, M12.3 dec. F),
     and ``fs.read`` and ``fs.write`` on a node that has a root (M13.3, ADR 0048).
@@ -453,6 +463,8 @@ def node_tools(
     builds the two tools of the filesystem, whose verifiers it carries (:func:`node_verifiers`) —
     they read *this* machine, which on a node is the right one. ``None`` builds neither: without a
     root the tool has nothing to act on, and the node does not declare what it does not have.
+    ``protected`` is what the node uses to exist (M13.14, ADR 0068): no write of ``fs.write``
+    reaches it.
     """
     tools: list[ToolPort] = [
         EchoTool(clock, ids),
@@ -463,7 +475,9 @@ def node_tools(
         ),
     ]
     if fs_root is not None:
-        tools.extend((FsReadTool(fs_root, clock, ids), FsWriteTool(fs_root, clock, ids)))
+        tools.extend(
+            (FsReadTool(fs_root, clock, ids), FsWriteTool(fs_root, clock, ids, protected=protected))
+        )
     return ToolRegistry(tools)
 
 

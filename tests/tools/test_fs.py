@@ -68,7 +68,7 @@ def root(tmp_path: Path) -> Path:
 
 
 def writer(root: Path) -> FsWriteTool:
-    return FsWriteTool(root, FakeClock(NOW), FakeIdGenerator())
+    return FsWriteTool(root, FakeClock(NOW), FakeIdGenerator(), protected={})
 
 
 def reader(root: Path) -> FsReadTool:

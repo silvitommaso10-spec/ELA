@@ -30,7 +30,7 @@ from ela.permissions import (
     PermissionGuardian,
     Rule,
 )
-from ela.permissions import guardian as guardian_module
+from ela.permissions import rows as rows_module
 from ela.testing.fakes import FakeAuditLog, FakeCapabilityRegistry, FakeClock, FakeIdGenerator
 from tests.domain.examples import TASK
 from tests.permissions.support import (
@@ -280,10 +280,13 @@ def test_high_asks_at_every_use_and_a_grant_born_of_a_yes_covers_it(h: Harness) 
 
 
 def test_a_standing_policy_never_covers_a_row_that_asks_at_every_use(h: Harness) -> None:
-    """M13.1 dec. D: §59 widens, and HIGH is the level those policies do not reach.
+    """M13.1 dec. D: §59 widens, and a HIGH that declares **no terms** is the row those policies
+    do not reach (M13.14, ADR 0068: one that declares them reads «approval unless policy»).
 
     The precondition is constructible **today** — the domain admits a grant with no
-    ``approval_id`` — so this is a defence exercised and not a defence declared.
+    ``approval_id`` — so this is a defence exercised and not a defence declared. The sentence is
+    ``no_policy_for``'s, the catalogue's and the birth's: «… is HIGH and declares no terms: only a
+    grant born from an approval covers it».
     """
     standing = grant(HIGH)
     assert standing.approval_id is None
@@ -293,13 +296,15 @@ def test_a_standing_policy_never_covers_a_row_that_asks_at_every_use(h: Harness)
     assert decision.outcome is DENIED
     assert rule_of(decision) is Rule.AUTHORIZATION_MISMATCH
     assert "standing policy" in decision.reason and "born from an approval" in decision.reason
+    assert f"{HIGH.id} is HIGH and declares no terms" in decision.reason
 
 
 def test_a_risk_level_without_a_policy_row_is_denied(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The table is data; a level it does not know is a doubt, not a pass."""
+    """The table is data; a level it does not know is a doubt, not a pass. Since M13.14 the
+    Guardian reads the row through ``row_of`` (ADR 0068), which reads the table where it lives."""
     rows = {level: rule for level, rule in RISK_POLICY.items() if level is not RiskLevel.SAFE}
     without_safe = MappingProxyType(rows)
-    monkeypatch.setattr(guardian_module, "RISK_POLICY", without_safe)
+    monkeypatch.setattr(rows_module, "RISK_POLICY", without_safe)
     decision = harness().guardian.decide(ECHO, ECHO_ARGS)
     assert decision.outcome is DENIED
     assert rule_of(decision) is Rule.DENY
@@ -404,13 +409,26 @@ def test_expiry_is_closed_at_the_exact_instant(h: Harness) -> None:
 def test_an_exhausted_authorization_requires_approval(
     h: Harness, max_uses: int, uses: int, outcome: PermissionOutcome
 ) -> None:
+    """A standing policy with uses: spent, it is the ``EXHAUSTED`` gap of the one predicate since
+    M13.14 (ADR 0068) — usable no, covering yes — and its sentence names the policy."""
     authorization = grant(TERMED, max_uses=max_uses)
     decision = h.guardian.decide(
         TERMED, TERMED_ARGS, authorization=authorization, authorization_uses=uses
     )
     assert decision.outcome is outcome
     if outcome is REQUIRES_APPROVAL:
-        assert f"used {uses} of {max_uses}" in decision.reason
+        assert f"was used {uses} of its {max_uses} times" in decision.reason
+
+
+def test_a_spent_grant_born_from_a_yes_requires_approval_with_the_count(h: Harness) -> None:
+    """A grant born from a yes has its use, and the count that says it was spent is the Guardian's
+    own line — the predicate of the policies does not read it."""
+    yes = born_of_a_yes(HIGH)
+    decision = h.guardian.decide(
+        HIGH, ECHO_ARGS, task=TASK, step=step_for(HIGH.id), authorization=yes, authorization_uses=1
+    )
+    assert decision.outcome is REQUIRES_APPROVAL
+    assert f"authorization {yes.id} was used 1 of 1 times" in decision.reason
 
 
 def test_without_a_use_limit_the_count_never_exhausts(h: Harness) -> None:

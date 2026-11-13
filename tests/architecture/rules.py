@@ -708,10 +708,13 @@ PLAN_DOORS = frozenset(
 #: sites as ``within`` — and the slug stays the one of M14.2, read with ADR 0060 beside it.
 #: Rule 66 (M13.12, ADR 0062): a policy of §59 is born only at the route of its creation. Three
 #: parts: outside :data:`POLICY_ROUTE` nobody calls :data:`POLICY_FACTORY`; nobody saves a grant
-#: (``.grant(`` on a receiver of :data:`STORE_RECEIVERS`) but the route and the executor — and the
-#: executor only one bound, in the same function, from :data:`APPROVAL_FACTORY`; nobody revokes one
-#: but the route, and no module of ``ela.tools`` names :data:`STORE_PORT`. The receiver decides, as
-#: for rule 62: ``ela.devices.revoke(…)`` revokes a node, not a policy.
+#: (``.grant(``, **on any receiver** since M13.14 — answer 33 of the review of its SPEC, ADR 0068:
+#: ``grant`` is a member of ``AuthorizationStore`` alone, so a store held under another name is a
+#: store all the same) but the route and the executor — and the executor only one bound, in the
+#: same function, from :data:`APPROVAL_FACTORY`; nobody revokes one but the route, and no module of
+#: ``ela.tools`` names :data:`STORE_PORT`. **For the revocation the receiver decides**, as for rule
+#: 62: ``ela.devices.revoke(…)`` revokes a node, not a policy — and a revocation outside the route,
+#: on a store under another name, takes away and never widens: declared in ADR 0068.
 POLICY_FACTORY = "authorization_from_policy"
 POLICY_ROUTE = Path("api") / "policies.py"
 APPROVAL_FACTORY = "authorization_from_approval"
@@ -771,6 +774,18 @@ VAULT_RECEIVERS = frozenset({"BitwardenVault", "VaultDoor.fixed", "Programs.fixe
 #: elsewhere, which nobody reading the call can check. **What the rule cannot see**: that the
 #: folder is the one of the target, and that the door is closed again — held by the tests of the
 #: behaviour on the real browsers.
+#: Rule 74 (M13.14, ADR 0068): a program is launched by the terminal. No policy of §59 covers a
+#: capability that launches a program the plan chooses (``LAUNCHES_A_PROGRAM`` in
+#: ``ela.permissions.rows``): a program launched as the user can read the Core's token and create a
+#: policy, and only the user creates one. The set is true only if no other tool can launch one, so
+#: in ``ela.tools`` the port that launches, :data:`LAUNCHER_PORT`, is named by
+#: :data:`LAUNCHER_HOLDERS` alone — the terminal's module, whose tool holds it, and the registry,
+#: which hands it over — and by no other module: a tool that held a launcher would be a capability
+#: that launches, outside the set. **What the rule cannot see**: a program launched through another
+#: door — a process the tool spawns by itself, which rule 32 refuses, or an adapter that launches —;
+#: the vault's program and the browser are launched by their adapters with ELA's own arguments.
+LAUNCHER_PORT = "CommandLauncher"
+LAUNCHER_HOLDERS = frozenset({Path(TOOLS_DIR) / "terminal.py", Path(TOOLS_DIR) / "registry.py"})
 FILE_GIVING_CALL = "set_input_files"
 BYTES_KEY = "buffer"
 DOOR_COMMAND = "Browser.setDownloadBehavior"
@@ -1793,14 +1808,17 @@ def check_a_policy_is_born_at_its_route(pkg_root: Path) -> list[Violation]:
 
     1. outside :data:`POLICY_ROUTE` nobody calls :data:`POLICY_FACTORY`, by name or as an
        attribute — a standing yes is Tommaso's, and it is born where he creates it;
-    2. nobody saves a grant — ``.grant(`` on a receiver of :data:`STORE_RECEIVERS` — but the route
-       and :data:`EXECUTOR_MODULE`, and the executor only a grant bound, in the same function, from
-       :data:`APPROVAL_FACTORY`: **the executor never saves a grant without** ``approval_id``;
+    2. nobody saves a grant — ``.grant(`` on **any** receiver (M13.14, ADR 0068: only
+       ``AuthorizationStore`` has the member, so ``self._grants.grant(…)`` is the store under
+       another name) — but the route and :data:`EXECUTOR_MODULE`, and the executor only a grant
+       bound, in the same function, from :data:`APPROVAL_FACTORY`: **the executor never saves a
+       grant without** ``approval_id``;
     3. nobody revokes one but the route, and no module of ``ela.tools`` names :data:`STORE_PORT`:
        **no capability creates or revokes a policy**.
 
-    A heuristic on names, like rules 16 and 62: the receiver decides, so ``ela.devices.revoke(…)``
-    — a node — is not a policy's revocation.
+    A heuristic on names, like rules 16 and 62. For the revocation the receiver decides, so
+    ``ela.devices.revoke(…)`` — a node — is not a policy's revocation; a revocation on a store held
+    under another name is not reported, and ADR 0068 declares it: it takes away, never widens.
     """
     rule = "a-policy-is-born-at-its-route"
     found: list[Violation] = []
@@ -1819,7 +1837,7 @@ def check_a_policy_is_born_at_its_route(pkg_root: Path) -> list[Violation]:
                 found.append(Violation(rule, name, f"{POLICY_FACTORY}(", node.lineno))
             elif _on_the_store(node, REVOKE_METHOD):
                 found.append(Violation(rule, name, f".{REVOKE_METHOD}(", node.lineno))
-            elif _on_the_store(node, GRANT_METHOD) and not (
+            elif _calls_the_method(node, GRANT_METHOD) and not (
                 relative == EXECUTOR_MODULE and _saves_a_yes(node, tree)
             ):
                 found.append(Violation(rule, name, f".{GRANT_METHOD}(", node.lineno))
@@ -2008,6 +2026,36 @@ def _called(callee: ast.AST) -> str:
     return ""
 
 
+def check_a_program_is_launched_by_the_terminal(pkg_root: Path) -> list[Violation]:
+    """Rule 74: in ``ela.tools`` a launcher is held by the terminal alone (M13.14, ADR 0068).
+
+    Reported: :data:`LAUNCHER_PORT` imported, named or read as an attribute in a module of
+    :data:`TOOLS_DIR` that is not one of :data:`LAUNCHER_HOLDERS`. A heuristic on a name, like rule
+    72: no other thing in ELA is called that, and a docstring that mentions it is not a holder.
+    """
+    rule = "a-program-is-launched-by-the-terminal"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root / TOOLS_DIR):
+        if path.relative_to(pkg_root) in LAUNCHER_HOLDERS:
+            continue
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        found.extend(
+            Violation(rule, name, LAUNCHER_PORT, getattr(node, "lineno", 0))
+            for node in ast.walk(tree)
+            if _names_the_launcher(node)
+        )
+    return found
+
+
+def _names_the_launcher(node: ast.AST) -> bool:
+    if isinstance(node, ast.alias):
+        return node.name == LAUNCHER_PORT or node.name.endswith(f".{LAUNCHER_PORT}")
+    if isinstance(node, ast.Name):
+        return node.id == LAUNCHER_PORT
+    return isinstance(node, ast.Attribute) and node.attr == LAUNCHER_PORT
+
+
 def check_the_gate_looks_and_does_not_redo(pkg_root: Path) -> list[Violation]:
     """Rule 70: the browser's adapter looks at a request, and never makes one (M13.4f, ADR 0064).
 
@@ -2139,6 +2187,11 @@ def _on_the_store(call: ast.Call, method: str) -> bool:
     if isinstance(receiver, ast.Name):
         return receiver.id in STORE_RECEIVERS
     return isinstance(receiver, ast.Attribute) and receiver.attr in STORE_RECEIVERS
+
+
+def _calls_the_method(call: ast.Call, method: str) -> bool:
+    """Whether ``call`` is ``<anything>.<method>(…)``, whatever the receiver is called."""
+    return isinstance(call.func, ast.Attribute) and call.func.attr == method
 
 
 def _names_the_store_port(node: ast.AST) -> bool:
@@ -4280,6 +4333,7 @@ RULES: dict[str, Rule] = {
     "a-file-is-given-as-bytes-and-a-download-is-named": (
         check_a_file_is_given_as_bytes_and_a_download_is_named
     ),
+    "a-program-is-launched-by-the-terminal": check_a_program_is_launched_by_the_terminal,
 }
 
 
@@ -4819,6 +4873,23 @@ CONSTANTS: tuple[Constant, ...] = (
     ),
     Constant(
         "a-file-is-given-as-bytes-and-a-download-is-named",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # a-program-is-launched-by-the-terminal (rule 74, M13.14)
+    Constant("a-program-is-launched-by-the-terminal", "LAUNCHER_PORT", DETECTOR),
+    Constant("a-program-is-launched-by-the-terminal", "TOOLS_DIR", DETECTOR),
+    Constant(
+        "a-program-is-launched-by-the-terminal",
+        "LAUNCHER_HOLDERS",
+        EXEMPTION,
+        by=EACH,
+        adr="ADR 0068",
+    ),
+    Constant(
+        "a-program-is-launched-by-the-terminal",
         "ROOT_PACKAGE",
         SUBJECT,
         why=INEVITABLE,

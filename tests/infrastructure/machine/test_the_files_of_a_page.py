@@ -602,7 +602,13 @@ async def test_a_download_ends_in_the_file_the_plan_named_with_600_and_its_verif
     a, _ = sites(served)
     under = root(tmp_path)
     tool = of(browser, BrowserDownloadTool, AccountDownloadTool)(
-        under, browsing(a.origin), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+        under,
+        browsing(a.origin),
+        browser,
+        CLOCK,
+        FakeIdGenerator(),
+        pages=FakeTaskPages(),
+        protected={},
     )
     capability = of(browser, BROWSER_DOWNLOAD, BROWSER_DOWNLOAD_AS_YOU)
     arguments: dict[str, Any] = {
@@ -637,7 +643,13 @@ async def test_a_download_from_a_page_instead_of_a_file_writes_nothing_and_says_
     a.pages[("GET", "/away")] = (302, [("Location", off.origin + "/attach")], "")
     under = root(tmp_path)
     tool = of(browser, BrowserDownloadTool, AccountDownloadTool)(
-        under, browsing(a.origin), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+        under,
+        browsing(a.origin),
+        browser,
+        CLOCK,
+        FakeIdGenerator(),
+        pages=FakeTaskPages(),
+        protected={},
     )
     capability = of(browser, BROWSER_DOWNLOAD, BROWSER_DOWNLOAD_AS_YOU)
     arguments = {"site": SITE, "file": "ELA/x.bin", "overwrite": False, "purpose": "la prova"}
@@ -678,7 +690,13 @@ async def test_a_download_the_time_of_its_step_cuts_leaves_nothing_in_the_folder
     number of seconds that a launch of the browser can outlast."""
     under = root(tmp_path)
     tool = of(browser, BrowserDownloadTool, AccountDownloadTool)(
-        under, browsing(slow.origin), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+        under,
+        browsing(slow.origin),
+        browser,
+        CLOCK,
+        FakeIdGenerator(),
+        pages=FakeTaskPages(),
+        protected={},
     )
     capability = of(browser, BROWSER_DOWNLOAD, BROWSER_DOWNLOAD_AS_YOU)
     arguments = {
@@ -711,7 +729,13 @@ async def test_a_task_stopped_while_a_real_download_arrives_leaves_nothing_in_th
     the folder, the download is cancelled and what the browser had written is taken away."""
     under = root(tmp_path)
     tool = of(browser, BrowserDownloadTool, AccountDownloadTool)(
-        under, browsing(slow.origin), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+        under,
+        browsing(slow.origin),
+        browser,
+        CLOCK,
+        FakeIdGenerator(),
+        pages=FakeTaskPages(),
+        protected={},
     )
     capability = of(browser, BROWSER_DOWNLOAD, BROWSER_DOWNLOAD_AS_YOU)
     arguments = {

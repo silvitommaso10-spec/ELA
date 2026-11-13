@@ -1,0 +1,29 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M13.14 (sezione 32, passo 4): una scrittura in uno/ dopo la revoca",
+    "della policy. Chiede di nuovo, e la riga «why I ask» dice che la policy è revocata. Si risponde no.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "scrivere nella cartella uno dopo la revoca",
+  "steps": [
+    {
+      "id": "c0de1a32-0000-4b00-8a00-000000000005",
+      "goal": "scrivere nella cartella uno dopo la revoca",
+      "required_capabilities": [
+        "fs.write"
+      ],
+      "arguments": {
+        "path": "ELA/prova-m13.14/uno/dopo-la-revoca.md",
+        "body": "ELA prova 32, dopo la revoca\n",
+        "overwrite": false,
+        "purpose": "la prova a mano delle policy sulle azioni HIGH"
+      },
+      "risk": "HIGH",
+      "expected_result": "il file c'è, con il testo della prova",
+      "success_conditions": [
+        "fs.file_exists"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}

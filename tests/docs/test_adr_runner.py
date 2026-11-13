@@ -203,15 +203,22 @@ def test_the_runner_picks_a_running_step_before_a_ready_one() -> None:
 # --------------------------------------------------------------------------------------
 
 
-def test_the_adr_says_the_node_reaches_no_rule_of_the_guardian() -> None:
+def test_the_adr_says_the_node_reaches_no_rule_of_the_guardian_and_adr_0068_revises_it() -> None:
+    """ADR 0019 §4 said no rule reads the node; ADR 0068 §4 revises it openly (M13.14, answer 21 of
+    the review of its SPEC): **one** rule reads it, only to take away. So ``decide`` sees the node
+    in one place — the line that turns it into «is this step on the Core» — and nowhere else: a
+    second reading would be the second permission axis ADR 0019 §4 refused."""
     body = section("4.")
     assert "non entra in nessuna regola del Guardian" in body
-    guardian = (
-        Path(__file__).resolve().parents[2] / "src" / "ela" / "permissions" / "guardian.py"
-    ).read_text(encoding="utf-8")
+    root = Path(__file__).resolve().parents[2]
+    state = (root / "docs" / "adr" / "0019-task-runner.md").read_text(encoding="utf-8")
+    assert "**Rivista da ADR 0068 (M13.14)**" in state.split("\n## ", 1)[0]
+    guardian = (root / "src" / "ela" / "permissions" / "guardian.py").read_text(encoding="utf-8")
     start = guardian.index("    def decide(")
     decide = guardian[start : guardian.index("    async def authorize(")]
-    assert "device" not in decide, "decide() must not see a node: it would be a second policy"
+    body_of_decide = decide.split('"""', 2)[2]
+    readings = [line.strip() for line in body_of_decide.splitlines() if "device_id" in line]
+    assert readings == ["device_id is not None and device_id == self._core,"], readings
 
 
 def test_the_adr_lists_the_four_places_the_node_reaches() -> None:

@@ -5,6 +5,7 @@
   **ADR 0048** (M13.3): §13 e il residuo di Linux di §5 sono ridichiarati a M13.7 (ADR 0048 §9, §10); §16 e §17 sono saldati (ADR 0048 §3, §5), e la riga di §16 sul `422` si corregge in ADR 0048 §3.
   **Riletta da ADR 0063 (M13.9)** il 2026-10-11: §6, l'ambiente chiuso di un figlio: il programma del vault riceve due variabili oltre a quelle (ADR 0063 §2).
   **Rivista da ADR 0066 (M13.13)** il 2026-11-10: §9, le righe del tool e del verifier di `terminal.run` guadagnano `terminal.vault_program` — il terminale rifiuta al lancio il programma del vault — e sono riscritte per intero in ADR 0066 (ADR 0066 §3).
+  **Rivista da ADR 0068 (M13.14)** il 2026-11-12: Contesto — «nessuna policy di §59 raggiungerà» la riga `HIGH` resta vero per `terminal.run`, che lancia un programma, non più per la riga (ADR 0068 §2).
 - **Data:** 2026-09-24
 - **Riferimenti spec:** §18, §27, §28, §29, §32, §33, §36, §41, §57, §59, §63
 - **Milestone:** M13.2

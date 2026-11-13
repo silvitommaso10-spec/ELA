@@ -275,6 +275,46 @@ def test_the_fifteenth_contract_breaks_on_an_executive_that_imports_the_context(
     assert case.module in output
 
 
+_MINT = (
+    "from ela.api.policies import created\n"
+    "\n"
+    "\n"
+    "async def mint(*arguments: object) -> object:\n"
+    "    return await created(*arguments)  # type: ignore[arg-type]\n"
+)
+_ROUTE_CASES = (
+    Case("a-tool-calls-the-route-of-the-policies", "", "tools/mint.py", _MINT, "ela.api.policies"),
+    Case(
+        "the-executor-calls-the-route-of-the-policies",
+        "",
+        "executive/mint.py",
+        _MINT,
+        "ela.api.policies",
+    ),
+)
+
+
+@pytest.mark.parametrize("case", _ROUTE_CASES, ids=[c.id for c in _ROUTE_CASES])
+def test_the_sixteenth_contract_breaks_on_a_tool_or_the_executor_that_calls_the_route(
+    tmp_path: Path, package_copy: Path, case: Case
+) -> None:
+    """Contract 16 (M13.14, ADR 0068; proposal 12 of the SPEC): rule 66 reads names, and a module of
+    ``ela.tools`` or ``ela.executive`` that imported the functions of the route of the policies and
+    called them with a ``CORE`` identity built by hand would not trip it. No pytest rule mirrors
+    the contract, so its negative cases — one per source package — are here."""
+    shutil.copy(PYPROJECT, tmp_path / "pyproject.toml")
+    apply(case, package_copy)
+
+    result = _run_lint_imports(tmp_path)
+
+    (contract,) = [c for c in _contracts() if c["forbidden_modules"] == ["ela.api"]]
+    assert contract["source_modules"] == [TOOLS_PACKAGE, "ela.executive"]
+    output = " ".join(result.stdout.split())
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert f"{contract['name']} BROKEN" in output
+    assert case.module in output
+
+
 def test_lint_imports_cannot_forbid_a_package_from_itself(
     tmp_path: Path, package_copy: Path
 ) -> None:

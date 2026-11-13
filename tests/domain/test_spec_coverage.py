@@ -75,6 +75,7 @@ LATER_ADDITIONS = frozenset(
         "Admission",
         "PolicyTerms",
         "PolicyBounds",
+        "PolicyWords",
         "Covered",
         "SessionCover",
     }

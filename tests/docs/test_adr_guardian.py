@@ -30,12 +30,16 @@ the ADR that moved it (M13.1 dec. O). Additions do not exist here — the table 
 level and the levels are §29's five — so a revision must name **every** level, and a revision that
 dropped one would fail ``test_policy_table_covers_every_risk_level``."""
 SIGNATURE_REVISING = "Firma rivista:"
-SIGNATURE_REVISING_ADRS = ((ADR_DIR / "0063-browser-with-your-accounts.md", SIGNATURE_REVISING),)
+SIGNATURE_REVISING_ADRS = (
+    (ADR_DIR / "0063-browser-with-your-accounts.md", SIGNATURE_REVISING),
+    (ADR_DIR / "0068-policies-on-high.md", SIGNATURE_REVISING),
+)
 """ADRs that change what ``decide`` receives, under a label, with the whole signature rewritten.
 
 The same reason as the table's: ADR 0011 keeps the signature it decided, and the parameters M13.9
 added — who wrote the plan, and the room's word about an open session — are read from the ADR that
-added them (ADR 0063 §1)."""
+added them (ADR 0063 §1) — and since M13.14 where the step is placed, which one rule reads only to
+take away (ADR 0068 §4)."""
 ROW = re.compile(r"^\| (SAFE|LOW|MEDIUM|HIGH|CRITICAL) \| `(\w+)` \| (.+) \|$")
 SIGNATURE = re.compile(r"```python\n(def decide\(.*?\) -> PermissionDecision: \.\.\.)\n```", re.S)
 
@@ -138,8 +142,9 @@ def test_decide_signature_matches_the_port() -> None:
 
 
 def test_the_signature_that_grew_is_read_from_the_adr_that_grew_it() -> None:
-    """ADR 0011 keeps the six parameters it decided, and that is history; the two M13.9 added come
-    after them, with a default each — a caller of yesterday is a caller of today."""
+    """ADR 0011 keeps the six parameters it decided, and that is history; the two M13.9 added and
+    the one M13.14 added come after them, with a default each — a caller of yesterday is a caller
+    of today."""
     original = documented_signature(ADR_PATH.read_text(encoding="utf-8"))
     today = signature_of_today()
 
@@ -147,6 +152,7 @@ def test_the_signature_that_grew_is_read_from_the_adr_that_grew_it() -> None:
     assert today[len(original) :] == [
         ("author", "KEYWORD_ONLY", "None"),
         ("session", "KEYWORD_ONLY", "None"),
+        ("device_id", "KEYWORD_ONLY", "None"),
     ]
 
 

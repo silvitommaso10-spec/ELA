@@ -18,6 +18,11 @@ constant it was defending, so raising the cap from MEDIUM to HIGH did not make i
 quietly narrower, still green, no longer proving anything about HIGH. **An assertion that adapts
 to the change it exists to catch is not an assertion** (M13.1 dec. M). So the cap and the rows are
 now stated together, in full, and the message says what to rewrite.
+
+**M13.14 turned the row of a ``HIGH`` that declares terms**, without moving a level (ADR 0068):
+``row_of`` reads ``APPROVAL_UNLESS_POLICY`` for it, and a policy of its own covers it. The ``HIGH``
+of these tests declares no terms, and asks at every use as it did; its twin with terms is covered,
+through the same pipeline.
 """
 
 from __future__ import annotations
@@ -29,15 +34,18 @@ from ela.domain import (
     CapabilityId,
     ExecutionStatus,
     PermissionOutcome,
+    PolicyWords,
     RiskLevel,
     StepState,
     TaskState,
 )
 from ela.permissions import MAX_RISK, POLICY_VERSION, RISK_POLICY, asks_at_every_use
 from ela.permissions.guardian import Rule
-from ela.testing.fakes import FakeCapabilityRegistry
-from tests.executive.support import World, world
+from ela.testing.fakes import FakeCapabilityRegistry, FakeClock, FakeIdGenerator, FakeTool
+from tests.executive.support import World, fake_verifier, world
+from tests.permissions.policy_support import TERMED, TERMED_ARGS
 from tests.permissions.support import (
+    CATALOGUE,
     CRITICAL,
     ECHO,
     ECHO_ARGS,
@@ -47,6 +55,15 @@ from tests.permissions.support import (
     grant,
     harness,
 )
+
+HIGH_TERMED = TERMED.model_copy(
+    update={
+        "id": CapabilityId("test.high_termed"),
+        "risk": RiskLevel.HIGH,
+        "policy_words": PolicyWords(does="does something of the tests", goes="nowhere"),
+    }
+)
+"""The twin of ``HIGH``: a ``HIGH`` that declares the terms of a policy (M13.14, ADR 0068)."""
 
 
 @pytest.fixture
@@ -71,8 +88,10 @@ def test_the_cap_the_rows_and_the_version_are_stated_together_and_none_moves_alo
     ``POLICY_VERSION`` is here for the same reason it was bumped to ``v0.2`` at all. A decision
     carries the version of the table that took it, so a milestone that changes a row and forgets
     the bump makes every decision name a table that is not the one it was decided under —
-    **exactly what the bump exists to prevent**. Nothing else in the suite asserts its value, so
-    if it is not asserted here it is not asserted anywhere.
+    **exactly what the bump exists to prevent**. Corrected by M13.14: two tests of the sessions pin
+    it too (``tests/permissions/test_guardian_sessions.py``), for the rule that moved it to
+    ``v0.3``; this one stays the pin of the table. ``v0.4`` since M13.14 (ADR 0068): the row of a
+    ``HIGH`` that declares terms, a way to allow the Guardian of ``v0.3`` did not have.
     """
     assert MAX_RISK is RiskLevel.HIGH, f"the catalogue cap moved. {MOVE_THEM_TOGETHER}"
     assert RISK_POLICY == {
@@ -82,7 +101,7 @@ def test_the_cap_the_rows_and_the_version_are_stated_together_and_none_moves_alo
         RiskLevel.HIGH: Rule.APPROVAL_EVERY_USE,
         RiskLevel.CRITICAL: Rule.DENY,
     }, f"the policy moved. {MOVE_THEM_TOGETHER}"
-    assert POLICY_VERSION == "v0.3", (
+    assert POLICY_VERSION == "v0.4", (
         f"the policy version moved, and this is the only place that says which one it is. "
         f"{MOVE_THEM_TOGETHER}"
     )
@@ -147,12 +166,13 @@ async def test_the_denial_does_not_depend_on_the_catalogue_refusing_it_first(w: 
 async def test_a_high_capability_asks_every_time_and_no_standing_policy_covers_it(
     w: World,
 ) -> None:
-    """The row the cap now admits, exercised through the executor (M13.1 dec. D, N).
+    """The row the cap now admits, exercised through the executor (M13.1 dec. D, N) — for a
+    ``HIGH`` that declares **no terms** (M13.14, ADR 0068).
 
     A HIGH capability is **registrable** since M13.1, so this is not a hand-built world: it is
     what a real one does. The user is asked; a standing policy of §59 — constructible today, which
     is why this is a defence exercised and not a defence declared — does not cover it; the grant
-    born from a yes does.
+    born from a yes does. Its twin with terms is the next test.
     """
     task, step = await w.running(HIGH.id)
     asked = await w.execute(task.id, step.id)
@@ -179,6 +199,35 @@ async def test_a_high_capability_asks_every_time_and_no_standing_policy_covers_i
     )
     assert again.decision.metadata["rule"] == Rule.APPROVAL_EVERY_USE.value
     assert other.tool(HIGH.id).calls == ()
+
+
+async def test_a_high_that_declares_terms_is_covered_by_its_policy_through_the_whole_pipeline() -> (
+    None
+):
+    """The twin (M13.14, ADR 0068; proposal 15): the same pipeline, a ``HIGH`` that declares the
+    terms of a policy, and a policy of its own in the store — the step runs without a question,
+    the row is «approval unless policy», the level stays ``HIGH``, and one use is spent."""
+    tool = FakeTool(HIGH_TERMED.id, FakeClock(), FakeIdGenerator(), name="fake-high-termed")
+    other = world(
+        catalogue=(*CATALOGUE, HIGH_TERMED),
+        tools=(tool,),
+        verifiers=(fake_verifier(HIGH_TERMED.id),),
+    )
+    other.fake_tools = {HIGH_TERMED.id: tool}
+    task, step = await other.running(HIGH_TERMED.id, arguments=TERMED_ARGS)
+    policy = grant(HIGH_TERMED)
+    await other.store.grant(policy)
+
+    ran = await other.execute(task.id, step.id)
+
+    assert ran.decision is not None
+    assert ran.decision.outcome is PermissionOutcome.ALLOWED
+    assert ran.decision.risk is RiskLevel.HIGH
+    assert ran.decision.metadata["rule"] == Rule.APPROVAL_UNLESS_POLICY.value
+    assert ran.decision.reason == f"test.high_termed is covered by policy {policy.id}"
+    assert ran.approval is None
+    assert await other.store.uses(policy.id) == 1
+    assert other.tool(HIGH_TERMED.id).calls != ()
 
 
 async def test_an_approved_high_spends_its_yes_and_the_audit_names_it(w: World) -> None:
@@ -218,9 +267,12 @@ async def test_an_approved_high_spends_its_yes_and_the_audit_names_it(w: World) 
 
 
 def test_the_grant_a_yes_mints_is_the_one_that_covers_a_high_row() -> None:
-    """The other side of dec. D, on the two shapes the domain itself keeps apart."""
-    assert asks_at_every_use(RiskLevel.HIGH)
-    assert not asks_at_every_use(RiskLevel.MEDIUM)
+    """The other side of dec. D, on the two shapes the domain itself keeps apart. Since M13.14
+    the predicate reads the capability (ADR 0068): a ``HIGH`` without terms asks at every use, its
+    twin with terms does not, and a ``MEDIUM`` never does."""
+    assert asks_at_every_use(HIGH)
+    assert not asks_at_every_use(HIGH_TERMED)
+    assert not asks_at_every_use(TERMED)
     assert born_of_a_yes(HIGH).approval_id is not None
     assert grant(HIGH).approval_id is None
 

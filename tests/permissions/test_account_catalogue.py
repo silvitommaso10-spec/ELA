@@ -3,9 +3,10 @@ Guardian (M13.9, ADR 0063; decisions 12 and 29).
 
 ``browser.read_as_you`` is **MEDIUM**: what it reads is the user's own content, and it leaves
 with their credentials — a question at every use, and no policy of §59 for a single read.
-``browser.act_as_you`` and ``browser.login`` are **HIGH**: a question at every use, which no
-standing grant reaches. The arguments of the first two are the empty browser's, to the letter; a
-login's have **no argument that could carry a value**.
+``browser.act_as_you`` and ``browser.login`` are **HIGH**: a login asks at every use, which no
+standing grant reaches; since M13.14 an action as you asks **unless a policy of yours for
+``browser.act_as_you``** covers its site (ADR 0068). The arguments of the first two are the empty
+browser's, to the letter; a login's have **no argument that could carry a value**.
 """
 
 from __future__ import annotations
@@ -48,7 +49,7 @@ from ela.permissions import (
     check_capability,
     production_catalogue,
 )
-from ela.permissions.rows import no_policy_for, no_session_covers
+from ela.permissions.rows import no_policy_for, no_session_covers, row_of
 from ela.testing.fakes import FakeAuditLog, FakeClock, FakeIdGenerator
 from tests.domain.examples import NOW, STEP_ID, TASK
 from tests.permissions.support import born_of_a_yes, grant
@@ -123,8 +124,13 @@ def test_the_three_capabilities_as_the_catalogue_holds_them() -> None:
         assert spec.requires_authorization is True
         assert spec.scope == SITES and spec.scoped_arguments == ("site",)
         assert spec.prompt_arguments == ("purpose",)
-        assert spec.policy_terms is None and spec.covers is None
+        assert spec.covers is None
         check_capability(spec)
+    # Since M13.14 (ADR 0068) the action as you declares the terms of a policy, and its words;
+    # the read and the login still declare none.
+    assert read.policy_terms is None and login.policy_terms is None
+    assert act.policy_terms is not None and act.policy_words is not None
+    assert read.policy_words is None and login.policy_words is None
     assert {BROWSER_READ_AS_YOU, BROWSER_ACT_AS_YOU, BROWSER_LOGIN} <= DECLARES_AN_EMPTY_SCOPE
     assert browser_read_as_you().scope == UNDECLARED_SITES
 
@@ -183,19 +189,34 @@ def test_a_read_with_the_profile_asks_where_the_empty_browser_s_does_not() -> No
     assert rule == Rule.APPROVAL_UNLESS_AUTHORIZED.value
 
 
-@pytest.mark.parametrize("capability", [BROWSER_ACT_AS_YOU, BROWSER_LOGIN])
-def test_an_action_and_a_login_ask_at_every_use_and_no_standing_grant_reaches_them(
-    capability: str,
-) -> None:
-    spec = catalogue().get(capability)
+def test_a_login_asks_at_every_use_and_no_standing_grant_reaches_it() -> None:
+    """A login declares no terms (M13.15 opens it): its row asks at every use."""
+    spec = catalogue().get(BROWSER_LOGIN)
 
-    assert decide(capability, CALLS[capability]) == (
+    assert decide(BROWSER_LOGIN, LOGIN) == (
         PermissionOutcome.REQUIRES_APPROVAL,
         Rule.APPROVAL_EVERY_USE.value,
     )
-    standing, _ = decide(capability, CALLS[capability], authorization=grant(spec))
+    standing, _ = decide(BROWSER_LOGIN, LOGIN, authorization=grant(spec))
     assert standing is not PermissionOutcome.ALLOWED
     assert no_policy_for(spec) is not None
+
+
+def test_an_action_as_you_asks_unless_a_policy_of_its_own_covers_it() -> None:
+    """M13.14, ADR 0068: the row of a ``HIGH`` that declares terms, «approval unless policy» —
+    the question without a policy, the policy of ``browser.act_as_you`` on its site allows."""
+    spec = catalogue().get(BROWSER_ACT_AS_YOU)
+
+    assert row_of(spec) is Rule.APPROVAL_UNLESS_POLICY
+    assert decide(BROWSER_ACT_AS_YOU, ACT) == (
+        PermissionOutcome.REQUIRES_APPROVAL,
+        Rule.APPROVAL_UNLESS_POLICY.value,
+    )
+    assert decide(BROWSER_ACT_AS_YOU, ACT, authorization=grant(spec)) == (
+        PermissionOutcome.ALLOWED,
+        Rule.APPROVAL_UNLESS_POLICY.value,
+    )
+    assert no_policy_for(spec) is None
 
 
 @EVERY
@@ -245,10 +266,10 @@ def test_a_site_outside_the_grammar_is_denied_before_the_scope_is_read(
     assert (outcome, rule) == (PermissionOutcome.DENIED, Rule.ARGUMENTS.value)
 
 
-@EVERY
-def test_no_policy_of_59_can_be_born_for_any_of_the_three(capability: str) -> None:
+@pytest.mark.parametrize("capability", [BROWSER_READ_AS_YOU, BROWSER_LOGIN])
+def test_no_policy_of_59_can_be_born_for_a_read_or_a_login(capability: str) -> None:
     """ADR 0062 §1: a capability that declares no terms admits no policy — a single read with
-    the profile among them (decision 29, the road C)."""
+    the profile among them (decision 29, the road C), and the login until M13.15."""
     request = PolicyRequest(capability_id=capability, scope=("posta.example",), limits={}, days=1)  # type: ignore[arg-type]
 
     with pytest.raises(PolicyRefusedError):
@@ -259,6 +280,29 @@ def test_no_policy_of_59_can_be_born_for_any_of_the_three(capability: str) -> No
             now=NOW,
             authorization_id=FakeIdGenerator().new_uuid(),  # type: ignore[arg-type]
         )
+
+
+def test_a_policy_of_59_is_born_for_an_action_as_you() -> None:
+    """M13.14, ADR 0068: the action as you admits a policy on its declared sites, with no limit
+    and the uses the user sets."""
+    request = PolicyRequest(
+        capability_id=BROWSER_ACT_AS_YOU,  # type: ignore[arg-type]
+        scope=("posta.example",),
+        limits={},
+        days=1,
+        uses=3,
+    )
+
+    born = authorization_from_policy(
+        request,
+        catalogue=catalogue(),
+        granted_by="tommaso",
+        now=NOW,
+        authorization_id=FakeIdGenerator().new_uuid(),  # type: ignore[arg-type]
+    )
+
+    assert born.capability_id == BROWSER_ACT_AS_YOU and born.scope == ("posta.example",)
+    assert born.approval_id is None and born.max_uses == 3
 
 
 def test_they_come_after_the_guided_session_in_the_catalogue_the_composition_builds() -> None:
@@ -420,7 +464,8 @@ def test_a_policy_of_one_session_does_not_cover_the_other_either_way() -> None:
 def test_the_session_covers_the_reads_its_model_writes_on_its_site_and_nothing_else() -> None:
     """The road A of decision 29, on the catalogue ELA builds: a read with the profile written by
     the model of an open session with the profile is allowed under the session's own rule — no
-    question at every look —; an act asks, always; and another site is not the session's."""
+    question at every look —; an act is never the session's, and without a policy of its own it
+    asks (M13.14, ADR 0068); and another site is not the session's."""
     assert gesture(BROWSER_READ_AS_YOU, READ, attested()) == (
         PermissionOutcome.ALLOWED,
         Rule.SESSION.value,
@@ -431,7 +476,7 @@ def test_the_session_covers_the_reads_its_model_writes_on_its_site_and_nothing_e
     )
     assert gesture(BROWSER_ACT_AS_YOU, ACT, None) == (
         PermissionOutcome.REQUIRES_APPROVAL,
-        Rule.APPROVAL_EVERY_USE.value,
+        Rule.APPROVAL_UNLESS_POLICY.value,
     )
     elsewhere = {**READ, "site": "altro.example"}
     assert gesture(BROWSER_READ_AS_YOU, elsewhere, attested())[0] is not PermissionOutcome.ALLOWED

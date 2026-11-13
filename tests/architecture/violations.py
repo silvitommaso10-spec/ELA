@@ -2036,6 +2036,50 @@ VIOLATIONS: tuple[Case, ...] = (
         "from ela.ports import AuthorizationStore\n",
         "AuthorizationStore",
     ),
+    Case(
+        # Part 2 since M13.14 (answer 33, ADR 0068): the store held under another name saves a
+        # grant all the same — ``grant`` is a member of ``AuthorizationStore`` alone.
+        "a-grant-is-saved-on-a-store-under-another-name",
+        "a-policy-is-born-at-its-route",
+        "executive/runner.py",
+        "class X:\n"
+        "    def __init__(self, store):\n"
+        "        self._grants = store\n"
+        "    async def run(self, grant):\n"
+        "        await self._grants.grant(grant)\n",
+        ".grant(",
+    ),
+    Case(
+        # Part 2 since M13.14: the executor saving what it read, on a store under another name.
+        "the-executor-saves-what-it-read-under-another-name",
+        "a-policy-is-born-at-its-route",
+        "executive/executor.py",
+        "class X:\n"
+        "    async def run(self, spec):\n"
+        "        grants = await self._grants.for_capability(spec)\n"
+        "        await self._grants.grant(grants[0])\n",
+        ".grant(",
+    ),
+    # --- a-program-is-launched-by-the-terminal (rule 74, M13.14) ---
+    Case(
+        # A tool that imports the launcher: a capability that launches, outside LAUNCHES_A_PROGRAM.
+        "a-tool-imports-the-launcher",
+        "a-program-is-launched-by-the-terminal",
+        "tools/notes.py",
+        "from ela.ports import CommandLauncher\n",
+        "CommandLauncher",
+    ),
+    Case(
+        # The same, reached through the module of the ports.
+        "a-tool-names-the-launcher-through-the-ports",
+        "a-program-is-launched-by-the-terminal",
+        "tools/browser.py",
+        "from ela import ports\n"
+        "class X:\n"
+        "    def __init__(self, launcher: ports.CommandLauncher) -> None:\n"
+        "        self._launcher = launcher\n",
+        "CommandLauncher",
+    ),
     # --- named-reaches-the-tool-only (rule 71, M13.10) ---
     Case(
         # What a question named, written in the audit: the log that is never redacted.
@@ -3238,6 +3282,22 @@ ALLOWED: tuple[Case, ...] = (
         "api/nodes.py",
         "async def revoke(ela, device_id, actor):\n"
         "    return await ela.devices.revoke(device_id, by=actor)\n",
+        "",
+    ),
+    Case(
+        # Rule 74: the terminal's module holds the launcher — the one capability that launches.
+        "the-terminal-holds-the-launcher",
+        "a-program-is-launched-by-the-terminal",
+        "tools/terminal.py",
+        "from ela.ports import CommandLauncher\n",
+        "",
+    ),
+    Case(
+        # Rule 74: an adapter of the machine implements the launcher; it is not a tool.
+        "an-adapter-implements-the-launcher",
+        "a-program-is-launched-by-the-terminal",
+        "infrastructure/machine/launcher.py",
+        "from ela.ports import CommandLauncher\n",
         "",
     ),
     Case(

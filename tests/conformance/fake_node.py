@@ -81,7 +81,9 @@ class FakeNode:
         """What this node verifies on its own machine (M13.3): ``fs.*`` on its root, if any."""
         if fs_root is not None:
             writer: ToolPort = (
-                SilentWrite(clock, self._ids) if liar else FsWriteTool(fs_root, clock, self._ids)
+                SilentWrite(clock, self._ids)
+                if liar
+                else FsWriteTool(fs_root, clock, self._ids, protected={})
             )
             self._tools[FS_READ] = FsReadTool(fs_root, clock, self._ids)
             self._tools[FS_WRITE] = writer

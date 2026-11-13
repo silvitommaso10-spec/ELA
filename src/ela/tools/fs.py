@@ -21,6 +21,16 @@ one direction is half a defence, and the missing case is the one a race loses.
 **The limit that remains, declared.** A component swapped between the classification and the
 ``open`` is not seen by either — :mod:`ela.tools.notes` declares the same limit for the workspace,
 and here it is wider, because the root is the user's own house and not a folder ELA made.
+
+**Two more refusals at every write, and one look at a place** (M13.14, ADR 0068; decision 9,
+answers 25 and 31 of the review of its SPEC). A write never reaches **what ELA uses to exist** —
+the list the composition derives and hands over, the one the root is checked against at the
+start-up —, :data:`ELA_S_OWN`: the start-up already refused a root that touches one, and a place
+enters the root only if the world changes after. A write never overwrites **a file with more than
+one name**, :data:`HARD_LINK`: the places are compared as paths, and a second name of a file of
+ELA's would step around the comparison. Both under a yes and under a policy, before the question
+and before the write. And :meth:`FsWriteTool.prospect_place`: whether a call could start in a
+folder a policy would name — it must be a folder, there, and nothing of ELA's.
 """
 
 from __future__ import annotations
@@ -28,7 +38,9 @@ from __future__ import annotations
 import hashlib
 import os
 import stat
+from collections.abc import Mapping
 from pathlib import Path
+from types import MappingProxyType
 from typing import ClassVar, Final
 
 from ela.domain import CapabilityId, ErrorMetadata, JsonMapping, TaskId
@@ -46,6 +58,7 @@ from ela.tools.paths import (
     classify,
     is_relative_note_path,
     resolve_workspace,
+    within,
 )
 
 __all__ = [
@@ -57,7 +70,12 @@ __all__ = [
     "FS_WRITE",
     "FS_WRITE_TOOL_NAME",
     "CREATES",
+    "ELA_S_OWN",
     "FILE",
+    "FOLDER",
+    "HARD_LINK",
+    "NOT_A_FOLDER",
+    "WRITES_IN",
     "OVERWRITES",
     "READS",
     "IO_ERROR",
@@ -108,10 +126,33 @@ before anything runs; this is the same answer one syscall from the disk, because
 removed while ELA is running and ``mkdir(parents=True)`` would put it back without being asked.
 """
 
+ELA_S_OWN: Final = "path.ela_s_own"
+"""The target is, holds or lies within a place ELA uses to exist (M13.14, ADR 0068; decision 9):
+the database, the ``.env``, the source tree, ELA's home, the Python it runs on… — the list the
+composition hands over. Refused at every write, under a yes or under a policy."""
+
+HARD_LINK: Final = "path.hard_link"
+"""The target is a file with more than one name (M13.14, ADR 0068; answer 31 of the review of its
+SPEC): overwriting it changes the file under its other names too, and the places are compared as
+paths — a second name of a file of ELA's would step around the comparison. Refused at every
+write; a new file has one name."""
+
+NOT_A_FOLDER: Final = "fs.not_a_folder"
+"""A place a policy would name is a file (M13.14, ADR 0068; answer 25): a policy of ``fs.write``
+names folders, and only :meth:`FsWriteTool.prospect_place` answers with it."""
+
+FOLDER: Final = "folder"
+"""What a place of a policy is called: the tool's word, beside :data:`FILE`."""
+
+WRITES_IN: Final = "writes in this folder"
+"""What a policy of ``fs.write`` lets ELA do in a place, in the tool's words (M13.14)."""
+
 WRITE_REFUSALS: Final[frozenset[str]] = frozenset(
-    {PATH_INVALID, PATH_OUTSIDE_ROOT, PATH_SYMLINK, PATH_IS_DIRECTORY}
+    {PATH_INVALID, PATH_OUTSIDE_ROOT, PATH_SYMLINK, PATH_IS_DIRECTORY, ELA_S_OWN, HARD_LINK}
 )
-"""The path problems ``fs.write`` names with their own code; the rest is :data:`IO_ERROR`."""
+"""The path problems a write names with their own code — ``fs.write``'s and a download's —; the
+rest is :data:`IO_ERROR`. The last two since M13.14: they are not :func:`classify`'s, they are
+:func:`looked_for_a_write`'s."""
 
 READ_REFUSALS: Final[frozenset[str]] = frozenset(
     {PATH_INVALID, PATH_OUTSIDE_ROOT, PATH_SYMLINK, PATH_IS_DIRECTORY, PATH_MISSING}
@@ -256,6 +297,8 @@ class FsWriteTool(Tool):
             OVERWRITE_MISMATCH,
             NO_ROOT,
             IO_ERROR,
+            ELA_S_OWN,
+            HARD_LINK,
         }
     )
     output_keys: ClassVar[frozenset[str]] = frozenset({"path", "bytes", "overwrote"})
@@ -273,15 +316,56 @@ class FsWriteTool(Tool):
     stop_point: ClassVar[StopPoint] = StopPoint(here=FIRST_WRITE, on_a_node=ENVELOPE)
 
     def __init__(
-        self, root: Path | str, clock: Clock, ids: IdGenerator, *, name: str = FS_WRITE_TOOL_NAME
+        self,
+        root: Path | str,
+        clock: Clock,
+        ids: IdGenerator,
+        *,
+        protected: Mapping[str, Path],
+        name: str = FS_WRITE_TOOL_NAME,
     ) -> None:
         super().__init__(FS_WRITE, clock, ids, name=name)
         self._root = resolve_workspace(root)
+        self._protected: Mapping[str, Path] = MappingProxyType(dict(protected))
 
     @property
     def root(self) -> Path:
         """The resolved root: ``ELA_FS_ROOT``, never created here."""
         return self._root
+
+    @property
+    def protected(self) -> Mapping[str, Path]:
+        """What ELA uses to exist, resolved and named (M13.14, ADR 0068): no write reaches it.
+        Required, without a default — a tool built without the list would write anywhere."""
+        return self._protected
+
+    async def prospect_place(self, place: str) -> Prospect:
+        """Whether a write could start in ``place`` now: one entry of the scope of a policy, at its
+        birth (M13.14, ADR 0068; decision 9, answer 25 of the review of its SPEC).
+
+        The root is there; ``place`` is **a folder that is there** — classified as a write is, so a
+        link, a path out of the root or a missing folder are refused with their code, and a file
+        is :data:`NOT_A_FOLDER` —; and it is nothing of ELA's, :data:`ELA_S_OWN`. The answer's
+        ``target`` is the folder on this disk, whole, beside the entry as written: what the
+        preview of the policy shows (answer 20)."""
+        if not self._root.is_dir():
+            return _refused(NO_ROOT, _no_root(self._root), self.name)
+        problem = classify(self._root, place)
+        if problem is None:
+            return _refused(
+                NOT_A_FOLDER,
+                f"{place!r} is a file and not a folder: a policy of fs.write names folders",
+                self.name,
+            )
+        if problem.code != PATH_IS_DIRECTORY:
+            return _refused(problem.code, problem.message(place), self.name)
+        folder = self._root / place
+        what = _ela_s_own(folder, self._protected)
+        if what is not None:
+            return _refused(ELA_S_OWN, _reaches(place, what), self.name)
+        return Prospect(
+            target=Target(resolved=str(folder), exists=True, does=WRITES_IN, label=FOLDER)
+        )
 
     async def asserted(self, arguments: JsonMapping) -> Prospect:
         """What a write asserts, on a machine ELA has not looked at (M13.3): the ``overwrite`` of
@@ -320,7 +404,7 @@ class FsWriteTool(Tool):
             return Outcome({}, ARGUMENTS_INVALID, "path and body must be strings"), None
         if not isinstance(overwrite, bool):
             return Outcome({}, ARGUMENTS_INVALID, "overwrite must be a boolean"), None
-        return looked_for_a_write(self._root, path, overwrite)
+        return looked_for_a_write(self._root, path, overwrite, protected=self._protected)
 
     async def _run(self, arguments: JsonMapping, stop: TaskStop) -> Outcome:
         refused, _ = self._look(arguments)
@@ -397,22 +481,62 @@ def looked_for_a_read(root: Path, path: str) -> tuple[Outcome | None, Target | N
 
 
 def looked_for_a_write(
-    root: Path, path: str, overwrite: bool
+    root: Path, path: str, overwrite: bool, *, protected: Mapping[str, Path]
 ) -> tuple[Outcome | None, Target | None]:
-    """**What a write refuses, in one place**: the root, the classification, and ``overwrite`` as
-    an assertion on the world, both ways (ADR 0045 §7). ``fs.write``'s, and a download's from the
-    browser (M13.13, ADR 0066)."""
+    """**What a write refuses, in one place**: the root, the classification, what ELA uses to
+    exist (M13.14), and ``overwrite`` as an assertion on the world, both ways (ADR 0045 §7) — and a
+    file with more than one name, which is not overwritten (M13.14). ``fs.write``'s, and a
+    download's from the browser (M13.13, ADR 0066).
+
+    ``protected`` is the list of the places no write reaches, named — the composition's
+    (``Settings.ela_s_own``, a node's ``NodeConfig.own``): keyword and without a default, so a
+    caller cannot forget it."""
     if not root.is_dir():
         return Outcome({}, NO_ROOT, _no_root(root)), None
     problem = classify(root, path)
     if problem is not None and problem.code != PATH_MISSING:
         code = problem.code if problem.code in WRITE_REFUSALS else IO_ERROR
         return Outcome({}, code, problem.message(path)), None
+    target = root / path
+    what = _ela_s_own(target, protected)
+    if what is not None:
+        return Outcome({}, ELA_S_OWN, _reaches(path, what)), None
     there = problem is None
     if there is not overwrite:
         return Outcome({}, OVERWRITE_MISMATCH, _moved(path, declared=overwrite)), None
+    if there:
+        try:
+            names = os.lstat(target).st_nlink
+        except OSError as error:
+            return Outcome({}, IO_ERROR, f"{type(error).__name__}: {error.strerror or error}"), None
+        if names > 1:
+            return Outcome({}, HARD_LINK, _more_than_one_name(path)), None
     does = OVERWRITES if there else CREATES
-    return None, Target(resolved=str(root / path), exists=there, does=does, label=FILE)
+    return None, Target(resolved=str(target), exists=there, does=does, label=FILE)
+
+
+def _ela_s_own(target: Path, protected: Mapping[str, Path]) -> str | None:
+    """Which place of ``protected`` the target is, holds or lies within — by its spelling and by
+    what the volume says (:func:`~ela.tools.paths.within`) —, or ``None``."""
+    for what, place in protected.items():
+        if within(target, place) or within(place, target):
+            return what
+    return None
+
+
+def _reaches(path: str, what: str) -> str:
+    """The path and the name of the place, never a content (§57)."""
+    return (
+        f"{path!r} reaches {what}: a write of ELA never touches what ELA uses to exist, under a "
+        "yes or under a policy"
+    )
+
+
+def _more_than_one_name(path: str) -> str:
+    return (
+        f"{path!r} is a file with more than one name: overwriting it would change it under its "
+        "other names too, in places no folder you chose names"
+    )
 
 
 def read_bytes(target: Path) -> bytes:

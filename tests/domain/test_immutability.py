@@ -102,6 +102,9 @@ def test_models_without_a_json_payload_are_the_expected_ones() -> None:
     bound, names of arguments and two names, and a mapping beside it would be where a limit nobody
     declared would one day be put (§59; ADR 0062). ``PolicyBounds`` carries one — the limits, by
     name — and is checked where the others are.
+
+    ``PolicyWords`` joined in M13.14 without a bag: two sentences a preview shows, and a mapping
+    beside them would be where a third, undeclared promise would one day be put (ADR 0068).
     """
     without = sorted(model.__name__ for model in MODELS if not _payloads(model))
     assert without == [
@@ -124,6 +127,7 @@ def test_models_without_a_json_payload_are_the_expected_ones() -> None:
         "PerceptionChange",
         "PlanAuthor",
         "PolicyTerms",
+        "PolicyWords",
         "ProviderUsage",
         "RawCapture",
         "RawHeardSegment",

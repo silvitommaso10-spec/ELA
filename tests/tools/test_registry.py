@@ -3,6 +3,7 @@ contract (ADR 0013 §10, ADR 0014 §2)."""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -24,11 +25,13 @@ from ela.permissions import (
     TERMINAL_RUN,
     catalogue_v01,
 )
+from ela.permissions.rows import LAUNCHES_A_PROGRAM
 from ela.ports import AlreadyExistsError
 from ela.testing.fakes import (
     FakeAuditLog,
     FakeClock,
     FakeIdGenerator,
+    FakeLauncher,
     FakeListening,
     FakeModelProvider,
     FakeModelRouter,
@@ -56,6 +59,7 @@ from ela.tools import (
     ModelCompleteTool,
     ModelCompleteVerifier,
     NotIdempotentError,
+    TerminalRunTool,
     Tool,
     ToolNotFound,
     ToolRegistry,
@@ -236,7 +240,9 @@ def test_the_refusal_comes_before_the_duplicate_check() -> None:
 # --------------------------------------------------------------------------------------
 
 
-def _production(tmp_path: Path) -> tuple[ToolRegistry, VerifierRegistry, CaptureStore]:
+def _production(
+    tmp_path: Path, *, launcher: FakeLauncher | None = None
+) -> tuple[ToolRegistry, VerifierRegistry, CaptureStore]:
     captures = CaptureStore(CaptureSettings(capture_dir=tmp_path / "captures"))
     router = FakeModelRouter()
     tools = production_tools(
@@ -260,7 +266,7 @@ def _production(tmp_path: Path) -> tuple[ToolRegistry, VerifierRegistry, Capture
         model="eleven_flash_v2_5",
         fs_root=tmp_path / "files",
         terminal=a_terminal(tmp_path / "files"),
-        launcher=a_launcher(),
+        launcher=a_launcher() if launcher is None else launcher,
         browsing=no_sites(),
         browser=a_browser(),
         gestures=a_room(),
@@ -270,6 +276,7 @@ def _production(tmp_path: Path) -> tuple[ToolRegistry, VerifierRegistry, Capture
         vault=a_door(),
         not_now=any_moment,
         pages=FakeTaskPages(),
+        protected={},
     )
     verifiers = production_verifiers(
         root=tmp_path,
@@ -324,6 +331,52 @@ def test_the_production_registries_are_v01_plus_what_came_after(tmp_path: Path) 
     assert {v.capability_id for v in verifiers.verifiers()} == {
         t.capability_id for t in tools.tools()
     }
+
+
+def _held(value: object, seen: set[int]) -> Iterator[object]:
+    """Every object ``value`` holds, through the attributes of ELA's own objects, each once."""
+    if id(value) in seen:
+        return
+    seen.add(id(value))
+    yield value
+    if not type(value).__module__.startswith("ela."):
+        return
+    attributes = dict(getattr(value, "__dict__", {}))
+    for name in getattr(type(value), "__slots__", ()):
+        if hasattr(value, name):
+            attributes[name] = getattr(value, name)
+    for held in attributes.values():
+        yield from _held(held, seen)
+
+
+def test_the_capabilities_that_launch_a_program_are_those_whose_tools_hold_a_launcher(
+    tmp_path: Path,
+) -> None:
+    """``LAUNCHES_A_PROGRAM`` (M13.14, ADR 0068; decision 5) is what no policy covers: a program
+    launched as you can read the Core's token and create a policy. **Derived, not re-listed**: the
+    production registry is built around one launcher, and the capabilities whose tool holds it —
+    through any object of ELA's it keeps — are the set. Rule 74 keeps every other module of
+    ``ela.tools`` from naming the launcher at all."""
+    launcher = FakeLauncher()
+    tools, _, _ = _production(tmp_path, launcher=launcher)
+
+    holding = {
+        tool.capability_id
+        for tool in tools.tools()
+        if any(held is launcher for held in _held(tool, set()))
+    }
+
+    assert holding == LAUNCHES_A_PROGRAM
+
+
+def test_the_terminal_s_tool_serves_terminal_run_and_no_other_capability(tmp_path: Path) -> None:
+    """The one tool that launches a program the plan chooses serves one capability (M13.14)."""
+    tools, _, _ = _production(tmp_path)
+
+    terminals = [tool for tool in tools.tools() if isinstance(tool, TerminalRunTool)]
+
+    assert [tool.capability_id for tool in terminals] == [TERMINAL_RUN]
+    assert tools.get(TERMINAL_RUN) is terminals[0]
 
 
 @pytest.mark.parametrize(

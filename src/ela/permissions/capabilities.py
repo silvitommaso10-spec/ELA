@@ -40,6 +40,7 @@ from ela.domain import (
     Covered,
     JsonValue,
     PolicyTerms,
+    PolicyWords,
     RiskLevel,
     SensorName,
 )
@@ -254,6 +255,10 @@ def check_capability(spec: CapabilitySpec) -> None:
             )
     if spec.policy_terms is not None:
         _check_policy_terms(spec, spec.policy_terms, properties, required)
+    elif spec.policy_words is not None:
+        raise InvalidCapabilityError(
+            spec.id, "policy words without policy terms describe a policy nobody can create"
+        )
 
 
 def _check_policy_terms(
@@ -263,30 +268,36 @@ def _check_policy_terms(
     required: Sequence[str],
 ) -> None:
     """Refuse a declaration of ``policy_terms`` that would admit policies nobody could create, or
-    that would cover what they should not (M13.12, ADR 0062; decisions 1 and 2).
+    that would cover what they should not (M13.12, ADR 0062; decisions 1 and 2; M13.14, ADR 0068).
 
-    On a row that does not ask unless authorized — the same reason the birth gives —; with nothing
-    to bound; on a capability without a scope, or whose scoped arguments are not lists — a policy's
-    scope is a set of targets, and the call that «partirebbe» carries them all —; with an argument
-    of the schema in no class, in two, or a name the schema does not have — **the closed world that
+    Where no policy can cover — the same reason the birth gives, :func:`no_policy_for`: a program
+    launched by the plan, a row that does not ask, a row that denies —; on a capability without a
+    scope, or whose scoped arguments are some lists and some single values; with an argument of
+    the schema in no class, in two, or a name the schema does not have — **the closed world that
     lets an old policy stop covering by itself the day the schema grows** —; with a limit that is
     not a required number — an ``integer``, or a ``string`` with ELA's pattern of an amount of
     money —, or an ``integer`` without its ``minimum`` and ``maximum``, which the form of a policy
     shows (decision 25 of the review of the summary); with an uncovered argument a call must carry;
-    with a required free argument that is not a ``string``, which the prospect could not fill.
+    for a capability whose scope is a list, with a required free argument that is not a ``string``,
+    which the prospect could not fill; and on a ``HIGH`` without
+    :attr:`CapabilitySpec.policy_words`, whose preview could not say what ELA will do without
+    asking.
+
+    **Since M13.14** a declaration with no limit is a policy (ADR 0068): what bounds it is its
+    scope, its end, and the uses if the user sets them; and a scoped argument may be one value, a
+    target per call, whose «partirebbe» is asked of the tool place by place.
     """
     refusal = no_policy_for(spec)
     if refusal is not None:
         raise InvalidCapabilityError(spec.id, refusal)
-    if not terms.limits:
-        raise InvalidCapabilityError(spec.id, "a policy that bounds nothing is not a policy")
     if not spec.scoped_arguments:
         raise InvalidCapabilityError(spec.id, "a policy needs a scope, and this has none")
-    for name in spec.scoped_arguments:
-        if dict(properties[name]).get("type") != "array":
-            raise InvalidCapabilityError(
-                spec.id, f"the scoped argument {name!r} of a capability with policy terms is a list"
-            )
+    lists = {dict(properties[name]).get("type") == "array" for name in spec.scoped_arguments}
+    if len(lists) > 1:
+        raise InvalidCapabilityError(
+            spec.id,
+            "the scoped arguments of a capability with policy terms are all lists or all one value",
+        )
     classes = (*terms.limits, *terms.uncovered, *terms.free, *spec.scoped_arguments)
     unclassified = sorted(set(properties) - set(classes))
     twice = sorted({name for name in classes if classes.count(name) > 1})
@@ -314,11 +325,17 @@ def _check_policy_terms(
             raise InvalidCapabilityError(
                 spec.id, f"the uncovered argument {name!r} is required: no policy could cover"
             )
-    for name in terms.free:
-        if name in required and dict(properties[name]).get("type") != "string":
-            raise InvalidCapabilityError(
-                spec.id, f"the free argument {name!r} is required and not a string"
-            )
+    if lists == {True}:
+        for name in terms.free:
+            if name in required and dict(properties[name]).get("type") != "string":
+                raise InvalidCapabilityError(
+                    spec.id, f"the free argument {name!r} is required and not a string"
+                )
+    if spec.risk >= RiskLevel.HIGH and spec.policy_words is None:
+        raise InvalidCapabilityError(
+            spec.id,
+            "a HIGH that declares policy terms says what it does and where it goes: policy_words",
+        )
 
 
 def _is_text_or_texts(declared: object) -> bool:
@@ -990,9 +1007,10 @@ def fs_read(fs_scope: str = UNDECLARED_FS_SCOPE) -> CapabilitySpec:
     **MEDIUM and not HIGH**, and the difference is not a feeling. Today both rows ask at every use,
     because every grant is single-use; what separates them is what they promise about tomorrow:
     a standing policy of §59 will be able to cover a MEDIUM, and it will never reach a HIGH
-    (dec. D). Reading is not writing — a read is undone by forgetting it, a write outside the
-    workspace is irreversible while §37 does not exist — so the level that can one day be widened
-    is the honest one for reading.
+    (dec. D) — *since M13.14 a policy reaches a HIGH that declares terms, ``fs.write`` among them
+    (ADR 0068); the difference of the levels stays what a write costs*. Reading is not writing — a
+    read is undone by forgetting it, a write outside the workspace is irreversible while §37 does
+    not exist — so the level that can one day be widened is the honest one for reading.
 
     **Not LOW**, which would ask nothing inside the scope: a file outside the workspace is the
     user's own content (§57), and LOW would turn a permission into a line of configuration
@@ -1036,7 +1054,10 @@ def fs_write(fs_scope: str = UNDECLARED_FS_SCOPE) -> CapabilitySpec:
     questa cartella" — is already honoured, today, by ``workspace.write_note``: LOW, inside its
     scope, no question. ``fs.write`` is the same action on a house instead of a folder, and
     outside the workspace **a write is irreversible while §37 does not exist**: there is no
-    rollback to appeal to. HIGH is the row no standing policy reaches (dec. D).
+    rollback to appeal to. HIGH was the row no standing policy reaches (dec. D); **since M13.14 a
+    policy of yours covers it** (ADR 0068) — the level does not move, the terms turn its row into
+    «approval unless policy», and a policy covers only a step on the Core (``on_the_core``): the
+    folders of its scope are the Core's, and the same path on a node is another file.
 
     ``overwrite`` is **an assertion about the world, not a request** (dec. Q): the question shows
     what the machine answers, and the tool reads it again before writing and refuses if it has
@@ -1063,6 +1084,16 @@ def fs_write(fs_scope: str = UNDECLARED_FS_SCOPE) -> CapabilitySpec:
         scope=(fs_scope,),
         scoped_arguments=("path",),
         prompt_arguments=("purpose",),
+        policy_terms=PolicyTerms(
+            limits=(), free=("body", "overwrite", "purpose"), on_the_core=True
+        ),
+        policy_words=PolicyWords(
+            does="writes and overwrites any file in these folders, on the Core",
+            goes=(
+                "what it writes goes into these folders, and wherever your system copies them; a "
+                "file written there may be one your system runs"
+            ),
+        ),
         requires_authorization=True,
         metadata={"introduced_in": "0.2"},
     )
@@ -1168,6 +1199,15 @@ def browser_read(sites: Sequence[str] = UNDECLARED_SITES) -> CapabilitySpec:
     )
 
 
+_GESTURE_TERMS: Final = PolicyTerms(
+    limits=(), free=("path", "fill", "click", "expect_text", "purpose", CONTINUES)
+)
+"""The terms of a policy of a gesture, ``browser.act``'s and ``browser.act_as_you``'s (M13.14, ADR
+0068; decision 8): the site is the scope, and everything else is free — the boundaries are the
+ones the user chooses. ``continues`` free means a policy covers a gesture that continues its task's
+page too (ADR 0065 §3)."""
+
+
 def browser_act(sites: Sequence[str] = UNDECLARED_SITES) -> CapabilitySpec:
     """``browser.act``, **HIGH**: fills fields on one page of a declared site and clicks (§19;
     M13.4).
@@ -1175,10 +1215,10 @@ def browser_act(sites: Sequence[str] = UNDECLARED_SITES) -> CapabilitySpec:
     **HIGH**: a click or a submission can send something out of the machine — a form, a message, an
     order — and **what is sent is not taken back**. ``fs.write`` is HIGH because a write is
     irreversible while §37 does not exist; a submission is irreversible for ever, because no
-    rollback reaches somebody else's server. A question at every use, which no policy of §59
-    reaches, and the grant is spent before the first gesture (ADR 0046). ELA cannot know whether a
-    click sends, so the capability says it can, always: the risk is the catalogue's and never the
-    arguments' (ADR 0026 §7).
+    rollback reaches somebody else's server. A question at every use unless a policy of yours for
+    ``browser.act`` covers the site (M13.14, ADR 0068), and the grant is spent before the first
+    gesture (ADR 0046). ELA cannot know whether a click sends, so the capability says it can,
+    always: the risk is the catalogue's and never the arguments' (ADR 0026 §7).
 
     One page, ``fill`` — pairs ``[selector, value]``, in order, possibly none —, **one** ``click``,
     and the ``expect_text`` the page must show after it: a click sent is not a click that worked
@@ -1223,6 +1263,11 @@ def browser_act(sites: Sequence[str] = UNDECLARED_SITES) -> CapabilitySpec:
         scope=tuple(sites),
         scoped_arguments=("site",),
         prompt_arguments=("purpose",),
+        policy_terms=_GESTURE_TERMS,
+        policy_words=PolicyWords(
+            does="makes any submission on these sites, in ELA's own empty browser",
+            goes="what it sends goes to these sites, and is not taken back",
+        ),
         requires_authorization=True,
         metadata={"introduced_in": "0.2"},
     )
@@ -1265,9 +1310,9 @@ def browser_act_as_you(sites: Sequence[str] = UNDECLARED_SITES) -> CapabilitySpe
     in ELA's browser **with the profile that lasts** (§19, §57; M13.9, ADR 0063).
 
     **HIGH**: where the user is signed in it acts as them, on their account there — what it sends
-    is sent in their name, and is not taken back. A question at every use, which no policy of §59
-    reaches (ADR 0045 §3) and no session covers. The arguments are ``browser.act``'s; a field that
-    declares itself secret is refused as there.
+    is sent in their name, and is not taken back. A question at every use unless a policy of yours
+    for ``browser.act_as_you`` covers the site (M13.14, ADR 0068) — a session never covers it. The
+    arguments are ``browser.act``'s; a field that declares itself secret is refused as there.
     """
     return CapabilitySpec(
         id=BROWSER_ACT_AS_YOU,
@@ -1282,6 +1327,14 @@ def browser_act_as_you(sites: Sequence[str] = UNDECLARED_SITES) -> CapabilitySpe
         scope=tuple(sites),
         scoped_arguments=("site",),
         prompt_arguments=("purpose",),
+        policy_terms=_GESTURE_TERMS,
+        policy_words=PolicyWords(
+            does=(
+                "makes any submission on these sites as you, in the browser that keeps your "
+                "accounts"
+            ),
+            goes="what it sends goes to these sites in your name, and is not taken back",
+        ),
         requires_authorization=True,
         metadata={"introduced_in": "0.2"},
     )

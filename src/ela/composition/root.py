@@ -789,8 +789,15 @@ async def build(
             sites=settings.browser.sites,
             guided_model=default_route_model(policy, GUIDED_ROUTE),
         )
+        # Which device is the Core (M13.14, ADR 0068): a policy of ``fs.write`` covers only a step
+        # placed here, and ``ela.permissions`` cannot import ``ela.devices`` to know it.
         guardian = PermissionGuardian(
-            capabilities, clock, ids, audit, decision_ttl=settings.core.decision_ttl
+            capabilities,
+            clock,
+            ids,
+            audit,
+            decision_ttl=settings.core.decision_ttl,
+            core=LOCAL_DEVICE_ID,
         )
 
         # The same router object for both (ADR 0022 §10): the verifier of ``model.routed_as_asked``
@@ -1016,6 +1023,9 @@ async def build(
             vault=door,
             not_now=while_the_user_signs_in(accounts),
             pages=pages,
+            # What ELA uses to exist (M13.14, ADR 0068): the list the root was checked against at
+            # the start-up, and no write of ELA's reaches it — under a yes or under a policy.
+            protected=settings.ela_s_own(),
         )
         verifiers = production_verifiers(
             root=root,

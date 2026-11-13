@@ -7,10 +7,10 @@ from uuid import UUID
 
 import pytest
 
-from ela.domain import AuditEventId
+from ela.domain import AuditEvent, AuditEventId, AuditEventType, AuthorizationId
 from ela.ports import AlreadyExistsError, AuditLog
 from tests.contracts.protocols import members
-from tests.domain.examples import AUDIT_EVENT, LATER, NOW, TASK_ID
+from tests.domain.examples import AUDIT_EVENT, AUTHORIZATION_ID, LATER, NOW, TASK_ID
 
 MUTATING_WORDS = ("update", "delete", "remove", "clear", "pop", "replace", "truncate", "set")
 UNRELATED_EVENT = AUDIT_EVENT.model_copy(
@@ -18,6 +18,22 @@ UNRELATED_EVENT = AUDIT_EVENT.model_copy(
 )
 LATER_EVENT = AUDIT_EVENT.model_copy(
     update={"id": AuditEventId(UUID("00000000-0000-4000-8000-000000000202")), "created_at": LATER}
+)
+ANOTHER_GRANT = AuthorizationId(UUID("00000000-0000-4000-8000-000000000210"))
+DECIDED_EVENT = AuditEvent.model_validate(
+    {
+        **AUDIT_EVENT.model_dump(),
+        "id": AuditEventId(UUID("00000000-0000-4000-8000-000000000203")),
+        "event_type": AuditEventType.PERMISSION_DECIDED,
+    }
+)
+"""The same grant on a decision: what a reading of «what this policy did» must leave out."""
+OTHER_GRANT_EVENT = AuditEvent.model_validate(
+    {
+        **AUDIT_EVENT.model_dump(),
+        "id": AuditEventId(UUID("00000000-0000-4000-8000-000000000204")),
+        "authorization_id": ANOTHER_GRANT,
+    }
 )
 
 
@@ -113,6 +129,43 @@ async def test_read_filters_apply_before_limit(audit_log: AuditLog) -> None:
     await audit_log.append(LATER_EVENT)
     assert await audit_log.read(task_id=TASK_ID, limit=1) == (AUDIT_EVENT,)
     assert await audit_log.read(task_id=TASK_ID, since=LATER, limit=5) == (LATER_EVENT,)
+
+
+async def test_read_filters_by_authorization(audit_log: AuditLog) -> None:
+    """The events of one grant (M13.14, ADR 0068; answer 29): a policy's actions are read by its
+    id, and an event of another grant, or of none, is left out."""
+    await audit_log.append(UNRELATED_EVENT.model_copy(update={"authorization_id": None}))
+    await audit_log.append(OTHER_GRANT_EVENT)
+    await audit_log.append(AUDIT_EVENT)
+
+    assert await audit_log.read(authorization_id=AUTHORIZATION_ID) == (AUDIT_EVENT,)
+    assert await audit_log.read(authorization_id=ANOTHER_GRANT) == (OTHER_GRANT_EVENT,)
+
+
+async def test_read_filters_by_event_type(audit_log: AuditLog) -> None:
+    """The events of one type: the same grant stands on a decision and on an execution."""
+    await audit_log.append(DECIDED_EVENT)
+    await audit_log.append(AUDIT_EVENT)
+
+    assert await audit_log.read(event_type=AuditEventType.TOOL_EXECUTED) == (AUDIT_EVENT,)
+    assert await audit_log.read(event_type=AuditEventType.PERMISSION_DECIDED) == (DECIDED_EVENT,)
+    assert await audit_log.read(event_type=AuditEventType.EXECUTION_VERIFIED) == ()
+
+
+async def test_the_filters_of_a_grant_apply_before_limit_from_either_end(
+    audit_log: AuditLog,
+) -> None:
+    """«The last five actions of a policy» are five ``TOOL_EXECUTED`` of its id, read from the end:
+    the two filters apply before ``limit``, as every filter does, in both directions."""
+    await audit_log.append(AUDIT_EVENT)
+    await audit_log.append(DECIDED_EVENT)
+    await audit_log.append(OTHER_GRANT_EVENT)
+    await audit_log.append(LATER_EVENT)
+
+    acted = {"authorization_id": AUTHORIZATION_ID, "event_type": AuditEventType.TOOL_EXECUTED}
+    assert await audit_log.read(**acted, limit=5, newest_first=True) == (LATER_EVENT, AUDIT_EVENT)
+    assert await audit_log.read(**acted, limit=1, newest_first=True) == (LATER_EVENT,)
+    assert await audit_log.read(**acted, limit=1) == (AUDIT_EVENT,)
 
 
 async def test_read_returns_a_tuple(audit_log: AuditLog) -> None:

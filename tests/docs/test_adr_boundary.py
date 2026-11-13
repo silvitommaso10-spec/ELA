@@ -42,6 +42,7 @@ from tests.docs.test_adr_browser import codes
 from tests.docs.test_adr_cli import coded_commands
 from tests.docs.test_adr_composition import coded_routes
 from tests.docs.test_adr_placement import _rules_up_to
+from tests.docs.test_adr_planner import contracts_up_to
 
 ROOT = Path(__file__).resolve().parents[2]
 ADR_PATH = ROOT / "docs" / "adr" / "0064-browser-boundary.md"
@@ -152,7 +153,7 @@ def test_the_conseguenze_count_the_totals_as_this_adr_saw_them() -> None:
     assert "**settanta**" in text
     assert len(_rules_up_to(70)) == 70 <= len(RULES)
     assert set(_rules_up_to(70)) - set(_rules_up_to(69)) == {THE_RULE}
-    assert "**quindici**" in text and len(contracts) == 15
+    assert "**quindici**" in text and len(contracts_up_to(15)) == 15 <= len(contracts)
     assert (
         "**trentacinque**" in text
         and len(tuple(p for p in port_protocols() if p.__name__ not in STEPS_PORTS)) == 35

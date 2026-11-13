@@ -67,6 +67,7 @@ from ela.domain import (
     PlanAuthorKind,
     PolicyBounds,
     PolicyTerms,
+    PolicyWords,
     PowerSource,
     PrivacyLevel,
     ProviderRequest,
@@ -350,6 +351,9 @@ policy_terms = st.builds(
     model=_optional(texts),
 )
 """What a capability declares a policy of §59 must bound (M13.12, ADR 0062)."""
+
+policy_words = st.builds(PolicyWords, does=texts, goes=texts)
+"""What the preview of a policy says it does and where it goes (M13.14, ADR 0068)."""
 
 covered = st.builds(domain.Covered, capability_id=capability_ids, input_schema=json_mappings)
 """What the capability of a session declares its reads are (M13.9, ADR 0063)."""
@@ -839,6 +843,7 @@ context_snapshots = st.builds(
 MODEL_STRATEGIES: Final[dict[type[BaseModel], st.SearchStrategy[BaseModel]]] = {
     domain.Actor: actors,
     domain.PolicyTerms: policy_terms,
+    domain.PolicyWords: policy_words,
     domain.PolicyBounds: policy_bounds,
     domain.Covered: covered,
     domain.SessionCover: session_covers,

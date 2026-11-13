@@ -44,6 +44,7 @@ from ela.domain import (
     AssignmentId,
     AssignmentState,
     AuditEvent,
+    AuditEventType,
     Authorization,
     AuthorizationId,
     CapabilityId,
@@ -921,8 +922,16 @@ class AuditLog(Protocol):
         since: datetime | None = None,
         limit: int | None = None,
         newest_first: bool = False,
+        authorization_id: AuthorizationId | None = None,
+        event_type: AuditEventType | None = None,
     ) -> tuple[AuditEvent, ...]:
         """Events of one task if ``task_id``, with ``created_at >= since``, ``limit`` of them.
+
+        ``authorization_id`` and ``event_type`` keep only the events of one grant and of one type
+        (M13.14, ADR 0068; answer 29 of the review of its SPEC): what a policy did is its
+        ``TOOL_EXECUTED`` events — the same id also stands on the decisions, the verifications and
+        the grant's own birth and revocation —, and the last few of them are read with the filters
+        and a ``limit`` from the end, never by reading the whole log.
 
         ``since`` is inclusive, like every time boundary in the system (ADR 0005). All filters
         apply before ``limit``. ``limit`` is ``None`` or at least 1: a non-positive limit raises
@@ -1414,12 +1423,15 @@ class PermissionGuardianPort(Protocol):
         authorization_uses: int = 0,
         author: PlanAuthor | None = None,
         session: SessionCover | None = None,
+        device_id: DeviceId | None = None,
     ) -> PermissionDecision:
         """Decide about one call of ``capability`` with ``arguments`` in this context.
 
         ``author`` is who wrote the plan of ``step``, and ``session`` the room's word about an
         open guided session (M13.9, ADR 0063): what covers a ``MEDIUM`` read that session's model
-        wrote, with no grant."""
+        wrote, with no grant. ``device_id`` is where the step is placed, read by one rule and
+        only to take away (M13.14, ADR 0068): a policy that covers only the Core does not cover a
+        step elsewhere, or one whose place nobody said."""
 
 
 @runtime_checkable
@@ -1733,6 +1745,19 @@ class ToolPort(Protocol):
         the tool's words — and the node's tool, which is this code, compares that with its own disk
         before acting. Only what needs no disk may refuse here: the shape of the arguments and the
         grammar of the path. A tool that works on no path answers an empty :class:`Prospect`.
+        """
+
+    async def prospect_place(self, place: str) -> Prospect:
+        """Whether a call whose target lies in ``place`` could start **now** — one entry of the
+        scope of a policy, asked by the route of its birth (M13.14, ADR 0068; decision 9).
+
+        The «partirebbe» of ADR 0062 §7 for a capability whose scoped argument is one value: there
+        is no call to build, so the tool that holds the boundary answers for the place. ``refusal``
+        is the first reason the place could hold no call; ``target``, when the tool resolves the
+        place on its machine, is that place as the disk names it — what the preview shows beside
+        the entry as written (answer 20 of the review of the SPEC). Read-only, like
+        :meth:`prospect`. **A tool that cannot look at a place refuses**: a default that said
+        «it would start» would be a defence that only looks active.
         """
 
     @property

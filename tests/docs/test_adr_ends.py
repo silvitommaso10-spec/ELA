@@ -22,6 +22,7 @@ from tests.docs.guided_ports import ACCOUNT_PORTS, GUIDED_PORTS, STEPS_PORTS
 from tests.docs.test_adr_cli import coded_commands, commands_after_0061
 from tests.docs.test_adr_composition import coded_routes, routes_after_0059
 from tests.docs.test_adr_placement import _rules_up_to
+from tests.docs.test_adr_planner import contracts_up_to
 
 ROOT = Path(__file__).resolve().parents[2]
 ADR_DIR = ROOT / "docs" / "adr"
@@ -63,7 +64,7 @@ def test_the_conseguenze_count_the_rules_the_contracts_the_ports_the_routes_and_
     assert len(_rules_up_to(64)) == 64  # rule 65 is ADR 0060's
     assert set(_rules_up_to(64)) - set(_rules_up_to(63)) == {"the-end-has-one-reader"}
     assert "**quindici**" in text
-    assert len(contracts) == 15
+    assert len(contracts_up_to(15)) == 15 <= len(contracts)
     assert "**trenta**" in text
     assert (
         len(
