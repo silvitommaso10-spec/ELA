@@ -10,6 +10,8 @@ Nei documenti «§N» è la spec, «§N del design» è `docs/spec/ELA_design.md
 ## Regola fondamentale
 Lavori su UNA milestone alla volta, quella indicata nel prompt. Non anticipare
 milestone future, non creare stub "per dopo", non aggiungere feature non richieste.
+***Dal 2026-11-13*** (`docs-roadmap`): **l'ordine delle milestone si legge in `docs/ROADMAP.md`**, il solo posto
+dove vive; le file di `docs/STATO.md` sono storia.
 Ciclo obbligatorio: SPEC → IMPLEMENTATION → TEST → REVIEW → COMMIT → NEXT
 MILESTONE.
 Alla fine della milestone committi e pushi sul branch di lavoro. Non fai mai merge su main
@@ -129,5 +131,7 @@ branch; un branch di sola registrazione comincia con `docs-` e non porta codice.
 Produci un riepilogo con: file toccati, test aggiunti, output di `pytest -q --cov`,
 cosa hai semplificato o lasciato aperto, domande per la review; e, alla fine di un branch, il
 titolo del merge, già scritto nella forma della testa.
+***Dal 2026-11-13*** (`docs-roadmap`): **il riepilogo di una sessione si scrive anche in
+`.git/<branch>-reference/`**, oltre che dove il prompt lo chiede.
 Alla fine della milestone committi e pushi sul branch di lavoro. Non fai mai merge su main
 e non usi mai --force: il merge lo fa l'utente dopo revisione esterna.

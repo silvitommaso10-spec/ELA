@@ -1,6 +1,7 @@
 Documentazione del progetto: [`STATO.md`](STATO.md) (**il punto di ripartenza**: dove siamo, cosa
 manca, e le decisioni che non stanno in nessun ADR — i conteggi e gli elenchi sono generati leggendo il
-repository), [`GETTING_STARTED.md`](GETTING_STARTED.md) (far partire ELA e farle
+repository), [`ROADMAP.md`](ROADMAP.md) (dal 2026-11-13 il solo posto dove vive l'ordine delle
+milestone, tenuto vero da `tests/docs/test_roadmap.py`), [`GETTING_STARTED.md`](GETTING_STARTED.md) (far partire ELA e farle
 fare la prima cosa, comando per comando), [`ARCHITECTURE.md`](ARCHITECTURE.md) (che cosa importa
 che cosa, e che strada fa una chiamata: due blocchi su tre sono generati dal codice),
 [`CHANGELOG.md`](CHANGELOG.md) (una voce per milestone, con l'ADR che l'ha decisa), `spec/`
