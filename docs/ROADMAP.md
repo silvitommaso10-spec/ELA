@@ -63,6 +63,7 @@ nodo, il file che vive su una macchina, e il terminale sotto le policy.
 - `M13.18` — riservata — L'eseguibile firmato
 - `M13.5` — Proposta — Computer control: il muro dichiarato prima di cominciare
 - `M14.4` — Proposta — Il computer guidato dal modello: lo schermo, con il meccanismo di M14.3
+- `M13.19` — riservata — Mouse e tastiera sul PC
 - `M13.7` — Proposta — Il terminale su un nodo: il Job Object, e `argv` che su Windows diventa una stringa
 - `M13.8` — Proposta — Un file che vive su una macchina: quale disco, e chi lo dice
 - `M13.16` — Proposta — Il terminale sotto le policy di Tommaso, con un confine dimostrato
@@ -142,6 +143,7 @@ documento. Un numero non sta mai nei due posti.
 |---|---|---|---|
 | `M13.17` | I file di tutto il computer | Lo scope dei file diventa un elenco di cartelle scelto da chi usa ELA, fino alla sua home; i posti protetti si controllano a ogni uso, come da `M13.14`. | §18, §57, §59, §65 |
 | `M13.18` | L'eseguibile firmato | Solo se il grant TCC di `M13.5` non tiene (la tappa 5). | §11, §20 |
+| `M13.19` | Mouse e tastiera sul PC | Le capacità di `M13.5` e di `M14.4` sul nodo Windows: chi usa ELA vuole le stesse capacità sul Mac e sul PC, come `M13.11` fa per il browser. | §17, §18, §20, §56 |
 | `M15.1` | La wake word | Il quarto stato del microfono, e la riga della 5.6 di `STATO.md` sulla voce: una voce riconosciuta non vale mai come un sì. | §9, §11, §34 |
 | `M15.4` | La memoria | Il Memory Core. | §21, §22 |
 | `M15.5` | La proattività | ELA parte da sola. | §34, §61 |
@@ -162,6 +164,9 @@ documento. Un numero non sta mai nei due posti.
 - **ogni id che questo file nomina ha un documento oppure è riservato, mai tutti e due**, e ogni numero
   riservato sta in una tappa;
 - le tappe sono numerate da 1 senza buchi, e le sezioni della spec delle riservate esistono.
+- ***dal 2026-11-14*** (decisione 6 di `m9.5-la-pulizia-della-suite`): **ogni documento ancora `Proposta` ha una
+  riga «Ordine», e quella riga rimanda qui** — letta intera, con le sue righe di continuazione —, così che una
+  frase d'ordine rimasta in un documento dica sempre dove l'ordine vive davvero.
 
 **Che cosa il test non tiene.** L'ordine: è una decisione di Tommaso, e nessuna riga del repository la contiene.
 E una voce già fatta tolta da una tappa: il mondo chiuso parte dalle `Proposta`, perché le milestone fatte prima

@@ -941,6 +941,8 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   senza di lei**. ***Il 2026-09-30*** la condizione d'ingresso non cambia, e il posto sì: dopo M13.11.
   ***Annotato il 2026-11-02***: dopo M14.7, che viene dopo M13.11 (la fila della 5.10).
   **Il controllo di mouse e tastiera sul PC è una milestone a sé**, da registrare quando M13.5 è chiusa.
+  ***Annotato il 2026-11-14*** (`m9.5-la-pulizia-della-suite`, decisione 5): ha un numero, **M13.19**, «Mouse e
+  tastiera sul PC», riservato in [`ROADMAP.md`](ROADMAP.md); il documento nasce quando tocca.
   E **M13.5 resta la capability** — mouse, tastiera, il Guardian, la verifica —, usabile con piani scritti
   a mano: il modello che guarda lo schermo e decide il gesto dopo è **M14.4**, subito dopo (5.12).
 - **M13.6 — spostare un lavoro già in corso da un nodo a un altro** (§15, §12 del design), il terzo
