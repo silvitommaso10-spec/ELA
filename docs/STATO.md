@@ -7,7 +7,8 @@ nessun ADR perché non sono decisioni tecniche.
 Non è un posto dove si decide. La fonte di verità resta [`spec/ELA_spec.md`](spec/ELA_spec.md);
 le decisioni stanno in [`adr/`](adr/README.md); che cosa entra in una milestone sta in
 [`milestones/`](milestones/); che cosa ELA ha guadagnato, milestone per milestone, sta in
-[`CHANGELOG.md`](CHANGELOG.md); com'è fatta sta in [`ARCHITECTURE.md`](ARCHITECTURE.md). Qui ci
+[`CHANGELOG.md`](CHANGELOG.md); com'è fatta sta in [`ARCHITECTURE.md`](ARCHITECTURE.md); e, ***dal
+2026-11-13***, l'ordine delle milestone sta in [`ROADMAP.md`](ROADMAP.md). Qui ci
 sono i puntatori, i conteggi, e **ciò che non ha nessun altro posto**.
 
 **Cinque blocchi sono generati** leggendo il repository, con `scripts/generate_stato.py`, e
@@ -202,7 +203,8 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 Qui c'è che cosa è **fatto** e che cosa è **aperto**. **Qual è la prossima milestone non sta qui**:
 è una decisione d'ordine, e sta nella §5, nella voce della fase che la contiene, in un posto solo.
 Una frase che va rincorsa a ogni merge è una lista scritta a mano, e questa è invecchiata due volte
-in tre giorni.
+in tre giorni. ***Dal 2026-11-13 l'ordine vive in [`ROADMAP.md`](ROADMAP.md)*** (decisione 6 di
+`docs-roadmap`): non sta più nella §5, che ne tiene la storia, e nemmeno qui.
 
 **Una registrazione non è un inizio**, ed è lo stesso criterio che vale per il blocco generato in
 fondo alla sezione e per il nome che il changelog dà a una fase: **una fase comincia quando una sua
@@ -644,6 +646,10 @@ si scrive sempre «§N del design», e un «§N» da solo resta la spec.
   futuristica stile JARVIS ma senza informazioni inutili; ELA deve apparire sul mio schermo come un
   widget».
 
+***Dal 2026-11-13 l'ordine vive in [`ROADMAP.md`](ROADMAP.md)*** (decisione 6 di `docs-roadmap`). Ciò che
+segue — l'ordine, la fila del 2026-09-30 e quella del 2026-11-02 — resta come storia, e da quel giorno qui non si
+scrive nessuna frase d'ordine nuova.
+
 **L'ordine, e qual è la prossima: qui l'ordine delle milestone della Fase 17 e ciò che le viene
 dopo; l'ordine dentro un'altra fase sta nella voce di quella fase.** Ciò che non sta in nessuna
 delle due è §4.1, che dice che cosa è fatto e che cosa è aperto e non che cosa viene dopo: una
@@ -839,6 +845,10 @@ agisca, e l'audit lo nomina (ADR 0046).
 **Il nome della fase l'ha dato il changelog**, con M13.1: «Il permesso prima dell'azione». La tabella
 della §2 e il blocco della §4.1 lo leggono dallo stesso fatto — la prima milestone uscita da
 `Proposta` —, e nessuna delle due liste si aggira scrivendo un nome a mano.
+
+***Dal 2026-11-13 l'ordine vive in [`ROADMAP.md`](ROADMAP.md)*** (decisione 6 di `docs-roadmap`). L'ordine
+scritto in questa voce — anche nelle righe delle milestone qui sotto — resta come storia, e da quel giorno qui non si
+scrive nessuna frase d'ordine nuova.
 
 **L'ordine è M13.1 → M13.2 → M13.3 → M13.4 → M13.5**, con **M13.6 dopo M13.3, quando la sua
 condizione d'ingresso scatta** — nella forma condizionale di M17.4: non una posizione nella fila,
@@ -1226,6 +1236,10 @@ Mac): il modello guida il browser, un gesto alla volta, e ogni gesto è deciso d
 2026-10-09***, più tardi: **la prova a mano di M14.3 è passata** sul Mac a `f58a6cb`, e ADR 0060 e ADR 0061 sono
 Accettate.
 
+***Dal 2026-11-13 l'ordine vive in [`ROADMAP.md`](ROADMAP.md)*** (decisione 6 di `docs-roadmap`). L'ordine
+scritto in questa voce — anche nelle righe delle milestone qui sotto — resta come storia, e da quel giorno qui non si
+scrive nessuna frase d'ordine nuova.
+
 **L'ordine è M14.1 → M14.2 → M14.3 → M14.4**, con M14.4 più avanti nella fila, dopo M13.5; ognuna ha la
 sua ragione. ***Annotato il 2026-10-08***: **M14.6 viene prima di M14.3**, sullo stesso branch (decisione 27 della review
 della SPEC di M14.3); M14.5 resta fuori dalla fila. ***Annotato il 2026-11-02*** (la fila rivista, 5.10): **M14.7** viene
@@ -1367,6 +1381,39 @@ suoi confini e una fine. È la forma che la 5.11 dà alle `MEDIUM` — «mai abb
 *Perché nessun ADR:* è una decisione di prodotto e di perimetro — fin dove arriva un sì dato prima — e nessuna riga di
 codice la contiene ancora. La parte tecnica prende l'ADR di M13.14, come le `MEDIUM` hanno preso ADR 0062 con M13.12.
 
+### 5.15 Tutto il computer, ELA che si migliora, e i numeri riservati
+
+Decisioni di Tommaso del 12 e del 13 novembre 2026, nella forma del branch `docs-roadmap` (decisione 7). **L'ordine
+che ne discende non sta qui**: sta in [`ROADMAP.md`](ROADMAP.md), che da quel giorno è il solo posto dove vive.
+
+- **ELA deve poter lavorare su tutto il computer.** I file: lo scope di `fs.*` diventa un elenco di cartelle che
+  sceglie chi usa ELA, fino alla sua home, e i posti protetti si controllano a ogni uso, come da M13.14 (ADR 0068) —
+  è **M13.17**, riservata. E il controllo del computer: mouse, tastiera e schermo, M13.5 e M14.4.
+- **ELA si migliora da sola, e il sì e il merge restano di Tommaso** — la Fase 16, §35–§38. ELA ripara il proprio
+  codice quando glielo si chiede, con il meccanismo di M14.7 puntato sul suo repository; si accorge dei propri errori
+  e propone; prova una modifica su una copia, la confronta con la versione di prima, e torna indietro. **Il diff si
+  approva e il merge non lo fa mai ELA**, come per ogni progetto su cui lavora (5.7); e sul repository di ELA nessuna
+  policy copre ciò che tocca il suo sistema di sicurezza (5.14, punto (d)). I numeri sono **M16.1, M16.2 e M16.3**,
+  riservati.
+- **La pulizia prima di M13.15**: M13.4g, M13.13b e M9.5, su un branch solo. È una revisione aperta della fila come
+  la 5.10 la annotava il 2026-11-12 — M13.14, M13.15, M13.4g, M13.11 (risposte 18 e 19 della review della SPEC di
+  M13.14) —, che metteva M13.15 prima di M13.4g. M9.5 guadagna la misura di dove va
+  il tempo della CI e di `make check`, con la regola per decidere scritta prima dei numeri
+  ([`milestones/M9.5.md`](milestones/M9.5.md)).
+- **I numeri nuovi sono riservati, e il documento si scrive quando tocca.** Un numero riservato ha una riga in
+  `ROADMAP.md` — il titolo, che cosa porta, le sezioni della spec — e nessun documento; il documento nasce quando la
+  milestone è la prossima o quella dopo, e quel giorno la riga esce dalle riservate.
+
+*Che cosa ne discende:* l'ordine ha un posto solo, e `tests/docs/test_roadmap.py` lo tiene a mondo chiuso con i
+documenti delle milestone — ogni `Proposta` una volta sola, lo stato del suo documento accanto, ogni numero con un
+documento oppure riservato, mai tutti e due. Le file della 5.10, della 5.11 e della 5.12 restano come storia, con una
+riga datata, e qui non si scrive più nessuna frase d'ordine. Un numero riservato non è una registrazione: la Fase 16
+non ha documenti, e per la 4.1 non è registrata.
+
+*Perché nessun ADR:* sono decisioni di prodotto e d'ordine — che cosa ELA deve poter fare, chi tiene il sì, quando si
+scrive un documento — e nessuna riga di codice le contiene ancora. La parte tecnica di ciascuna prende l'ADR della
+milestone che la costruisce.
+
 ## 6. I debiti datati
 
 Un debito datato è un difetto **trovato lavorando e non riparato lì**, scritto in un ADR con la
@@ -1405,7 +1452,8 @@ nuova. Un pagamento resta l'ultima parola. Il primo è il debito di ADR 0065 §6
 ## 7. Come si riparte
 
 1. **Leggi `CLAUDE.md`** alla radice: è il contratto di lavoro (una milestone alla volta,
-   architettura non negoziabile, gate di qualità).
+   architettura non negoziabile, gate di qualità). E **leggi [`ROADMAP.md`](ROADMAP.md)**: ***dal
+   2026-11-13*** l'ordine delle milestone vive lì, e la prossima è la prima voce che non è fatta.
 2. **Leggi le sezioni della spec** che riguardano la milestone, e gli ADR che la continuano —
    [`adr/README.md`](adr/README.md) è l'indice, e non può diventare stantio.
 3. **Scrivi la SPEC** della milestone in `docs/milestones/<id>.md`, con che cosa entra, che cosa
