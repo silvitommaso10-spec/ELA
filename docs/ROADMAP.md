@@ -136,6 +136,12 @@ check` a `4e4adc5`, alla riga 293 — il lancio del browser del profilo —, **p
 per l'attesa che eredita. **`M13.9d`** passa davanti al prossimo rosso di un test che lancia il browser del profilo per
 un lancio non arrivato: quel giro, con il log della suite, è la misura.
 
+***Annotato il 2026-11-18*** (decisione 75 della review di M13.15, una scelta d'ordine di Tommaso): **`M13.9d` passa
+davanti, su `m13.15-le-policy-al-login-e-ai-file`**, prima che la prova a mano di M13.15 si rifaccia. È venuto prima del
+rosso di un test un caso del prodotto, sull'ELA vera: la prova del 2026-11-17 a `3256e4b` si è appesa al passo 3. Il
+browser del profilo è caduto 1,28 s dopo il lancio, e lo step non è più finito. La SPEC è in
+[`M13.9d.md`](milestones/M13.9d.md).
+
 - `M9.2` — Proposta — Le liste che restano scritte a mano
 - `M9.7` — Proposta — Ogni blocco della guida che mostra un'uscita della CLI è confrontato con la CLI
 - `M9.8` — Proposta — Le attese che nessun elenco conosceva
