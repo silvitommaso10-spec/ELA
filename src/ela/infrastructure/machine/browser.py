@@ -76,7 +76,7 @@ import weakref
 from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Final, TypeVar
+from typing import Any, Final, Literal, TypeVar
 from uuid import uuid4
 
 import playwright
@@ -1029,6 +1029,9 @@ class _NotStarted:
     left: str | None
 
 
+_DoorState = Literal["open", "closing", "closed"]
+
+
 class _Door:
     """The door of the downloads of one page (M13.13, ADR 0066): **closed, and telling**.
 
@@ -1047,12 +1050,20 @@ class _Door:
     cancelled, closed later a second one the site starts is written too (measured, 80 of 80 and 20
     of 20). What is announced beside the first while the door is open is not the step's: it is
     kept apart, cancelled and taken away with what carries its name.
+
+    **It says itself closed at the browser's answer to its deny, not when it sends it** (M13.13b,
+    ADR 0070): open, closing, closed. The browser can write a file before the door has heard its
+    announcement (measured), and what it announced before it was told to deny is heard before
+    that answer — the messages of a session come in the order the browser sends them. While the
+    deny travels the door is closing, and what is announced then is still the gesture's, or beside
+    it, and is taken away; what is announced after the answer is refused. **One deny for one
+    closing**: a closing on its way is awaited, never told again.
     """
 
     def __init__(self, session: CDPSession, context: str) -> None:
         self._session = session
         self._context = context
-        self._open = False
+        self._state: _DoorState = "closed"
         self._shutting: set[asyncio.Future[None]] = set()
         self._others: list[str] = []
         self.refused: str | None = None
@@ -1066,11 +1077,25 @@ class _Door:
 
     async def shut(self) -> None:
         """Closed: nothing is written, and what knocks is announced."""
-        self._open = False
         await self._session.send(
             "Browser.setDownloadBehavior",
             {"behavior": "deny", "browserContextId": self._context, "eventsEnabled": True},
         )
+
+    def _close(self) -> None:
+        """Close the door if it is open: closing now, one deny on its way, closed at its answer."""
+        if self._state != "open":
+            return
+        self._state = "closing"
+        shutting = asyncio.ensure_future(self._closed())
+        self._shutting.add(shutting)
+        shutting.add_done_callback(self._shutting.discard)
+
+    async def _closed(self) -> None:
+        try:
+            await _quietly(self.shut)
+        finally:
+            self._state = "closed"
 
     async def open_on(self, into: str) -> None:
         """Open on ``into``, for the gesture that follows."""
@@ -1086,36 +1111,32 @@ class _Door:
                 "eventsEnabled": True,
             },
         )
-        self._open = True
+        self._state = "open"
 
     def _announced(self, event: Mapping[str, Any]) -> None:
         name = str(event.get("guid", ""))
-        if self._open and not self.asked:
+        if self._state != "closed" and not self.asked:
             self.asked = name
             self.begun.set()
             return
-        if self._open:
+        if self._state != "closed":
             self._others.append(name)
         self.refused = self.refused or str(event.get("url", ""))
 
     def _progressed(self, event: Mapping[str, Any]) -> None:
         if not self.asked or event.get("guid") != self.asked:
             return
-        if self._open:
-            # The first word of progress of the download the gesture started: closed now.
-            self._open = False
-            shutting = asyncio.ensure_future(_quietly(self.shut))
-            self._shutting.add(shutting)
-            shutting.add_done_callback(self._shutting.discard)
+        # The first word of progress of the download the gesture started: the door closes now.
+        self._close()
         state = str(event.get("state", ""))
         if state != "inProgress" and not self.ended.done():
             self.ended.set_result(state)
 
     async def done(self, folder: Path, *, kept: bool) -> None:
-        """The gesture is over, whatever way: the door closed, what was announced beside the
-        download cancelled and taken away, and the download itself too unless it is ``kept``."""
-        if self._open:
-            await _quietly(self.shut)
+        """The gesture is over, whatever way: the door closed — at the browser's answer —, what
+        was announced beside the download cancelled and taken away, and the download itself too
+        unless it is ``kept``."""
+        self._close()
         if self._shutting:
             await asyncio.wait(self._shutting)
         gone = [*self._others, *(() if kept or not self.asked else (self.asked,))]
