@@ -419,6 +419,92 @@ async def test_while_a_file_arrives_the_door_is_closed_and_a_second_download_wri
     assert os.listdir(into) == [got.name] and (into / got.name).read_bytes() == FILE
 
 
+ANNOUNCED = "Browser.downloadWillBegin"
+PROGRESS = "Browser.downloadProgress"
+
+
+async def test_what_is_announced_while_the_door_closes_is_cancelled_and_taken_away(
+    browser: Any, slow: Slow, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """**The door says itself closed at the answer to its deny, not when it sends it** (M13.13b,
+    ADR 0070). The browser can write a file before the door has heard its announcement —
+    measured, a millisecond wide with the empty browser —, and a cancellation that falls there
+    found a door that knew no name: the half file stayed, and the announcement heard after was
+    taken for a download nobody asked for. With the browser of the profile the file stayed even
+    after its browser was closed, and arrived whole (``.git/m9.5-reference/m13.13b/``).
+
+    The test builds that order with what the protocol guarantees: the door's listeners are taken
+    off its session, and the test's hold what the browser says of the download — its
+    announcement, its words of progress —; they are given to the door, in the order they came,
+    while the deny the cancellation makes travels — after the browser answered it and before the
+    answer reaches the door, as what the browser sent before an answer is delivered before it.
+    The door is closing then: what it hears is the gesture's, cancelled and taken away, and its
+    words of progress tell no second deny. A file of somebody else's whose name ends the same
+    way stays where it is.
+
+    The test says it held the announcement, and when it gave it: if what it stands on changes —
+    the listeners, ``send`` —, it is red, not green."""
+    into = folder(tmp_path)
+    theirs = into / "di-un-altro.crdownload"
+    theirs.write_bytes(b"not ELA's")
+    opened = await browser.open(slow.origin + "/", only(slow), FakeStop())
+    door = browser._pages[opened.page].door
+    session = door._session
+    heard = {ANNOUNCED: door._announced, PROGRESS: door._progressed}
+    held: list[tuple[str, dict[str, Any]]] = []
+    given: list[str] = []
+    denied = 0
+
+    def hold(method: str) -> Any:
+        def holding(event: dict[str, Any]) -> None:
+            if given:
+                heard[method](event)
+            else:
+                held.append((method, event))
+
+        return holding
+
+    for method, listener in heard.items():
+        session.remove_listener(method, listener)
+        session.on(method, hold(method))
+    send = session.send
+
+    async def sent(method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        nonlocal denied
+        answer: dict[str, Any] = await send(method, params)
+        if (params or {}).get("behavior") == "deny":
+            denied += 1
+            given.extend(str(event["guid"]) for said, event in held if said == ANNOUNCED)
+            for said, event in held:
+                heard[said](event)
+            held.clear()
+        return answer
+
+    monkeypatch.setattr(session, "send", sent)
+
+    downloading = asyncio.ensure_future(browser.download(opened.page, "#at", FakeStop(), str(into)))
+    await until(
+        lambda: (
+            slow.half_sent.is_set()
+            and {said for said, _ in held} == {ANNOUNCED, PROGRESS}
+            and set(os.listdir(into)) - {theirs.name}
+        ),
+        "half a file in the folder, its announcement and a word of its progress held",
+    )
+    (ours,) = set(os.listdir(into)) - {theirs.name}
+    assert door.asked == "", "the door has not heard the announcement: the test holds it"
+    downloading.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await downloading
+
+    assert len(given) == 1 and ours.startswith(given[0]), "given while the deny travelled"
+    assert denied == 1, "one deny for one closing, whatever words of progress came then"
+    left = (os.listdir(into), await browser.refused_download(opened.page))
+    assert left == ([theirs.name], None), "somebody else's file, and no download nobody asked for"
+    assert theirs.read_bytes() == b"not ELA's"
+    assert door.asked == given[0], "heard as the gesture's"
+
+
 # ----------------------------------------------------------------------------------------
 # A file given by bytes, and the page that holds it
 # ----------------------------------------------------------------------------------------
