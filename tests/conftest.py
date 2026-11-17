@@ -19,7 +19,7 @@ import httpx
 import httpx2
 import pytest
 
-from tests import profile_browser
+from tests import machines, profile_browser, suite_log
 from tests.browser_leftovers import RAN_LAST
 
 NO_NETWORK = "a test tried to open a network connection"
@@ -67,10 +67,36 @@ def pytest_runtest_makereport(
     return report
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    """The mark of the one place (``tests/machines.py``), and who this process is for the log of
+    the suite (``tests/suite_log.py``)."""
+    suite_log.configured(config)
+    config.addinivalue_line(
+        "markers",
+        f"{machines.MARK}(*conditions, why=''): what of the machine a test needs — "
+        "tests/machines.py, and nowhere else",
+    )
+
+
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
-    """The skip of a test that takes the browser of the profile, put where it takes it and never
+    """The mark of a test that takes the browser of the profile, put where it takes it and never
     written in the test: three tests of M13.9b forgot to copy it, and ubuntu was red."""
     profile_browser.marked(items)
+
+
+def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    """The log of the suite (``tests/suite_log.py``, M9.5): off unless ``SUITE_LOG`` is set — the
+    two jobs of ``make check`` set it, a run on this Mac does not."""
+    suite_log.reported(report)
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_setup(item: pytest.Item) -> Generator[None, None, None]:
+    """**The guard** (M9.5, ``tests/machines.py``): before a test is set up — before the skips are
+    read and before its fixtures —, what it needs of the machine decides whether it is skipped,
+    red, or let run. A wrapper, so it comes before every other part of the set-up."""
+    machines.guard(item)
+    return (yield)
 
 
 def pytest_runtest_logfinish(nodeid: str, location: tuple[str, int | None, str]) -> None:

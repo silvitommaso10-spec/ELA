@@ -1,22 +1,28 @@
-"""Where a test takes the browser of the profile, and **the one place its skip is derived**
-(decision 27 of the review after the red CI of ``56c672c``, 2026-11-10).
+"""Where a test takes the browser of the profile, and **where its condition is put on the test**
+(decision 27 of the review after the red CI of ``56c672c``, 2026-11-10) — a client of the one place,
+``tests/machines.py``, since M9.5 (decision 64 of the review at ``ad1826c``).
 
 The browser with the user's accounts is Chrome for Testing, and the product has it on one system:
 :data:`ela.infrastructure.machine.account.SUPPORTED`, the condition its adapter raises
-``BrowserUnsupported`` by. A test of the real one cannot run anywhere else — and until 2026-11-10
-each such test said so with a condition written by hand, which a new test had to remember to copy.
-Three of M13.9b did not, and the ubuntu runner was red for a week.
+``BrowserUnsupported`` by — :data:`tests.machines.PROFILE_BROWSER`. A test of the real one cannot
+run anywhere else — and until 2026-11-10 each such test said so with a condition written by hand,
+which a new test had to remember to copy. Three of M13.9b did not, and the ubuntu runner was red for
+a week.
 
-* :func:`where_it_is` is the skip, **from the product's condition**: no system is written here.
+* :data:`ON_A_MAC` is the mark, ``needs(PROFILE_BROWSER)`` **from the one place**: no system is
+  written here, and the guard of ``tests/machines.py`` turns it into a skip where the product has no
+  such browser, and into a red where it has one and the test could not run.
 * :data:`TAKEN` is the fixture every test takes that browser through — ``tests/conftest.py`` has
   it, and the folder of a test's profile asks for it (``profile`` in
   ``tests/infrastructure/machine/test_account_browser.py``). The collection marks every test whose
-  fixtures reach it (:func:`marked`): a ``skipif``, which shows in the summary with its reason.
+  fixtures reach it (:func:`marked`), **once**: a test that carries the mark already — a parameter
+  of a fixture that asks for the folder by name, which the collection cannot see — is not marked
+  again.
 * :func:`built_through_the_fixture` is asked by the one function that builds the real browser of
   the profile in a test: **outside a test that took the fixture it raises, on every system** —
-  so a new test cannot take the browser and leave the skip out.
+  so a new test cannot take the browser and leave the mark out.
 * And the other way round (:func:`taken`): **a test that took the fixture, passed, and never
-  built that browser is an error where it runs**. The skip is of the browser, not of a folder: the
+  built that browser is an error where it runs**. The mark is of the browser, not of a folder: the
   first form of this, on 2026-11-10, marked every test that took the folder of a profile, and
   three tests of the *empty* browser that took it — two for a helper that uses it only when the
   browser is the profile's, one for nothing — stopped running on Linux, where they had always run.
@@ -39,13 +45,16 @@ from typing import Final
 
 import pytest
 
-from ela.infrastructure.machine.account import SUPPORTED
+from tests import machines
 
 SYSTEM: Final = platform.system()
-"""The system these tests run on — or the one ``tests/foreign_machine.py`` pretends."""
-REASON: Final = "the browser with the profile is Chrome for Testing on a Mac"
+"""The system these tests run on — or the one ``tests/foreign_machine.py`` pretends: what the
+browser of the profile and the folder of its registry are built with."""
 TAKEN: Final = "the_browser_of_the_profile"
 """The name of the fixture a test takes the browser of the profile through."""
+ON_A_MAC: Final = machines.needs(machines.PROFILE_BROWSER)
+"""The one mark: on the tests the collection finds, on a parameter, on a test that builds the
+browser through a fixture the collection cannot see."""
 
 NEVER_BUILT: Final = (
     f"a test took the fixture {TAKEN} — the folder of a profile asks for it —, passed, and never "
@@ -61,20 +70,12 @@ _taking: list[int] = []
 the profile: a worker runs one test at a time."""
 
 
-def where_it_is(system: str) -> pytest.MarkDecorator:
-    """The skip of a test that takes the browser of the profile, on ``system``: true exactly
-    where the product's adapter would raise ``BrowserUnsupported``."""
-    return pytest.mark.skipif(system != SUPPORTED, reason=REASON)
-
-
-ON_A_MAC: Final = where_it_is(SYSTEM)
-"""The one mark: on the tests the collection finds, on a parameter, on a whole module."""
-
-
 def marked(items: Iterable[object]) -> None:
-    """Put :data:`ON_A_MAC` on every collected test whose fixtures reach :data:`TAKEN`."""
+    """Put :data:`ON_A_MAC` on every collected test whose fixtures reach :data:`TAKEN` — and that
+    does not carry it already."""
     for item in items:
-        if TAKEN in getattr(item, "fixturenames", ()):
+        taken = TAKEN in getattr(item, "fixturenames", ())
+        if taken and not machines.carries(item, machines.PROFILE_BROWSER):
             item.add_marker(ON_A_MAC)  # type: ignore[attr-defined]
 
 

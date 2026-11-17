@@ -22,18 +22,16 @@ assertion or the code is at fault is the text Windows really wrote, so a failure
 from __future__ import annotations
 
 import os
-import platform
 import re
 import subprocess
 from pathlib import Path
-
-import pytest
 
 from ela.composition import build_node
 from ela.infrastructure.machine.windows import POWERSHELL, encoded, without_module_path
 from ela.node import join_or_read
 from ela.node.state import STATE_FILE
 from ela.testing.fakes import FakePower, FakeSpeech
+from tests import machines
 from tests.node.support import config, replies, status
 
 READ_SDDL = """$ProgressPreference = 'SilentlyContinue'
@@ -93,7 +91,7 @@ def inherited(descriptor: str) -> bool:
     return len(entries) == len(INHERITED) and set(entries) == INHERITED
 
 
-@pytest.mark.skipif(platform.system() != "Windows", reason="an ACL is Windows's")
+@machines.needs(machines.WINDOWS, why="an ACL is Windows's")
 async def test_the_secret_sits_under_the_protected_acl_on_the_road_a_node_takes(
     tmp_path: Path,
 ) -> None:
@@ -109,7 +107,7 @@ async def test_the_secret_sits_under_the_protected_acl_on_the_road_a_node_takes(
     assert inherited(secret), secret
 
 
-@pytest.mark.skipif(platform.system() != "Windows", reason="an ACL is Windows's")
+@machines.needs(machines.WINDOWS, why="an ACL is Windows's")
 def test_a_directory_born_as_a_parent_does_not_carry_it(tmp_path: Path) -> None:
     today = tmp_path / "today"
     (today / "speech").mkdir(mode=0o700, parents=True)

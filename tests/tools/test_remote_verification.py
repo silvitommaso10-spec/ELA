@@ -20,10 +20,12 @@ import builtins
 import io
 import os
 import shutil
+import sys
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import ClassVar
+from types import FrameType
+from typing import Any, ClassVar
 
 import pytest
 
@@ -306,11 +308,47 @@ DISK_CALLS: tuple[tuple[object, str], ...] = (
 attribute, so replacing them sees ``Path.exists``, ``Path.read_bytes`` and ``os.path.realpath``."""
 
 
+TraceFunction = Callable[[FrameType, str, Any], Any]
+"""What ``sys.settrace`` takes."""
+IMPORTS = ("importlib._bootstrap", "_frozen_importlib", "zipimport")
+"""The machinery of imports: a module found and read the first time it is asked for is no read of
+whoever asked."""
+
+
+def not_of_the_code(frame: FrameType | None) -> bool:
+    """Whether the disk call being made from ``frame`` up is **the active trace function's** or
+    **the machinery of imports'** — the two readers that are nobody's code (M9.5, decision 72 of the
+    review at ``ad1826c``). The trace function is recognised by its own stack, ``sys.gettrace()``:
+    a function, by its code on the stack — a fake one written in a test is one —; an object of C,
+    like the coverage's ``CTracer``, by the package its type is of, whose callbacks do the reading.
+    **Everything else counts**: a verifier written in a test, reading through ``pathlib``, included.
+
+    The red of 2026-10-10 — six ``lstat`` with one command and not another — does not reproduce
+    (measured on 2026-11-14 at ``8220b20``): six is what ``os.path.realpath`` of a file six folders
+    deep costs, which is what the coverage's tracer does when it sees a file of ``src/ela`` for the
+    first time inside the window. An inference, not a measure; what can be built is built — a
+    trace function that reads the disk inside the window — and that is what this tells apart."""
+    tracer = sys.gettrace()
+    code = getattr(tracer, "__code__", None)
+    package = None
+    if tracer is not None and code is None:
+        package = type(tracer).__module__.split(".")[0]
+    while frame is not None:
+        name = str(frame.f_globals.get("__name__", ""))
+        if name.startswith(IMPORTS) or (code is not None and frame.f_code is code):
+            return True
+        if package is not None and (name == package or name.startswith(package + ".")):
+            return True
+        frame = frame.f_back
+    return False
+
+
 def _recording(
     touched: list[str], label: str, real: Callable[..., object]
 ) -> Callable[..., object]:
     def recorded(*args: object, **kwargs: object) -> object:
-        touched.append(label)
+        if not not_of_the_code(sys._getframe(1)):
+            touched.append(label)
         return real(*args, **kwargs)
 
     return recorded
@@ -328,11 +366,23 @@ def watching_the_disk() -> Iterator[list[str]]:
 
 
 async def disk_reads_of(
-    verifier: Verifier, arguments: JsonMapping, result: ExecutionResult
+    verifier: Verifier,
+    arguments: JsonMapping,
+    result: ExecutionResult,
+    *,
+    traced_by: TraceFunction | None = None,
 ) -> list[str]:
-    """The disk calls ``verifier`` makes answering every condition it knows."""
+    """The disk calls ``verifier`` makes answering every condition it knows — with ``traced_by``
+    the trace function of the window, when the test puts one there."""
     with watching_the_disk() as touched:
-        await verifier.verify(tuple(sorted(verifier.conditions)), arguments, result)
+        previous = sys.gettrace()
+        if traced_by is not None:
+            sys.settrace(traced_by)
+        try:
+            await verifier.verify(tuple(sorted(verifier.conditions)), arguments, result)
+        finally:
+            if traced_by is not None:
+                sys.settrace(previous)
     return touched
 
 
@@ -381,6 +431,30 @@ class _ReadsInSecret(Verifier):
     ) -> ErrorMetadata | None:
         self._root.joinpath(NOTE).exists()  # the read its declaration hides
         return None
+
+
+async def test_what_the_trace_function_reads_inside_the_window_is_not_the_verifier_s(
+    production: VerifierRegistry, tmp_path: Path
+) -> None:
+    """**The red, built** (M9.5, ADR 0069; decision 72 of the review at ``ad1826c``): a trace
+    function that reads the disk at its first event inside the window, as the coverage's does when
+    it first sees a file of ``src/ela``. Until 2026-11-17 its read was counted as the verifier's —
+    red on that code, for a verifier that reads nothing. The fake is a function and the coverage's
+    an object of C: :func:`not_of_the_code` knows both by their stack."""
+    seen = tmp_path / "seen-by-the-tracer"
+    seen.write_text("x", encoding="utf-8")
+    read: list[os.stat_result] = []
+
+    def tracer(frame: FrameType, event: str, arg: object) -> None:
+        if not read:
+            read.append(os.lstat(seen))
+
+    arguments, result = TRAVELLING[CORE_ECHO]
+    verifier = production.get(CORE_ECHO)
+    assert isinstance(verifier, Verifier)
+
+    assert await disk_reads_of(verifier, arguments, result, traced_by=tracer) == []
+    assert read, "the trace function read the disk inside the window"
 
 
 async def test_the_check_sees_a_verifier_that_reads_in_secret(tmp_path: Path) -> None:

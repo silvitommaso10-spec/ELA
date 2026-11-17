@@ -49,9 +49,10 @@ from ela.ports import (
     ProfileBusy,
 )
 from ela.testing.fakes import FakeStop
+from tests import machines
 from tests.browser_leftovers import running
 
-pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="a process group is POSIX's")
+pytestmark = machines.needs(machines.POSIX, why="a process group is POSIX's")
 
 SOURCE = Path(__file__).with_name("fake_window.py")
 ENVIRONMENT = {"PATH": "/usr/bin:/bin", "HOME": "/nowhere", "LANG": "C.UTF-8"}

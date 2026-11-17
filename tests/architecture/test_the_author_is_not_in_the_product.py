@@ -39,6 +39,7 @@ from pathlib import Path
 import pytest
 
 from ela.composition.settings import TAILNET_RANGES
+from tests import machines
 
 ROOT = Path(__file__).resolve().parents[2]
 TREES = ("src", "apps")
@@ -136,7 +137,7 @@ def the_six_voices() -> list[str]:
     return VOICE_ROW.findall(text[start : text.index("\n## ", start + 1)])
 
 
-@pytest.mark.skipif(NO_REPOSITORY is not None, reason=NO_REPOSITORY or "")
+@machines.needs(machines.GIT_REPOSITORY)
 def test_no_tailnet_host_and_no_path_inside_a_home_in_src_and_apps() -> None:
     """The tree git tracks, every text file of it. Seeing nothing is not a pass."""
     assert TRACKED, "git listed no file under src/ and apps/"
@@ -150,7 +151,7 @@ def test_no_tailnet_host_and_no_path_inside_a_home_in_src_and_apps() -> None:
     assert not found, "\n".join(found)
 
 
-@pytest.mark.skipif(NO_REPOSITORY is not None, reason=NO_REPOSITORY or "")
+@machines.needs(machines.GIT_REPOSITORY)
 def test_none_of_the_six_voices_the_author_chose_is_written_in_src_or_apps() -> None:
     voices = the_six_voices()
     assert len(voices) == 6, f"the table of M9.6 gave {voices}"
@@ -164,7 +165,7 @@ def test_none_of_the_six_voices_the_author_chose_is_written_in_src_or_apps() -> 
     assert not found, "\n".join(found)
 
 
-@pytest.mark.skipif(NO_REPOSITORY is not None, reason=NO_REPOSITORY or "")
+@machines.needs(machines.GIT_REPOSITORY)
 def test_every_readme_of_apps_names_the_rule_with_its_test() -> None:
     readmes = [path for path in TRACKED if path.startswith("apps/") and path.endswith("README.md")]
     assert readmes, "git listed no README under apps/"

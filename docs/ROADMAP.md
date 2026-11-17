@@ -34,7 +34,6 @@ azioni `HIGH`.
 *A che cosa serve:* la suite torna a dire il vero — i due test che a volte diventano rossi senza una causa vista, e
 la disciplina della suite con i debiti che porta e la misura di dove va il suo tempo.
 
-- `M13.4g` — Proposta — Il click che apre un'altra pagina, con il browser del profilo: un'azione che a volte non dice la sua pagina
 - `M13.13b` — Proposta — Uno scaricamento interrotto che a volte lascia il suo file a metà
 - `M9.5` — Proposta — La disciplina della suite: gli skip che si accorgono di essere saltati, e i test che aspettano un evento
 
@@ -124,10 +123,18 @@ nella 4.3 di [`STATO.md`](STATO.md), «Oltre le fasi in fila».
 
 Da fare insieme ad altro, quando capita. Una condizione d'ingresso, dove c'è, sta nel documento.
 
+***Dal 2026-11-17*** (decisioni 56 e 57 della review delle tre SPEC di `m9.5-la-pulizia-della-suite`): **`M13.4g`
+esce dalla tappa 2** — nelle due serie della sua misura la causa non si è vista —, e **si riapre quando il suo test torna
+rosso in un giro**: quel giro, con il log della suite (`tests/suite_log.py`, il passo della CI che lo porta via), è la
+misura. **`M9.8`**, nata dal taglio di M9.5, **passa davanti se uno dei suoi test torna rosso in un giro**, con la
+regola di `M13.13b`.
+
 - `M9.2` — Proposta — Le liste che restano scritte a mano
 - `M9.7` — Proposta — Ogni blocco della guida che mostra un'uscita della CLI è confrontato con la CLI
+- `M9.8` — Proposta — Le attese che nessun elenco conosceva
 - `M10.3b` — Proposta — Una riga che `ela init` scrive, tolto il `#`, ferma l'avvio
 - `M13.4d` — Proposta — Lo shell del browser vuoto gira senza il sandbox di Chromium
+- `M13.4g` — Proposta — Il click che apre un'altra pagina, con il browser del profilo: un'azione che a volte non dice la sua pagina
 - `M13.6` — Proposta — Spostare un lavoro già in corso: il ripiazzamento, quando due capability sanno dichiararsi ripetibili
 - `M14.1c` — Proposta — Il caso peggiore senza prezzo: un ramo e un rifiuto che nessun produttore raggiunge
 - **WhatsApp Web con il profilo di ELA**, senza un numero: nessuna milestone finché la causa della barra di

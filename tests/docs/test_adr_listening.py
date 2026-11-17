@@ -12,6 +12,7 @@ changed them.
 from __future__ import annotations
 
 import ast
+import functools
 import re
 from pathlib import Path
 
@@ -32,6 +33,22 @@ def adr_text() -> str:
     return ADR_PATH.read_text(encoding="utf-8")
 
 
+@functools.cache
+def _attributes_of_the_package() -> tuple[tuple[str, frozenset[str]], ...]:
+    """For every module of ``src/ela`` but the one the enum is declared in, the names of attribute
+    its code uses — **read once in a process** (M9.5, decision 77 of the review at ``ad1826c``):
+    until 2026-11-17 every member of the enum read the whole package again, 38 × 189 trees for what
+    one reading of each file says, and the test was the longest of the suite."""
+    found = []
+    for path in sorted(PACKAGE_ROOT.rglob("*.py")):
+        if path.name == "domain.py":
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        names = frozenset(node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute))
+        found.append((str(path.relative_to(PACKAGE_ROOT)), names))
+    return tuple(found)
+
+
 def writers_of(event: AuditEventType) -> list[str]:
     """Every module of ``src/ela`` that names ``event`` other than where the enum is declared.
 
@@ -39,16 +56,7 @@ def writers_of(event: AuditEventType) -> list[str]:
     docstring that mentions the member is not a writer, and this debt is precisely about the
     difference between naming a thing and doing it.
     """
-    found = []
-    for path in sorted(PACKAGE_ROOT.rglob("*.py")):
-        if path.name == "domain.py":
-            continue
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Attribute) and node.attr == event.name:
-                found.append(str(path.relative_to(PACKAGE_ROOT)))
-                break
-    return found
+    return [module for module, names in _attributes_of_the_package() if event.name in names]
 
 
 def test_the_debt_of_paragraph_12_is_paid_and_a_decision_says_where() -> None:

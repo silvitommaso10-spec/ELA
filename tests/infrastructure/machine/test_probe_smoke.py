@@ -14,7 +14,6 @@ whatever this machine happens to be.
 from __future__ import annotations
 
 import json
-import platform
 import subprocess  # noqa: S404 — this test *is* the one that starts the helper for real
 import sys
 
@@ -22,10 +21,9 @@ import pytest
 
 from ela.domain import FAMILY_FIELDS, ProbeFamily, RawObservation
 from ela.infrastructure.machine import PROBE_MODULE
+from tests import machines
 
-pytestmark = pytest.mark.skipif(
-    platform.system() != "Darwin", reason="the helper reads macOS frameworks"
-)
+pytestmark = machines.needs(machines.DARWIN, why="the helper reads macOS frameworks")
 
 
 def run(families: str) -> subprocess.CompletedProcess[str]:

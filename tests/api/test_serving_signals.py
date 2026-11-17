@@ -35,11 +35,10 @@ from pathlib import Path
 
 import pytest
 
+from tests import machines
 from tests.browser_leftovers import Left, left, named, running, scratch, sweep
 
-pytestmark = pytest.mark.skipif(
-    sys.platform == "win32", reason="SIGHUP, a session and ps are POSIX's"
-)
+pytestmark = machines.needs(machines.POSIX, why="SIGHUP, a session and ps are POSIX's")
 
 CHILD = Path(__file__).with_name("serving.py")
 ROOT = CHILD.parents[2]

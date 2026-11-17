@@ -9,15 +9,15 @@ Each test first shows Windows doing the thing, then the classification refusing 
 from __future__ import annotations
 
 import os
-import platform
 import subprocess
 from pathlib import Path
 
 import pytest
 
 from ela.tools import PATH_INVALID, PATH_SYMLINK, classify, resolve_workspace
+from tests import machines
 
-pytestmark = pytest.mark.skipif(platform.system() != "Windows", reason="NTFS is Windows's")
+pytestmark = machines.needs(machines.WINDOWS, why="NTFS is Windows's")
 
 
 @pytest.fixture

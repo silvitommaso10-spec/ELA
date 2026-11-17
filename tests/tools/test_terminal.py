@@ -66,7 +66,7 @@ from ela.tools.terminal import (
     decoded,
     stream,
 )
-from tests.tools.support import PERMISSIONS_BITE
+from tests import machines
 
 NOW = datetime(2026, 9, 24, 10, 0, tzinfo=UTC)
 SCRIPT = "#!/bin/sh\necho eco\n"
@@ -775,7 +775,7 @@ def test_a_head_of_bytes_that_continue_nothing_is_left_as_it_is() -> None:
     assert kept.replaced == 4
 
 
-@pytest.mark.skipif(not PERMISSIONS_BITE, reason="this user reads files whatever their mode")
+@machines.needs(machines.PERMISSIONS_BITE, why="this user reads files whatever their mode")
 async def test_a_program_that_cannot_be_read_is_one_whose_identity_nobody_can_vouch_for(
     root: Path, program: Path
 ) -> None:

@@ -19,6 +19,8 @@ from types import ModuleType
 
 import pytest
 
+from tests.composition.support import _only_the_declared_environment  # noqa: F401 — the fixture
+
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "generate_stato.py"
 
 MILESTONE = "# {identifier} — {title}\n\n- **Stato:** **{state}**\n\n{body}\n"

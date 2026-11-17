@@ -16,18 +16,17 @@ and the flag can be weighed again.
 from __future__ import annotations
 
 import shlex
-import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
 from ruff.__main__ import find_ruff_bin
 
+from tests import machines
 from tests.scripts.test_critical_packages import MAKEFILE
 
-pytestmark = pytest.mark.skipif(
-    shutil.which("make") is None,
-    reason="the Makefile is the thing under test, and reading it is not running it",
+pytestmark = machines.needs(
+    machines.MAKE, why="the Makefile is the thing under test, and reading it is not running it"
 )
 
 PYPROJECT = '[tool.ruff]\nsrc = ["src", "tests"]\n[tool.ruff.lint]\nselect = ["I"]\n'

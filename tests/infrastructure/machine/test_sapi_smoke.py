@@ -9,14 +9,12 @@ system's default (an empty name), so the test does not depend on which voices a 
 
 from __future__ import annotations
 
-import platform
 from datetime import timedelta
 
-import pytest
-
 from ela.infrastructure.machine import SapiSpeechCommand
+from tests import machines
 
-pytestmark = pytest.mark.skipif(platform.system() != "Windows", reason="System.Speech is Windows's")
+pytestmark = machines.needs(machines.WINDOWS, why="System.Speech is Windows's")
 
 
 async def test_powershell_is_there_and_says_a_syllable_timing_it() -> None:

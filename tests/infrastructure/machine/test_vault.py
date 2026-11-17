@@ -33,9 +33,10 @@ from typing import Any
 
 import pytest
 
+from tests import machines
 from tests.browser_leftovers import running
 
-pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="a process group is POSIX's")
+pytestmark = machines.needs(machines.POSIX, why="a process group is POSIX's")
 
 SOURCE = Path(__file__).with_name("fake_bw.py")
 KEY = "the-session-key-of-the-test-7c1d"

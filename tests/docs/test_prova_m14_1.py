@@ -24,6 +24,7 @@ from typing import Any
 import pytest
 
 from ela.providers.anthropic.models import HAIKU_5_5
+from tests.composition.support import _only_the_declared_environment  # noqa: F401 — the fixture
 from tests.domain.examples import HAIKU_4_5_ID
 
 ROOT = Path(__file__).resolve().parents[2]

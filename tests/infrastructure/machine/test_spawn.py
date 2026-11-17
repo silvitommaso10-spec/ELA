@@ -15,6 +15,7 @@ import signal
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -25,6 +26,55 @@ from ela.infrastructure.machine.darwin import (
     spawn_with_input,
     sweep_speech_files,
 )
+
+CEILING = 20.0
+"""The ceiling of a wait for an event of a child: it fires only when something is already wrong —
+the child never said its pid, the cancelled call never came back. Never the measure of anything."""
+NEVER_ENDS = (
+    "import os, pathlib, sys, threading\n"
+    "{first}"
+    "said = pathlib.Path({said!r})\n"
+    "said.with_suffix('.tmp').write_text(str(os.getpid()))\n"
+    "os.replace(said.with_suffix('.tmp'), said)\n"
+    "threading.Event().wait()\n"
+)
+"""A child that says its pid **first** and **never ends by itself**: what a cancellation finds it
+doing is running, whenever it comes (ADR 0041 §5, paid by M9.5). Until 2026-11-17 the three tests
+below waited 0,15 s for the child to exist and 0,9 s past the instant it would have written a
+marker: a verdict of durations."""
+
+
+async def cancelled_while_it_runs(start: Any, said: Path, started: list[int]) -> int:
+    """Start the call, wait for the child to say its pid — an event, under a ceiling —, cancel the
+    call, and answer the pid once the cancellation has come back. The pid goes into ``started`` as
+    soon as it is read, so the test can kill the child whatever happens after."""
+    task = asyncio.create_task(start)
+    async with asyncio.timeout(CEILING):
+        while not said.exists():
+            await asyncio.sleep(0.01)
+    pid = int(said.read_text())
+    started.append(pid)
+    task.cancel()
+    async with asyncio.timeout(CEILING):
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    return pid
+
+
+def gone(pid: int) -> bool:
+    """Whether ``pid`` is no process any more — killed **and reaped**: a zombie still answers."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    return False
+
+
+def killed(started: list[int]) -> None:
+    """Whatever the test found, the child it started does not outlive it."""
+    for pid in started:
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(pid, signal.SIGKILL)
 
 
 async def test_a_command_that_answers_gives_its_code_and_its_output() -> None:
@@ -67,24 +117,22 @@ async def test_a_cancelled_wait_kills_the_child_instead_of_orphaning_it() -> Non
     talking when it has been told to stop**, which is the worse half of the problem decision F
     postponed to the barge-in.
 
-    Written as a marker file the child creates *after* the moment it should already be dead: if
-    the kill happened, the file never appears.
+    The child says its pid first and never ends by itself: after the cancellation has come back —
+    the launcher kills and reaps before it raises again (``_wait``, ``_kill``) — the pid is no
+    process. Neither a launcher that raised without killing nor one that waited for the child's own
+    end passes: the first leaves it alive, the second never comes back.
     """
     with tempfile.TemporaryDirectory() as directory:
-        marker = Path(directory) / "still-alive"
-        child = (
-            "import pathlib, time\n"
-            "time.sleep(0.6)\n"
-            f"pathlib.Path({str(marker)!r}).write_text('x')\n"
-        )
-        task = asyncio.create_task(spawn([sys.executable, "-c", child], 30))
-        await asyncio.sleep(0.15)  # long enough for the child to exist, short enough to be early
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
-        await asyncio.sleep(0.9)  # past the instant the child would have written
-
-        assert not marker.exists(), "the child outlived the cancelled call"
+        said = Path(directory) / "pid"
+        child = NEVER_ENDS.format(first="", said=str(said))
+        started: list[int] = []
+        try:
+            pid = await cancelled_while_it_runs(
+                spawn([sys.executable, "-c", child], 30), said, started
+            )
+            assert gone(pid), "the child outlived the cancelled call"
+        finally:
+            killed(started)
 
 
 async def test_the_child_reads_the_bytes_on_its_stdin_whole() -> None:
@@ -118,21 +166,16 @@ async def test_a_cancelled_wait_on_a_child_fed_on_stdin_kills_it() -> None:
     """The same property as ``spawn``'s, and for the same reason: on a PC this child is the voice,
     and a voice that outlives the call that asked for it is ELA not stopping when told to."""
     with tempfile.TemporaryDirectory() as directory:
-        marker = Path(directory) / "still-alive"
-        child = (
-            "import pathlib, sys, time\n"
-            "sys.stdin.buffer.read()\n"
-            "time.sleep(0.6)\n"
-            f"pathlib.Path({str(marker)!r}).write_text('x')\n"
-        )
-        task = asyncio.create_task(spawn_with_input([sys.executable, "-c", child], b"x", 30))
-        await asyncio.sleep(0.15)
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
-        await asyncio.sleep(0.9)
-
-        assert not marker.exists(), "the child outlived the cancelled call"
+        said = Path(directory) / "pid"
+        child = NEVER_ENDS.format(first="sys.stdin.buffer.read()\n", said=str(said))
+        started: list[int] = []
+        try:
+            pid = await cancelled_while_it_runs(
+                spawn_with_input([sys.executable, "-c", child], b"x", 30), said, started
+            )
+            assert gone(pid), "the child outlived the cancelled call"
+        finally:
+            killed(started)
 
 
 async def test_the_stderr_of_a_child_fed_on_stdin_goes_to_the_terminal_and_never_back(
@@ -218,22 +261,15 @@ async def test_a_cancelled_playback_kills_the_child_and_frees_the_audio() -> Non
     descriptor is closed, so the audio is gone even though nobody deleted anything.
     """
     with tempfile.TemporaryDirectory() as directory:
-        marker = Path(directory) / "still-playing"
-        child = (
-            "import pathlib, time\n"
-            "time.sleep(0.6)\n"
-            f"pathlib.Path({str(marker)!r}).write_text('x')\n"
-        )
-        task = asyncio.create_task(
-            spawn_with_audio([sys.executable, "-c", child], b"x", 30, directory=directory)
-        )
-        await asyncio.sleep(0.15)
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
-        await asyncio.sleep(0.9)
-
-        assert not marker.exists(), "the player outlived the cancelled call"
+        said = Path(directory) / "pid"
+        child = NEVER_ENDS.format(first="", said=str(said))
+        started: list[int] = []
+        playing = spawn_with_audio([sys.executable, "-c", child], b"x", 30, directory=directory)
+        try:
+            pid = await cancelled_while_it_runs(playing, said, started)
+            assert gone(pid), "the player outlived the cancelled call"
+        finally:
+            killed(started)
 
 
 def test_the_sweep_finds_what_a_crash_in_one_syscall_would_leave() -> None:

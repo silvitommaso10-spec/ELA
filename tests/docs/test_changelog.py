@@ -24,7 +24,7 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Final
 
-import pytest
+from tests import machines
 
 ROOT = Path(__file__).resolve().parents[2]
 CHANGELOG = ROOT / "docs" / "CHANGELOG.md"
@@ -307,7 +307,7 @@ def changed_by(sha: str) -> list[str]:
     return _git("diff", "--name-only", f"{sha}^1", sha)
 
 
-@pytest.mark.skipif(NO_HISTORY is not None, reason=NO_HISTORY or "")
+@machines.needs(machines.GIT_HISTORY)
 def test_a_milestone_merged_into_main_cannot_still_call_itself_a_proposal() -> None:
     """The fact is the history, not a list: a list would go stale the same way the line did."""
     merged = merged_in(SUBJECTS)
@@ -401,7 +401,7 @@ def test_a_head_that_is_the_branch_in_lowercase_names_its_milestone() -> None:
     assert merged_in([M17_2_BY_ITS_BRANCH]) == {"M17.2"}
 
 
-@pytest.mark.skipif(NO_HISTORY is not None, reason=NO_HISTORY or "")
+@machines.needs(machines.GIT_HISTORY)
 def test_the_titles_of_these_cases_are_titles_of_main() -> None:
     """A case built on a title nobody wrote would prove the parser, not the history."""
     for title in (
@@ -414,7 +414,7 @@ def test_the_titles_of_these_cases_are_titles_of_main() -> None:
         assert title in SUBJECTS, title
 
 
-@pytest.mark.skipif(NO_HISTORY is not None, reason=NO_HISTORY or "")
+@machines.needs(machines.GIT_HISTORY)
 def test_a_registration_branch_brought_no_code_into_main() -> None:
     """The prefix is a name, and names can lie: what every ``docs-`` merge brought into ``main`` is
     read from git, and none of it is code. The negative case is the merge of M13.1's branch, which

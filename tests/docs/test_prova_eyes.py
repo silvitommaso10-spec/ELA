@@ -25,6 +25,8 @@ from typing import Any
 
 import pytest
 
+from tests.composition.support import _only_the_declared_environment  # noqa: F401 — the fixture
+
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ROOT / "scripts"
 DECLARED = ("LOOKS", "SHOWS")

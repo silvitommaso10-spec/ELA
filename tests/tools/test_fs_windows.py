@@ -17,7 +17,6 @@ of this file died there, before any test ran.
 from __future__ import annotations
 
 import os
-import platform
 import subprocess
 from pathlib import Path
 
@@ -28,10 +27,11 @@ from ela.domain import ExecutionStatus
 from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeStop
 from ela.tools import FS_CONTENT_MATCHES, FS_WRITE, FsReadTool, FsWriteTool, FsWriteVerifier
 from ela.tools.fs import HARD_LINK
+from tests import machines
 from tests.domain.examples import EXECUTION_RESULT
 from tests.tools.support import allowed
 
-pytestmark = pytest.mark.skipif(platform.system() != "Windows", reason="NTFS is Windows's")
+pytestmark = machines.needs(machines.WINDOWS, why="NTFS is Windows's")
 
 
 @pytest.fixture

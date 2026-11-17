@@ -28,10 +28,13 @@ from pathlib import Path
 import pytest
 
 from ela.composition.system import own_command
+from tests import machines
 
 WINDOWS = sys.platform == "win32"
-ON_WINDOWS = pytest.mark.skipif(not WINDOWS, reason="the command with its extension is Windows's")
-ON_POSIX = pytest.mark.skipif(WINDOWS, reason="the command with no extension is POSIX's")
+ON_WINDOWS = machines.needs(
+    machines.WINDOWS_KERNEL, why="the command with its extension is Windows's"
+)
+ON_POSIX = machines.needs(machines.POSIX, why="the command with no extension is POSIX's")
 
 
 def closed() -> dict[str, str]:
@@ -125,7 +128,7 @@ def test_on_windows_the_command_is_the_one_with_its_extension(tmp_path: Path) ->
     assert own_command(str(here / "python.exe"), "Windows") == here / "ela.exe"
 
 
-@pytest.mark.skipif(WINDOWS, reason="a link to a file wants a privilege on Windows")
+@machines.needs(machines.POSIX, why="a link to a file wants a privilege on Windows")
 def test_the_interpreter_is_taken_as_it_is_named_and_never_where_its_link_leads(
     tmp_path: Path,
 ) -> None:
@@ -154,7 +157,7 @@ def test_a_folder_named_as_the_command_is_not_the_command(tmp_path: Path) -> Non
     assert own_command(str(here / "python3"), "Darwin") is None
 
 
-@pytest.mark.skipif(WINDOWS, reason="Windows has no bit that says a file executes")
+@machines.needs(machines.POSIX, why="Windows has no bit that says a file executes")
 def test_a_file_named_as_the_command_that_does_not_execute_is_not_the_command(
     tmp_path: Path,
 ) -> None:

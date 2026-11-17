@@ -42,7 +42,7 @@ from ela.tools.paths import (
     PATH_OUTSIDE_ROOT,
     PATH_SYMLINK,
 )
-from tests.tools.support import PERMISSIONS_BITE
+from tests import machines
 
 NOW = datetime(2026, 9, 21, 10, 0, tzinfo=UTC)
 BODY = "Giovedì alle dieci.\n"
@@ -372,7 +372,7 @@ def test_both_tools_report_the_root_they_resolved(root: Path) -> None:
     assert reader(root).root == root.resolve()
 
 
-@pytest.mark.skipif(not PERMISSIONS_BITE, reason="chmod(0o000) does not deny this user: it is root")
+@machines.needs(machines.PERMISSIONS_BITE, why="chmod(0o000) does not deny this user: it is root")
 async def test_a_file_the_os_will_not_open_for_reading_is_an_io_error(root: Path) -> None:
     target = root / "note.md"
     target.write_text(BODY, encoding="utf-8")
@@ -385,7 +385,7 @@ async def test_a_file_the_os_will_not_open_for_reading_is_an_io_error(root: Path
     assert (status, code) == (ExecutionStatus.FAILED, IO_ERROR)
 
 
-@pytest.mark.skipif(not PERMISSIONS_BITE, reason="chmod(0o000) does not deny this user: it is root")
+@machines.needs(machines.PERMISSIONS_BITE, why="chmod(0o000) does not deny this user: it is root")
 async def test_a_directory_the_os_will_not_write_into_is_an_io_error(root: Path) -> None:
     (root / "chiusa").mkdir()
     (root / "chiusa").chmod(0o500)

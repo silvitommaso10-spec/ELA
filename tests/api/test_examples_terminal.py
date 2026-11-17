@@ -27,6 +27,7 @@ from httpx import AsyncClient
 from ela.composition.settings import Settings
 from ela.domain import TaskState
 from ela.tools.terminal import PROGRAM, RUNS
+from tests import machines
 from tests.composition.support import declare
 
 EXAMPLES = Path(__file__).resolve().parents[2] / "docs" / "examples"
@@ -186,7 +187,7 @@ async def test_an_output_longer_than_the_ceiling_keeps_its_head_and_its_tail(
     assert stdout["cut_after"] == len(stdout["head"].encode())
 
 
-@pytest.mark.skipif(not Path("/usr/bin/time").exists(), reason="/usr/bin/time is not here")
+@machines.needs(machines.USR_BIN_TIME)
 async def test_a_program_that_does_not_end_is_stopped_with_its_grandchild(
     client: AsyncClient,
 ) -> None:

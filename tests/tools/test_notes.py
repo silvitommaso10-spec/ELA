@@ -29,7 +29,8 @@ from ela.tools import (
     WriteNoteTool,
     is_relative_note_path,
 )
-from tests.tools.support import PERMISSIONS_BITE, allowed
+from tests import machines
+from tests.tools.support import allowed
 
 NOTE = "workspace/notes/briefing.md"
 BODY = "# Briefing\n\nTre punti.\n"
@@ -236,7 +237,7 @@ async def test_an_os_error_is_a_failed_result_not_an_exception(
     assert "cannot be reached: NotADirectoryError" in message
 
 
-@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="no FIFOs on this platform")
+@machines.needs(machines.POSIX, why="no FIFOs on this platform")
 async def test_a_target_that_is_not_a_regular_file_is_an_io_error(
     tool: WriteNoteTool, root: Path
 ) -> None:
@@ -248,7 +249,7 @@ async def test_a_target_that_is_not_a_regular_file_is_an_io_error(
     assert "is not a regular file" in message
 
 
-@pytest.mark.skipif(not PERMISSIONS_BITE, reason="chmod(0o500) does not deny this user: it is root")
+@machines.needs(machines.PERMISSIONS_BITE, why="chmod(0o500) does not deny this user: it is root")
 async def test_a_read_only_directory_is_an_io_error(tool: WriteNoteTool, root: Path) -> None:
     folder = root / "workspace" / "notes"
     folder.mkdir(parents=True)

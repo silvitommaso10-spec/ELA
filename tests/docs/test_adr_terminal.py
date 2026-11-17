@@ -9,6 +9,7 @@ routes.
 
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
@@ -247,8 +248,10 @@ def test_it_writes_what_the_review_decided_with_its_measures() -> None:
 
 
 MILESTONES = ROOT / "docs" / "milestones"
-WINDOWS_ONLY = 'platform.system() != "Windows"'
-"""How a test reserves itself to Windows in this suite, read as source: an ``skipif`` on it."""
+WINDOWS_ONLY = re.compile(r"machines\.WINDOWS")
+"""How a test reserves itself to Windows in this suite, read as source: it needs the system Windows
+of the one place, ``tests/machines.py`` (M9.5; until 2026-11-17 a ``skipif`` on
+``platform.system()``). The kernel of Windows, ``WINDOWS_KERNEL``, is not the system."""
 
 
 def test_the_two_debts_of_the_census_have_an_owner_a_day_and_a_page_that_names_them() -> None:
@@ -273,12 +276,25 @@ def test_the_two_debts_of_the_census_have_an_owner_a_day_and_a_page_that_names_t
         assert inherited in discipline, inherited
 
 
+def needs_windows(tree: ast.Module) -> bool:
+    """Whether a module carries a mark of the one place that needs the system Windows: a call of
+    ``needs`` with ``machines.WINDOWS`` among its conditions — in its code, not in a string."""
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        called = node.func.attr if isinstance(node.func, ast.Attribute) else ""
+        if called == "needs" and any(WINDOWS_ONLY.fullmatch(ast.unparse(one)) for one in node.args):
+            return True
+    return False
+
+
 def reserved_to_windows(root: Path) -> set[str]:
-    """Every test file under ``root / "tests"`` that reserves itself to Windows, from root."""
+    """Every test file under ``root / "tests"`` that reserves itself to Windows, from root: a test
+    of it needs the system Windows, said in the one place (``tests/machines.py``, M9.5)."""
     return {
         path.relative_to(root).as_posix()
         for path in (root / "tests").rglob("test_*.py")
-        if "skipif(" + WINDOWS_ONLY in path.read_text(encoding="utf-8")
+        if needs_windows(ast.parse(path.read_text(encoding="utf-8")))
     }
 
 
@@ -308,11 +324,14 @@ def test_the_turned_defence_sees_a_file_the_job_leaves_out(tmp_path: Path) -> No
     """The negative case, on a fabricated suite: a file reserved to Windows that the job does not
     name is left out, one that it names is not, and a file reserved to another system is neither."""
     (tmp_path / "tests" / "x").mkdir(parents=True)
-    skip = "pytestmark = pytest.mark.skipif(" + WINDOWS_ONLY + ', reason="r")\n'
+    skip = 'pytestmark = machines.needs(machines.WINDOWS, why="r")\n'
     (tmp_path / "tests" / "x" / "test_in.py").write_text(skip, encoding="utf-8")
     (tmp_path / "tests" / "x" / "test_out.py").write_text(skip, encoding="utf-8")
     (tmp_path / "tests" / "x" / "test_mac.py").write_text(
-        skip.replace("Windows", "Darwin"), encoding="utf-8"
+        skip.replace("WINDOWS", "DARWIN"), encoding="utf-8"
+    )
+    (tmp_path / "tests" / "x" / "test_kernel.py").write_text(
+        skip.replace("WINDOWS", "WINDOWS_KERNEL"), encoding="utf-8"
     )
     reserved = reserved_to_windows(tmp_path)
 
@@ -322,14 +341,35 @@ def test_the_turned_defence_sees_a_file_the_job_leaves_out(tmp_path: Path) -> No
     }
 
 
-def test_the_watch_on_skips_still_lives_in_one_file() -> None:
-    """ADR 0047 §18, the smallest defence: the guard of ``test_terminal_limits.py`` is the only one.
-    The day another joins it or replaces it, this fails: write the payment, and turn this round."""
+PAYMENT = ROOT / "docs" / "adr" / "0069-suite-discipline.md"
+PAID = "### 1. Il debito di ADR 0047 §18, saldato: un posto solo per gli skip, e la guardia"
+
+
+def watches(root: Path) -> list[str]:
+    """The files of ``root / "tests"`` that keep a watch on skips of their own — a function named
+    ``skip_problems``, the model of ADR 0047 §18 —, found from the source."""
     guard = "def " + "skip_problems("  # in two pieces, or this file would be found as a guard
-    watching = sorted(
-        str(path.relative_to(ROOT))
-        for path in (ROOT / "tests").rglob("*.py")
+    return sorted(
+        path.relative_to(root).as_posix()
+        for path in (root / "tests").rglob("*.py")
         if guard in path.read_text(encoding="utf-8")
     )
 
-    assert watching == ["tests/tools/test_terminal_limits.py"]
+
+def test_the_watch_on_skips_is_the_guard_of_the_one_place() -> None:
+    """ADR 0047 §18, turned round by M9.5 (ADR 0069 §1): the watch of ``test_terminal_limits.py``
+    and its copies are gone, the guard is the hook of ``tests/conftest.py`` for every test of the
+    suite, and the payment is a section of the ADR that paid."""
+    conftest = (ROOT / "tests" / "conftest.py").read_text(encoding="utf-8")
+
+    assert PAID in PAYMENT.read_text(encoding="utf-8")
+    assert watches(ROOT) == []
+    assert "machines.guard(item)" in conftest and "def pytest_runtest_setup" in conftest
+
+
+def test_a_watch_of_its_own_written_again_is_seen(tmp_path: Path) -> None:
+    """The negative case, on a suite built here."""
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_x.py").write_text("def " + "skip_problems(t): ...\n")
+
+    assert watches(tmp_path) == ["tests/test_x.py"]

@@ -50,8 +50,6 @@ served = account.served
 nothing_left_behind = account.nothing_left_behind
 profile = account.profile
 
-pytestmark = account.pytestmark
-
 USER = "mario"
 WORD = "-".join(("the", "word", "of", "the", "test"))
 ACCESS = f"user={USER}&0123456789abcdef"

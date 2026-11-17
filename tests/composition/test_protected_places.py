@@ -42,8 +42,8 @@ from ela.permissions import BROWSER_DOWNLOAD, BROWSER_DOWNLOAD_AS_YOU
 from ela.tools import FS_WRITE
 from ela.tools import paths as paths_module
 from ela.tools import settings as tools_settings
+from tests import machines
 from tests.composition.support import database_url, declare
-from tests.composition.test_account_settings import IGNORES_CASE, ONE_SPELLING
 
 SRC = Path(ela.__file__).resolve().parent
 TOUCH = "contain one another"
@@ -219,7 +219,7 @@ def test_the_list_of_the_core_names_every_place_and_the_program_only_when_declar
 # ----------------------------------------------------------------------------------------
 
 
-@pytest.mark.skipif(not IGNORES_CASE, reason=ONE_SPELLING)
+@machines.needs(machines.IGNORES_CASE)
 def test_a_root_spelt_with_other_capitals_inside_ela_s_home_stops_ela(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

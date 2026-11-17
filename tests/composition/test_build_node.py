@@ -70,6 +70,7 @@ from ela.tools import (
     VerifierRegistry,
 )
 from ela.tools.settings import VoiceSettings
+from tests import machines
 from tests.domain.examples import HAIKU_4_5_ID
 
 
@@ -459,7 +460,7 @@ def _port_of(built: NodeWorld, name: str) -> object:
     return tool._speech  # type: ignore[attr-defined]  # noqa: SLF001 — not on the public surface
 
 
-@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits: Windows has no 0o700")
+@machines.needs(machines.POSIX, why="POSIX permission bits: Windows has no 0o700")
 def test_the_state_directory_is_born_0o700_where_no_core_made_it_first(tmp_path: Path) -> None:
     """M12.3b. The directory that holds the node's secret is ``0o700`` from the moment it exists.
 

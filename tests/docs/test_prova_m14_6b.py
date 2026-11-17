@@ -32,6 +32,7 @@ from ela.providers.anthropic.models import HAIKU_5_5, MODELS
 from ela.providers.anthropic.pricing import PRICES, worst_cost
 from ela.providers.anthropic.settings import DEFAULT_MAX_OUTPUT_TOKENS
 from ela.tools.model import placed
+from tests.composition.support import _only_the_declared_environment  # noqa: F401 — the fixture
 from tests.domain.examples import HAIKU_4_5_ID
 
 ROOT = Path(__file__).resolve().parents[2]

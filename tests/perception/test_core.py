@@ -230,6 +230,11 @@ async def test_a_probe_that_breaks_its_contract_does_not_stop_the_loop() -> None
 
 
 async def test_the_loop_keeps_ticking_until_it_is_cancelled() -> None:
+    """The loop of perception sleeps a second of real time between two reads: a **cadence**, not a
+    wait the verdict depends on — the test waits for the event, two reads, however long they take
+    (ADR 0041 §5, paid by M9.5 as what it is). ``PerceptionCore`` takes no sleep to inject, and a
+    seam in ``src/`` is not the repair of a measured cause (decision 25 of M9.5): the second stays,
+    with this reason beside it."""
     probe = FakeProbe([MAC])
     watcher, _ = core(
         probe, perception_sensors_interval_seconds=0, perception_loop_interval_seconds=1

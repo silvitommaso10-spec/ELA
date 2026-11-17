@@ -40,6 +40,7 @@ import pytest
 from ela.executive.planner import PLANNER_NO_PLAN
 from ela.permissions.capabilities import DEFAULT_NOTES_SCOPE, production_catalogue
 from tests.api.test_planning import WORST
+from tests.composition.support import _only_the_declared_environment  # noqa: F401 — the fixture
 from tests.docs.real_planning import Real, Recorded, changed, record
 from tests.executive.planning import NOTE_BODY, NOTE_PATH
 
