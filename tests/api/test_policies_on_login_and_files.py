@@ -21,7 +21,7 @@ import inspect
 import json
 import stat
 import typing
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
@@ -406,13 +406,10 @@ async def test_the_console_says_where_what_a_policy_moves_goes(
     assert page.index("Che cosa fa senza chiederti") < page.index("Dove va")
 
 
-async def test_no_output_of_the_command_line_shows_the_id_of_an_entry(
-    monkeypatch: pytest.MonkeyPatch, ela: Ela, app: FastAPI, client: AsyncClient
-) -> None:
-    """Answer 35 and proposal 11 of the SPEC: an id known to the test, looked for in every output
-    of ``ela policy`` — the preview, the creation, a refusal that received a wrong id, the list in
-    its two forms, the revocation (finding 13 of the consistency reading: the routes were tested,
-    the command line was not)."""
+def command_line(
+    monkeypatch: pytest.MonkeyPatch, ela: Ela, app: FastAPI
+) -> Callable[..., Awaitable[Result]]:
+    """``ela`` against the routes of this ELA, as a person types it: what each command printed."""
     transport = LoopTransport(app, asyncio.get_running_loop())
     monkeypatch.setattr(
         cli_client, "connect", lambda: cli_client.open_client(ela.settings.api, transport=transport)
@@ -422,6 +419,39 @@ async def test_no_output_of_the_command_line_shows_the_id_of_an_entry(
     async def invoke(*arguments: str) -> Result:
         return await asyncio.to_thread(runner.invoke, ela_app, list(arguments))
 
+    return invoke
+
+
+async def test_the_command_line_says_where_it_goes_in_the_preview_and_in_its_json(
+    monkeypatch: pytest.MonkeyPatch, ela: Ela, app: FastAPI, client: AsyncClient
+) -> None:
+    """Answer 65: ``goes`` is in the console, in the preview of the command line and in its
+    ``--json`` — not in the table of ``ela policy list``, where it would be a column of sentences:
+    what is approved names it, and that is the preview."""
+    invoke = command_line(monkeypatch, ela, app)
+    download = ("policy", "create", "browser.download", "--scope", "ELA/giu", "--site")
+    shown = await invoke(*download, "posta.example", "--days", "1", "--uses", "2")
+    made = await invoke(*download, "posta.example", "--days", "1", "--uses", "2", "--confirm")
+    as_json = await invoke("policy", "list", "--json")
+    listed = await invoke("policy", "list")
+
+    words = production_catalogue().get(CapabilityId("browser.download")).policy_words
+    assert words is not None and words.goes is not None
+    assert made.exit_code == 0, made.output
+    assert " ".join(words.goes.split()) in " ".join(plain(shown.output).split())
+    (policy,) = json.loads(as_json.output)["policies"]
+    assert policy["goes"] == words.goes
+    assert " ".join(words.goes.split()) not in " ".join(plain(listed.output).split())
+
+
+async def test_no_output_of_the_command_line_shows_the_id_of_an_entry(
+    monkeypatch: pytest.MonkeyPatch, ela: Ela, app: FastAPI, client: AsyncClient
+) -> None:
+    """Answer 35 and proposal 11 of the SPEC: an id known to the test, looked for in every output
+    of ``ela policy`` — the preview, the creation, a refusal that received a wrong id, the list in
+    its two forms, the revocation (finding 13 of the consistency reading: the routes were tested,
+    the command line was not)."""
+    invoke = command_line(monkeypatch, ela, app)
     login = ("policy", "create", "browser.login", "--scope", "posta.example", "--days", "1")
     shown = await invoke(*login, "--entry", ENTRY.id)
     made = await invoke(*login, "--entry", ENTRY.id, "--uses", "1", "--confirm")
