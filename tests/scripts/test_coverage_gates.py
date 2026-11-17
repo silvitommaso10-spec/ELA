@@ -22,18 +22,17 @@ would make the gate measure no file at all. That is not a silent 100% — ``cove
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
+from tests import machines
 from tests.scripts.test_critical_packages import MAKEFILE, REPO_ROOT, critical_packages
 
-pytestmark = pytest.mark.skipif(
-    shutil.which("make") is None,
-    reason="the Makefile is the thing under test, and reading it is not running it",
+pytestmark = machines.needs(
+    machines.MAKE, why="the Makefile is the thing under test, and reading it is not running it"
 )
 
 STUB = """#!/bin/sh

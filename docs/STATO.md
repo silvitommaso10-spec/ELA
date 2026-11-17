@@ -101,9 +101,10 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 9 — Le liste che si accorgono di essere false | `M9.2` | Proposta | Le liste che restano scritte a mano |
 | 9 — Le liste che si accorgono di essere false | `M9.3` | Completata | Le esenzioni che si accorgono di essere false |
 | 9 — Le liste che si accorgono di essere false | `M9.4` | Completata | Le finestre, i negativi, e la release v0.1 |
-| 9 — Le liste che si accorgono di essere false | `M9.5` | Proposta | La disciplina della suite: gli skip che si accorgono di essere saltati, e i test che aspettano un evento |
+| 9 — Le liste che si accorgono di essere false | `M9.5` | Implementata | La disciplina della suite: gli skip che si accorgono di essere saltati, e i test che aspettano un evento |
 | 9 — Le liste che si accorgono di essere false | `M9.6` | Implementata | Niente di Tommaso nel codice: ciò che ELA installa e serve non porta le macchine e l'account di chi l'ha scritta |
 | 9 — Le liste che si accorgono di essere false | `M9.7` | Proposta | Ogni blocco della guida che mostra un'uscita della CLI è confrontato con la CLI |
+| 9 — Le liste che si accorgono di essere false | `M9.8` | Proposta | Le attese che nessun elenco conosceva |
 | 10 — La percezione | `M10.1` | Completata | Perception Core: fondamenta |
 | 10 — La percezione | `M10.2` | Completata | Screen awareness: la prima lettura di contenuto |
 | 10 — La percezione | `M10.3` | Implementata | Comprendere ciò che si vede: il contesto che non costa niente, e il testo che non esce |
@@ -149,7 +150,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.11` | Proposta | Il browser sul PC: le capacità di M13.9 e M13.10 sul nodo Windows, e il verdetto che torna in busta |
 | 13 — Il permesso prima dell'azione | `M13.12` | Implementata | Le policy di §59: una policy che Tommaso si crea rende autonoma un'azione `MEDIUM`, a partire da `browser.guided` |
 | 13 — Il permesso prima dell'azione | `M13.13` | Implementata | I file dal browser: uno scaricamento è un `fs.write`, un caricamento un `fs.read` |
-| 13 — Il permesso prima dell'azione | `M13.13b` | Proposta | Uno scaricamento interrotto che a volte lascia il suo file a metà |
+| 13 — Il permesso prima dell'azione | `M13.13b` | Implementata | Uno scaricamento interrotto che a volte lascia il suo file a metà |
 | 13 — Il permesso prima dell'azione | `M13.14` | Implementata | Le policy di Tommaso arrivano alle azioni HIGH |
 | 13 — Il permesso prima dell'azione | `M13.15` | Proposta | Le policy di Tommaso arrivano al login e ai file dal browser |
 | 13 — Il permesso prima dell'azione | `M13.16` | Proposta | Il terminale sotto le policy di Tommaso, con un confine dimostrato |
@@ -184,8 +185,8 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **68** | `docs/adr/NNNN-*.md` |
-| Milestone | **104, di cui 81 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| ADR scritti | **70** | `docs/adr/NNNN-*.md` |
+| Milestone | **105, di cui 83 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **74** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **16** | `pyproject.toml` |
 | Port | **36** | i `Protocol` di `src/ela/ports.py` |
@@ -941,6 +942,8 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   senza di lei**. ***Il 2026-09-30*** la condizione d'ingresso non cambia, e il posto sì: dopo M13.11.
   ***Annotato il 2026-11-02***: dopo M14.7, che viene dopo M13.11 (la fila della 5.10).
   **Il controllo di mouse e tastiera sul PC è una milestone a sé**, da registrare quando M13.5 è chiusa.
+  ***Annotato il 2026-11-14*** (`m9.5-la-pulizia-della-suite`, decisione 5): ha un numero, **M13.19**, «Mouse e
+  tastiera sul PC», riservato in [`ROADMAP.md`](ROADMAP.md); il documento nasce quando tocca.
   E **M13.5 resta la capability** — mouse, tastiera, il Guardian, la verifica —, usabile con piani scritti
   a mano: il modello che guarda lo schermo e decide il gesto dopo è **M14.4**, subito dopo (5.12).
 - **M13.6 — spostare un lavoro già in corso da un nodo a un altro** (§15, §12 del design), il terzo
@@ -1431,20 +1434,22 @@ nuova. Un pagamento resta l'ultima parola. Il primo è il debito di ADR 0065 §6
 
 | Debito | Dichiarato | A carico | Stato |
 |---|---|---|---|
-| ADR 0041 §5 — i test che aspettano, e le difese che costano un terzo della suite | 2026-09-18 | della milestone sulla disciplina della suite | **aperto** |
-| ADR 0047 §18 — gli skip sul sistema che il test copre, che nessuno vede | 2026-09-24 | di M9.5, la milestone sulla disciplina della suite | **aperto** |
 | ADR 0048 §9 — il terminale su un nodo, ridichiarato | 2026-09-25 | di M13.7 | **aperto** |
 | ADR 0048 §10 — il residuo di Linux del terminale, ridichiarato | 2026-09-25 | di M13.7 | **aperto** |
-| ADR 0063 §12 — il costo dei test di M13.9, sopra la soglia di ADR 0052 §16 | 2026-10-13 | di M9.5, la milestone sulla disciplina della suite | **aperto** |
 | ADR 0066 §10 — il debito di ADR 0065 §6, ridichiarato — un processo del browser lasciato su ubuntu da un test non identificato | 2026-11-11 | di M13.11, la milestone del browser sul PC | **aperto** |
+| ADR 0069 §4 — il debito di ADR 0063 §12, ridichiarato — la parte di M13.9 senza binario, sopra la soglia | 2026-11-17 | di M9.8 | **aperto** |
+| ADR 0069 §5 — le attese che nessun elenco conosceva | 2026-11-17 | di M9.8 | **aperto** |
 | ADR 0035 §7 — i numeri in coda a `CONSTANTS` non contano più niente | 2026-09-09 | della milestone sulla disciplina della suite | saldato da ADR 0036 §10 |
 | ADR 0036 §12 — `PROVIDER_CALLED` non lo scrive nessuno | 2026-09-10 | di chi aggiungerà il prossimo `AuditEventType` | saldato da ADR 0037 §14 |
+| ADR 0041 §5 — i test che aspettano, e le difese che costano un terzo della suite | 2026-09-18 | della milestone sulla disciplina della suite | saldato da ADR 0069 §2 |
 | ADR 0044 §8 — il battito di `local`, e la prima vista che l'ha reso visibile | 2026-09-20 | della Fase 13 | saldato da ADR 0048 §2 |
 | ADR 0047 §16 — il surrogato isolato fuori dal piano | 2026-09-24 | di M13.3 | saldato da ADR 0048 §3 |
 | ADR 0047 §17 — i test di Windows che nessun job raccoglie | 2026-09-24 | di M13.3 | saldato da ADR 0048 §5 |
+| ADR 0047 §18 — gli skip sul sistema che il test copre, che nessuno vede | 2026-09-24 | di M9.5, la milestone sulla disciplina della suite | saldato da ADR 0069 §1 |
 | ADR 0052 §15 — il «ferma» a metà di uno step del browser | 2026-09-29 | di M6.3c | saldato da ADR 0054 §11 |
 | ADR 0053 §2 — il runner della CI, da fissare entro il 2026-10-19 | 2026-09-30 | di M6.3c | saldato da ADR 0054 §1 |
 | ADR 0054 §16 — il passo 8 della prova a mano, entro domenica 2026-10-04 | 2026-10-02 | del giro di domenica della prova di M6.3c, su `main` | saldato da ADR 0055 §7 |
+| ADR 0063 §12 — il costo dei test di M13.9, sopra la soglia di ADR 0052 §16 | 2026-10-13 | di M9.5, la milestone sulla disciplina della suite | ridichiarato in ADR 0069 §4 |
 | ADR 0065 §6 — un processo del browser lasciato su ubuntu da un test non identificato | 2026-10-14 | di M13.13, la milestone dei file dal browser | ridichiarato in ADR 0066 §10 |
 
 <!-- fine del blocco generato: i debiti datati -->

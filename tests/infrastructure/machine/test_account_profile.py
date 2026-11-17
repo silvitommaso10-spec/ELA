@@ -67,6 +67,7 @@ from ela.ports import (
     Secret,
 )
 from ela.testing.fakes import FakeStop
+from tests import machines
 
 VARIABLE = "ELA_BROWSER_PROFILE_DIR"
 
@@ -1187,7 +1188,7 @@ async def test_a_lock_left_by_a_process_that_is_gone_is_not_busy(tmp_path: Path)
     assert asked.of == [], "nothing is launched to ask about a process that is not there"
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="the system's own ps is POSIX's")
+@machines.needs(machines.POSIX, why="the system's own ps is POSIX's")
 async def test_a_lock_whose_pid_went_to_another_process_does_not_hold_the_folder(
     tmp_path: Path, installed: Path
 ) -> None:
@@ -1294,7 +1295,7 @@ async def test_what_the_adapter_has_in_flight_is_looked_at_again_once_the_system
     assert await made.occupied() == PROFILE_WINDOW, "what this adapter has comes first, as ever"
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="the system's own ps is POSIX's")
+@machines.needs(machines.POSIX, why="the system's own ps is POSIX's")
 async def test_the_command_line_of_a_process_is_asked_of_the_system(tmp_path: Path) -> None:
     """The one launch the adapter makes to look at a process: its arguments as the system has
     them — and nothing, for a process that is not there any more."""
@@ -1311,7 +1312,7 @@ async def test_the_command_line_of_a_process_is_asked_of_the_system(tmp_path: Pa
     assert await command_line(child.pid, environment) == ""
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="a program that begins with #! is POSIX's")
+@machines.needs(machines.POSIX, why="a program that begins with #! is POSIX's")
 async def test_a_system_that_cannot_be_asked_says_nothing_and_never_a_guess(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1349,7 +1350,7 @@ def started_as(program: Path) -> list[int]:
     return [int(line.split()[0]) for line in said.splitlines() if str(program) in line]
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="a program that begins with #! is POSIX's")
+@machines.needs(machines.POSIX, why="a program that begins with #! is POSIX's")
 async def test_a_process_that_is_not_there_is_an_answer_and_not_a_doubt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1738,7 +1739,7 @@ def test_what_a_field_holds_is_compared_whole_whatever_it_is() -> None:
 CLOSED = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="the system's own ps is POSIX's")
+@machines.needs(machines.POSIX, why="the system's own ps is POSIX's")
 async def test_the_processes_of_this_user_are_asked_of_the_system_with_their_command_lines() -> (
     None
 ):
@@ -1773,7 +1774,7 @@ print('   9     9 (ended)')
 """
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="a program that begins with #! is POSIX's")
+@machines.needs(machines.POSIX, why="a program that begins with #! is POSIX's")
 async def test_the_table_is_asked_for_this_user_alone_and_read_line_by_line(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1799,7 +1800,7 @@ async def test_the_table_is_asked_for_this_user_alone_and_read_line_by_line(
     )
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="a program that begins with #! is POSIX's")
+@machines.needs(machines.POSIX, why="a program that begins with #! is POSIX's")
 async def test_a_table_the_system_did_not_give_is_none_and_never_an_empty_one(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

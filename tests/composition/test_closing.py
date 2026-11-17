@@ -36,6 +36,7 @@ import pytest
 
 from ela.composition import Ela, Settings, build
 from ela.testing.fakes import FakeBrowser, FakePower
+from tests import machines
 from tests.browser_leftovers import left, scratch, sweep
 from tests.composition.closing import INTERRUPTED
 from tests.composition.support import create_schema, database_url, declare
@@ -44,7 +45,7 @@ CHILD = Path(__file__).with_name("closing.py")
 ROOT = CHILD.parents[2]
 GUARD_SECONDS = 60
 PAGE = b'<form><input id="nome" name="nome" disabled><button id="invia">Invia</button></form>'
-POSIX = pytest.mark.skipif(sys.platform == "win32", reason="a session and SIGINT are POSIX's")
+POSIX = machines.needs(machines.POSIX, why="a session and SIGINT are POSIX's")
 
 
 @pytest.fixture

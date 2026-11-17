@@ -54,7 +54,8 @@ job against ``make check-linux``, both at ``89efd0e``) — the skips each has an
 * **``/proc``**: the tests that read a process the way only Linux lets one
   (``test_nothing_left_behind.py``, ``test_agent_session.py``) are skipped here by ``sys.platform``,
   which this does not fake, and run there;
-* **``GITHUB_ACTIONS``**: ``test_permissions_bite.py`` runs only on a runner;
+* **``GITHUB_ACTIONS``**: ``test_permissions_bite.py`` ran only on a runner — taken away on
+  2026-11-17 (decision 95 of M9.5): the guard of ``tests/machines.py`` holds the same, test by test;
 * **the volume that tells the cases of a name apart**: a runner's does, and four tests of
   ``tests/composition/test_account_settings.py`` are skipped there and run here.
 

@@ -28,6 +28,7 @@ from ela.cli.errors import UNREACHABLE
 from ela.cli.output import EMPTY
 from ela.executive.runner import OUTCOMES
 from ela.tasks.ending import REASONED
+from tests.composition.support import _only_the_declared_environment  # noqa: F401 — the fixture
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "prova_m13_1c_m13_1d_m9_6.py"

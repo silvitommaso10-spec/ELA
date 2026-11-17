@@ -13,15 +13,13 @@ through ``/dev/fd/N`` is not. That is why the audio ELA plays has no name, and i
 
 from __future__ import annotations
 
-import platform
 from pathlib import Path
-
-import pytest
 
 from ela.infrastructure.machine import AFPLAY, OnlineSpeechCommand
 from ela.providers.elevenlabs import Synthesis
+from tests import machines
 
-pytestmark = pytest.mark.skipif(platform.system() != "Darwin", reason="afplay(1) is macOS's")
+pytestmark = machines.needs(machines.DARWIN, why="afplay(1) is macOS's")
 
 
 async def _never(text: str) -> Synthesis:  # pragma: no cover - available() never synthesises

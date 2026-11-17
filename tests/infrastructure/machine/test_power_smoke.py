@@ -9,11 +9,8 @@ the reader reads.
 from __future__ import annotations
 
 import os
-import platform
 import subprocess
 import time
-
-import pytest
 
 from ela.infrastructure.machine.darwin import POWER_TIMEOUT_SECONDS, pmset_source
 from ela.infrastructure.machine.windows import (
@@ -24,12 +21,13 @@ from ela.infrastructure.machine.windows import (
     spawn_powershell,
     without_module_path,
 )
+from tests import machines
 
 SMOKE_WAIT_SECONDS = 60.0
 """How long the smoke waits for a reading on the runner: a VM's cold PowerShell, not the PC's."""
 
 
-@pytest.mark.skipif(platform.system() != "Darwin", reason="pmset(1) is macOS's")
+@machines.needs(machines.DARWIN, why="pmset(1) is macOS's")
 async def test_pmset_answers_in_words_the_reader_can_read() -> None:
     assert await pmset_source() is not None
 
@@ -55,7 +53,7 @@ def what_the_pc_said() -> str:
     )
 
 
-@pytest.mark.skipif(platform.system() != "Windows", reason="PowerStatus is Windows's")
+@machines.needs(machines.WINDOWS, why="PowerStatus is Windows's")
 async def test_powershell_answers_in_words_the_reader_can_read() -> None:
     """ELA's launcher and environment (M12.3d), and **a wait of a minute, not ELA's five seconds**.
 

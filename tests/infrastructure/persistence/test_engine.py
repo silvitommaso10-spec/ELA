@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -19,6 +18,7 @@ from ela.infrastructure.persistence import (
     sync_url,
 )
 from ela.infrastructure.persistence.engine import DIRECTORY_MODE, is_memory
+from tests import machines
 from tests.contracts.implementations import MEMORY_URL
 from tests.infrastructure.persistence.conftest import create_schema
 
@@ -77,7 +77,7 @@ def test_ensure_directory_creates_the_parent(tmp_path: Path) -> None:
     assert directory.is_dir()
 
 
-@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits: Windows has no 0o700")
+@machines.needs(machines.POSIX, why="POSIX permission bits: Windows has no 0o700")
 def test_ensure_directory_creates_the_parent_privately(tmp_path: Path) -> None:
     """The mode is asserted where the mode exists, and *skipped out loud* where it does not.
 

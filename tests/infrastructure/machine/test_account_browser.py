@@ -76,9 +76,6 @@ judged = shell.judged
 
 SYSTEM = profile_browser.SYSTEM
 INSTALL = "uv run playwright install chromium"
-pytestmark = profile_browser.ON_A_MAC
-"""The one skip of the browser of the profile, derived from the product's own condition
-(``tests/profile_browser.py``; decision 27 of the review after the red CI of ``56c672c``)."""
 
 SENTINEL = "-".join(("SENTINEL", "typed", "in", "the", "field"))
 LOGIN = """

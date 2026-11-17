@@ -17,20 +17,16 @@ the contract. So: exit 0, valid JSON, known keys, and the values are whatever th
 from __future__ import annotations
 
 import json
-import platform
 import struct
 import subprocess  # noqa: S404 — this test *is* the one that starts the helper for real
 import sys
 import zlib
 from pathlib import Path
 
-import pytest
-
 from ela.infrastructure.machine import VISION_MODULE
+from tests import machines
 
-pytestmark = pytest.mark.skipif(
-    platform.system() != "Darwin", reason="the helper reads the macOS Vision framework"
-)
+pytestmark = machines.needs(machines.DARWIN, why="the helper reads the macOS Vision framework")
 
 KEYS = {"lines", "unsupported_languages"}
 

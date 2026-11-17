@@ -2,7 +2,7 @@
 
 The order itself is a decision of Tommaso's, and no line of the repository holds it. What is held
 here is that the roadmap cannot say something the milestone documents deny. The world is closed
-three ways (decision 5 of ``docs-roadmap``):
+four ways (the first three are decision 5 of ``docs-roadmap``):
 
 - every milestone document that is still a ``Proposta`` is an entry of the roadmap **exactly
   once** — in a stage (*tappa*) or outside the queue — and no entry is written twice;
@@ -10,7 +10,11 @@ three ways (decision 5 of ``docs-roadmap``):
   definition ``docs/STATO.md`` and the changelog read it with (``scripts/generate_stato.py``), and
   so is the title;
 - **every milestone id the roadmap names has a document or is reserved, never both**, and every
-  reserved number sits in a stage.
+  reserved number sits in a stage;
+- **every document still a** ``Proposta`` **has an «Ordine» entry, and that entry points here**
+  (decision 6 of ``m9.5-la-pulizia-della-suite``, 2026-11-14): the entry is read whole, with its
+  continuation lines, so that a sentence of order left in a document always says where the order
+  really lives.
 
 **Why the world starts from the proposals, and not from every document.** The milestones done
 before 2026-11-13 are in no stage — the first stage holds M13.14, the last one done, and nothing
@@ -54,6 +58,12 @@ ENTRY = re.compile(r"^- `(M\d+\.\d+[a-z]?)` — (\S+) — (.+)$")
 STAGE = re.compile(r"^### Tappa (\d+) — .+$")
 ROW = re.compile(r"^\| `(M\d+\.\d+[a-z]?)` \| (.+?) \| .+? \| (.+?) \|$")
 SECTION = re.compile(r"§(\d+)")
+ORDER: Final = "- **Ordine:**"
+"""The head entry of a milestone document that says where it sits."""
+CONTINUATION: Final = "  "
+"""A line of the same entry: the head's bullets wrap with two spaces."""
+TO_THE_ROADMAP: Final = "](../ROADMAP.md)"
+"""The link a milestone document writes to the roadmap, from ``docs/milestones/``."""
 SPEC_HEADING = re.compile(r"^## (\d+)\. ", re.MULTILINE)
 
 
@@ -212,6 +222,32 @@ def unplaced(found: Iterable[Entry], rows: Iterable[Reservation]) -> set[str]:
     return {row.identifier for row in rows} - in_a_stage
 
 
+def order_entry(text: str) -> str | None:
+    """The «Ordine» entry of a milestone document, whole: its line and its continuation lines.
+
+    ``None`` when the document has none. Only the first is read: the head has one.
+    """
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if line.startswith(ORDER):
+            kept = [line]
+            for following in lines[index + 1 :]:
+                if not following.startswith(CONTINUATION):
+                    break
+                kept.append(following)
+            return "\n".join(kept)
+    return None
+
+
+def not_pointing_here(texts: Mapping[str, str]) -> set[str]:
+    """The documents (``id -> text``) with no «Ordine» entry, or one that does not link here."""
+    return {
+        name
+        for name, text in texts.items()
+        if (entry := order_entry(text)) is None or TO_THE_ROADMAP not in entry
+    }
+
+
 def numbered_without_gaps(numbers: list[int]) -> bool:
     """Stages are numbered 1, 2, 3… in the order they are written, and no number is skipped."""
     return bool(numbers) and numbers == list(range(1, len(numbers) + 1))
@@ -290,6 +326,19 @@ def test_every_id_has_a_document_or_is_reserved_never_both(documents: dict[str, 
     assert unaccounted(mentioned(text), documents, rows) == set()
     assert both(documents, rows) == set()
     assert unplaced(entries(text), rows) == set()
+
+
+def test_every_proposal_s_order_entry_points_to_the_roadmap(
+    generator: ModuleType, documents: dict[str, Document]
+) -> None:
+    proposals = {
+        name: (ROOT / "docs" / "milestones" / f"{name}.md").read_text(encoding="utf-8")
+        for name, document in documents.items()
+        if document.state == generator.PROPOSED
+    }
+
+    assert proposals
+    assert not_pointing_here(proposals) == set()
 
 
 def test_the_stages_are_numbered_from_one_without_gaps() -> None:
@@ -409,3 +458,40 @@ def test_a_stage_skipped_or_a_count_that_does_not_start_at_one_is_seen() -> None
 
 def test_a_section_the_spec_does_not_have_or_no_section_at_all_is_seen() -> None:
     assert unknown_sections(reservations(BUILT), SPEC_BUILT) == {"M1.4": (1, 99), "M1.8": ()}
+
+
+ORDER_BUILT: Final = {
+    "M1.1": (
+        "# M1.1 — Il primo\n\n- **Stato:** **Proposta**.\n"
+        "- **Ordine:** **dopo M1.0**, come diceva la fila.\n"
+        "  ***Dal 2026-11-13 l'ordine vive in [`docs/ROADMAP.md`](../ROADMAP.md)***.\n"
+        "\n## Obiettivo\n"
+    ),
+    "M1.2": "# M1.2 — Il secondo\n\n- **Stato:** **Proposta**.\n\n## Obiettivo\n",
+    "M1.3": (
+        "# M1.3 — Il terzo\n\n- **Stato:** **Proposta**.\n"
+        "- **Ordine:** **non deciso.**\n  Lo decide Tommaso.\n\n## Obiettivo\n"
+    ),
+    "M1.4": (
+        "# M1.4 — Il quarto\n\n- **Stato:** **Proposta**.\n"
+        "- **Ordine:** **non deciso.**\n- **ADR:** nessuno.\n\n"
+        "Altrove nel testo, [`docs/ROADMAP.md`](../ROADMAP.md), che non è la riga «Ordine».\n"
+    ),
+    "M1.5": (
+        "# M1.5 — Il quinto\n\n- **Stato:** **Proposta**.\n"
+        "- **Ordine:** l'ordine vive in [`docs/ROADMAP.md`](../ROADMAP.md).\n"
+    ),
+    "M1.6": (
+        "# M1.6 — Il sesto\n\n- **Stato:** **Proposta**.\n\n"
+        "La riga **Ordine:** non c'è; [`docs/ROADMAP.md`](../ROADMAP.md) sì.\n"
+    ),
+}
+
+
+def test_an_order_entry_missing_or_not_pointing_to_the_roadmap_is_seen() -> None:
+    """M1.2 has none; M1.3 has no link; M1.4 links in another paragraph; M1.6 only in prose.
+
+    M1.1 links on a continuation line and M1.5 on the first: both are read as pointing here.
+    """
+    assert not_pointing_here(ORDER_BUILT) == {"M1.2", "M1.3", "M1.4", "M1.6"}
+    assert order_entry(ORDER_BUILT["M1.4"]) == "- **Ordine:** **non deciso.**"

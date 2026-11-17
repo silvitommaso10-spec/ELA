@@ -76,7 +76,7 @@ from ela.tools.verifiers import (
     BROWSER_EXPECT_VISIBLE,
     BrowserActVerifier,
 )
-from tests import profile_browser
+from tests import machines, profile_browser
 from tests.architecture.test_every_use_of_a_page_asks_the_boundary import ASKED_BEFORE_ONLY
 from tests.browser_leftovers import running
 from tests.infrastructure.machine import test_account_browser as account
@@ -762,7 +762,9 @@ async def test_a_read_of_a_page_that_opens_another_by_itself_succeeds_and_says_s
 ) -> None:
     """Decision 123: a step does not fail because a page tried to open another — a site that
     opens a window by itself would fail a read that worked. But the result says it, with the
-    origin alone, or that the page had asked for nothing yet."""
+    origin alone, or that the page had asked for nothing yet. **The state first**, with its reason
+    (M13.4g, decision 11): a read that failed says why, not a ``KeyError`` on a page it never
+    wrote."""
     from ela.tools.browser import ANOTHER_PAGE, ASKED_FOR_NOTHING
 
     a, off = two(served)
@@ -782,9 +784,10 @@ async def test_a_read_of_a_page_that_opens_another_by_itself_succeeds_and_says_s
     arguments = {"site": "sito.example", "path": "/", "selector": "h1", "purpose": "x"}
 
     result = await tool.execute(decision(BROWSER_READ), arguments, FakeStop())
+    assert result.status is ExecutionStatus.SUCCEEDED, why_not(result)
     found = await another(browser, str(result.output["page"]))
 
-    assert result.status is ExecutionStatus.SUCCEEDED and result.output["text"] == "Letto"
+    assert result.output["text"] == "Letto"
     assert result.output[ANOTHER_PAGE] in {off.origin, ASKED_FOR_NOTHING}
     assert "k=1" not in str(result.output), "the origin, and nothing else of that address"
     assert found.address == off.origin + "/x?k=1" and off.requests == []
@@ -1259,7 +1262,7 @@ asyncio.run(asyncio.wait_for(main(), 90))
 """
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="a signal nobody can refuse is POSIX's")
+@machines.needs(machines.POSIX, why="a signal nobody can refuse is POSIX's")
 def test_a_driver_that_dies_with_a_request_paused_lets_it_never_leave(served: list[Site]) -> None:
     """Criterion 9. In a process of its own, as the test of the signals has one: the request for
     the other site is paused and nobody answers; the driver is killed. The browser dies with
@@ -1581,7 +1584,7 @@ async def test_a_tool_on_a_page_that_is_elsewhere_reads_nothing_and_says_where_b
 OPENSSL = shutil.which("openssl")
 
 
-@pytest.mark.skipif(OPENSSL is None, reason="the certificate of this test is made with openssl")
+@machines.needs(machines.OPENSSL, why="the certificate of this test is made with openssl")
 async def test_a_certificate_the_browser_does_not_accept_opens_no_page_whatever_the_driver_reads(
     served: list[Site], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -10,15 +10,13 @@ it runs on, and the adapter's ``available()`` is precisely the answer that costs
 
 from __future__ import annotations
 
-import platform
 from datetime import timedelta
 from pathlib import Path
 
-import pytest
-
 from ela.infrastructure.machine import SAY, SaySpeechCommand
+from tests import machines
 
-pytestmark = pytest.mark.skipif(platform.system() != "Darwin", reason="say(1) is macOS's")
+pytestmark = machines.needs(machines.DARWIN, why="say(1) is macOS's")
 
 
 async def test_the_helper_is_apple_s_at_an_absolute_path_and_executable() -> None:

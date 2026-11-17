@@ -33,6 +33,7 @@ from ela.cli.client import Unreachable
 from ela.cli.output import EMPTY
 from ela.cli.tasks import HALT_WORDS, RUN_LABELS, _detail, _ran, _results
 from ela.domain import Halt
+from tests.composition.support import _only_the_declared_environment  # noqa: F401 — the fixture
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "prova_m6_3c.py"

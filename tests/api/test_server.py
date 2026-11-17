@@ -20,6 +20,7 @@ from collections.abc import (
     Callable,
     Iterator,
 )
+from datetime import timedelta
 from typing import Any, cast
 
 import pytest
@@ -32,6 +33,7 @@ from ela.composition.settings import (
     ApiSettings,
 )
 from ela.testing.fakes import FakeBrowser, FakePower
+from tests import machines
 from tests.api.test_nodes import enrolled
 from tests.composition.support import create_schema
 
@@ -149,34 +151,63 @@ def test_a_start_with_no_node_variable_says_nothing_about_them(
     assert "NODE_" not in capsys.readouterr().err
 
 
-async def test_a_stop_wakes_the_node_that_waits(app: Any, client: AsyncClient, ela: Ela) -> None:
+CEILING = 20.0
+"""The ceiling of a wait for an event of the server: it fires only when something is already wrong.
+Never the measure of anything."""
+
+
+async def test_a_stop_wakes_the_node_that_waits(
+    app: Any, client: AsyncClient, ela: Ela, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Criterion 33 (dec. I): a node holding ``POST /nodes/work`` is answered at the instant of the
     stop, not at the end of its window.
 
     The measurement behind it: with the plain uvicorn server the lifespan fires **after** the
     requests in flight are awaited, so the handler finished its own wait (3.56 s against a three
     second handler) — the signal handler is the one place early enough. Here the event is raised
-    while a request is genuinely in flight, and what is asserted is the *timing*: the answer comes
-    back in a fraction of the window, which is the difference between being told and waiting it out.
+    while a request is genuinely in flight, and what is asserted is **what the handler did**, not
+    how long it took (ADR 0026 §6; ADR 0041 §5, paid by M9.5): the product says no «I am waiting»,
+    so its reading of the service, ``_taken``, is wrapped — by its name, so a name that changed is a
+    red, and calling the real one. The first reading is the event «in flight, with nothing to hand
+    out»; then the stop; and the handler read **once more and answered** — woken by the stop. One
+    that let its window run would never answer here: the window and the interval are an hour, and
+    the ceiling of the test fires first.
 
     What this cannot show in one process is the signal itself; that half is
     ``test_the_first_signal_raises_the_stop_and_stops_the_server_and_the_second_the_hurry`` —
     since M13.4e's second part the handler is ELA's and not uvicorn's —, and the two together are
     the criterion.
     """
+    from ela.api import nodes
+
     _, headers = await enrolled(client, "TRUSTED", available_tools=["core-echo"])
-    window = ela.settings.core.node_poll.total_seconds()
-    loop = asyncio.get_running_loop()
-    started = loop.time()
+    # A window and an interval between two readings that nothing in this test reaches: **only the
+    # stop can end the request**, and one the stop did not wake is red at the ceiling.
+    monkeypatch.setattr(
+        type(ela.settings.core), "node_poll", property(lambda _: timedelta(hours=1))
+    )
+    monkeypatch.setattr(nodes, "WORK_REREAD_INTERVAL", timedelta(hours=1))
+    stopping: asyncio.Event = app.state.stopping
+    read: list[bool] = []
+    in_flight = asyncio.Event()
+    real = nodes._taken
+
+    async def taken(*arguments: Any, **named: Any) -> Any:
+        read.append(stopping.is_set())
+        answer = await real(*arguments, **named)
+        in_flight.set()
+        return answer
+
+    monkeypatch.setattr(nodes, "_taken", taken)
     waiting = asyncio.create_task(client.post("/nodes/work", headers=headers))
-    await asyncio.sleep(0.05)
+    await asyncio.wait_for(in_flight.wait(), timeout=CEILING)
     assert not waiting.done()  # it is holding the request, with nothing to hand out
 
-    app.state.stopping.set()
-    answered = await asyncio.wait_for(waiting, timeout=window * 5)
+    stopping.set()
+    answered = await asyncio.wait_for(waiting, timeout=CEILING)
 
     assert answered.status_code == 204
-    assert loop.time() - started < window / 2
+    assert read == [False, True], "one reading in flight, and one when the stop woke it"
 
 
 def test_a_socket_is_bound_where_it_is_asked_and_refused_where_the_address_is_not_here() -> None:
@@ -419,7 +450,7 @@ def test_a_browser_that_closed_by_itself_is_not_mentioned_at_the_close(
 # The stop signals are ELA's (M13.4e, the second part: decisions 55 and 56)
 # ----------------------------------------------------------------------------------------
 
-POSIX = pytest.mark.skipif(sys.platform == "win32", reason="SIGHUP is POSIX's")
+POSIX = machines.needs(machines.POSIX, why="SIGHUP is POSIX's")
 
 
 def numbered(names: list[str]) -> list[int]:

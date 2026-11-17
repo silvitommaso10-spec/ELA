@@ -97,6 +97,7 @@ from ela.tools.verifiers import (
     BrowserActVerifier,
     BrowserReadVerifier,
 )
+from tests import machines
 from tests.browser_leftovers import RAN_LAST, collected, left, scratch, sweep
 
 INSTALL = "uv run playwright install --only-shell chromium"
@@ -1807,7 +1808,7 @@ asyncio.run(main())
 """
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="a process group and SIGINT are POSIX's")
+@machines.needs(machines.POSIX, why="a process group and SIGINT are POSIX's")
 def test_a_sigint_to_the_process_group_does_not_close_the_page(served: list[Site]) -> None:
     web = site(served, {"/": (200, {}, "<title>t</title>")})
     holder = subprocess.Popen(

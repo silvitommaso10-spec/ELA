@@ -18,11 +18,10 @@ from pathlib import Path
 
 import pytest
 
+from tests import machines
 from tests.browser_leftovers import PROFILE, Left, left, named, scratch, sweep
 
-pytestmark = pytest.mark.skipif(
-    sys.platform == "win32", reason="ps, SIGSTOP and SIGKILL are POSIX's"
-)
+pytestmark = machines.needs(machines.POSIX, why="ps, SIGSTOP and SIGKILL are POSIX's")
 
 SLEEPS = "import time; time.sleep(600)"
 HOLDS = (

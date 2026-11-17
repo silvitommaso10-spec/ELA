@@ -42,7 +42,7 @@ from pathlib import Path
 import pytest
 
 from ela.infrastructure.machine.account import SUPPORTED
-from tests import profile_browser, profile_browser_cases
+from tests import machines, profile_browser, profile_browser_cases
 from tests.infrastructure.machine import test_account_browser as account
 from tests.infrastructure.machine import test_browser as shell
 from tests.infrastructure.machine import test_the_boundary as bounded
@@ -64,17 +64,23 @@ def it_fell() -> bool:
 
 
 def derived(node: pytest.Item) -> list[pytest.Mark]:
-    """The marks of ``node`` that are the one skip of the browser of the profile."""
-    return [mark for mark in node.iter_markers("skipif") if mark == profile_browser.ON_A_MAC.mark]
+    """The marks of ``node`` that say it needs the browser of the profile."""
+    return [
+        mark for mark in node.iter_markers(machines.MARK) if machines.PROFILE_BROWSER in mark.args
+    ]
 
 
-def test_the_skip_is_the_product_s_own_condition_and_no_system_written_in_a_test() -> None:
+def test_the_mark_is_the_product_s_own_condition_and_no_system_written_in_a_test() -> None:
     """Skipped exactly where the adapter would raise ``BrowserUnsupported`` — and run where it
-    would not: there the exception, if it comes, is a red."""
-    assert profile_browser.where_it_is("Linux").mark.args == (True,)
-    assert profile_browser.where_it_is("Windows").mark.args == (True,)
-    assert profile_browser.where_it_is(SUPPORTED).mark.args == (False,)
-    assert profile_browser.ON_A_MAC.mark == profile_browser.where_it_is(account.SYSTEM).mark
+    would not: there the exception, if it comes, is a red. The condition is the one place's
+    (``tests/machines.py``, M9.5), and it must hold where the product has the browser."""
+    condition = machines.PROFILE_BROWSER
+
+    assert profile_browser.ON_A_MAC.mark.args == (condition,)
+    assert not condition.required(machines.Machine("Linux", "linux", runner=True))
+    assert not condition.required(machines.Machine("Windows", "win32", runner=True))
+    assert condition.required(machines.Machine(SUPPORTED, "darwin", runner=False))
+    assert (condition.read() is None) is (account.SYSTEM == SUPPORTED)
 
 
 def test_a_test_that_takes_the_browser_of_the_profile_is_marked_and_wrote_nothing(
@@ -262,8 +268,10 @@ def test_after_a_test_that_took_the_fixture_the_browser_is_not_built_any_more(bu
 
 def test_the_conditions_once_written_by_hand_are_the_one_source() -> None:
     """The three places that each wrote ``SYSTEM != "Darwin"`` (decision 27: the tests beside pass
-    to the same source)."""
-    assert account.pytestmark is profile_browser.ON_A_MAC
+    to the same source). Since M9.5 the module of the browser of the profile carries no mark of its
+    own: each of its tests is marked where it takes the browser, and the one that only reads the
+    folder of the registry runs everywhere (decision 66 of the review at ``ad1826c``)."""
+    assert not hasattr(account, "pytestmark")
     assert bounded.ON_A_MAC is profile_browser.ON_A_MAC
     assert gate.ON_A_MAC is profile_browser.ON_A_MAC
     assert account.SYSTEM is profile_browser.SYSTEM
@@ -272,18 +280,25 @@ def test_the_conditions_once_written_by_hand_are_the_one_source() -> None:
 class Item:
     """What the collection hands to the hook, as far as the hook reads it."""
 
-    def __init__(self, *fixtures: str) -> None:
+    def __init__(self, *fixtures: str, carrying: pytest.MarkDecorator | None = None) -> None:
         self.fixturenames = list(fixtures)
-        self.marks: list[pytest.MarkDecorator] = []
+        self.marks: list[pytest.MarkDecorator] = [] if carrying is None else [carrying]
 
     def add_marker(self, mark: pytest.MarkDecorator) -> None:
         self.marks.append(mark)
 
+    def iter_markers(self, name: str) -> list[pytest.Mark]:
+        return [one.mark for one in self.marks if one.name == name]
 
-def test_the_collection_marks_every_test_whose_fixtures_reach_the_one_fixture() -> None:
+
+def test_the_collection_marks_every_test_whose_fixtures_reach_the_one_fixture_once() -> None:
+    """Once: a test that carries the mark already — a parameter of a fixture that asks for the
+    folder by name — is not marked again (decision 64: nobody carries it twice)."""
     takes, does_not, no_fixtures = Item("served", profile_browser.TAKEN), Item("served"), object()
+    carried = Item(profile_browser.TAKEN, carrying=profile_browser.ON_A_MAC)
 
-    profile_browser.marked([takes, does_not, no_fixtures])
+    profile_browser.marked([takes, does_not, no_fixtures, carried])
 
     assert takes.marks == [profile_browser.ON_A_MAC]
     assert does_not.marks == []
+    assert carried.marks == [profile_browser.ON_A_MAC]

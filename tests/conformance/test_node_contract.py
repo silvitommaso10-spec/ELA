@@ -39,7 +39,6 @@ driver of a real node, on its machine, is what counts.
 
 from __future__ import annotations
 
-import os
 from collections.abc import Mapping
 from datetime import timedelta
 from pathlib import Path
@@ -58,6 +57,7 @@ from ela.domain import (
     TaskId,
 )
 from ela.tools.verifiers import SPEECH_TEXT_MATCHES, SPEECH_TOOK_REAL_TIME
+from tests import machines
 from tests.api.support import echo_plan, note_plan
 from tests.conformance.driver import Conformance, NodeDriver, NodeKit, needs
 from tests.conformance.fake_node import FAKE
@@ -84,20 +84,31 @@ depend on the runner the suite happens to run on (ADR 0031 §3). The third, ``wi
 same driver naming Windows (M12.4 dec. G)."""
 
 
-@pytest.fixture(params=KITS, ids=lambda kit: kit.name)
+def with_its_needs(one: NodeKit) -> Any:
+    """A kit as a parameter, with what it needs of the machine: the macos-node kit writes its secret
+    with ``os.fchmod``, which only a POSIX kernel has."""
+    if one is MACOS:
+        return pytest.param(
+            one,
+            id=one.name,
+            marks=machines.needs(
+                machines.POSIX, why="the macos-node kit writes its secret with os.fchmod"
+            ),
+        )
+    return pytest.param(one, id=one.name)
+
+
+@pytest.fixture(params=[with_its_needs(one) for one in KITS])
 def kit(request: pytest.FixtureRequest) -> NodeKit:
     """A kit, and the one kit a Windows runner cannot build, declared (M12.4 dec. G).
 
     ``macos-node`` writes its secret with the ``BITS`` mode, and on a PC Python 3.12 has no
-    ``os.fchmod``: P1 saw its stories fall at that line. Skipped here, where the summary names it,
-    in the form of ``tests/infrastructure/persistence/test_engine.py:80`` — not as a
-    ``pytest.param`` in :data:`KITS`, which has no ``name`` for ``test_unsupported.py`` to read, and
-    not in the kit's ``unsupported`` map, which speaks of the protocol and not of the machine the
-    suite runs on.
+    ``os.fchmod``: P1 saw its stories fall at that line. It needs a POSIX kernel, said **in the one
+    place** (``tests/machines.py``, M9.5) on its parameter — not in :data:`KITS`, which
+    ``test_unsupported.py`` reads by name, and not in the kit's ``unsupported`` map, which speaks
+    of the protocol and not of the machine the suite runs on.
     """
     chosen: NodeKit = request.param
-    if os.name == "nt" and chosen is MACOS:
-        pytest.skip("POSIX permission bits: the macos-node kit writes its secret with os.fchmod")
     return chosen
 
 

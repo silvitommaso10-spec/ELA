@@ -23,12 +23,13 @@ import pytest
 from ela.composition.node import PermissionMode
 from ela.node import NodeIdentity, read_identity, write_identity
 from ela.node.state import DIRECTORY_MODE, STATE_FILE, STATE_MODE
+from tests import machines
 
 SECRET = "tanto-lungo-quanto-un-token-urlsafe-di-32-byte"  # pragma: allowlist secret
 IDENTITY = NodeIdentity(device_id="9f0d2a6e-0000-4000-8000-000000000001", secret=SECRET)
 
-POSIX_WRITER = pytest.mark.skipif(
-    os.name == "nt", reason="the BITS writer is POSIX's: Windows has no fchmod and no O_NOFOLLOW"
+POSIX_WRITER = machines.needs(
+    machines.POSIX, why="the BITS writer is POSIX's: Windows has no fchmod and no O_NOFOLLOW"
 )
 
 
@@ -42,7 +43,7 @@ def mode(request: pytest.FixtureRequest) -> PermissionMode:
     return chosen
 
 
-@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits: Windows has no 0o600")
+@machines.needs(machines.POSIX, why="POSIX permission bits: Windows has no 0o600")
 def test_the_secret_is_0o600_from_the_first_byte_even_under_a_permissive_umask(
     tmp_path: Path,
 ) -> None:

@@ -19,6 +19,7 @@ from typing import Any
 
 import pytest
 
+from tests.composition.support import _only_the_declared_environment  # noqa: F401 — the fixture
 from tests.docs.test_prova_m6_3c import SCRIPT
 
 TASK = "11111111-1111-4111-8111-111111111111"

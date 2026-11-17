@@ -26,6 +26,7 @@ from ela.node import (
 from ela.node.runner import NEVER_STOPPED
 from ela.node.state import STATE_FILE
 from ela.ports import WireCode
+from tests import machines
 from tests.node.support import dropped, ok, refused, replies, status, world
 
 BORN = {
@@ -35,9 +36,8 @@ BORN = {
 }
 
 
-@pytest.mark.skipif(
-    os.name == "nt",
-    reason="POSIX permission bits: a world named Darwin writes its secret with fchmod",
+@machines.needs(
+    machines.POSIX, why="POSIX permission bits: a world named Darwin writes its secret with fchmod"
 )
 async def test_a_first_run_enrols_writes_the_identity_and_then_starts_asking(
     tmp_path: Path,

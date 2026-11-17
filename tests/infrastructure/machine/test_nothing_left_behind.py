@@ -30,10 +30,9 @@ from pathlib import Path
 
 import pytest
 
+from tests import machines
 from tests.browser_leftovers import collected, running, scratch
 from tests.infrastructure.machine import test_browser as shell
-
-LINUX = Path("/proc").is_dir()
 
 
 @pytest.fixture
@@ -79,7 +78,7 @@ def test_a_process_that_is_gone_is_named_as_gone() -> None:
     assert shell.command_line(2**22 + 12345) == "(gone)"
 
 
-@pytest.mark.skipif(not LINUX, reason="only Linux has /proc")
+@machines.needs(machines.PROC, why="only Linux has /proc")
 def test_on_linux_the_command_line_is_read_from_proc() -> None:
     raw = Path(f"/proc/{os.getpid()}/cmdline").read_bytes()
 
@@ -110,7 +109,7 @@ def test_a_process_that_ended_and_was_not_collected_is_named_all_the_same(
     assert shell.command_line(ended.pid) not in ("", "(gone)")
 
 
-@pytest.mark.skipif(not LINUX, reason="only Linux keeps no command line for it")
+@machines.needs(machines.PROC, why="only Linux keeps no command line for it")
 def test_on_linux_it_is_named_by_its_state_and_by_the_parent_that_should_collect_it(
     ended: subprocess.Popen[bytes],
 ) -> None:

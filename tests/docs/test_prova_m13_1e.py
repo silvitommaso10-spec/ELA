@@ -32,6 +32,7 @@ import pytest
 from ela.api import companion, console
 from ela.cli.tasks import ROLE_WORDS as CLI_ROLE_WORDS
 from tests.api.ends import STOP_WORDS
+from tests.composition.support import _only_the_declared_environment  # noqa: F401 — the fixture
 from tests.docs.real_ends import HANDS, Real, Recorded, changed, record, todo_of
 
 ROOT = Path(__file__).resolve().parents[2]

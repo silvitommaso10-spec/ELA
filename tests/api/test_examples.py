@@ -172,10 +172,12 @@ def test_every_example_explains_itself() -> None:
     brought the four of section 30 — a download as you that replaces a file, a download outside the
     scope, an upload, and the same upload as you; forty-nine since M14.6b, which brought the plan of
     section 31 that ELA accepts and denies at the gate: a step whose model_hint names a model the
-    list no longer has; sixty since M13.14, the eleven plans of the hand test of section 32.
+    list no longer has; sixty since M13.14, the eleven plans of the hand test of section 32;
+    sixty-three since M13.13b, the three downloads of section 33 — the two browsers, and the one the
+    time of the tool cuts short.
     """
     found = sorted(EXAMPLES.glob("*.json"))
-    assert len(found) == 60, [path.name for path in found]
+    assert len(found) == 63, [path.name for path in found]
     for path in found:
         plan = json.loads(path.read_text(encoding="utf-8"))
         assert NOTE in plan, path.name

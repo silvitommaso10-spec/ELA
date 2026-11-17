@@ -14,7 +14,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-import os
 import subprocess
 import sys
 import uuid
@@ -39,7 +38,6 @@ from ela.infrastructure.machine.agent import (
     SDK_NAMES,
     ClaudeAgentSession,
     _changed,
-    bundled_binary,
     closed_environment,
     launcher_text,
     named_tools,
@@ -60,7 +58,7 @@ from ela.tools.guided import (
 )
 from ela.tools.guided import ACT_TOOL as ACT
 from ela.tools.guided import READ_TOOL as READ
-from tests.tools.test_terminal_limits import fired, skip_problems
+from tests import machines
 
 SENTINEL = "ELA_SENTINEL_OF_M14_3"
 TOKEN = "t" * 43
@@ -308,8 +306,6 @@ def _host(
 # The dry run: the binary of the SDK on a fake model on loopback
 # ----------------------------------------------------------------------------------------
 
-RUNNABLE = os.access(bundled_binary(), os.X_OK) and sys.platform != "win32"
-NO_BINARY = "the binary of Claude Code that the SDK's wheel carries is not on this machine"
 NO_PROC = (
     "only Linux hands a process the environment of another, in /proc: macOS keeps it out of "
     "KERN_PROCARGS2 and of ps -E (measured on the Mac, 2026-10-09)"
@@ -420,7 +416,7 @@ async def a_dry_session(
     return end, seen, gestures, calls, tmp_path / "sessions" / str(planned.session)
 
 
-@pytest.mark.skipif(not RUNNABLE, reason=NO_BINARY)
+@machines.needs(machines.CLAUDE_CODE)
 async def test_the_real_binary_starts_with_the_two_tools_makes_a_gesture_and_ends_closed(
     tmp_path: Path,
 ) -> None:
@@ -435,7 +431,7 @@ async def test_the_real_binary_starts_with_the_two_tools_makes_a_gesture_and_end
     assert not folder.exists()
 
 
-@pytest.mark.skipif(not RUNNABLE, reason=NO_BINARY)
+@machines.needs(machines.CLAUDE_CODE)
 async def test_a_session_with_the_profile_offers_three_tools_and_the_real_binary_lists_them(
     tmp_path: Path,
 ) -> None:
@@ -452,8 +448,8 @@ async def test_a_session_with_the_profile_offers_three_tools_and_the_real_binary
     assert not folder.exists()
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason=NO_PROC)
-@pytest.mark.skipif(not RUNNABLE, reason=NO_BINARY)
+@machines.needs(machines.LINUX_KERNEL, why=NO_PROC)
+@machines.needs(machines.CLAUDE_CODE)
 async def test_the_process_of_a_session_sees_nothing_of_ela_s_environment(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -473,30 +469,7 @@ async def test_the_process_of_a_session_sees_nothing_of_ela_s_environment(
     assert SENTINEL not in seen
 
 
-@pytest.mark.parametrize(
-    ("test", "kernel", "absent"),
-    [
-        (test_the_process_of_a_session_sees_nothing_of_ela_s_environment, "linux", NO_PROC),
-    ],
-    ids=["environment-on-linux"],
-)
-def test_the_reading_of_the_environment_is_never_skipped_on_linux_and_elsewhere_says_why(
-    test: Any, kernel: str, absent: str
-) -> None:
-    assert skip_problems(test, kernel, absent) == []
-
-
-@pytest.mark.parametrize(
-    "test",
-    [test_the_real_binary_starts_with_the_two_tools_makes_a_gesture_and_ends_closed],
-)
-def test_the_real_binary_is_never_skipped_where_the_suite_runs(test: Any) -> None:
-    """The SDK's wheel carries the binary on macOS and on Linux, the two systems of ``make check``:
-    a binary missing there is a skip that would hide the dry run."""
-    assert sys.platform == "win32" or fired(test) == []
-
-
-@pytest.mark.skipif(not RUNNABLE, reason=NO_BINARY)
+@machines.needs(machines.CLAUDE_CODE)
 async def test_the_real_binary_stopped_during_a_gesture_ends_and_leaves_nothing(
     tmp_path: Path,
 ) -> None:
@@ -522,7 +495,7 @@ async def test_the_real_binary_stopped_during_a_gesture_ends_and_leaves_nothing(
     assert not (tmp_path / "sessions" / str(planned.session)).exists()
 
 
-@pytest.mark.skipif(not RUNNABLE, reason=NO_BINARY)
+@machines.needs(machines.CLAUDE_CODE)
 async def test_a_launched_session_writes_its_pid_beside_the_launcher(tmp_path: Path) -> None:
     """Decision 34 (a): the pid of the process the SDK started, in the session's folder, so that a
     start-up after a crash finds it."""
@@ -547,7 +520,7 @@ async def test_a_launched_session_writes_its_pid_beside_the_launcher(tmp_path: P
     assert written == str(process)
 
 
-@pytest.mark.skipif(not RUNNABLE, reason=NO_BINARY)
+@machines.needs(machines.CLAUDE_CODE)
 async def test_after_the_sweep_the_session_of_a_step_left_by_a_crash_starts(
     tmp_path: Path,
 ) -> None:
@@ -572,7 +545,7 @@ async def test_after_the_sweep_the_session_of_a_step_left_by_a_crash_starts(
     assert end.subtype == "success", end
 
 
-@pytest.mark.skipif(not RUNNABLE, reason=NO_BINARY)
+@machines.needs(machines.CLAUDE_CODE)
 async def test_the_model_receives_the_grammar_of_a_selector_with_the_tools(tmp_path: Path) -> None:
     """What the model receives, read on the fake model: the description of ``act`` in every call
     carries the grammar — the binary of the SDK sends what the adapter declares."""

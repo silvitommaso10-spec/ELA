@@ -18,8 +18,6 @@ its own code.
 
 from __future__ import annotations
 
-import sys
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -29,23 +27,12 @@ from ela.composition import ConfigurationError, NodeConfig, Settings
 from ela.composition.settings import AccountSettings
 from ela.testing.fakes import FakeClock
 from ela.tools.vault import UNDECLARED, VaultDoor, VaultProblem
+from tests import machines
 from tests.composition.support import CAPTURES, FS_ROOT, WORKSPACE, declare
 
 PROFILE = "ELA_BROWSER_PROFILE_DIR"
 PROGRAM = "ELA_VAULT_PROGRAM"
 STATE = "ELA_NODE_STATE_DIR"
-
-
-def _ignores_case() -> bool:
-    """Whether the volume these tests build their folders on holds one folder under two
-    spellings: asked of the volume, by making a folder and looking for it in capitals."""
-    with tempfile.TemporaryDirectory() as made:
-        (Path(made) / "a-name").mkdir()
-        return (Path(made) / "A-NAME").is_dir()
-
-
-IGNORES_CASE = _ignores_case()
-ONE_SPELLING = "this volume tells the cases of a name apart: a folder has one spelling on it"
 
 
 def loaded(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **extra: str) -> Settings:
@@ -244,7 +231,7 @@ def test_a_folder_beside_the_two_that_are_copied_is_accepted(
     assert loaded(monkeypatch, tmp_path, **{PROFILE: str(beside)}).accounts.browser_profile_dir
 
 
-@pytest.mark.skipif(not IGNORES_CASE, reason=ONE_SPELLING)
+@machines.needs(machines.IGNORES_CASE)
 @pytest.mark.parametrize("where", ["the-tree", "copied-elsewhere", "the-captures", "the-workspace"])
 def test_a_folder_written_in_another_case_is_where_it_is_and_not_where_it_is_spelled(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, home: Path, where: str
@@ -312,13 +299,6 @@ def test_two_paths_are_one_folder_when_the_volume_says_so_and_never_when_one_nam
     assert _same_folder(real, tmp_path) is False
     assert _same_folder(tmp_path / "nothing", real) is False
     assert _same_folder(real, tmp_path / "nothing") is False
-
-
-def test_on_a_mac_the_two_spellings_are_one_folder_and_the_test_above_ran() -> None:
-    """A skip on the system a test covers turns the suite red: the browser with the profile runs
-    on the Mac, whose volume ignores case, and there the test of the two spellings on the real
-    volume is not one a count of skips may hide."""
-    assert sys.platform != "darwin" or IGNORES_CASE, ONE_SPELLING
 
 
 def test_where_the_folder_is_is_asked_of_the_path_resolved(

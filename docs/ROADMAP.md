@@ -34,9 +34,8 @@ azioni `HIGH`.
 *A che cosa serve:* la suite torna a dire il vero — i due test che a volte diventano rossi senza una causa vista, e
 la disciplina della suite con i debiti che porta e la misura di dove va il suo tempo.
 
-- `M13.4g` — Proposta — Il click che apre un'altra pagina, con il browser del profilo: un'azione che a volte non dice la sua pagina
-- `M13.13b` — Proposta — Uno scaricamento interrotto che a volte lascia il suo file a metà
-- `M9.5` — Proposta — La disciplina della suite: gli skip che si accorgono di essere saltati, e i test che aspettano un evento
+- `M13.13b` — Implementata — Uno scaricamento interrotto che a volte lascia il suo file a metà
+- `M9.5` — Implementata — La disciplina della suite: gli skip che si accorgono di essere saltati, e i test che aspettano un evento
 
 ### Tappa 3 — Più permessi, e il PC
 
@@ -63,6 +62,7 @@ nodo, il file che vive su una macchina, e il terminale sotto le policy.
 - `M13.18` — riservata — L'eseguibile firmato
 - `M13.5` — Proposta — Computer control: il muro dichiarato prima di cominciare
 - `M14.4` — Proposta — Il computer guidato dal modello: lo schermo, con il meccanismo di M14.3
+- `M13.19` — riservata — Mouse e tastiera sul PC
 - `M13.7` — Proposta — Il terminale su un nodo: il Job Object, e `argv` che su Windows diventa una stringa
 - `M13.8` — Proposta — Un file che vive su una macchina: quale disco, e chi lo dice
 - `M13.16` — Proposta — Il terminale sotto le policy di Tommaso, con un confine dimostrato
@@ -123,10 +123,18 @@ nella 4.3 di [`STATO.md`](STATO.md), «Oltre le fasi in fila».
 
 Da fare insieme ad altro, quando capita. Una condizione d'ingresso, dove c'è, sta nel documento.
 
+***Dal 2026-11-17*** (decisioni 56 e 57 della review delle tre SPEC di `m9.5-la-pulizia-della-suite`): **`M13.4g`
+esce dalla tappa 2** — nelle due serie della sua misura la causa non si è vista —, e **si riapre quando il suo test torna
+rosso in un giro**: quel giro, con il log della suite (`tests/suite_log.py`, il passo della CI che lo porta via), è la
+misura. **`M9.8`**, nata dal taglio di M9.5, **passa davanti se uno dei suoi test torna rosso in un giro**, con la
+regola di `M13.13b`.
+
 - `M9.2` — Proposta — Le liste che restano scritte a mano
 - `M9.7` — Proposta — Ogni blocco della guida che mostra un'uscita della CLI è confrontato con la CLI
+- `M9.8` — Proposta — Le attese che nessun elenco conosceva
 - `M10.3b` — Proposta — Una riga che `ela init` scrive, tolto il `#`, ferma l'avvio
 - `M13.4d` — Proposta — Lo shell del browser vuoto gira senza il sandbox di Chromium
+- `M13.4g` — Proposta — Il click che apre un'altra pagina, con il browser del profilo: un'azione che a volte non dice la sua pagina
 - `M13.6` — Proposta — Spostare un lavoro già in corso: il ripiazzamento, quando due capability sanno dichiararsi ripetibili
 - `M14.1c` — Proposta — Il caso peggiore senza prezzo: un ramo e un rifiuto che nessun produttore raggiunge
 - **WhatsApp Web con il profilo di ELA**, senza un numero: nessuna milestone finché la causa della barra di
@@ -142,6 +150,7 @@ documento. Un numero non sta mai nei due posti.
 |---|---|---|---|
 | `M13.17` | I file di tutto il computer | Lo scope dei file diventa un elenco di cartelle scelto da chi usa ELA, fino alla sua home; i posti protetti si controllano a ogni uso, come da `M13.14`. | §18, §57, §59, §65 |
 | `M13.18` | L'eseguibile firmato | Solo se il grant TCC di `M13.5` non tiene (la tappa 5). | §11, §20 |
+| `M13.19` | Mouse e tastiera sul PC | Le capacità di `M13.5` e di `M14.4` sul nodo Windows: chi usa ELA vuole le stesse capacità sul Mac e sul PC, come `M13.11` fa per il browser. | §17, §18, §20, §56 |
 | `M15.1` | La wake word | Il quarto stato del microfono, e la riga della 5.6 di `STATO.md` sulla voce: una voce riconosciuta non vale mai come un sì. | §9, §11, §34 |
 | `M15.4` | La memoria | Il Memory Core. | §21, §22 |
 | `M15.5` | La proattività | ELA parte da sola. | §34, §61 |
@@ -162,6 +171,9 @@ documento. Un numero non sta mai nei due posti.
 - **ogni id che questo file nomina ha un documento oppure è riservato, mai tutti e due**, e ogni numero
   riservato sta in una tappa;
 - le tappe sono numerate da 1 senza buchi, e le sezioni della spec delle riservate esistono.
+- ***dal 2026-11-14*** (decisione 6 di `m9.5-la-pulizia-della-suite`): **ogni documento ancora `Proposta` ha una
+  riga «Ordine», e quella riga rimanda qui** — letta intera, con le sue righe di continuazione —, così che una
+  frase d'ordine rimasta in un documento dica sempre dove l'ordine vive davvero.
 
 **Che cosa il test non tiene.** L'ordine: è una decisione di Tommaso, e nessuna riga del repository la contiene.
 E una voce già fatta tolta da una tappa: il mondo chiuso parte dalle `Proposta`, perché le milestone fatte prima

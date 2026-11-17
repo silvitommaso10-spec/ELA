@@ -16,7 +16,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-import pytest
+from tests import machines
 
 ROOT = Path(__file__).resolve().parents[2]
 PROTECTED = "attr/text=auto eol=lf"
@@ -49,7 +49,7 @@ def _listing() -> tuple[str, str | None]:
 LISTING, NO_REPOSITORY = _listing()
 
 
-@pytest.mark.skipif(NO_REPOSITORY is not None, reason=NO_REPOSITORY or "")
+@machines.needs(machines.GIT_REPOSITORY)
 def test_every_text_file_carries_lf_whatever_the_machine_that_clones_it() -> None:
     """Git's answer for the tree, and not a sample of it. Seeing nothing is not a pass."""
     assert LISTING, "git listed no files"

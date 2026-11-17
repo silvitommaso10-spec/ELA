@@ -52,6 +52,11 @@ branch; un branch di sola registrazione comincia con `docs-` e non porta codice.
   (`tests/design/` per il design system), e il README della cartella nomina ogni regola col test
   che la difende.
 - Ogni bug trovato → prima un test che fallisce, poi il fix.
+- **I mutanti girano in un worktree loro o con `PYTHONDONTWRITEBYTECODE=1`.** ***Dal 2026-11-17*** (decisione 99 di
+  M9.5, review a `42bac98`): un `.pyc` rimasto da un mutante rende falso un verdetto nei due versi — gira un codice che
+  sul disco non c'è più —, e il 2026-11-17 è costato un `make check` rosso. Un mutante della stessa lunghezza, rimesso
+  nello stesso secondo, aveva lasciato un `.pyc` con lo stesso mtime e la stessa dimensione del sorgente vero
+  (`.git/m9.5-reference/make-check-c30a4e3.txt`).
 - Tutto ciò che gira in `make check` ha un test che ne dimostra il fallimento nel caso
   negativo.
 - **`make check` una volta, alla fine della milestone, prima del riepilogo; durante il lavoro solo

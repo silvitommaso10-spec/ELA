@@ -1,12 +1,17 @@
 """The recorder as a real process, on the machine that has one (M11.2, ADR 0036 §6).
 
 Two properties no fake can carry, and both are about a microphone that nobody is holding any
-more. They run on macOS only — declared with a ``skipif`` so the skip appears in the summary
-rather than as an ``if`` inside the test that quietly asserts nothing (ADR 0031 §6).
+more. They run on macOS only, **where an input opens** — said in the one place,
+``tests/machines.py`` (M9.5): the system Darwin, and :data:`~tests.machines.AUDIO_INPUT`, read by
+the product's own recorder. So the skip appears in the summary rather than as an ``if`` inside the
+test that quietly asserts nothing (ADR 0031 §6); and on the runner of macOS, whose queue opens (run
+43554146346, read on 2026-11-17), a queue that does not open is a red.
 
 They do **not** need a granted microphone: a refused one opens just the same and delivers zeros,
 which is precisely the measurement this milestone is built on. What is under test is the process,
-not the sound.
+not the sound — and **the recorder is found by its parentage**, the child the call started, never
+by its name among every process of the machine (M9.5: a process of anybody's carrying the module's
+name turned the test red, measured on 2026-11-14).
 """
 
 from __future__ import annotations
@@ -15,27 +20,29 @@ import asyncio
 import ctypes
 import json
 import os
-import platform
 import struct
 import subprocess
 import sys
-import time
 
 import pytest
 
 from ela.infrastructure.machine import microphone
 from ela.infrastructure.machine.darwin import MICROPHONE_MODULE, spawn_through_nameless_audio
+from tests import machines
 
-darwin_only = pytest.mark.skipif(
-    platform.system() != "Darwin", reason="the recorder is macOS's AudioQueue"
+recording = machines.needs(
+    machines.DARWIN, machines.AUDIO_INPUT, why="the recorder is macOS's AudioQueue"
 )
+CEILING = 20.0
+"""The ceiling of a wait for an event of the recorder: it fires only when something is already
+wrong. Never the measure of anything."""
 
 
 def never_transcribe(_: str) -> bool:
     return False
 
 
-@darwin_only
+@recording
 async def test_the_recorder_answers_with_numbers_and_writes_no_named_file(tmp_path) -> None:  # type: ignore[no-untyped-def]
     """The contract, not the sound: it opened or it did not, and it says which."""
     recorded, report = await spawn_through_nameless_audio(
@@ -51,17 +58,26 @@ async def test_the_recorder_answers_with_numbers_and_writes_no_named_file(tmp_pa
     code, said = recorded
     assert code == 0
     answer = json.loads(said)
+    assert answer["opened"] is True, "the input opens here: the condition of the test read it"
     assert set(answer) >= {"opened", "peak", "bytes", "recorded_seconds"}
     assert isinstance(answer["peak"], int)
     assert list(tmp_path.iterdir()) == [], "the audio never wore a name"
 
 
-@darwin_only
+@recording
 async def test_a_cancelled_call_closes_the_microphone(tmp_path) -> None:  # type: ignore[no-untyped-def]
     """ADR 0033 §4 with the sign reversed, and graver.
 
     An orphaned ``say`` is ELA still talking; an orphaned recorder is **ELA still listening after
     being told to stop**, and nobody hears that happen.
+
+    **What this asserts**: the recorder, found by its parentage — the child the call started —, is
+    no process any more once the cancellation has come back. **Not who killed it**: when the
+    cancelled call is let go, asyncio closes the child's transport and kills it too
+    (``BaseSubprocessTransport.close``), so a launcher that raised again without killing passes
+    here (measured on 2026-11-17, ``.git/m9.5-reference/mutanti-m9.5.txt``). **The kill of the
+    launcher is held by the three tests of the cancellation in** ``test_spawn.py``, which catch that
+    mutant (decision 91 of M9.5's review at ``42bac98``; ADR 0069 §2).
     """
     started = asyncio.get_running_loop().create_future()
 
@@ -76,22 +92,23 @@ async def test_a_cancelled_call_closes_the_microphone(tmp_path) -> None:  # type
             directory=str(tmp_path),
         )
 
+    before = _children()
     task = asyncio.create_task(listen())
     await started
-    await asyncio.sleep(1.5)
-    before = _recorders()
-    assert before, "the recorder has to be running for the cancellation to mean anything"
+    async with asyncio.timeout(CEILING):
+        while not (recorders := _children() - before):
+            await asyncio.sleep(0.02)
+    assert len(recorders) == 1, "the call started one child: the recorder"
 
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
-    await asyncio.sleep(0.5)
 
-    assert _recorders() == (), "a cancelled call left a microphone open"
+    assert _children() & recorders == set(), "a cancelled call left a microphone open"
     assert list(tmp_path.iterdir()) == []
 
 
-@darwin_only
+@recording
 def test_the_child_carries_its_own_deadline_and_outlives_nobody(tmp_path) -> None:  # type: ignore[no-untyped-def]
     """A subprocess outlives its parent — ``launchd`` adopts it — so the child closes itself.
 
@@ -106,24 +123,33 @@ def test_the_child_carries_its_own_deadline_and_outlives_nobody(tmp_path) -> Non
             pass_fds=(handle,),
             stdout=subprocess.DEVNULL,
         )
-        deadline = time.monotonic() + 20
-        while child.poll() is None and time.monotonic() < deadline:
-            time.sleep(0.2)
-        assert child.poll() is not None, "the child did not close on its own deadline"
+        try:
+            child.wait(timeout=CEILING)
+        except subprocess.TimeoutExpired:
+            child.kill()
+            child.wait()
+            pytest.fail("the child did not close on its own deadline")
     finally:
         os.close(handle)
 
 
-def _recorders() -> tuple[int, ...]:
-    """The recorder processes alive right now, by the module they were started with."""
-    listing = subprocess.run(  # noqa: S603
-        ["/bin/ps", "-Ao", "pid,command"], capture_output=True, text=True, check=False
+def _children() -> set[tuple[int, str]]:
+    """The children of this process alive right now — pid and the instant each started, so a pid
+    the system gives again is another process —: **by parentage**, never by a name. The recorder is
+    the child the call started; a process of anybody's that carries the module's name is not. The
+    ``ps`` that lists them is a child too, while it runs, and is left out by its pid."""
+    listing = subprocess.Popen(  # noqa: S603
+        ["/bin/ps", "-A", "-o", "pid=,ppid=,lstart=,stat="], stdout=subprocess.PIPE, text=True
     )
-    return tuple(
-        int(line.split()[0])
-        for line in listing.stdout.splitlines()
-        if MICROPHONE_MODULE in line and "ps -Ao" not in line
-    )
+    printed, _ = listing.communicate()
+    found = set()
+    for line in printed.splitlines():
+        parts = line.split()
+        if len(parts) < 8 or int(parts[1]) != os.getpid() or int(parts[0]) == listing.pid:
+            continue
+        if not parts[7].startswith("Z"):
+            found.add((int(parts[0]), " ".join(parts[2:7])))
+    return found
 
 
 def test_the_loudest_possible_sample_does_not_report_a_peak_that_cannot_exist() -> None:

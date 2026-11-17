@@ -17,6 +17,45 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+# ----------------------------------------------------------------------------------------
+# The trees, read once for their content (M9.5, decision 77 of the review at ``ad1826c``)
+# ----------------------------------------------------------------------------------------
+
+_TREES: dict[str, ast.Module] = {}
+_WALKED: dict[int, list[ast.AST]] = {}
+"""The nodes of each tree of :data:`_TREES`, by the tree's identity: those trees live as long as the
+process, so an identity is never another tree's."""
+
+
+def parsed(path: Path) -> ast.Module:
+    """The tree of ``path``, made **once for its content**: the same text is the same tree,
+    whatever path it is at — the copies of ``src/ela`` the cases make are mostly the same text —,
+    and a file a case changed has a text of its own, so a tree of its own. **The key is the
+    content, never the path**: a path whose file changed is read again.
+
+    Safe because **no rule writes on a tree** — the census of 2026-11-17, from the AST of this file:
+    two writes, both into a dictionary of the rule's own
+    (``.git/m9.5-reference/tempo/censimento-scritture-alberi.txt``). Where the time of the
+    architecture tests went, measured on 2026-11-14: reading and walking, not deciding —
+    ``ast.walk`` 44,7 s and ``ast.parse`` 18,3 s of the 87,46 s of ``test_violation_is_reported``
+    alone."""
+    text = path.read_text(encoding="utf-8")
+    tree = _TREES.get(text)
+    if tree is None:
+        tree = _TREES[text] = ast.parse(text, filename=str(path))
+        _WALKED[id(tree)] = list(ast.walk(tree))
+    return tree
+
+
+def walked(tree: ast.AST) -> list[ast.AST]:
+    """Every node of ``tree``, in the order of ``ast.walk`` — walked once for a tree of
+    :func:`parsed`; any other tree, walked each time."""
+    known = _WALKED.get(id(tree))
+    if known is not None:
+        return known
+    return list(ast.walk(tree))
+
+
 ROOT_PACKAGE = "ela"
 STDLIB = frozenset(sys.stdlib_module_names)
 
@@ -1059,9 +1098,9 @@ def imported_modules(path: Path, pkg_root: Path) -> list[tuple[str, int]]:
     """
     current = module_name(path, pkg_root)
     package = current if path.name == "__init__.py" else current.rpartition(".")[0]
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    tree = parsed(path)
     found: list[tuple[str, int]] = []
-    for node in ast.walk(tree):
+    for node in walked(tree):
         if isinstance(node, ast.Import):
             found.extend((alias.name, node.lineno) for alias in node.names)
         elif isinstance(node, ast.ImportFrom):
@@ -1190,8 +1229,8 @@ def check_state_changes(pkg_root: Path) -> list[Violation]:
         if path.relative_to(pkg_root) in STATE_EXEMPT:
             continue
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
+        tree = parsed(path)
+        for node in walked(tree):
             if not isinstance(node, ast.Call):
                 continue
             if _copies_state(node):
@@ -1330,8 +1369,8 @@ def check_audit_adapter_append_only(pkg_root: Path) -> list[Violation]:
         return []
     name = module_name(path, pkg_root)
     found: list[Violation] = []
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    for node in ast.walk(tree):
+    tree = parsed(path)
+    for node in walked(tree):
         if isinstance(node, ast.ImportFrom):
             found.extend(
                 Violation(rule, name, alias.name, node.lineno)
@@ -1391,8 +1430,8 @@ def check_step_event_writers(pkg_root: Path) -> list[Violation]:
         if path.relative_to(pkg_root).parts[0] == TASKS_DIR:
             continue
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
+        tree = parsed(path)
+        for node in walked(tree):
             if isinstance(node, ast.Call) and _is_named(node.func, "TaskEvent"):
                 found.extend(
                     Violation(rule, name, "TaskEvent(event_type=STEP_*)", node.lineno)
@@ -1447,8 +1486,8 @@ def check_decision_builders(pkg_root: Path) -> list[Violation]:
         if path.relative_to(pkg_root).parts[0] in DECISION_BUILDERS_EXEMPT:
             continue
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
+        tree = parsed(path)
+        for node in walked(tree):
             if not isinstance(node, ast.Call):
                 continue
             if _is_named(node.func, DECISION_MODEL) and not _denies(node):
@@ -1491,10 +1530,10 @@ def check_decide_callers(pkg_root: Path) -> list[Violation]:
         if path.relative_to(pkg_root).parts[0] == PERMISSIONS_DIR:
             continue
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = parsed(path)
         found.extend(
             Violation(rule, name, f".{DECIDE_METHOD}(", node.lineno)
-            for node in ast.walk(tree)
+            for node in walked(tree)
             if isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
             and node.func.attr == DECIDE_METHOD
@@ -1519,8 +1558,8 @@ def check_authorization_builders(pkg_root: Path) -> list[Violation]:
         if relative.parts[0] in AUTHORIZATION_BUILDERS_EXEMPT or relative == AUTHORIZATION_READER:
             continue
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
+        tree = parsed(path)
+        for node in walked(tree):
             if not isinstance(node, ast.Call):
                 continue
             if _is_named(node.func, AUTHORIZATION_MODEL):
@@ -1559,10 +1598,10 @@ def check_tool_execute_callers(pkg_root: Path) -> list[Violation]:
         if relative == EXECUTOR_MODULE:
             continue
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = parsed(path)
         found.extend(
             Violation(rule, name, f".{EXECUTE_METHOD}(", node.lineno)
-            for node in ast.walk(tree)
+            for node in walked(tree)
             if isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
             and node.func.attr == EXECUTE_METHOD
@@ -1602,10 +1641,10 @@ def check_step_completers(pkg_root: Path) -> list[Violation]:
         if path.relative_to(pkg_root) == EXECUTOR_MODULE:
             continue
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = parsed(path)
         found.extend(
             Violation(rule, name, f".{node.func.attr}(", node.lineno)
-            for node in ast.walk(tree)
+            for node in walked(tree)
             if isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
             and node.func.attr in {COMPLETE_STEP_METHOD, STOP_STEP_METHOD}
@@ -1635,13 +1674,13 @@ def check_only_the_engine_raises_a_stop(pkg_root: Path) -> list[Violation]:
         if relative == STOP_RAISER:
             continue
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = parsed(path)
         handed = {
             id(node.args[0])
-            for node in ast.walk(tree)
+            for node in walked(tree)
             if isinstance(node, ast.Call) and _call_name(node.func) == STOP_OF_A_CALL and node.args
         }
-        for node in ast.walk(tree):
+        for node in walked(tree):
             if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
                 continue
             if node.func.attr == STOP_SIGNAL_METHOD and id(node) not in handed:
@@ -1680,22 +1719,22 @@ def check_a_stop_arrives_per_call(pkg_root: Path) -> list[Violation]:
 
     for path in _source_files(pkg_root):
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = parsed(path)
         if path.relative_to(pkg_root).parts[0] == COMPOSITION_DIR:
             found.extend(
                 Violation(rule, name, node.id, node.lineno)
-                for node in ast.walk(tree)
+                for node in walked(tree)
                 if isinstance(node, ast.Name) and node.id in STOP_TYPES
             )
             found.extend(
                 Violation(rule, name, alias.name, node.lineno)
-                for node in ast.walk(tree)
+                for node in walked(tree)
                 if isinstance(node, ast.ImportFrom)
                 for alias in node.names
                 if alias.name in STOP_TYPES
             )
             continue
-        for node in ast.walk(tree):
+        for node in walked(tree):
             if (
                 isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
                 and node.name == CONSTRUCTOR
@@ -1737,8 +1776,8 @@ def check_a_tool_that_spends_is_neither_repeated_nor_moved(pkg_root: Path) -> li
         if path.relative_to(pkg_root) == BASE_TOOL_MODULE:
             continue
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
+        tree = parsed(path)
+        for node in walked(tree):
             if not isinstance(node, ast.ClassDef) or not any(
                 isinstance(member, ast.FunctionDef | ast.AsyncFunctionDef)
                 and member.name == WORST_CASE_METHOD
@@ -1783,10 +1822,10 @@ def check_plans_enter_by_two_doors(pkg_root: Path) -> list[Violation]:
         if path.relative_to(pkg_root) in PLAN_DOORS:
             continue
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = parsed(path)
         found.extend(
             Violation(rule, name, f".{PLAN_METHOD}(", node.lineno)
-            for node in ast.walk(tree)
+            for node in walked(tree)
             if isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
             and node.func.attr == PLAN_METHOD
@@ -1827,8 +1866,8 @@ def check_a_policy_is_born_at_its_route(pkg_root: Path) -> list[Violation]:
         if relative == POLICY_ROUTE:
             continue
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
+        tree = parsed(path)
+        for node in walked(tree):
             if relative.parts[0] == TOOLS_DIR and _names_the_store_port(node):
                 found.append(Violation(rule, name, STORE_PORT, getattr(node, "lineno", 0)))
             if not isinstance(node, ast.Call):
@@ -1858,10 +1897,10 @@ def check_the_room_s_word_is_the_room_s(pkg_root: Path) -> list[Violation]:
         if path.relative_to(pkg_root) == SESSION_ROOM:
             continue
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = parsed(path)
         found.extend(
             Violation(rule, name, f"{SESSION_COVER_MODEL}(...)", node.lineno)
-            for node in ast.walk(tree)
+            for node in walked(tree)
             if isinstance(node, ast.Call) and _is_named(node.func, SESSION_COVER_MODEL)
         )
     return found
@@ -1882,10 +1921,10 @@ def check_a_secret_is_opened_only_by_an_adapter(pkg_root: Path) -> list[Violatio
         if relative.parts[0] == TESTING_DIR or relative.parts[:2] == MACHINE_ADAPTER_DIR.parts:
             continue
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = parsed(path)
         found.extend(
             Violation(rule, name, f".{OPENING_METHOD}(", node.lineno)
-            for node in ast.walk(tree)
+            for node in walked(tree)
             if isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
             and node.func.attr == OPENING_METHOD
@@ -1908,10 +1947,10 @@ def check_the_profile_s_folder_is_its_adapter_s(pkg_root: Path) -> list[Violatio
         if path.relative_to(pkg_root) in PROFILE_READERS:
             continue
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = parsed(path)
         found.extend(
             Violation(rule, name, PROFILE_FIELD, getattr(node, "lineno", 0))
-            for node in ast.walk(tree)
+            for node in walked(tree)
             if _names_the_profile(node)
         )
     return found
@@ -1940,11 +1979,11 @@ def check_the_vault_s_program_is_its_adapter_s(pkg_root: Path) -> list[Violation
     for path in _source_files(pkg_root):
         where = path.relative_to(pkg_root)
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = parsed(path)
         if where not in VAULT_READERS:
             found.extend(
                 Violation(rule, name, VAULT_FIELD, getattr(node, "lineno", 0))
-                for node in ast.walk(tree)
+                for node in walked(tree)
                 if _names_the_vault_program(node)
             )
         elif where == VAULT_ROOT:
@@ -1986,7 +2025,7 @@ def _handed_elsewhere(rule: str, module: str, tree: ast.AST) -> list[Violation]:
             todo.extend(ast.iter_child_nodes(node))
         return False
 
-    assignments = [node for node in ast.walk(tree) if isinstance(node, ast.Assign)]
+    assignments = [node for node in walked(tree) if isinstance(node, ast.Assign)]
     grew = True
     while grew:
         grew = False
@@ -1999,7 +2038,7 @@ def _handed_elsewhere(rule: str, module: str, tree: ast.AST) -> list[Violation]:
                     grew = True
 
     found: list[Violation] = []
-    for node in ast.walk(tree):
+    for node in walked(tree):
         if not isinstance(node, ast.Call):
             continue
         handed = [*node.args, *(keyword.value for keyword in node.keywords)]
@@ -2039,10 +2078,10 @@ def check_a_program_is_launched_by_the_terminal(pkg_root: Path) -> list[Violatio
         if path.relative_to(pkg_root) in LAUNCHER_HOLDERS:
             continue
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = parsed(path)
         found.extend(
             Violation(rule, name, LAUNCHER_PORT, getattr(node, "lineno", 0))
-            for node in ast.walk(tree)
+            for node in walked(tree)
             if _names_the_launcher(node)
         )
     return found
@@ -2070,8 +2109,8 @@ def check_the_gate_looks_and_does_not_redo(pkg_root: Path) -> list[Violation]:
     found: list[Violation] = []
     for path in _source_files(pkg_root / MACHINE_ADAPTER_DIR):
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
+        tree = parsed(path)
+        for node in walked(tree):
             if (
                 isinstance(node, ast.Call)
                 and isinstance(node.func, ast.Attribute)
@@ -2101,9 +2140,9 @@ def check_a_file_is_given_as_bytes_and_a_download_is_named(pkg_root: Path) -> li
     found: list[Violation] = []
     for path in _source_files(pkg_root / MACHINE_ADAPTER_DIR):
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = parsed(path)
         sent_well: set[int] = set()
-        for node in ast.walk(tree):
+        for node in walked(tree):
             if not isinstance(node, ast.Call):
                 continue
             if isinstance(node.func, ast.Attribute) and node.func.attr == FILE_GIVING_CALL:
@@ -2117,7 +2156,7 @@ def check_a_file_is_given_as_bytes_and_a_download_is_named(pkg_root: Path) -> li
                     sent_well.add(id(node.args[0]))
         found.extend(
             Violation(rule, name, DOOR_COMMAND, node.lineno)
-            for node in ast.walk(tree)
+            for node in walked(tree)
             if isinstance(node, ast.Constant)
             and isinstance(node.value, str)
             and DOOR_COMMAND in node.value
@@ -2155,9 +2194,9 @@ def check_named_reaches_the_tool_only(pkg_root: Path) -> list[Violation]:
     found: list[Violation] = []
     for path in _source_files(pkg_root):
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = parsed(path)
         served = path.relative_to(pkg_root).parts[0] == API_DIR
-        for node in ast.walk(tree):
+        for node in walked(tree):
             if served and _names_the_named_bag(node):
                 found.append(Violation(rule, name, NAMED_CONSTANT, getattr(node, "lineno", 0)))
             if (
@@ -2207,7 +2246,7 @@ def _saves_a_yes(call: ast.Call, tree: ast.Module) -> bool:
     a call of :data:`APPROVAL_FACTORY`."""
     around = [
         function
-        for function in ast.walk(tree)
+        for function in walked(tree)
         if isinstance(function, ast.FunctionDef | ast.AsyncFunctionDef)
         and any(inner is call for inner in ast.walk(function))
     ]
@@ -2241,9 +2280,9 @@ def check_the_planner_names_no_device(pkg_root: Path) -> list[Violation]:
     if not path.is_file():
         return []
     name = module_name(path, pkg_root)
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    tree = parsed(path)
     found: list[Violation] = []
-    for node in ast.walk(tree):
+    for node in walked(tree):
         for named in _names_of(node):
             if any(word in named.lower() for word in DEVICE_WORDS):
                 found.append(Violation(rule, name, named, getattr(node, "lineno", 0)))
@@ -2284,10 +2323,10 @@ def check_the_end_has_one_reader(pkg_root: Path) -> list[Violation]:
         if path.relative_to(pkg_root) in END_MODULES:
             continue
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = parsed(path)
         found.extend(
             Violation(rule, name, END_KEY, node.lineno)
-            for node in ast.walk(tree)
+            for node in walked(tree)
             if isinstance(node, ast.Constant) and node.value == END_KEY
         )
     return found
@@ -2312,8 +2351,8 @@ def check_who_calls_the_model_bounds_the_call(pkg_root: Path) -> list[Violation]
     found: list[Violation] = []
     for path in _source_files(pkg_root):
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
+        tree = parsed(path)
+        for node in walked(tree):
             if not isinstance(node, ast.ClassDef):
                 continue
             calls = [
@@ -2361,10 +2400,10 @@ def check_who_spends_passes_the_gate(pkg_root: Path) -> list[Violation]:
         if path.relative_to(pkg_root) == SPENDING_MODULE:
             continue
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = parsed(path)
         found.extend(
             Violation(rule, name, f"{_call_name(node.func)}(", node.lineno)
-            for node in ast.walk(tree)
+            for node in walked(tree)
             if isinstance(node, ast.Call) and _call_name(node.func) in PASS_TYPES
         )
     spenders = _methods_receiving_a_pass(pkg_root)
@@ -2376,8 +2415,8 @@ def check_who_spends_passes_the_gate(pkg_root: Path) -> list[Violation]:
     launchers = {method for method, kind in spenders.items() if kind == RESERVATION_TYPE}
     for path in _source_files(pkg_root):
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
+        tree = parsed(path)
+        for node in walked(tree):
             if not isinstance(node, ast.ClassDef):
                 continue
             calls = [
@@ -2398,9 +2437,9 @@ def check_who_spends_passes_the_gate(pkg_root: Path) -> list[Violation]:
 def _methods_receiving_a_pass(pkg_root: Path) -> dict[str, str]:
     """The methods of the protocols of ``ela.ports`` with a parameter annotated with a pass."""
     path = pkg_root / "ports.py"
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    tree = parsed(path)
     methods: dict[str, str] = {}
-    for node in ast.walk(tree):
+    for node in walked(tree):
         if not isinstance(node, ast.ClassDef):
             continue
         for member in node.body:
@@ -2414,25 +2453,25 @@ def _methods_receiving_a_pass(pkg_root: Path) -> dict[str, str]:
 
 
 def _reads_key(path: Path) -> bool:
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    tree = parsed(path)
     return any(
         isinstance(node, ast.Attribute)
         and node.attr == KEY_FIELD
         and isinstance(node.ctx, ast.Load)
-        for node in ast.walk(tree)
+        for node in walked(tree)
     )
 
 
 def _calls_out_without_a_pass(path: Path, pkg_root: Path, rule: str) -> list[Violation]:
     """The functions of a module holding the key that call the provider outside the two roads."""
     name = module_name(path, pkg_root)
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    tree = parsed(path)
     on_the_road: set[int] = set()
-    for node in ast.walk(tree):
+    for node in walked(tree):
         if isinstance(node, ast.ClassDef) and _defines(node, COMPLETE_METHOD):
             on_the_road.update(id(inner) for inner in ast.walk(node))
     found: list[Violation] = []
-    for function in ast.walk(tree):
+    for function in walked(tree):
         if not isinstance(function, ast.FunctionDef | ast.AsyncFunctionDef):
             continue
         if id(function) in on_the_road or _receives(function, ADMISSION_TYPE):
@@ -2499,10 +2538,10 @@ def check_approval_responders(pkg_root: Path) -> list[Violation]:
         if path.relative_to(pkg_root) == APPROVAL_RESPONDER:
             continue
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = parsed(path)
         found.extend(
             Violation(rule, name, f".{RESPOND_METHOD}(", node.lineno)
-            for node in ast.walk(tree)
+            for node in walked(tree)
             if isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
             and node.func.attr == RESPOND_METHOD
@@ -2530,10 +2569,10 @@ def check_verifier_read_only(pkg_root: Path) -> list[Violation]:
         if not path.is_file():
             continue
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = parsed(path)
         found.extend(
             Violation(rule, name, f"{callee}(", node.lineno)
-            for node in ast.walk(tree)
+            for node in walked(tree)
             if isinstance(node, ast.Call)
             for callee in [_callee(node.func)]
             if _writes(node, callee)
@@ -2606,8 +2645,8 @@ def check_audit_arguments(pkg_root: Path) -> list[Violation]:
     found: list[Violation] = []
     for path in _source_files(pkg_root):
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for call in ast.walk(tree):
+        tree = parsed(path)
+        for call in walked(tree):
             if not (
                 isinstance(call, ast.Call)
                 and isinstance(call.func, ast.Name)
@@ -2653,8 +2692,8 @@ def check_device_availability_readers(pkg_root: Path) -> list[Violation]:
         if relative.parts[0] == DEVICES_DIR or relative == PERSISTENCE_MAPPERS:
             continue
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
+        tree = parsed(path)
+        for node in walked(tree):
             if isinstance(node, ast.Attribute) and node.attr == AVAILABILITY_FIELD:
                 found.append(Violation(rule, name, f".{AVAILABILITY_FIELD}", node.lineno))
             elif isinstance(node, ast.keyword) and node.arg == AVAILABILITY_FIELD:
@@ -2755,10 +2794,10 @@ def check_provider_complete_callers(pkg_root: Path) -> list[Violation]:
         if path.relative_to(pkg_root) == MODEL_TOOL_MODULE:
             continue
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = parsed(path)
         found.extend(
             Violation(rule, name, f".{COMPLETE_METHOD}(", node.lineno)
-            for node in ast.walk(tree)
+            for node in walked(tree)
             if isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
             and node.func.attr == COMPLETE_METHOD
@@ -2832,8 +2871,8 @@ def check_cli_over_the_api(pkg_root: Path) -> list[Violation]:
 
 def _composing_names(path: Path, name: str, rule: str) -> Iterator[Violation]:
     """``build`` and ``Ela`` wherever they are written: the CLI holds no built world."""
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    for node in ast.walk(tree):
+    tree = parsed(path)
+    for node in walked(tree):
         if isinstance(node, ast.alias) and node.name in COMPOSED_NAMES:
             yield Violation(rule, name, node.name, getattr(node, "lineno", 0))
         elif isinstance(node, ast.Name) and node.id in COMPOSED_NAMES:
@@ -2869,8 +2908,8 @@ def check_tool_output_readers(pkg_root: Path) -> list[Violation]:
     found: list[Violation] = []
     for path in _source_files(pkg_root / API_DIR):
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
+        tree = parsed(path)
+        for node in walked(tree):
             if isinstance(node, ast.ClassDef) and node.name not in {OUTPUT_MODEL, ENVELOPE_MODEL}:
                 found.extend(
                     Violation(rule, name, f"{node.name}.{OUTPUT_NAME}", field.lineno)
@@ -2883,7 +2922,7 @@ def check_tool_output_readers(pkg_root: Path) -> list[Violation]:
             continue
         found.extend(
             Violation(rule, name, mention, node.lineno)
-            for node in ast.walk(tree)
+            for node in walked(tree)
             if (mention := _mentions_output(node)) is not None
         )
     return found
@@ -2925,8 +2964,8 @@ def check_placement_builders(pkg_root: Path) -> list[Violation]:
         if path.relative_to(pkg_root).parts[0] == DEVICES_DIR:
             continue
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
+        tree = parsed(path)
+        for node in walked(tree):
             if not isinstance(node, ast.Call):
                 continue
             if _is_named(node.func, PLACEMENT_MODEL) and not _places_nobody(node):
@@ -2972,7 +3011,7 @@ def check_constant_time_token(pkg_root: Path) -> list[Violation]:
     rule = "token-compared-in-constant-time"
     path = pkg_root / SECURITY_MODULE
     name = module_name(path, pkg_root)
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    tree = parsed(path)
     found = [
         Violation(rule, name, f"{CONSTANT_TIME_COMPARE}(...)", 1)
         for node in [tree]
@@ -2983,7 +3022,7 @@ def check_constant_time_token(pkg_root: Path) -> list[Violation]:
     ]
     found.extend(
         Violation(rule, name, f"{_operator(node)} on the token", node.lineno)
-        for node in ast.walk(tree)
+        for node in walked(tree)
         if isinstance(node, ast.Compare) and _compares_the_token(node)
     )
     for other in _source_files(pkg_root):
@@ -2996,7 +3035,7 @@ def check_constant_time_token(pkg_root: Path) -> list[Violation]:
                 f"{_operator(node)} on a node's secret",
                 node.lineno,
             )
-            for node in ast.walk(ast.parse(other.read_text(encoding="utf-8"), filename=str(other)))
+            for node in walked(parsed(other))
             if isinstance(node, ast.Compare) and _compares_a_secret_by_value(node)
         )
     return found
@@ -3083,10 +3122,10 @@ def check_machine_access(pkg_root: Path) -> list[Violation]:
     )
     for path in files:
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = parsed(path)
         found.extend(
             Violation(rule, name, f"{_dotted(node.func) or node.func.attr}(...)", node.lineno)  # type: ignore[attr-defined]
-            for node in ast.walk(tree)
+            for node in walked(tree)
             if isinstance(node, ast.Call)
             and (
                 _dotted(node.func) in SPAWNING_CALLS
@@ -3113,7 +3152,7 @@ def _is_child(path: Path) -> bool:
     instead of when somebody remembers to add it — the same fail-safe direction as
     ``fingerprint()`` deriving its keys from the model's fields (ADR 0028 §5).
     """
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    tree = parsed(path)
     return any(
         isinstance(node, ast.If)
         and isinstance(node.test, ast.Compare)
@@ -3121,7 +3160,7 @@ def _is_child(path: Path) -> bool:
             isinstance(operand, ast.Constant) and operand.value == MAIN_GUARD
             for operand in [node.test.left, *node.test.comparators]
         )
-        for node in ast.walk(tree)
+        for node in walked(tree)
     )
 
 
@@ -3165,8 +3204,8 @@ def check_no_window_titles(pkg_root: Path) -> list[Violation]:
     found: list[Violation] = []
     for path in _source_files(pkg_root / MACHINE_ADAPTER_DIR):
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
+        tree = parsed(path)
+        for node in walked(tree):
             if not isinstance(node, ast.Constant):
                 continue
             text = node.value if isinstance(node.value, str) else None
@@ -3211,10 +3250,10 @@ def check_the_voice_writes_no_file(pkg_root: Path) -> list[Violation]:
         if not path.is_file():
             continue
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = parsed(path)
         literals = [
             node
-            for node in ast.walk(tree)
+            for node in walked(tree)
             if isinstance(node, ast.Constant) and isinstance(node.value, str)
         ]
         found.extend(
@@ -3287,10 +3326,10 @@ def check_the_voice_leaves_no_named_file(pkg_root: Path) -> list[Violation]:
     found: list[Violation] = []
     for path in _voice_paths(pkg_root):
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = parsed(path)
         found.extend(
             Violation(rule, name, written, node.lineno)
-            for node in ast.walk(tree)
+            for node in walked(tree)
             if (written := _writes_a_named_file(node)) is not None
         )
     return found
@@ -3319,10 +3358,10 @@ def check_what_ela_hears_leaves_no_named_file(pkg_root: Path) -> list[Violation]
         if not path.is_file():
             continue
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = parsed(path)
         found.extend(
             Violation(rule, name, written, node.lineno)
-            for node in ast.walk(tree)
+            for node in walked(tree)
             if (written := _writes_a_named_file(node)) is not None
         )
     return found
@@ -3356,8 +3395,8 @@ def check_the_voice_goes_only_where_it_is_declared(pkg_root: Path) -> list[Viola
     )
     for path in files:
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
+        tree = parsed(path)
+        for node in walked(tree):
             if isinstance(node, ast.Constant) and isinstance(node.value, str):
                 if SCHEME_SEPARATOR in node.value and node.value != ELEVENLABS_ENDPOINT:
                     found.append(Violation(rule, name, node.value, node.lineno))
@@ -3387,9 +3426,9 @@ def check_the_audition_speaks_only_the_repositorys_words(pkg_root: Path) -> list
     if not path.is_file():
         return []
     name = module_name(path, pkg_root)
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    tree = parsed(path)
     found: list[Violation] = []
-    for node in ast.walk(tree):
+    for node in walked(tree):
         if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
             continue
         arguments = node.args
@@ -3438,7 +3477,7 @@ def check_a_refresh_touches_only_what_is_declared(pkg_root: Path) -> list[Violat
         return []
     name = module_name(path, pkg_root)
     found: list[Violation] = []
-    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"), filename=str(path))):
+    for node in walked(parsed(path)):
         named = _names_what_is_not_declared(node)
         if named is not None:
             found.append(Violation(rule, name, named, node.lineno))
@@ -3482,10 +3521,10 @@ def check_adapter_names_no_state(pkg_root: Path) -> list[Violation]:
     )
     for path in _source_files(pkg_root / MACHINE_ADAPTER_DIR):
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = parsed(path)
         found.extend(
             Violation(rule, name, node.attr, node.lineno)
-            for node in ast.walk(tree)
+            for node in walked(tree)
             if isinstance(node, ast.Attribute) and node.attr in PERCEPTION_VOCABULARY
         )
     return found
@@ -3528,10 +3567,10 @@ def check_content_stays_on_the_machine(pkg_root: Path) -> list[Violation]:
         if not path.is_file():
             continue
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = parsed(path)
         found.extend(
             Violation(rule, name, node.attr, node.lineno)
-            for node in ast.walk(tree)
+            for node in walked(tree)
             if isinstance(node, ast.Attribute) and node.attr in CAPTURE_FORBIDDEN
         )
     return found
@@ -3596,10 +3635,10 @@ def check_platform_choice_is_a_statement(pkg_root: Path) -> list[Violation]:
     found: list[Violation] = []
     for path in _source_files(pkg_root):
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = parsed(path)
         found.extend(
             Violation(rule, name, ast.unparse(node.test), node.lineno)
-            for node in ast.walk(tree)
+            for node in walked(tree)
             if isinstance(node, ast.IfExp) and _condition_words(node.test) & PLATFORM_WORDS
         )
     return found
@@ -3607,9 +3646,9 @@ def check_platform_choice_is_a_statement(pkg_root: Path) -> list[Violation]:
 
 def _named(path: Path) -> set[str]:
     """Every name and attribute a module mentions, however it reached for it."""
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    tree = parsed(path)
     found: set[str] = set()
-    for node in ast.walk(tree):
+    for node in walked(tree):
         if isinstance(node, ast.Name):
             found.add(node.id)
         elif isinstance(node, ast.Attribute):
@@ -3645,10 +3684,10 @@ def check_context_writes_nothing(pkg_root: Path) -> list[Violation]:
     found: list[Violation] = []
     for path in _source_files(pkg_root / CONTEXT_DIR):
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = parsed(path)
         found.extend(
             Violation(rule, name, node.func.attr, node.lineno)
-            for node in ast.walk(tree)
+            for node in walked(tree)
             if isinstance(node, ast.Call) and _writes_through_self(node.func)
         )
     return found
@@ -3696,8 +3735,8 @@ def check_a_nodes_secret_crosses_no_readable_boundary(pkg_root: Path) -> list[Vi
     found: list[Violation] = []
     for path in _source_files(pkg_root):
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for call in ast.walk(tree):
+        tree = parsed(path)
+        for call in walked(tree):
             if not (
                 isinstance(call, ast.Call)
                 and isinstance(call.func, ast.Name)
@@ -3711,16 +3750,16 @@ def check_a_nodes_secret_crosses_no_readable_boundary(pkg_root: Path) -> list[Vi
             )
     shapes = pkg_root / WIRE_SHAPES
     if shapes.is_file():
-        tree = ast.parse(shapes.read_text(encoding="utf-8"), filename=str(shapes))
+        tree = parsed(shapes)
         handed_out = {
             id(node)
-            for shape in ast.walk(tree)
+            for shape in walked(tree)
             if isinstance(shape, ast.ClassDef) and shape.name in ONCE_SECRET_SHAPES
             for node in ast.walk(shape)
         }
         found.extend(
             Violation(rule, module_name(shapes, pkg_root), named, node.lineno)
-            for node in ast.walk(tree)
+            for node in walked(tree)
             if (
                 named := _names_a_node_secret(node)
                 or (None if id(node) in handed_out else _names_a_wire_secret(node))
@@ -3730,7 +3769,7 @@ def check_a_nodes_secret_crosses_no_readable_boundary(pkg_root: Path) -> list[Vi
     entities = pkg_root / ENTITIES_FILE
     if not entities.is_file():
         return found
-    for entity in ast.walk(ast.parse(entities.read_text(encoding="utf-8"), filename=str(entities))):
+    for entity in walked(parsed(entities)):
         if isinstance(entity, ast.ClassDef) and entity.name == DEVICE_ENTITY:
             found.extend(
                 Violation(rule, module_name(entities, pkg_root), field.target.id, field.lineno)
@@ -3784,10 +3823,10 @@ def check_identity_resolved_in_one_place(pkg_root: Path) -> list[Violation]:
     for path in sorted((pkg_root / API_DIR).rglob("*.py")):
         if path == pkg_root / SECURITY_MODULE:
             continue
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = parsed(path)
         found.extend(
             Violation(rule, module_name(path, pkg_root), named, node.lineno)
-            for node in ast.walk(tree)
+            for node in walked(tree)
             if isinstance(node, ast.Constant)
             and isinstance(node.value, str)
             and (named := _names_an_identity(node.value, cookies)) is not None
@@ -3809,10 +3848,10 @@ def cookie_names(pkg_root: Path) -> set[str]:
     path = pkg_root / SECURITY_MODULE
     if not path.is_file():
         return set()
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    tree = parsed(path)
     constants = {
         target.id: node.value.value
-        for node in ast.walk(tree)
+        for node in walked(tree)
         if isinstance(node, ast.Assign | ast.AnnAssign)
         for target in ([node.target] if isinstance(node, ast.AnnAssign) else node.targets)
         if isinstance(target, ast.Name)
@@ -3820,7 +3859,7 @@ def cookie_names(pkg_root: Path) -> set[str]:
         and isinstance(node.value.value, str)
     }
     found = set()
-    for node in ast.walk(tree):
+    for node in walked(tree):
         if not isinstance(node, ast.Call) or _call_name(node.func) != SURFACE_CLASS:
             continue
         for keyword in node.keywords:
@@ -3866,7 +3905,7 @@ def check_the_bell_rings_a_method(pkg_root: Path) -> list[Violation]:
     if not ports.is_file():
         return []
     voices: dict[str, ast.AsyncFunctionDef] = {}
-    for node in ast.walk(ast.parse(ports.read_text(encoding="utf-8"), filename=str(ports))):
+    for node in walked(parsed(ports)):
         if isinstance(node, ast.ClassDef) and node.name == BELL_PORT:
             voices = {
                 member.name: member
@@ -3886,10 +3925,10 @@ def check_the_bell_rings_a_method(pkg_root: Path) -> list[Violation]:
     for path in _source_files(pkg_root):
         if path.relative_to(pkg_root) in {BELL_CALLER, PORTS_FILE}:
             continue
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = parsed(path)
         found.extend(
             Violation(rule, module_name(path, pkg_root), f".{node.func.attr}(", node.lineno)
-            for node in ast.walk(tree)
+            for node in walked(tree)
             if isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
             and node.func.attr in voices
@@ -3916,8 +3955,8 @@ def check_one_composer_for_a_page(pkg_root: Path) -> list[Violation]:
         if path == pkg_root / HTML_COMPOSER:
             continue
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
+        tree = parsed(path)
+        for node in walked(tree):
             if _names_the_html_response(node):
                 found.append(Violation(rule, name, HTML_RESPONSE, getattr(node, "lineno", 0)))
             elif (
@@ -3953,7 +3992,7 @@ def page_modules(pkg_root: Path) -> list[Path]:
     """
     found = []
     for path in sorted((pkg_root / API_DIR).rglob("*.py")):
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = parsed(path)
         if _names_the_composer(tree) and _declares_a_router(tree):
             found.append(path)
     return found
@@ -3961,7 +4000,7 @@ def page_modules(pkg_root: Path) -> list[Path]:
 
 def _names_the_composer(tree: ast.AST) -> bool:
     """Whether this module imports the one module that builds a page (:data:`HTML_COMPOSER`)."""
-    for node in ast.walk(tree):
+    for node in walked(tree):
         if isinstance(node, ast.ImportFrom) and node.module is not None:
             if node.module.endswith(f".{API_DIR}") and any(
                 alias.name == COMPOSER_MODULE for alias in node.names
@@ -3976,7 +4015,7 @@ def _declares_a_router(tree: ast.AST) -> bool:
     """Whether this module builds an ``APIRouter``: what makes it serve, and not only compose."""
     return any(
         isinstance(node, ast.Call) and _call_name(node.func) == ROUTER_CLASS
-        for node in ast.walk(tree)
+        for node in walked(tree)
     )
 
 
@@ -4006,11 +4045,11 @@ def check_pages_read_the_routes(pkg_root: Path) -> list[Violation]:
     rule = "pages-read-the-routes"
     found = []
     for path in page_modules(pkg_root):
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = parsed(path)
         name = module_name(path, pkg_root)
         found.extend(
             Violation(rule, name, f"{COMPOSED_WORLD}.{node.attr}", node.lineno)
-            for node in ast.walk(tree)
+            for node in walked(tree)
             if isinstance(node, ast.Attribute)
             and isinstance(node.value, ast.Name)
             and node.value.id == COMPOSED_WORLD
@@ -4076,8 +4115,8 @@ def check_assignment_builders(pkg_root: Path) -> list[Violation]:
     for path in _source_files(pkg_root):
         if path.relative_to(pkg_root) in ASSIGNMENT_BUILDERS:
             continue
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
+        tree = parsed(path)
+        for node in walked(tree):
             if isinstance(node, ast.Call) and (built := _builds(node.func, ASSIGNMENT_MODEL)):
                 found.append(Violation(rule, module_name(path, pkg_root), built, node.lineno))
     return found
@@ -4097,10 +4136,10 @@ def check_release_step_callers(pkg_root: Path) -> list[Violation]:
     for path in _source_files(pkg_root):
         if path.relative_to(pkg_root) in RELEASE_CALLERS:
             continue
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = parsed(path)
         found.extend(
             Violation(rule, module_name(path, pkg_root), f".{RELEASE_METHOD}(", node.lineno)
-            for node in ast.walk(tree)
+            for node in walked(tree)
             if isinstance(node, ast.Call) and _is_named(node.func, RELEASE_METHOD)
         )
     return found
@@ -4125,10 +4164,10 @@ def check_a_work_order_goes_only_to_its_node(pkg_root: Path) -> list[Violation]:
     rule = "a-work-order-goes-only-to-its-node"
     found: list[Violation] = []
     for path in _source_files(pkg_root):
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = parsed(path)
         built = [
             (description, node.lineno)
-            for node in ast.walk(tree)
+            for node in walked(tree)
             if isinstance(node, ast.Call)
             and (description := _builds(node.func, WORK_ORDER_MODEL)) is not None
         ]
@@ -4159,10 +4198,10 @@ def check_results_are_minted_by_the_core(pkg_root: Path) -> list[Violation]:
     rule = "results-are-minted-by-the-core"
     found: list[Violation] = []
     for path in sorted((pkg_root / API_DIR).rglob("*.py")):
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = parsed(path)
         found.extend(
             Violation(rule, module_name(path, pkg_root), built, node.lineno)
-            for node in ast.walk(tree)
+            for node in walked(tree)
             if isinstance(node, ast.Call)
             and (built := _builds(node.func, RESULT_MODEL)) is not None
         )
@@ -4188,8 +4227,8 @@ def check_a_node_mints_no_deadline(pkg_root: Path) -> list[Violation]:
     found: list[Violation] = []
     for path in sorted((pkg_root / NODE_DIR).rglob("*.py")):
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
+        tree = parsed(path)
+        for node in walked(tree):
             if isinstance(node, ast.Call):
                 called = node.func
                 if isinstance(called, ast.Name) and called.id in DEADLINE_BUILDERS:
@@ -4233,8 +4272,8 @@ def check_a_node_does_not_ask_which_machine_it_is(pkg_root: Path) -> list[Violat
     )
     for path in files:
         name = module_name(path, pkg_root)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
+        tree = parsed(path)
+        for node in walked(tree):
             if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
                 read = f"{node.value.id}.{node.attr}"
                 if read in MACHINE_QUESTIONS:

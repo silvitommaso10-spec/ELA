@@ -76,6 +76,8 @@ cambia, si scrive un nuovo ADR che sostituisce il precedente.
 | [0066](0066-browser-files.md) | I file dal browser, e la pagina del browser che non è un sito | Accettata |
 | [0067](0067-three-models.md) | Il listino senza Haiku 4.5: tre modelli, un id che non nomina niente, e un budget che sta in ogni modello | Accettata |
 | [0068](0068-policies-on-high.md) | Le policy di chi usa ELA arrivano alle azioni HIGH | Accettata |
+| [0069](0069-suite-discipline.md) | La disciplina della suite: un posto solo per gli skip, i test che aspettano un evento, e il costo di un binario vero | Accettata |
+| [0070](0070-the-door-closes-at-the-answer.md) | La porta degli scaricamenti si dice chiusa alla risposta del browser | Accettata |
 
 ## Template
 

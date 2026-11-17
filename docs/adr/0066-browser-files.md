@@ -21,6 +21,7 @@
   M13.11**, con il conto chiuso a sei giri su otto, è scritto dopo l'accettazione, nel commit che scrive l'esito; con lui
   la riga rivista di ADR 0065 §6, in «Righe riviste», e il suo marchio sulla riga «Stato:» di ADR 0065 (decisione 44).
   **Rivista da ADR 0068 (M13.14)** il 2026-11-12: §4 — le quattro capability dei file chiedono a ogni uso fino a M13.15, non più «fino a M13.14» (ADR 0068).
+  **Rivista da ADR 0070 (M13.13b)** il 2026-11-17: §8, punto 5 — uno scaricamento interrotto è annullato e tolto per ciò che il browser ha annunciato prima di rispondere al `deny` della chiusura, che la porta sente in chiusura; il resto è dichiarato (ADR 0070 §1, §2, §4).
 - **Data:** 2026-11-03
 - **Riferimenti spec:** §19, §33, §57, §58, §65
 - **Milestone:** [M13.13](../milestones/M13.13.md), con [M13.9b](../milestones/M13.9b.md),
