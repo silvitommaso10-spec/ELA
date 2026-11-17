@@ -19,24 +19,28 @@ parentesi **non si incollano**. `ela task run <id>` si scrive `ela task run 55ed
 | `<questo repo>` | l'URL da cui cloni ELA | da dove hai preso il repository |
 | `<id>` | l'id di un task | `ela task create`, oppure `ela task list` |
 | `<approval-id>` | l'id di una richiesta di consenso | `ela approvals` |
-| `<id del figlio>` | l'id del task di pianificazione di un task, o del task figlio di un gesto di una sessione guidata | `ela task plan <id>`, riga `planning` (§5, sezione 24); nella sezione 26 lo scrive `scripts/prova_m14_3.py`, dal figlio che aspetta il tuo sì |
+| `<id del figlio>` | l'id del task di pianificazione di un task, o del task figlio di un gesto di una sessione guidata | `ela task plan <id>`, riga `planning` (§5); nelle prove lo scrive lo script della sezione: `scripts/prova_m14_2.py` nella sezione 24, `scripts/prova_m14_3.py` nella sezione 26, dal figlio che aspetta il tuo sì, `scripts/prova_m13_12.py` nella sezione 27, `scripts/prova_m13_10.py` nella sezione 29 e `scripts/prova_m13_13.py` nella sezione 30 |
 | `<nota>` | il nome della nota del passo 2 della sezione 24, unico per giro | lo scrive `scripts/prova_m14_2.py` al posto del segnaposto, con la data e l'ora |
 | `<codice>` | il codice di arruolamento di un nodo | `ela node enroll`, stampato una volta sola |
-| `<ip tailnet del Mac>` | l'indirizzo del Mac sulla tailnet | `tailscale ip -4`, sul Mac (§12) |
+| `<ip tailnet del Mac>` | l'indirizzo del Mac sulla tailnet | `tailscale ip -4`, sul Mac (§12); lo usano anche i comandi di §13 |
 | `<nome della voce>` | una voce SAPI 5 installata sul PC | l'elenco del passo 3 di §12: sul PC di M12.4, `Microsoft Elsa Desktop` |
 | `<chiave del modello del PC>` | la chiave Anthropic del nodo, mai quella del Core | la console Anthropic (§12, passo 4) |
 | `<chiave del modello del Mac>` | la chiave Anthropic del Core, nella stessa workspace di quella del PC | la console Anthropic (§9, §23) |
 | `<tetto in dollari>` | quanto il mese può spendere sulla chiave del modello, sotto il limite mensile dell'organizzazione | lo decidi tu (§9, §23) |
-| `<id del companion>` | l'id della riga dell'iPhone nel registro | `ela device list`, colonna `ID` (§13) |
-| `<id della console>` | l'id della riga del Command Center nel registro | `ela device list`, colonna `ID` (§14) |
+| `<id del companion>` | l'id della riga dell'iPhone nel registro | `ela device list`, colonna `ID` (§13); lo usano anche i comandi di §18 |
+| `<id della console>` | l'id della riga del Command Center nel registro | `ela device list`, colonna `ID` (§14); lo usano anche i comandi di §18 |
 | `<il piano del login>` | il file del piano del login dal vault della sezione 28 | nella prova è `docs/examples/login-news-ycombinator.json`, e lo dai allo script con `--login`; per un altro sito lo scrivi da `docs/examples/login-from-the-vault.json` |
 | `<la cartella del profilo>` | la cartella in cui il browser di ELA tiene i siti in cui sei entrato | la scegli tu: sul Mac, fuori dal repository e da ciò che si sincronizza (sezione 28) |
 | `<il programma del vault>` | il percorso assoluto del programma `bw` di Bitwarden | dove l'hai installato: `which bw` lo dice (sezione 28) |
 | `<id della policy>` | l'id breve di una policy di §59, i primi otto caratteri del suo id | `ela policy list`, colonna `policy`; nella sezione 27 lo scrive `scripts/prova_m13_12.py`, dalla policy del passo 4 |
-| `<id della policy 2>` | l'id breve della policy che la prova della sezione 32 crea al passo 2 | lo scrive `scripts/prova_m13_14.py`, dalla policy che hai creato al passo 2 |
-| `<id della policy 5>` | l'id breve della policy che la prova della sezione 32 crea al passo 5 | lo scrive `scripts/prova_m13_14.py`, dalla policy che hai creato al passo 5 |
+| `<id della policy 2>` | l'id breve della policy che la prova della sezione 32, o quella della sezione 34, crea al passo 2 | lo scrive `scripts/prova_m13_14.py` nella sezione 32, `scripts/prova_m13_15.py` nella sezione 34, dalla policy che hai creato al passo 2 |
+| `<id della policy 3>` | l'id breve della policy che la prova della sezione 34 crea al passo 3 | lo scrive `scripts/prova_m13_15.py`, dalla policy che hai creato al passo 3 |
+| `<id della policy 5>` | l'id breve della policy che la prova della sezione 32, o quella della sezione 34, crea al passo 5 | lo scrive `scripts/prova_m13_14.py` nella sezione 32, `scripts/prova_m13_15.py` nella sezione 34, dalla policy che hai creato al passo 5 |
+| `<id della policy 6>` | l'id breve della policy che la prova della sezione 34 crea al passo 6 | lo scrive `scripts/prova_m13_15.py`, dalla policy che hai creato al passo 6 |
 | `<id della policy 7>` | l'id breve della policy che la prova della sezione 32 crea al passo 7 | lo scrive `scripts/prova_m13_14.py`, dalla policy che hai creato al passo 7 |
 | `<id della policy 8>` | l'id breve della policy che la prova della sezione 32 crea al passo 8 | lo scrive `scripts/prova_m13_14.py`, dalla policy che hai creato al passo 8 |
+| `<id della policy 9>` | l'id breve della policy che la prova della sezione 34 crea al passo 9 | lo scrive `scripts/prova_m13_15.py`, dalla policy che hai creato al passo 9 |
+| `<id della voce>` | l'id della voce del tuo vault per `news.ycombinator.com`, in una policy di login | lo leggi nell'app di Bitwarden; nella sezione 34 te lo chiede `scripts/prova_m13_15.py`, senza mostrarlo, e nel file della prova resta il segnaposto |
 | `<id del passo 2>` | l'id del task del passo 2 di §21, nel suo ultimo giro, o della sezione 25, o della sessione della sezione 26 | lo scrive `scripts/prova_m6_3c.py`, o `scripts/prova_m13_1e.py`, o `scripts/prova_m14_3.py`, al posto del segnaposto |
 | `<id del passo 3>` | l'id del task del passo 3 di §21, nel suo ultimo giro, o della sezione 25 | lo scrive `scripts/prova_m6_3c.py`, o `scripts/prova_m13_1e.py`, al posto del segnaposto |
 | `<id del passo 4>` | l'id del task del passo 4 di §21, nel suo ultimo giro, o della sezione 25 | lo scrive `scripts/prova_m6_3c.py`, o `scripts/prova_m13_1e.py`, al posto del segnaposto |
@@ -44,7 +48,7 @@ parentesi **non si incollano**. `ela task run <id>` si scrive `ela task run 55ed
 | `<id del passo 6>` | l'id del task del passo 6 della sezione 25 | lo scrive `scripts/prova_m13_1e.py` al posto del segnaposto |
 | `<id di chi ha risposto>` | l'id dell'identità che ha detto no, nel passo della sezione 25 | lo scrive `scripts/prova_m13_1e.py`, da `GET /tasks/<id>`, al posto del segnaposto |
 | `<nome di chi ha risposto>` | il nome che il registro dà a chi ha detto no | lo scrive `scripts/prova_m13_1e.py`, da `GET /devices`, al posto del segnaposto |
-| `<porta>` | la porta su cui ELA ascolta | `ela diagnostics`, riga `addresses` (§14) |
+| `<porta>` | la porta su cui ELA ascolta | `ela diagnostics`, riga `addresses` (§14); la usano i comandi di §13 e §18 |
 | `<radice del PC>` | la cartella del PC dentro cui ELA può leggere e scrivere | la scegli tu, sul PC: una cartella che c'è, e che non contiene né sta dentro `$HOME\.ela` o `$HOME\ELA` (§17, passo 2) |
 | `<id della voce configurata>` | l'id della voce online che usi | `uv run ela voice`, riga `online voice`: lo scrive `scripts/prova_m13_1c_m13_1d_m9_6.py` al posto del segnaposto (§22) |
 
