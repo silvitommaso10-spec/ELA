@@ -106,7 +106,7 @@ cambiamento — è in `tests/architecture/test_the_trees_are_read_for_their_cont
 scritture sugli alberi: due, tutte e due in un dizionario della regola. `test_every_audit_event_type_has_a_writer`, che
 la registrazione eredita per nome, legge i nomi d'attributo di ogni modulo una volta per processo. **Nessun caso è
 tolto**: gli id raccolti prima e dopo sono gli stessi, confrontati come liste, e i casi che sono i mutanti delle regole
-muoiono ancora. I numeri, prima e dopo, sono nel documento della milestone.
+muoiono ancora. I numeri di prima sono nel documento della milestone; quelli di dopo, con i due giri del «dopo» (§4).
 
 **Il test che lo difendeva si è girato**:
 `tests/docs/test_adr_parallel.py::test_the_tests_that_waited_wait_for_an_event_or_say_why`.
@@ -122,6 +122,18 @@ all'ultimo commit della milestone**, nelle condizioni di ADR 0052 §16, con i nu
 posto solo che nomina un binario vero lanciato — `PROFILE_BROWSER`, `CLAUDE_CODE`, con `binary=True` in
 `tests/machines.py`, e la marca che la raccolta mette dove un test prende il browser del profilo —; `of_a_binary` lo
 dice dalle marche, mai da un elenco di file. **Vale per le milestone future, prima dei loro numeri.**
+
+### 4. Il debito di ADR 0063 §12: la regola c'è, la misura no
+
+**La regola che lo pagherebbe è decisa** (§3, decisione 79): la soglia vale due volte, per la parte di M13.9 che non
+lancia il binario e per quella che lo lancia. **Si misura sui due giri del «dopo»** — `make check` con
+`--durations=0` nelle condizioni di ADR 0052 §16 —, con la costruzione del Core contata per milestone e
+`detect-secrets` fuori con la sua ragione (decisione 78). **Il 2026-11-17 quei due giri non si sono fatti**: il Mac era a
+batteria — una delle condizioni di ADR 0052 §16 mancava —, e la regola della misura dice che allora non si fanno e si
+scrive (decisione 81). **Il debito resta aperto, a carico di M9.5**: non è pagato e non è ridichiarato, e
+`docs/STATO.md` §6 lo dice. Si misura con i due giri, nelle condizioni, prima che questo ADR diventi Accettata; se le
+due parti di M13.9 stanno sotto il 10 % è pagato da questa regola, e questa sezione prende il titolo del pagamento; se
+no è ridichiarato a carico di M13.11, con i numeri.
 
 ### 5. Un debito datato: le attese che nessun elenco conosceva
 
