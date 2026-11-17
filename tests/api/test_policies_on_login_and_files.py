@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import html
 import inspect
 import json
 import stat
@@ -24,19 +26,25 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from click.testing import Result
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from pydantic import BaseModel
+from typer.testing import CliRunner
 
 from ela.api import create_app, schemas
 from ela.api.policies import READS_GO_ON, SESSION_GOES_ON, running_of
+from ela.cli import client as cli_client
+from ela.cli.app import app as ela_app
 from ela.composition import Ela, Settings, build
-from ela.domain import AuditEventType, Authorization, PolicyBounds
+from ela.domain import AuditEventType, Authorization, CapabilityId, PolicyBounds
+from ela.permissions import production_catalogue
 from ela.ports import Secret
 from ela.testing.fakes import FakeAccountBrowser, FakeBrowser, FakePower, FakeVault
 from ela.tools.guided import EMPTY_SESSION, SESSION_AS_YOU
 from tests.api.support import AUTHORIZED, BASE
 from tests.api.test_login_surfaces import ENTRY, LOOPBACK, MASKED, NAMELESS
+from tests.cli.support import LoopTransport, plain
 from tests.composition.support import create_schema, database_url, declare
 from tests.permissions.catalogue_calls import CATALOGUE
 from tests.permissions.policy_support import policy_for
@@ -380,3 +388,53 @@ async def test_the_console_s_preview_says_the_uses_then_the_end_with_its_date(
     assert page.index("Usi") < page.index("Scade")
     assert "fra 1 giorno, il 20" in page, "the date, not the time alone"
     assert "at most 1 use" in page and "Insieme" in page
+
+
+async def test_the_console_says_where_what_a_policy_moves_goes(
+    client: AsyncClient, console: AsyncClient
+) -> None:
+    """Proposal 11 of the SPEC: the view of a policy says ``goes`` beside ``does`` — «Dove va» —
+    for the five as for every capability that declares it (finding 4 of the consistency reading:
+    only the preview said it)."""
+    await client.post("/policies", json={**DOWNLOAD, "model": None})
+    page = html.unescape(" ".join((await console.get("/console/policies")).text.split()))
+
+    words = production_catalogue().get(CapabilityId("browser.download")).policy_words
+    assert words is not None and words.goes is not None
+    assert "Dove va" in page
+    assert " ".join(words.goes.split()) in page
+    assert page.index("Che cosa fa senza chiederti") < page.index("Dove va")
+
+
+async def test_no_output_of_the_command_line_shows_the_id_of_an_entry(
+    monkeypatch: pytest.MonkeyPatch, ela: Ela, app: FastAPI, client: AsyncClient
+) -> None:
+    """Answer 35 and proposal 11 of the SPEC: an id known to the test, looked for in every output
+    of ``ela policy`` — the preview, the creation, a refusal that received a wrong id, the list in
+    its two forms, the revocation (finding 13 of the consistency reading: the routes were tested,
+    the command line was not)."""
+    transport = LoopTransport(app, asyncio.get_running_loop())
+    monkeypatch.setattr(
+        cli_client, "connect", lambda: cli_client.open_client(ela.settings.api, transport=transport)
+    )
+    runner = CliRunner()
+
+    async def invoke(*arguments: str) -> Result:
+        return await asyncio.to_thread(runner.invoke, ela_app, list(arguments))
+
+    login = ("policy", "create", "browser.login", "--scope", "posta.example", "--days", "1")
+    shown = await invoke(*login, "--entry", ENTRY.id)
+    made = await invoke(*login, "--entry", ENTRY.id, "--uses", "1", "--confirm")
+    refused = await invoke(*login, "--entry", WRONG_ID, "--confirm")
+    listed = await invoke("policy", "list")
+    as_json = await invoke("policy", "list", "--json")
+    (policy,) = (await client.get("/policies")).json()["policies"]
+    revoked = await invoke("policy", "revoke", policy["short"])
+    ended = await invoke("policy", "list", "--all")
+
+    for result in (shown, made, refused, listed, as_json, revoked, ended):
+        for secret in (ENTRY.id, WRONG_ID):
+            assert secret not in result.output, (result.output, secret)
+    assert made.exit_code == 0 and revoked.exit_code == 0, made.output + revoked.output
+    assert refused.exit_code != 0 and "vault.no_entry" in plain(refused.output)
+    assert MASKED in plain(shown.output) and MASKED in plain(listed.output)

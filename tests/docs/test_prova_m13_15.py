@@ -68,13 +68,16 @@ SIBLINGS = (
 ENTRY_ID: Final = "5e1f0c2a-7b3d-4e8f-9a01-23456789abcd"
 """An id of an entry of the fake vault — searched for in the file of the proof, and never found."""
 USERNAME: Final = "tester@example.com"
+MASKED_USERNAME: Final = "t…@example.com"
+"""The username as a surface shows it: on the screen at the birth of the policy, never in the file
+(finding 5 of the consistency reading: the guide promises the file without the username)."""
 HN: Final = FakeVaultEntry(
     ENTRY_ID,
     "Hacker News",
     ("https://news.ycombinator.com/login",),
     USERNAME,
     "-".join(("SENTINEL", "of", "the", "word")),
-    "t…@example.com",
+    MASKED_USERNAME,
 )
 ACCT = "form:not(:has(input[name=creating])) input[name=acct]"
 PW = "form:not(:has(input[name=creating])) input[name=pw]"
@@ -376,6 +379,7 @@ async def test_steps_2_to_14_walk_against_a_real_ela_and_pass(
     ]
     assert ENTRY_ID not in walk.written, "the id of the entry entered the file of the proof"
     assert USERNAME not in walk.written, "the whole username entered the file of the proof"
+    assert MASKED_USERNAME not in walk.written, "the masked username entered the file of the proof"
     assert str(walk.files) not in walk.written and str(walk.files.resolve()) not in walk.written
     assert not list(Path(module.tempfile.gettempdir()).glob("prova-m13.15-*.json"))
 

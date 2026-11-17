@@ -20,6 +20,9 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from tests.composition.support import (
+    _only_the_declared_environment,  # noqa: F401 — it reads the scripts of the proofs
+)
 from tests.docs.test_getting_started import BLOCK, LEGEND_ROW, PLACEHOLDER, guide
 
 SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"

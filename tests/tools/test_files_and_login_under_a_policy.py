@@ -64,6 +64,7 @@ from ela.tools.browser_files import (
     UPLOAD_MAX_BYTES,
 )
 from ela.tools.fs import (
+    CHUNK,
     ELA_S_OWN,
     HARD_LINK,
     NO_ROOT,
@@ -248,13 +249,24 @@ async def test_a_file_that_grows_past_the_limit_under_a_policy_is_refused_and_no
     assert asked == [10] and browser.given == []
 
 
-def test_the_read_stops_one_byte_past_the_limit(tmp_path: Path) -> None:
+@pytest.mark.parametrize("at_most", [10, CHUNK - 1, CHUNK, CHUNK + 1, 2 * CHUNK])
+def test_the_read_stops_one_byte_past_the_limit(tmp_path: Path, at_most: int) -> None:
+    """Decision 51, to the byte: a file larger than the limit gives **the limit and one byte**,
+    never the rest of a piece of the read — whatever the limit is against the size of a piece
+    (found by the consistency reading of the branch, finding 1)."""
     target = tmp_path / "grande.bin"
-    target.write_bytes(b"x" * (3 * 1024 * 1024))
+    target.write_bytes(b"x" * (3 * CHUNK + 7))
 
-    assert len(read_bytes(target, at_most=10)) > 10
-    assert len(read_bytes(target, at_most=10)) < 3 * 1024 * 1024
+    assert len(read_bytes(target, at_most=at_most)) == at_most + 1
     assert UPLOAD_MAX_BYTES == 50 * 1024 * 1024
+
+
+def test_a_file_within_the_limit_is_read_whole(tmp_path: Path) -> None:
+    target = tmp_path / "piccolo.bin"
+    target.write_bytes(b"x" * (CHUNK + 3))
+
+    assert len(read_bytes(target, at_most=CHUNK + 3)) == CHUNK + 3
+    assert len(read_bytes(target)) == CHUNK + 3
 
 
 def test_a_second_name_is_refused_on_the_descriptor_that_reads(tmp_path: Path) -> None:
