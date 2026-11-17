@@ -593,3 +593,95 @@ async def test_a_covered_login_reads_the_entry_the_plan_names(tmp_path: Path) ->
     assert covered.refusal is None
     assert result.status is ExecutionStatus.SUCCEEDED, result.error
     assert [call for call in vault.calls if call.startswith("take")] == [f"take:{ANNA.id}"]
+
+
+# ----------------------------------------------------------------------------------------
+# The races: what changes between the look at the path and the read
+# ----------------------------------------------------------------------------------------
+
+
+class _Os:
+    """``os`` as a module sees it, with ``lstat`` raising: a file gone between two looks."""
+
+    def __init__(self, error: OSError) -> None:
+        self._error = error
+
+    def lstat(self, *_: object, **__: object) -> os.stat_result:
+        raise self._error
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(os, name)
+
+
+async def test_a_file_gone_before_its_size_is_asked_is_an_io_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder = root(tmp_path)
+    (folder / "ELA" / "prova" / "da-caricare.txt").write_bytes(BYTES)
+    monkeypatch.setattr(browser_files, "os", _Os(FileNotFoundError(2, "gone")))
+
+    covered = await upload(FakeBrowser(), folder).prospect_covered(UPLOAD)
+
+    assert covered.refusal is not None and covered.refusal.code == "io.error"
+
+
+def test_a_file_gone_before_its_names_are_counted_is_an_io_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ela.tools import fs
+
+    folder = root(tmp_path)
+    (folder / "ELA" / "prova" / "letto.txt").write_bytes(BYTES)
+    monkeypatch.setattr(fs, "os", _Os(FileNotFoundError(2, "gone")))
+
+    refused, _ = fs.looked_for_a_read(folder, "ELA/prova/letto.txt", protected={})
+
+    assert refused is not None and refused.code == "io.error"
+
+
+async def test_a_second_name_given_after_the_look_is_refused_by_the_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The descriptor that reads has the last word (answer 36, decision 51): a name added after
+    the path was looked at is refused there — for an upload, and for ``fs.read``."""
+    from ela.tools import fs
+
+    folder = root(tmp_path)
+    (folder / "ELA" / "prova" / "da-caricare.txt").write_bytes(BYTES)
+
+    def two_names(*_: object, **__: object) -> bytes:
+        raise MoreThanOneName(HARD_LINK)
+
+    monkeypatch.setattr(browser_files, "read_bytes", two_names)
+    monkeypatch.setattr(fs, "read_bytes", two_names)
+    browser = FakeBrowser(FakePage(fields={"#fileinput": _file_field()}))
+    reader = FsReadTool(folder, CLOCK, FakeIdGenerator(), protected={"a place": tmp_path / "x"})
+
+    uploaded = await upload(browser, folder).execute(
+        deciding(BROWSER_UPLOAD), UPLOAD, FakeStop(), {}
+    )
+    read = await reader.execute(
+        deciding("fs.read", approval=True), {"path": "ELA/prova/da-caricare.txt"}, FakeStop()
+    )
+
+    assert uploaded.error is not None and uploaded.error.code == HARD_LINK
+    assert read.error is not None and read.error.code == HARD_LINK
+    assert browser.given == []
+    assert dict(reader.protected) == {"a place": tmp_path / "x"}
+
+
+@FOUR
+async def test_a_place_with_no_browser_to_start_is_refused(
+    tmp_path: Path, capability: str, profile: bool
+) -> None:
+    folder = root(tmp_path)
+    browser = (FakeAccountBrowser if profile else FakeBrowser)(installed=False)
+    tool = (
+        download(browser, folder, profile=profile)
+        if capability in (BROWSER_DOWNLOAD, BROWSER_DOWNLOAD_AS_YOU)
+        else upload(browser, folder, profile=profile)
+    )
+
+    looked = await tool.prospect_place("ELA/prova", ("httpbin.org",))
+
+    assert looked.refusal is not None and looked.refusal.code == NOT_INSTALLED
