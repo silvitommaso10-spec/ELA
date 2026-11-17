@@ -174,10 +174,11 @@ def test_every_example_explains_itself() -> None:
     section 31 that ELA accepts and denies at the gate: a step whose model_hint names a model the
     list no longer has; sixty since M13.14, the eleven plans of the hand test of section 32;
     sixty-three since M13.13b, the three downloads of section 33 — the two browsers, and the one the
-    time of the tool cuts short.
+    time of the tool cuts short; seventy-three since M13.15, the ten plans of section 34 — three
+    downloads, five uploads and two logins, one of them with the placeholder of an entry.
     """
     found = sorted(EXAMPLES.glob("*.json"))
-    assert len(found) == 63, [path.name for path in found]
+    assert len(found) == 73, [path.name for path in found]
     for path in found:
         plan = json.loads(path.read_text(encoding="utf-8"))
         assert NOTE in plan, path.name

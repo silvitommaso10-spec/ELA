@@ -560,7 +560,7 @@ def test_a_tool_that_must_be_verified_on_the_node_without_its_verifier_is_refuse
 ) -> None:
     """The negative case of a refusal with no producer in production (form E): the tool and its
     verifier are built together, so only a registry built here can hold one without the other."""
-    tools = ToolRegistry((FsReadTool(tmp_path, FakeClock(), FakeIdGenerator()),))
+    tools = ToolRegistry((FsReadTool(tmp_path, FakeClock(), FakeIdGenerator(), protected={}),))
 
     with pytest.raises(ConfigurationError, match="fs.read"):
         carried(tools, VerifierRegistry(()))

@@ -91,7 +91,8 @@ def test_the_cap_the_rows_and_the_version_are_stated_together_and_none_moves_alo
     **exactly what the bump exists to prevent**. Corrected by M13.14: two tests of the sessions pin
     it too (``tests/permissions/test_guardian_sessions.py``), for the rule that moved it to
     ``v0.3``; this one stays the pin of the table. ``v0.4`` since M13.14 (ADR 0068): the row of a
-    ``HIGH`` that declares terms, a way to allow the Guardian of ``v0.3`` did not have.
+    ``HIGH`` that declares terms, a way to allow the Guardian of ``v0.3`` did not have. ``v0.5``
+    since M13.15 (ADR 0071): the login and the four files from the browser under a policy.
     """
     assert MAX_RISK is RiskLevel.HIGH, f"the catalogue cap moved. {MOVE_THEM_TOGETHER}"
     assert RISK_POLICY == {
@@ -101,7 +102,7 @@ def test_the_cap_the_rows_and_the_version_are_stated_together_and_none_moves_alo
         RiskLevel.HIGH: Rule.APPROVAL_EVERY_USE,
         RiskLevel.CRITICAL: Rule.DENY,
     }, f"the policy moved. {MOVE_THEM_TOGETHER}"
-    assert POLICY_VERSION == "v0.4", (
+    assert POLICY_VERSION == "v0.5", (
         f"the policy version moved, and this is the only place that says which one it is. "
         f"{MOVE_THEM_TOGETHER}"
     )

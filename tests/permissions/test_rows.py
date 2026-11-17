@@ -69,11 +69,13 @@ ROWS = {
     "browser.act": Rule.APPROVAL_UNLESS_POLICY,
     "browser.act_as_you": Rule.APPROVAL_UNLESS_POLICY,
     "terminal.run": Rule.APPROVAL_EVERY_USE,
-    "browser.login": Rule.APPROVAL_EVERY_USE,
-    "browser.download": Rule.APPROVAL_EVERY_USE,
-    "browser.download_as_you": Rule.APPROVAL_EVERY_USE,
-    "browser.upload": Rule.APPROVAL_EVERY_USE,
-    "browser.upload_as_you": Rule.APPROVAL_EVERY_USE,
+    # Since M13.15 (ADR 0071) the login and the four files from the browser declare terms: a
+    # policy of yours covers them, and ``terminal.run`` is the one row that asks at every use.
+    "browser.login": Rule.APPROVAL_UNLESS_POLICY,
+    "browser.download": Rule.APPROVAL_UNLESS_POLICY,
+    "browser.download_as_you": Rule.APPROVAL_UNLESS_POLICY,
+    "browser.upload": Rule.APPROVAL_UNLESS_POLICY,
+    "browser.upload_as_you": Rule.APPROVAL_UNLESS_POLICY,
 }
 """Criterion 7: the row of every capability of the catalogue, written out — a closed world."""
 

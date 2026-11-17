@@ -72,7 +72,7 @@ def writer(root: Path) -> FsWriteTool:
 
 
 def reader(root: Path) -> FsReadTool:
-    return FsReadTool(root, FakeClock(NOW), FakeIdGenerator())
+    return FsReadTool(root, FakeClock(NOW), FakeIdGenerator(), protected={})
 
 
 async def write(tool: FsWriteTool, **arguments: object) -> tuple[ExecutionStatus, str | None]:

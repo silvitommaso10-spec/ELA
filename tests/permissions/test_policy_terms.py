@@ -19,8 +19,13 @@ from ela.domain import CapabilityId, PolicyTerms, PolicyWords, RiskLevel
 from ela.permissions import (
     BROWSER_ACT,
     BROWSER_ACT_AS_YOU,
+    BROWSER_DOWNLOAD,
+    BROWSER_DOWNLOAD_AS_YOU,
     BROWSER_GUIDED,
     BROWSER_GUIDED_AS_YOU,
+    BROWSER_LOGIN,
+    BROWSER_UPLOAD,
+    BROWSER_UPLOAD_AS_YOU,
     FS_WRITE,
     GUIDED_ROUTE,
     RISK_POLICY,
@@ -42,13 +47,105 @@ GESTURE_TERMS = PolicyTerms(
 """The terms of a gesture, as proposal 3 of the SPEC of M13.14 writes them."""
 
 
+FIVE: tuple[CapabilityId, ...] = (
+    BROWSER_LOGIN,
+    BROWSER_DOWNLOAD,
+    BROWSER_DOWNLOAD_AS_YOU,
+    BROWSER_UPLOAD,
+    BROWSER_UPLOAD_AS_YOU,
+)
+"""The five that M13.15 opens to a policy (ADR 0071)."""
+DOWNLOAD_TERMS = PolicyTerms(
+    limits=(), free=("path", "overwrite", "click", "purpose"), on_the_core=True, by_value="site"
+)
+UPLOAD_TERMS = PolicyTerms(
+    limits=(),
+    free=("path", "file_field", "fill", "click", "expect_text", "purpose"),
+    on_the_core=True,
+    by_value="site",
+)
+FIVE_TERMS = {
+    BROWSER_LOGIN: PolicyTerms(
+        limits=(),
+        free=("path", "username_field", "password_field", "click", "expect_text", "purpose"),
+        on_the_core=True,
+        by_value="entry",
+    ),
+    BROWSER_DOWNLOAD: DOWNLOAD_TERMS,
+    BROWSER_DOWNLOAD_AS_YOU: DOWNLOAD_TERMS,
+    BROWSER_UPLOAD: UPLOAD_TERMS,
+    BROWSER_UPLOAD_AS_YOU: UPLOAD_TERMS,
+}
+"""The terms of proposal 2 of the SPEC of M13.15, byte for byte."""
+FOLDERS_WITH_SITES = "every one of these folders with every one of these sites"
+DOWNLOAD_GOES = (
+    "what arrives is chosen by the site, not by the plan, and ELA has not looked at it: it goes "
+    "into these folders, and wherever your system copies them; a file written there may be one "
+    "your system runs"
+)
+FIVE_WORDS = {
+    BROWSER_LOGIN: PolicyWords(
+        does=(
+            "signs in to these sites with these entries of your vault: a window of ELA's browser "
+            "comes up on the screen and takes the keyboard while it types, and you may be "
+            "elsewhere"
+        ),
+        goes=(
+            "the password goes from your vault to the site; only you open the vault, and with it "
+            "closed nothing is typed; a wrong password leaves the site a failed attempt"
+        ),
+        together="every one of these sites with every one of these entries",
+    ),
+    BROWSER_DOWNLOAD: PolicyWords(
+        does=(
+            "downloads whatever these sites send into these folders, on the Core, in ELA's own "
+            "empty browser, and replaces a file there when the plan says so"
+        ),
+        goes=DOWNLOAD_GOES,
+        together=FOLDERS_WITH_SITES,
+    ),
+    BROWSER_DOWNLOAD_AS_YOU: PolicyWords(
+        does=(
+            "downloads whatever these sites send into these folders, on the Core, as you, in the "
+            "browser that keeps your accounts, and replaces a file there when the plan says so"
+        ),
+        goes=f"{DOWNLOAD_GOES}; where you are signed in, what arrives is your own content",
+        together=FOLDERS_WITH_SITES,
+    ),
+    BROWSER_UPLOAD: PolicyWords(
+        does=(
+            "gives these sites any file of these folders, in ELA's own empty browser: nobody "
+            "looks at the file before it leaves"
+        ),
+        goes=(
+            "the content of the file leaves this machine for these sites, and is not taken back: "
+            "a revocation stops only what comes after"
+        ),
+        together=FOLDERS_WITH_SITES,
+    ),
+    BROWSER_UPLOAD_AS_YOU: PolicyWords(
+        does=(
+            "gives these sites any file of these folders as you, in the browser that keeps your "
+            "accounts: nobody looks at the file before it leaves"
+        ),
+        goes=(
+            "the content of the file leaves this machine for these sites in your name, and is not "
+            "taken back: a revocation stops only what comes after"
+        ),
+        together=FOLDERS_WITH_SITES,
+    ),
+}
+"""The words of proposal 13 of the SPEC of M13.15, byte for byte: «you», never a name."""
+
+
 def test_the_capabilities_that_declare_terms_are_these_and_no_other() -> None:
     """``browser.guided`` since M13.12, and ``browser.guided_as_you`` since M13.9 with the same
     limits — the limits are a session's, whatever browser it guides —, byte for byte as before.
     Since M13.14 (ADR 0068) ``fs.write``, ``browser.act`` and ``browser.act_as_you``, with the terms
-    and the words of proposal 3. No single read, no login, no file from the browser and no
-    terminal declares any."""
-    catalogue = production_catalogue(sites=SITES, guided_model=MODEL)
+    and the words of proposal 3. **Since M13.15** (ADR 0071) the login and the four files from the
+    browser, with the second dimension named by value and the words of proposal 13 of its SPEC. No
+    single read and no terminal declares any."""
+    catalogue = production_catalogue(sites=SITES, guided_model=MODEL, fs_scope="ELA")
     declared = {spec.id: spec.policy_terms for spec in catalogue.specs() if spec.policy_terms}
     words = {spec.id: spec.policy_words for spec in catalogue.specs() if spec.policy_words}
 
@@ -58,13 +155,16 @@ def test_the_capabilities_that_declare_terms_are_these_and_no_other() -> None:
         FS_WRITE,
         BROWSER_ACT,
         BROWSER_ACT_AS_YOU,
+        *FIVE,
     }
-    assert set(words) == {FS_WRITE, BROWSER_ACT, BROWSER_ACT_AS_YOU}
+    assert set(words) == {FS_WRITE, BROWSER_ACT, BROWSER_ACT_AS_YOU, *FIVE}
+    assert {name: declared[name] for name in FIVE} == FIVE_TERMS
+    assert {name: words[name] for name in FIVE} == FIVE_WORDS
     assert declared[FS_WRITE] == PolicyTerms(
         limits=(), free=("body", "overwrite", "purpose"), on_the_core=True
     )
     assert declared[BROWSER_ACT] == declared[BROWSER_ACT_AS_YOU] == GESTURE_TERMS
-    assert words == {
+    assert {name: words[name] for name in (FS_WRITE, BROWSER_ACT, BROWSER_ACT_AS_YOU)} == {
         FS_WRITE: PolicyWords(
             does="writes and overwrites any file in these folders, on the Core",
             goes=(

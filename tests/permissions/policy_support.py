@@ -91,11 +91,20 @@ WIDEST: Final = {
 """The widest value of every limit the declarations of the tests name."""
 
 
+BY_VALUE: dict[str, tuple[str, ...]] = {
+    "site": ("httpbin.org",),
+    "entry": ("0f7c2e5a-1b2c-4d3e-8f90-a1b2c3d4e5f6",),
+}
+"""The values a policy of the tests names for each argument a declaration names by value (M13.15,
+ADR 0071): a site of the calls of the tests, and an id of an entry of a vault of nobody's."""
+
+
 def policy_for(
     spec: CapabilitySpec,
     *,
     scope: tuple[str, ...] | None = None,
     limits: dict[str, str] | None = None,
+    values: tuple[str, ...] | None = None,
     created_at: datetime = NOW,
     expires_at: datetime | None = None,
     revoked_at: datetime | None = None,
@@ -104,10 +113,13 @@ def policy_for(
     **changes: Any,
 ) -> Authorization:
     """A standing policy for ``spec``: the capability's whole scope, limits at their widest unless
-    given, a day of life, the terms of today — then ``changes``."""
+    given, the values of :data:`BY_VALUE` for an argument named by value unless given, a day of
+    life, the terms of today — then ``changes``."""
     declared = spec.policy_terms if terms is None else terms
     assert declared is not None, f"{spec.id} declares no terms"
     chosen = {name: WIDEST[name] for name in declared.limits} if limits is None else limits
+    if values is None:
+        values = () if declared.by_value is None else BY_VALUE[declared.by_value]
     base = Authorization(
         id=AuthorizationId(UUID(f"{tail:08x}-0000-4000-8000-{tail:012d}")),
         created_at=created_at,
@@ -116,7 +128,7 @@ def policy_for(
         granted_by="tommaso",
         expires_at=created_at + timedelta(days=1) if expires_at is None else expires_at,
         revoked_at=revoked_at,
-        bounds=PolicyBounds(terms=declared, limits=chosen),
+        bounds=PolicyBounds(terms=declared, limits=chosen, values=values),
         metadata={"origin": "policy"},
     )
     return base.model_copy(update=changes)

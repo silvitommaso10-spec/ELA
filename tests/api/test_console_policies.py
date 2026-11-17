@@ -21,7 +21,6 @@ import pytest
 from httpx import AsyncClient
 
 from ela.api import console
-from ela.api.companion import when
 from ela.api.console import NO_POLICIES, _bounds
 from ela.api.schemas import LimitOut, PolicyIn, PreviewOut
 from ela.domain import (
@@ -233,6 +232,9 @@ MARKED = PreviewOut(
     goes="GOES-4",
     scope=("ELA/uno", "ELA/due"),
     resolved=("/root/ELA/uno", None),
+    by_value="site",
+    values=("VALUE-16", "VALUE-17"),
+    together="TOGETHER-18",
     limits={"LIMIT-5": "VALUE-5"},
     days=6,
     expires_at=datetime(2026, 11, 13, 9, 30, tzinfo=UTC),
@@ -256,9 +258,14 @@ def shown_by_the_page() -> dict[str, tuple[str, ...]]:
         "goes": ("GOES-4",),
         "scope": ("ELA/uno", "ELA/due"),
         "resolved": ("ELA/uno = /root/ELA/uno",),
+        # The second dimension and its product (M13.15, ADR 0071): the console names it «Siti».
+        "by_value": ("Siti",),
+        "values": ("VALUE-16", "VALUE-17"),
+        "together": ("TOGETHER-18",),
         "limits": ("LIMIT-5=VALUE-5",),
         "days": ("fra 6 giorni",),
-        "expires_at": (when(MARKED.expires_at),),
+        # The date beside the time (M13.15, answer 47): a policy lives up to ninety days.
+        "expires_at": (console._expires(MARKED.expires_at),),
         "uses": ("USES-8",),
         "on_the_core": ("CORE-9",),
         "model": ("MODEL-10",),
@@ -310,7 +317,7 @@ async def test_a_policy_says_its_level_what_it_does_its_uses_and_its_last_action
     assert guided_policy.status_code == 303
     for text in ("Livello", "HIGH", "MEDIUM", "Che cosa fa senza chiederti", words.does):
         assert text in page, text
-    assert "3 di 10, ne restano 7" in page
+    assert "3 di 10, 7 rimasti" in page
     assert "0, senza limite di usi" in page
     assert "Ultime azioni" in page and "task 3a4d7002" in page and "ELA/uno/2.md" in page
     assert page.index("ELA/uno/2.md") < page.index("ELA/uno/0.md"), "the most recent first"

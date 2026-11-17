@@ -85,7 +85,7 @@ class FakeNode:
                 if liar
                 else FsWriteTool(fs_root, clock, self._ids, protected={})
             )
-            self._tools[FS_READ] = FsReadTool(fs_root, clock, self._ids)
+            self._tools[FS_READ] = FsReadTool(fs_root, clock, self._ids, protected={})
             self._tools[FS_WRITE] = writer
             self._verifiers = {FS_READ: FsReadVerifier(fs_root), FS_WRITE: FsWriteVerifier(fs_root)}
         self.order: Mapping[str, Any] | None = None

@@ -503,7 +503,15 @@ def _an_upload(tmp_path: Path, *, profile: bool) -> Subject:
     )
     made = AccountUploadTool if profile else BrowserUploadTool
     return Subject(
-        made(root, SITES, browser, FakeClock(), FakeIdGenerator(), pages=FakeTaskPages()),  # type: ignore[arg-type]
+        made(  # type: ignore[arg-type]
+            root,
+            SITES,
+            browser,
+            FakeClock(),
+            FakeIdGenerator(),
+            protected={},
+            pages=FakeTaskPages(),
+        ),
         browser_decision(BROWSER_UPLOAD_AS_YOU if profile else BROWSER_UPLOAD),
         {
             "site": ACT["site"],
@@ -908,7 +916,7 @@ async def test_a_tool_without_a_point_never_listens(tmp_path: Path, capability: 
         tool = EchoTool(FakeClock(), FakeIdGenerator())
         decision, arguments = allowed(CORE_ECHO), {"message": "ciao"}
     else:
-        tool = FsReadTool(root, FakeClock(FS_NOW), FakeIdGenerator())
+        tool = FsReadTool(root, FakeClock(FS_NOW), FakeIdGenerator(), protected={})
         decision, arguments = fs_decision(FS_READ), {"path": "a.md"}
     stop = FakeStop(stopped=True)
 

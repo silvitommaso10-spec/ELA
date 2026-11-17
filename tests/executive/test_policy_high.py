@@ -162,7 +162,7 @@ async def test_a_spent_policy_asks_and_the_question_says_its_uses() -> None:
     assert execution.decision.metadata["rule"] == Rule.APPROVAL_UNLESS_POLICY.value
     assert execution.approval is not None
     assert list(execution.approval.metadata[ASKED]["why"]) == [
-        f"policy {short_id(policy.id)} was used 1 of its 1 times"
+        f"policy {short_id(policy.id)} was used 1 of its 1 use"
     ]
     assert await w.store.uses(policy.id) == 1
     assert w.tool(HIGH_TERMED.id).calls == ()

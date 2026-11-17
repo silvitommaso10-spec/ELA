@@ -121,18 +121,29 @@ async def test_the_creation_saves_the_policy_and_writes_who_created_it(
     assert policy["created_by"]["name"] == "the command line on the Core"
     assert [one["id"] for one in listed["policies"]] == [policy["id"]]
     by_capability = {one["capability"]: one for one in listed["admitting"]}
-    # The two sessions, each a capability of its own — a policy of one is not the other's —, and
-    # since M13.14 the three HIGH that declare their terms (ADR 0068).
+    # The two sessions, each a capability of its own — a policy of one is not the other's —, since
+    # M13.14 the three HIGH that declare their terms (ADR 0068), and since M13.15 the login and the
+    # four files from the browser (ADR 0071).
     assert set(by_capability) == {
         "browser.guided",
         "browser.guided_as_you",
         "fs.write",
         "browser.act",
         "browser.act_as_you",
+        "browser.login",
+        "browser.download",
+        "browser.download_as_you",
+        "browser.upload",
+        "browser.upload_as_you",
     }
     assert by_capability["fs.write"]["risk"] == "HIGH"
     assert by_capability["fs.write"]["on_the_core"] is True
     assert by_capability["browser.act"]["on_the_core"] is False
+    assert by_capability["browser.login"]["on_the_core"] is True
+    assert by_capability["browser.login"]["by_value"] == "entry"
+    assert by_capability["browser.login"]["choices"] == [], "ELA lists no entry of the vault"
+    assert by_capability["browser.upload"]["by_value"] == "site"
+    assert by_capability["fs.write"]["by_value"] is None
     assert by_capability["browser.guided"]["does"] is None
     admitting = by_capability["browser.guided"]
     assert [limit["name"] for limit in admitting["limits"]] == ["max_cost_usd", "looks", "seconds"]
@@ -162,10 +173,11 @@ CORE: Final = Identity(Kind.CORE)
             "token and create a policy, and only you create one",
         ),
         (
-            {**POLICY, "capability": "browser.login", "scope": ["httpbin.org"]},
+            # Since M13.15 (ADR 0071) the catalogue has no HIGH without terms but terminal.run: the
+            # second refusal at ADMITS is a MEDIUM nobody declared.
+            {**POLICY, "capability": "browser.read_as_you", "scope": ["httpbin.org"]},
             PolicyCheck.ADMITS,
-            "browser.login is HIGH and declares no terms: only a grant born from an approval "
-            "covers it",
+            "no milestone has said what a policy must bound for browser.read_as_you",
         ),
         (
             {**POLICY, "scope": ["www.google.com"]},
@@ -350,12 +362,9 @@ async def test_the_revocation_is_written_once_and_the_session_asks_again(
     assert revoked.status_code == 200, revoked.text
     assert revoked.json()["policy"]["state"] == "REVOKED"
     assert "goes on until it ends" in revoked.json()["running"]
-    # M13.9, decision 29: a revocation does not stop a session already started — nor the reads
-    # that session covers —, and the output says where they end.
-    assert (
-        "The reads it covers go on with it, up to its own looks, seconds and cost"
-        in revoked.json()["running"]
-    )
+    # M13.15, answer 40: the reads of browser.guided are browser.read, which nothing covers — the
+    # sentence of the reads is said only of a session that declares what it ``covers``.
+    assert "The reads it covers" not in revoked.json()["running"]
     assert again.status_code == 409
     assert again.json()["error"]["code"] == "policy.not_live"
     assert "revoked" in asked["why"][0]

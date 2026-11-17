@@ -74,7 +74,8 @@ def gap(policy: Any = POLICY, arguments: dict[str, Any] | None = None, **kwargs:
 
 def test_the_order_of_the_gaps_is_the_one_of_decision_4() -> None:
     """With the two gaps of M13.14 (ADR 0068), each in its slice: ``EXHAUSTED`` after the expiry,
-    ``ELSEWHERE`` after the terms."""
+    ``ELSEWHERE`` after the terms; and since M13.15 (ADR 0071) ``VALUE``, the second dimension,
+    after the scope."""
     assert GAPS == (
         Gap.REVOKED,
         Gap.EXPIRED,
@@ -82,11 +83,12 @@ def test_the_order_of_the_gaps_is_the_one_of_decision_4() -> None:
         Gap.TERMS,
         Gap.ELSEWHERE,
         Gap.SITE,
+        Gap.VALUE,
         Gap.LIMIT,
         Gap.ARGUMENT,
     )
     assert UNUSABLE == (Gap.REVOKED, Gap.EXPIRED, Gap.EXHAUSTED)
-    assert UNCOVERED == (Gap.TERMS, Gap.ELSEWHERE, Gap.SITE, Gap.LIMIT, Gap.ARGUMENT)
+    assert UNCOVERED == (Gap.TERMS, Gap.ELSEWHERE, Gap.SITE, Gap.VALUE, Gap.LIMIT, Gap.ARGUMENT)
     assert set(UNUSABLE) | set(UNCOVERED) == set(GAPS)
     assert not set(UNUSABLE) & set(UNCOVERED)
 
@@ -440,18 +442,17 @@ NOT_TAKEN_BACK = "what has left is not taken back: a revocation stops only what 
 
 def test_never_covered_names_the_rows_that_ask_at_every_use_and_the_terms() -> None:
     """Since M13.14 (ADR 0068) the rows that ask at every use are the ``HIGH`` that declare no
-    terms — ``fs.write`` and the two gestures left the list —, a guided session's gestures need a
-    policy of their own — ``browser.guided`` too, whose sessions make ``browser.act`` gestures, and
-    not only the session that declares ``covers`` —, and the last line says what no revocation
-    calls back."""
+    terms — ``fs.write`` and the two gestures left the list, and since M13.15 (ADR 0071) the login
+    and the four files from the browser: ``terminal.run`` alone —, a guided session's gestures need
+    a policy of their own — ``browser.guided`` too, whose sessions make ``browser.act`` gestures,
+    and not only the session that declares ``covers`` —, and the last line says what no
+    revocation calls back."""
     catalogue = production_catalogue(sites=SITES, guided_model=MODEL)
 
     said = never_covered(GUIDED, catalogue.specs())
 
     assert said == (
-        "every call of a capability that asks at every use asks every time: "
-        "browser.download, browser.download_as_you, browser.login, browser.upload, "
-        "browser.upload_as_you, terminal.run",
+        "every call of a capability that asks at every use asks every time: terminal.run",
         "a call above a limit, or outside the scope, asks",
         "a call with task_type asks",
         "a gesture of its sessions asks, unless a policy of the gesture's own capability covers it",
@@ -516,6 +517,7 @@ def test_the_checks_run_in_the_order_of_decision_6() -> None:
         PolicyCheck.CATALOGUE,
         PolicyCheck.ADMITS,
         PolicyCheck.SCOPE,
+        PolicyCheck.VALUES,
         PolicyCheck.LIMITS,
         PolicyCheck.USES,
         PolicyCheck.DAYS,
@@ -548,7 +550,10 @@ def test_a_capability_outside_the_catalogue_is_refused() -> None:
     ("spec", "reason"),
     [
         (
-            browser_login(SITES),
+            # Since M13.15 (ADR 0071) no capability of the catalogue is a HIGH without terms but
+            # terminal.run, which its program refuses first: the login of before, without its terms,
+            # admitted by the catalogue's own road — the registry checks it as it checks every one.
+            browser_login(SITES).model_copy(update={"policy_terms": None, "policy_words": None}),
             "browser.login is HIGH and declares no terms: only a grant born from an approval "
             "covers it",
         ),
@@ -560,7 +565,7 @@ def test_a_capability_outside_the_catalogue_is_refused() -> None:
         (ECHO, "core.echo does not ask: it needs no policy"),
         (fs_read("ELA"), "no milestone has said what a policy must bound for fs.read"),
     ],
-    ids=["browser.login", "terminal.run", "core.echo", "fs.read"],
+    ids=["a-high-without-terms", "terminal.run", "core.echo", "fs.read"],
 )
 def test_admits_has_its_distinct_reasons(spec: Any, reason: str) -> None:
     """M13.14 (ADR 0068): a ``HIGH`` without terms, the program, a row that does not ask, a
@@ -694,7 +699,7 @@ def test_a_policy_whose_uses_are_spent_is_exhausted_usable_no() -> None:
     assert gap_of(policy, GUIDED, GUIDED_ARGS, True, UNUSABLE, uses=4) is None
     found = shortfall(policy, GUIDED, GUIDED_ARGS, now=NOW, uses=5, gaps=UNUSABLE)
     assert found is not None and found.gap is Gap.EXHAUSTED
-    assert found.reason == f"policy {short_id(policy.id)} was used 5 of its 5 times"
+    assert found.reason == f"policy {short_id(policy.id)} was used 5 of its 5 uses"
     assert gap_of(policy, GUIDED, GUIDED_ARGS, True, UNCOVERED, uses=5) is None
     assert gap_of(POLICY, GUIDED, GUIDED_ARGS, True, GAPS, uses=10**6) is None
 
@@ -724,7 +729,7 @@ def test_the_line_says_a_policy_spent_its_uses_and_one_of_the_core() -> None:
     """The line «why I ask» receives every policy with its uses, and the step with its place
     (M13.14): the same predicate."""
     spent = POLICY.model_copy(update={"max_uses": 2})
-    assert why((spent,), uses=2) == (f"policy {short_id(POLICY.id)} was used 2 of its 2 times",)
+    assert why((spent,), uses=2) == (f"policy {short_id(POLICY.id)} was used 2 of its 2 uses",)
     write = born(PolicyRequest(WRITE.id, ("ELA/prova/uno",), {}, 1), HIGH_CATALOGUE)
     on_a_node = why_lines([(write, 0)], WRITE, WRITE_ARGS, now=NOW, on_the_core=False)
     assert on_a_node == (

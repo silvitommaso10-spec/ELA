@@ -225,7 +225,7 @@ def test_a_spent_policy_of_a_high_asks_and_names_its_uses(h: Harness) -> None:
     assert decision.outcome is PermissionOutcome.REQUIRES_APPROVAL
     assert decision.reason == (
         f"browser.act requires an authorization: policy {short_id(policy.id)} was used 2 of its "
-        "2 times"
+        "2 uses"
     )
 
 
@@ -387,7 +387,9 @@ def test_the_calls_of_the_property_are_every_capability_of_the_catalogue() -> No
 def test_with_a_node_a_decision_is_never_more_permissive_than_with_the_core() -> None:
     """Answer 21 of the review of the SPEC of M13.14: on every capability of the catalogue, under
     every row, with no grant, a yes and a standing grant, the place can only take away — and it
-    takes away exactly one thing: the policy of ``fs.write`` on a step that is not on the Core."""
+    takes away exactly the policies of the capabilities whose terms say ``on_the_core`` on a step
+    that is not on the Core: ``fs.write``'s, and since M13.15 (ADR 0071; decisions 12 and 41) the
+    login's and the four files' from the browser — derived from the declarations, never listed."""
     guardian = guardian_of(registry=CATALOGUE)
     differing = []
     for spec in CATALOGUE.specs():
@@ -418,7 +420,13 @@ def test_with_a_node_a_decision_is_never_more_permissive_than_with_the_core() ->
                 assert RANK[outcomes[elsewhere]] <= RANK[outcomes[CORE]], (spec.id, name)
             if outcomes[NODE] is not outcomes[CORE]:
                 differing.append((spec.id, name))
-    assert differing == [("fs.write", "standing")]
+    of_the_core = [
+        (spec.id, "standing")
+        for spec in CATALOGUE.specs()
+        if spec.policy_terms is not None and spec.policy_terms.on_the_core
+    ]
+    assert differing == of_the_core
+    assert {"fs.write", "browser.login", "browser.upload"} <= {one for one, _ in of_the_core}
 
 
 # ----------------------------------------------------------------------------------------

@@ -178,10 +178,22 @@ def download(
 
 
 def upload(
-    browser: FakeBrowser, folder: Path, *, profile: bool = False
+    browser: FakeBrowser,
+    folder: Path,
+    *,
+    profile: bool = False,
+    protected: dict[str, Path] | None = None,
 ) -> BrowserUploadTool | AccountUploadTool:
     kind = AccountUploadTool if profile else BrowserUploadTool
-    return kind(folder, SITES, browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages())  # type: ignore[arg-type]
+    return kind(  # type: ignore[arg-type]
+        folder,
+        SITES,
+        browser,
+        CLOCK,
+        FakeIdGenerator(),
+        protected={} if protected is None else protected,
+        pages=FakeTaskPages(),
+    )
 
 
 def with_(arguments: dict[str, Any], **changed: Any) -> dict[str, Any]:
@@ -327,7 +339,7 @@ async def test_an_upload_refuses_what_fs_read_refuses(tmp_path: Path, make: str,
     elif make == "link outside":
         (tmp_path / "vero.txt").write_bytes(BYTES)
         target.symlink_to(tmp_path / "vero.txt")
-    as_a_read = await FsReadTool(folder, CLOCK, FakeIdGenerator()).prospect(
+    as_a_read = await FsReadTool(folder, CLOCK, FakeIdGenerator(), protected={}).prospect(
         {"path": UPLOAD["file"]}
     )
 
@@ -358,7 +370,7 @@ async def test_a_file_over_the_limit_a_page_takes_is_refused_before_the_question
     with (folder / "ELA" / "prova" / "da-caricare.txt").open("wb") as big:
         big.truncate(UPLOAD_MAX_BYTES + 1)
     read: list[Path] = []
-    monkeypatch.setattr(browser_files, "read_bytes", lambda target: read.append(target) or b"")
+    monkeypatch.setattr(browser_files, "read_bytes", lambda target, **_: read.append(target) or b"")
 
     prospect = await upload(FakeBrowser(), folder).prospect(UPLOAD)
 
@@ -1055,7 +1067,7 @@ async def test_a_file_that_cannot_be_read_is_not_a_question(
     folder = root(tmp_path)
     (folder / "ELA" / "prova" / "da-caricare.txt").write_bytes(BYTES)
 
-    def refuses(target: Path) -> bytes:
+    def refuses(target: Path, **_: object) -> bytes:
         raise PermissionError(13, "Permission denied")
 
     monkeypatch.setattr(browser_files, "read_bytes", refuses)
@@ -1072,7 +1084,7 @@ async def test_a_file_that_grew_past_the_limit_while_it_was_read_is_refused(
     folder = root(tmp_path)
     (folder / "ELA" / "prova" / "da-caricare.txt").write_bytes(b"12345")
     monkeypatch.setattr(browser_files, "UPLOAD_MAX_BYTES", 10)
-    monkeypatch.setattr(browser_files, "read_bytes", lambda target: b"x" * 11)
+    monkeypatch.setattr(browser_files, "read_bytes", lambda target, **_: b"x" * 11)
 
     prospect = await upload(FakeBrowser(), folder).prospect(UPLOAD)
 
@@ -1139,7 +1151,9 @@ async def test_the_page_of_an_upload_goes_to_its_verifier_and_to_no_step_after_i
     (folder / "ELA" / "prova" / "da-caricare.txt").write_bytes(BYTES)
     browser = FakeBrowser(FakePage(fields={"#fileinput": _file_field()}))
     pages = FakeTaskPages(continued=[STEP])
-    tool = BrowserUploadTool(folder, SITES, browser, CLOCK, FakeIdGenerator(), pages=pages)
+    tool = BrowserUploadTool(
+        folder, SITES, browser, CLOCK, FakeIdGenerator(), protected={}, pages=pages
+    )
     prospect = await tool.prospect(UPLOAD)
 
     result = await tool.execute(of_a_task(BROWSER_UPLOAD), UPLOAD, FakeStop(), prospect.named or {})

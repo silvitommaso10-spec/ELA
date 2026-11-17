@@ -250,6 +250,9 @@ MARKED: dict[str, Any] = {
     "goes": "GOES-4",
     "scope": ["ELA/uno", "ELA/due"],
     "resolved": ["/root/ELA/uno", None],
+    "by_value": "site",
+    "values": ["VALUE-16", "VALUE-17"],
+    "together": "TOGETHER-18",
     "limits": {"LIMIT-5": "VALUE-5"},
     "days": 6,
     "expires_at": "EXPIRES-7",
@@ -271,8 +274,12 @@ SHOWN: dict[str, tuple[str, ...]] = {
     "goes": ("GOES-4",),
     "scope": ("ELA/uno", "ELA/due"),
     "resolved": ("ELA/uno = /root/ELA/uno",),
+    "by_value": ("site values",),
+    "values": ("VALUE-16", "VALUE-17"),
+    "together": ("TOGETHER-18",),
     "limits": ("LIMIT-5=VALUE-5",),
-    "days": ("in 6 day(s)",),
+    # The plural decided in one place (M13.15, ADR 0071; decision 21): «in 6 days», «in 1 day».
+    "days": ("in 6 days",),
     "expires_at": ("EXPIRES-7",),
     "uses": ("USES-8",),
     "on_the_core": ("CORE-9",),
@@ -359,3 +366,82 @@ async def test_list_says_the_level_the_uses_and_the_last_actions(
     assert "task 3a4d7002 fs.write SUCCEEDED" in flat and "ELA/uno/a.md" in flat
     assert f"policy {listed['browser.guided']['short']}, its last actions" not in flat
     assert "fs.write: no limit to set; never covered: —" in flat
+
+
+# ----------------------------------------------------------------------------------------
+# M13.15 (ADR 0071): the second dimension, and the plural decided in one place
+# ----------------------------------------------------------------------------------------
+
+
+async def test_a_policy_of_a_download_is_created_with_its_sites(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``--site`` gives the second dimension of a file from the browser: the preview names the
+    sites and the product, the list shows them beside the folder resolved by the birth."""
+    async with a_cli(monkeypatch, tmp_path) as (g, runner):
+        (Path(g.ela.settings.filesystem.root) / "ELA" / "giu").mkdir(parents=True)
+        made = await invoke(
+            runner, "policy", "create", "browser.download", "--scope", "ELA/giu",
+            "--site", "httpbin.org", "--days", "1", "--uses", "1", "--confirm",
+        )  # fmt: skip
+        listed_ = await invoke(runner, "policy", "list")
+        (policy,) = (await g.client.get("/policies")).json()["policies"]
+
+    out = " ".join(plain(made.output).split())
+    shown = " ".join(plain(listed_.output).split())
+    assert made.exit_code == 0, made.output
+    assert 'site values ["httpbin.org"]' in out
+    assert "every one of these folders with every one of these sites" in out
+    assert "at most 1 use " in f"{out} " and "in 1 day," in out
+    assert policy["values"] == ["httpbin.org"]
+    assert '["httpbin.org"]' in shown and str(Path(policy["resolved"][0]).name) in shown
+
+
+async def test_sites_and_entries_together_are_refused_before_anything_is_sent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    async with a_cli(monkeypatch, tmp_path) as (g, runner):
+        refused = await invoke(
+            runner, "policy", "create", "browser.login", "--scope", "httpbin.org",
+            "--site", "httpbin.org", "--entry", "an-id", "--days", "1", "--confirm",
+        )  # fmt: skip
+        policies = (await g.client.get("/policies")).json()["policies"]
+
+    assert refused.exit_code != 0
+    assert "--site or --entry" in plain(refused.output)
+    assert policies == []
+
+
+@pytest.mark.parametrize(("days", "said"), [(1, "in 1 day,"), (2, "in 2 days,")])
+def test_the_days_of_a_preview_are_said_with_their_singular(days: int, said: str) -> None:
+    text = " ".join(policies._preview_text({**MARKED, "days": days}).split())
+
+    assert said in text
+    assert "day(s)" not in text
+
+
+def test_a_revocation_that_covers_no_session_says_nothing_of_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Decision 20: the route says ``running`` only for a session; the command prints it only when
+    it is there."""
+    answer = {"policy": {"short": "3f2a1b2c"}, "running": None}
+
+    class Api:
+        def __enter__(self) -> Api:
+            return self
+
+        def __exit__(self, *exc: object) -> None:
+            return None
+
+        def get(self, *_: object) -> dict[str, Any]:
+            return {"policies": [{"id": "3f2a1b2c-0000-4000-8000-000000000001"}]}
+
+        def post(self, *_: object) -> dict[str, Any]:
+            return answer
+
+    monkeypatch.setattr(client, "connect", Api)
+    printed = CliRunner().invoke(ela_app, ["policy", "revoke", "3f2a1b2c"])
+
+    assert printed.exit_code == 0, printed.output
+    assert plain(printed.output).strip() == "revoked policy 3f2a1b2c"
