@@ -1437,7 +1437,7 @@ nuova. Un pagamento resta l'ultima parola. Il primo è il debito di ADR 0065 §6
 | ADR 0048 §9 — il terminale su un nodo, ridichiarato | 2026-09-25 | di M13.7 | **aperto** |
 | ADR 0048 §10 — il residuo di Linux del terminale, ridichiarato | 2026-09-25 | di M13.7 | **aperto** |
 | ADR 0066 §10 — il debito di ADR 0065 §6, ridichiarato — un processo del browser lasciato su ubuntu da un test non identificato | 2026-11-11 | di M13.11, la milestone del browser sul PC | **aperto** |
-| ADR 0069 §4 — il debito di ADR 0063 §12, ridichiarato — la parte di M13.9 senza binario, sopra la soglia | 2026-11-17 | di M13.11, la milestone del browser sul PC | **aperto** |
+| ADR 0069 §4 — il debito di ADR 0063 §12, ridichiarato — la parte di M13.9 senza binario, sopra la soglia | 2026-11-17 | di M9.8 | **aperto** |
 | ADR 0069 §5 — le attese che nessun elenco conosceva | 2026-11-17 | di M9.8 | **aperto** |
 | ADR 0035 §7 — i numeri in coda a `CONSTANTS` non contano più niente | 2026-09-09 | della milestone sulla disciplina della suite | saldato da ADR 0036 §10 |
 | ADR 0036 §12 — `PROVIDER_CALLED` non lo scrive nessuno | 2026-09-10 | di chi aggiungerà il prossimo `AuditEventType` | saldato da ADR 0037 §14 |

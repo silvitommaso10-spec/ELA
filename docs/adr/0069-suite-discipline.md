@@ -11,7 +11,7 @@
 - **Continua:** ADR 0031 §6 (un test afferma solo ciò di cui ha costruito le precondizioni), ADR 0035 §7 (la forma di
   un debito datato), ADR 0006 §13 (si aspetta un evento, mai una durata), ADR 0026 §6 (un tetto di tempo in un test
   misura la macchina). **Paga** ADR 0047 §18 e ADR 0041 §5; **rivede** come si applica la soglia di ADR 0052 §16 (§3); **ridichiara** il
-  debito di ADR 0063 §12, a carico di M13.11 (§4).
+  debito di ADR 0063 §12, a carico di M9.8 (§4).
 
 ## Contesto
 
@@ -142,9 +142,12 @@ dice dalle marche, mai da un elenco di file. **Vale per le milestone future, pri
 
 ### 4. Un debito datato: il debito di ADR 0063 §12, ridichiarato — la parte di M13.9 senza binario, sopra la soglia
 
-**Debito a carico di M13.11, la milestone del browser sul PC**, dichiarato il **2026-11-17**, dai due giri del «dopo»
-di M9.5, con la regola di §3 (decisione 79 della review a `ad1826c`, decisione 93 della review a `42bac98`). **Una parte
-di M13.9 sta sopra il 10 %, e la regola dice che allora il debito non è pagato: passa di mano.**
+**Debito a carico di M9.8**, dichiarato il **2026-11-17**, dai due giri del «dopo» di M9.5, con la regola di §3
+(decisione 79 della review a `ad1826c`, decisione 93 della review a `42bac98`). **Una parte di M13.9 sta sopra il 10 %, e
+la regola dice che allora il debito non è pagato: passa di mano.** *A M9.8, non a M13.11* (decisione 108 della review
+dell'ultimo blocco): la decisione 79 lo dava a M13.11 pensando alla parte del binario, che sta al 3,3–3,6 %; sopra la
+soglia è la parte senza binario, e la leva lì è di M9.8, che riscrive `test_account_window.py` e `tests/tools/test_vault.py`
+per togliere le attese a durata. **Un debito va a chi ha la leva.**
 
 **La misura.** Due giri di `make check` con `--durations=0 --durations-min=0` a `05f8675`, nelle condizioni della misura
 di M9.5 (`.git/m9.5-reference/tempo/`: `conditions.py`, `run_make_check.py`; `giro-dopo-1-run.txt` e
@@ -181,13 +184,17 @@ altri lo peggiora».
 `test_browser_routes.py`, `tests/api/test_vault.py`, `test_no_password_anywhere.py` e
 `tests/infrastructure/machine/test_vault.py`, ciascuno fra lo 0,5 e l'1,1 % del tempo dei test; poi la parte c.
 
-**Lo paga M13.11, con la stessa regola**: i due giri del «dopo» al suo ultimo commit, nelle condizioni, con le due parti
-lette così. Se stanno sotto il 10 % è pagato. Se no, la milestone si ferma e lo dice, con i numeri.
+**Lo paga M9.8, con la stessa regola, e chi paga misura, non stima** (decisione 109). **Il metodo, scritto prima dei
+suoi numeri**: M9.8 misura **la parte di M13.9 nella costruzione del Core di oggi** — il tempo di `build()` speso in ciò
+che M13.9 ha aggiunto, attribuito da git come `by_milestone.py` attribuisce i test — e la usa al posto dei +3,20 ms del
+13 ottobre, che sono di cinque milestone insieme. Come si fa di preciso lo dice la SPEC di M9.8; **se non si può
+misurare, resta il lato largo, e M9.8 lo dice**. Poi i due giri del «dopo» al suo ultimo commit, nelle condizioni, con le
+due parti lette come in §3. Se stanno sotto il 10 % è pagato. Se no, la milestone si ferma e lo dice, con i numeri.
 
 **La difesa più piccola**:
 `tests/docs/test_adr_accounts.py::test_the_debt_of_the_cost_changes_hands_with_its_numbers_and_who_inherits_it_says_so`
-tiene questa sezione nella forma che `docs/STATO.md` legge, con i suoi numeri, e tiene che M13.11 la nomini fra ciò che
-eredita.
+tiene questa sezione nella forma che `docs/STATO.md` legge, con i suoi numeri e il metodo, e tiene che M9.8 la nomini fra
+ciò che eredita.
 
 ### 5. Un debito datato: le attese che nessun elenco conosceva
 
@@ -267,4 +274,4 @@ mancato a M13.4g il 2026-11-12: un rosso diceva il suo worker, e niente di ciò 
 con la sezione di questo ADR a cui guardare.
 
 - **ADR 0052** §16 — «la soglia del 10 %» di un giro conforme: per una milestone che porta un binario vero vale due volte, per la parte dei suoi test che non lancia il binario e per quella che lo lancia, ciascuna dentro il giro all'ultimo commit della milestone; la parte del binario si deriva dalle marche del posto solo (§3).
-- **ADR 0063** §12 — il debito del costo dei test di M13.9, «a carico di M9.5»: misurato con la regola di §3 nei due giri del «dopo», la parte senza binario sta sopra il 10 %, e il debito passa di mano, a carico di M13.11 (§4).
+- **ADR 0063** §12 — il debito del costo dei test di M13.9, «a carico di M9.5»: misurato con la regola di §3 nei due giri del «dopo», la parte senza binario sta sopra il 10 %, e il debito passa di mano, a carico di M9.8 (§4).

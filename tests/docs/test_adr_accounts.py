@@ -345,16 +345,14 @@ REDECLARED = (
     "### 4. Un debito datato: il debito di ADR 0063 §12, ridichiarato — la parte di M13.9 senza "
     "binario, sopra la soglia"
 )
-REDECLARED_TO = (
-    "**Debito a carico di M13.11, la milestone del browser sul PC**, dichiarato il **2026-11-17**"
-)
+REDECLARED_TO = "**Debito a carico di M9.8**, dichiarato il **2026-11-17**"
 OLD_ROW = (
     "| ADR 0063 §12 — il costo dei test di M13.9, sopra la soglia di ADR 0052 §16 | 2026-10-13 "
     "| di M9.5, la milestone sulla disciplina della suite | ridichiarato in ADR 0069 §4 |"
 )
 NEW_ROW = (
     "| ADR 0069 §4 — il debito di ADR 0063 §12, ridichiarato — la parte di M13.9 senza binario, "
-    "sopra la soglia | 2026-11-17 | di M13.11, la milestone del browser sul PC | **aperto** |"
+    "sopra la soglia | 2026-11-17 | di M9.8 | **aperto** |"
 )
 PART = re.compile(
     r"^\| (\d) \| [\d,]+ s \| [\d,]+ s — \*\*([\d,]+) %\*\* \| [\d,]+ s — \*\*([\d,]+) %\*\* \|",
@@ -371,8 +369,9 @@ def test_the_debt_of_the_cost_changes_hands_with_its_numbers_and_who_inherits_it
     without. **Turned on 2026-11-17**: the part without the binary stays above 10 % in both runs,
     so the debt is not paid, it changes hands. This section of ADR 0063 stays as the merge left it,
     with its numbers; the debt that carries it is ADR 0069 §4, a dated debt whose heading says which
-    debt it redeclares — the form STATO reads —, charged to M13.11, with the two runs and the part
-    above the threshold; M13.11 names it among what it inherits; and STATO says it of both rows —
+    debt it redeclares — the form STATO reads —, charged to M9.8 — who has the lever on the part
+    above the threshold, decision 108 —, with the two runs and the method of the payer written
+    before its numbers; M9.8 names it among what it inherits; and STATO says it of both rows —
     the old one no longer open, the new one open."""
     text = adr_text()
     section = text.split(THE_DEBT, 1)[1].split("\n## ", 1)[0]
@@ -387,8 +386,9 @@ def test_the_debt_of_the_cost_changes_hands_with_its_numbers_and_who_inherits_it
     assert [run for run, _, _ in parts] == ["1", "2"]
     over = [float(rest.replace(",", ".")) for _, _, rest in parts]
     assert any(one >= 10 for one in over), "below 10 % in both parts the rule pays it: not this"
-    assert "**Lo paga M13.11, con la stessa regola**" in debt
-    inherits = (ADR_PATH.parents[1] / "milestones" / "M13.11.md").read_text(encoding="utf-8")
+    assert "**Lo paga M9.8, con la stessa regola, e chi paga misura, non stima**" in debt
+    assert "**Il metodo, scritto prima dei\nsuoi numeri**" in debt
+    inherits = (ADR_PATH.parents[1] / "milestones" / "M9.8.md").read_text(encoding="utf-8")
     inherited = inherits.split("## Che cosa eredita", 1)[1].split("\n## ", 1)[0]
     assert "ADR 0069 §4" in inherited and "ADR 0063 §12" in inherited
     stato = (ADR_PATH.parents[1] / "STATO.md").read_text(encoding="utf-8")

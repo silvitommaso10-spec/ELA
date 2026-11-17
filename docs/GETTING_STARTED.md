@@ -8283,6 +8283,12 @@ ELA/prova-m9.5/interrotto.bin assente
 ELA/prova-m9.5/ solo come-te.bin vuoto.bin
 ```
 
+***Annotato il 2026-11-17, dopo la prova*** (decisione 110 dell'ultima review di M9.5): alla prova a `fa3377a`
+(`~/Downloads/prova-m9.5-20261117-133606.txt`) **questo passo non ha interrotto niente**. Lo step è finito `failed` per
+`browser.download_not_started` — il gesto fatto, nessuno scaricamento avviato, niente scritto —, in meno di 30 secondi.
+L'atteso «outcome failed» non distingue le due cose. L'interruzione la provano i test della porta (ADR 0070); il passo
+da rifare è in conto a [M13.15](milestones/M13.15.md).
+
 ## Dove guardare dopo
 
 - [`spec/ELA_spec.md`](spec/ELA_spec.md) — che cos'è ELA, per intero. È la fonte di verità.
