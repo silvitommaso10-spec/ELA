@@ -34,8 +34,8 @@ azioni `HIGH`.
 *A che cosa serve:* la suite torna a dire il vero — i due test che a volte diventano rossi senza una causa vista, e
 la disciplina della suite con i debiti che porta e la misura di dove va il suo tempo.
 
-- `M13.13b` — Proposta — Uno scaricamento interrotto che a volte lascia il suo file a metà
-- `M9.5` — Proposta — La disciplina della suite: gli skip che si accorgono di essere saltati, e i test che aspettano un evento
+- `M13.13b` — Implementata — Uno scaricamento interrotto che a volte lascia il suo file a metà
+- `M9.5` — Implementata — La disciplina della suite: gli skip che si accorgono di essere saltati, e i test che aspettano un evento
 
 ### Tappa 3 — Più permessi, e il PC
 

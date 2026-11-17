@@ -271,7 +271,9 @@ def test_the_two_debts_of_the_census_have_an_owner_a_day_and_a_page_that_names_t
         "**2026-09-24**"
     ) in " ".join(text.split())
     assert "ADR 0047 §17" in owner
-    assert "- **Stato:** **Proposta**" in discipline
+    assert "- **Stato:** **Implementata**" in discipline, (
+        "M9.5 took the debt, and paid it (ADR 0069 §1)"
+    )
     for inherited in ("ADR 0047 §18", "ADR 0041 §5", "test_microphone_smoke.py"):
         assert inherited in discipline, inherited
 

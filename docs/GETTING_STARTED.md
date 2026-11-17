@@ -8095,6 +8095,194 @@ nessuna policy viva
 La prova non spende niente. Dopo, in `ELA/prova-m13.14/` restano i file dei passi 2 e 5, che la prova dopo toglie da sé;
 i link li ha già tolti lo script.
 
+## 33. La porta degli scaricamenti: la prova a mano di M13.13b e M9.5
+
+> **Scritta con l'implementazione il 2026-11-17** (`milestones/M13.13b.md` e `milestones/M9.5.md`, la decisione 63 della
+> review delle tre SPEC), e `tests/docs/test_prova_m9_5.py` tiene lo script allineato a questa sezione, e ne cammina i
+> passi 2 e 3 con lo script contro un'ELA vera. La si fa **sul Mac, senza il PC**, sull'**ultimo commit del branch**
+> `m9.5-la-pulizia-della-suite`, con lo script `scripts/prova_m9_5.py`: dopo, sul branch cambiano solo `docs/`,
+> `tests/` e `scripts/generate_stato.py`. **Nessun login, nessun vault e nessuna chiamata al modello**: i piani sono
+> scritti, e il sito non vuole un account.
+
+Il branch tocca **una cosa sola di ciò che ELA installa e serve**: la porta degli scaricamenti dei due browser
+([ADR 0070](adr/0070-the-door-closes-at-the-answer.md)). La porta, aperta per un gesto, **si dice chiusa quando il
+browser ha risposto al suo `deny`, non quando lo manda**: ciò che il browser annuncia mentre la chiusura viaggia è
+ancora del gesto, e se lo scaricamento si interrompe è annullato e tolto dalla cartella. Il cammino che la riparazione
+cambia **a ogni scaricamento** è la chiusura alla prima parola di avanzamento: lo rifanno i passi 2 e 3, sui due
+browser, e la cartella della prova tiene **il file chiesto e nient'altro** — nessun `.crdownload`. Il passo 4 interrompe
+uno scaricamento con il tempo del tool. **La finestra di un millisecondo che la riparazione chiude non si apre a mano**:
+la prova il test, `test_what_is_announced_while_the_door_closes_is_cancelled_and_taken_away`. Di M9.5 la prova non ha
+passi: M9.5 cambia solo la suite, la CI e i documenti.
+
+**Che cosa serve**: `httpbin.org` in `ELA_BROWSER_SITES`, come nelle sezioni 28 e 30 — nessuna riga nuova nel `.env` —;
+`ELA_FS_ROOT` e `ELA_FS_SCOPE` come nella sezione 15, con lo scope `ELA`; il profilo del browser dichiarato e libero,
+come nella sezione 28; ed **ELA riavviata da te dal branch**, dopo il suo ultimo commit. Nessun campo dell'API distingue
+il codice di questo branch, e lo script non lo può guardare: **è la tua condizione**, scritta qui. Lo script stampa **PASSATO**, **FALLITO**,
+**SALTATO** o **FERMATO** per ogni passo, e scrive tutto in `~/Downloads/prova-m9.5-<data>.txt`. Dei tipi della sezione
+30 usa `comando`, `atteso`, `occhio`, `sì`, `schermo`, `domanda` e `file`, con le stesse parole.
+
+```
+uv run python scripts/prova_m9_5.py
+```
+
+### 1. Prima
+
+Lo script controlla, e stampa **PASSATO** per ciascuno: il Mac è sull'ultimo commit del branch, con l'albero pulito; ELA
+risponde; `httpbin.org` è dichiarato; lo scope ammette `ELA/prova-m9.5/`; il profilo è dichiarato e libero. Poi **toglie
+dalla cartella della prova i file che una prova di prima ha lasciato** — solo i file regolari con i nomi dei file dei
+suoi piani —, uno per uno, e lo dice. **Se nella cartella c'è altro**, la prova si ferma lì senza toccare niente. **Se
+qualcosa manca, la prova si ferma lì** — **FERMATO** —, con ciò che manca.
+
+### 2. Uno scaricamento nel browser vuoto
+
+Un piano scritto: `browser.download` di 1024 byte di `httpbin.org`, in un file nuovo della cartella della prova. La
+domanda la guardi sullo schermo; dopo il sì, il file arriva con il nome del piano e i permessi `600`, e **nella cartella
+c'è lui e nient'altro**.
+
+<!-- prova: 2.comando -->
+```
+uv run ela task create --json "scaricare un file nella cartella della prova della porta"
+uv run ela task plan <id> --file docs/examples/download-for-the-door.json
+uv run ela task run <id>
+```
+
+<!-- prova: 2.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 2.domanda -->
+```
+capability browser.download
+file ELA/prova-m9.5/vuoto.bin
+fa creates a new file, with what the download brings
+sito httpbin.org
+```
+
+<!-- prova: 2.schermo -->
+```
+uv run ela approvals
+```
+
+<!-- prova: 2.occhio -->
+```
+Qui sopra, sullo schermo: la domanda di browser.download nomina il percorso intero di vuoto.bin dentro la tua cartella, dice che crea un file nuovo, e nomina il sito httpbin.org?
+```
+
+<!-- prova: 2.sì -->
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+<!-- prova: 2.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 2.atteso -->
+```
+outcome completed
+```
+
+<!-- prova: 2.file -->
+```
+ELA/prova-m9.5/vuoto.bin 1024 600
+ELA/prova-m9.5/ solo vuoto.bin
+```
+
+### 3. Uno scaricamento con il tuo profilo
+
+Lo stesso con `browser.download_as_you`, 2048 byte, nel browser del tuo profilo: quello dove un file che la porta non
+aveva sentito annunciare restava nella cartella anche a browser chiuso (ADR 0070 §4).
+
+<!-- prova: 3.comando -->
+```
+uv run ela task create --json "scaricare come me un file nella cartella della prova della porta"
+uv run ela task plan <id> --file docs/examples/download-as-you-for-the-door.json
+uv run ela task run <id>
+```
+
+<!-- prova: 3.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 3.domanda -->
+```
+capability browser.download_as_you
+file ELA/prova-m9.5/come-te.bin
+fa creates a new file, with what the download brings
+sito httpbin.org
+```
+
+<!-- prova: 3.sì -->
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+<!-- prova: 3.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 3.atteso -->
+```
+outcome completed
+```
+
+<!-- prova: 3.file -->
+```
+ELA/prova-m9.5/come-te.bin 2048 600
+ELA/prova-m9.5/ solo come-te.bin vuoto.bin
+```
+
+### 4. Uno scaricamento interrotto
+
+`httpbin.org` manda 4096 byte in un minuto, e il tempo del tool — 30 secondi, una costante — lo interrompe a metà: il
+passo **aspetta i suoi 30 secondi**. Lo step fallisce, e **nella cartella non resta niente di lui**: né il file né un
+`.crdownload`.
+
+<!-- prova: 4.comando -->
+```
+uv run ela task create --json "scaricare un file che il tempo del tool interrompe"
+uv run ela task plan <id> --file docs/examples/download-cut-short.json
+uv run ela task run <id>
+```
+
+<!-- prova: 4.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 4.domanda -->
+```
+capability browser.download
+file ELA/prova-m9.5/interrotto.bin
+fa creates a new file, with what the download brings
+sito httpbin.org
+```
+
+<!-- prova: 4.sì -->
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+<!-- prova: 4.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 4.atteso -->
+```
+outcome failed
+```
+
+<!-- prova: 4.file -->
+```
+ELA/prova-m9.5/interrotto.bin assente
+ELA/prova-m9.5/ solo come-te.bin vuoto.bin
+```
+
 ## Dove guardare dopo
 
 - [`spec/ELA_spec.md`](spec/ELA_spec.md) — che cos'è ELA, per intero. È la fonte di verità.

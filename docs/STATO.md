@@ -101,7 +101,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 9 — Le liste che si accorgono di essere false | `M9.2` | Proposta | Le liste che restano scritte a mano |
 | 9 — Le liste che si accorgono di essere false | `M9.3` | Completata | Le esenzioni che si accorgono di essere false |
 | 9 — Le liste che si accorgono di essere false | `M9.4` | Completata | Le finestre, i negativi, e la release v0.1 |
-| 9 — Le liste che si accorgono di essere false | `M9.5` | Proposta | La disciplina della suite: gli skip che si accorgono di essere saltati, e i test che aspettano un evento |
+| 9 — Le liste che si accorgono di essere false | `M9.5` | Implementata | La disciplina della suite: gli skip che si accorgono di essere saltati, e i test che aspettano un evento |
 | 9 — Le liste che si accorgono di essere false | `M9.6` | Implementata | Niente di Tommaso nel codice: ciò che ELA installa e serve non porta le macchine e l'account di chi l'ha scritta |
 | 9 — Le liste che si accorgono di essere false | `M9.7` | Proposta | Ogni blocco della guida che mostra un'uscita della CLI è confrontato con la CLI |
 | 9 — Le liste che si accorgono di essere false | `M9.8` | Proposta | Le attese che nessun elenco conosceva |
@@ -150,7 +150,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.11` | Proposta | Il browser sul PC: le capacità di M13.9 e M13.10 sul nodo Windows, e il verdetto che torna in busta |
 | 13 — Il permesso prima dell'azione | `M13.12` | Implementata | Le policy di §59: una policy che Tommaso si crea rende autonoma un'azione `MEDIUM`, a partire da `browser.guided` |
 | 13 — Il permesso prima dell'azione | `M13.13` | Implementata | I file dal browser: uno scaricamento è un `fs.write`, un caricamento un `fs.read` |
-| 13 — Il permesso prima dell'azione | `M13.13b` | Proposta | Uno scaricamento interrotto che a volte lascia il suo file a metà |
+| 13 — Il permesso prima dell'azione | `M13.13b` | Implementata | Uno scaricamento interrotto che a volte lascia il suo file a metà |
 | 13 — Il permesso prima dell'azione | `M13.14` | Implementata | Le policy di Tommaso arrivano alle azioni HIGH |
 | 13 — Il permesso prima dell'azione | `M13.15` | Proposta | Le policy di Tommaso arrivano al login e ai file dal browser |
 | 13 — Il permesso prima dell'azione | `M13.16` | Proposta | Il terminale sotto le policy di Tommaso, con un confine dimostrato |
@@ -186,7 +186,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **70** | `docs/adr/NNNN-*.md` |
-| Milestone | **105, di cui 81 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **105, di cui 83 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **74** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **16** | `pyproject.toml` |
 | Port | **36** | i `Protocol` di `src/ela/ports.py` |

@@ -1,0 +1,32 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M9.5 e M13.13b per uno SCARICAMENTO INTERROTTO",
+    "(GETTING_STARTED, sezione 33, passo 4): httpbin.org manda 4096 byte in sessanta secondi, e il tempo del",
+    "tool — 30 secondi, una costante — lo interrompe a metà. La porta annulla lo scaricamento e toglie dalla",
+    "cartella ciò che il browser ha annunciato per quel gesto: nella cartella non resta niente di lui.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "scaricare un file che il tempo del tool interrompe",
+  "steps": [
+    {
+      "id": "c0de1a28-0000-4b00-8a00-000000009503",
+      "goal": "scaricare 4096 byte che arrivano in un minuto",
+      "required_capabilities": [
+        "browser.download"
+      ],
+      "arguments": {
+        "site": "httpbin.org",
+        "path": "/drip?duration=60&numbytes=4096&delay=0",
+        "file": "ELA/prova-m9.5/interrotto.bin",
+        "overwrite": false,
+        "purpose": "la prova a mano della porta degli scaricamenti"
+      },
+      "risk": "HIGH",
+      "expected_result": "nessun file: il tempo del tool interrompe lo scaricamento",
+      "success_conditions": [
+        "browser.file_downloaded"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}
