@@ -129,6 +129,13 @@ rosso in un giro**: quel giro, con il log della suite (`tests/suite_log.py`, il 
 misura. **`M9.8`**, nata dal taglio di M9.5, **passa davanti se uno dei suoi test torna rosso in un giro**, con la
 regola di `M13.13b`.
 
+***Annotato il 2026-11-17*** (decisione 69 della review di M13.15, una scelta d'ordine di Tommaso): uno dei test di
+`M9.8`, `test_a_page_that_is_still_arriving_is_waited_for_before_it_is_asked_about`, è stato rosso in un giro di `make
+check` a `4e4adc5`, alla riga 293 — il lancio del browser del profilo —, **prima** dell'attesa che M9.8 eredita (riga
+298). **M9.8 non passa davanti per questo rosso**, che è di **`M13.9d`**; passa davanti quando uno dei suoi test è rosso
+per l'attesa che eredita. **`M13.9d`** passa davanti al prossimo rosso di un test che lancia il browser del profilo per
+un lancio non arrivato: quel giro, con il log della suite, è la misura.
+
 - `M9.2` — Proposta — Le liste che restano scritte a mano
 - `M9.7` — Proposta — Ogni blocco della guida che mostra un'uscita della CLI è confrontato con la CLI
 - `M9.8` — Proposta — Le attese che nessun elenco conosceva
@@ -136,6 +143,7 @@ regola di `M13.13b`.
 - `M13.4d` — Proposta — Lo shell del browser vuoto gira senza il sandbox di Chromium
 - `M13.4g` — Proposta — Il click che apre un'altra pagina, con il browser del profilo: un'azione che a volte non dice la sua pagina
 - `M13.6` — Proposta — Spostare un lavoro già in corso: il ripiazzamento, quando due capability sanno dichiararsi ripetibili
+- `M13.9d` — Proposta — Un lancio del browser del profilo che a volte non arriva
 - `M14.1c` — Proposta — Il caso peggiore senza prezzo: un ramo e un rifiuto che nessun produttore raggiunge
 - **WhatsApp Web con il profilo di ELA**, senza un numero: nessuna milestone finché la causa della barra di
   caricamento ferma non è nota ([ADR 0065](adr/0065-browser-steps.md) §5, punto 9).
