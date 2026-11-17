@@ -3,10 +3,12 @@ Guardian (M13.9, ADR 0063; decisions 12 and 29).
 
 ``browser.read_as_you`` is **MEDIUM**: what it reads is the user's own content, and it leaves
 with their credentials — a question at every use, and no policy of §59 for a single read.
-``browser.act_as_you`` and ``browser.login`` are **HIGH**: a login asks at every use, which no
-standing grant reaches; since M13.14 an action as you asks **unless a policy of yours for
-``browser.act_as_you``** covers its site (ADR 0068). The arguments of the first two are the empty
-browser's, to the letter; a login's have **no argument that could carry a value**.
+``browser.act_as_you`` and ``browser.login`` are **HIGH**: since M13.14 an action as you asks
+**unless a policy of yours for ``browser.act_as_you``** covers its site (ADR 0068), and since M13.15
+a login asks unless a policy of yours for ``browser.login`` covers its site **and its entry**
+(ADR 0071) — the login of a guided session, which carries no entry, asks every time. The
+arguments of the first two are the empty browser's, to the letter; a login's have **no argument
+that could carry a value**.
 """
 
 from __future__ import annotations
