@@ -1436,8 +1436,8 @@ nuova. Un pagamento resta l'ultima parola. Il primo è il debito di ADR 0065 §6
 |---|---|---|---|
 | ADR 0048 §9 — il terminale su un nodo, ridichiarato | 2026-09-25 | di M13.7 | **aperto** |
 | ADR 0048 §10 — il residuo di Linux del terminale, ridichiarato | 2026-09-25 | di M13.7 | **aperto** |
-| ADR 0063 §12 — il costo dei test di M13.9, sopra la soglia di ADR 0052 §16 | 2026-10-13 | di M9.5, la milestone sulla disciplina della suite | **aperto** |
 | ADR 0066 §10 — il debito di ADR 0065 §6, ridichiarato — un processo del browser lasciato su ubuntu da un test non identificato | 2026-11-11 | di M13.11, la milestone del browser sul PC | **aperto** |
+| ADR 0069 §4 — il debito di ADR 0063 §12, ridichiarato — la parte di M13.9 senza binario, sopra la soglia | 2026-11-17 | di M13.11, la milestone del browser sul PC | **aperto** |
 | ADR 0069 §5 — le attese che nessun elenco conosceva | 2026-11-17 | di M9.8 | **aperto** |
 | ADR 0035 §7 — i numeri in coda a `CONSTANTS` non contano più niente | 2026-09-09 | della milestone sulla disciplina della suite | saldato da ADR 0036 §10 |
 | ADR 0036 §12 — `PROVIDER_CALLED` non lo scrive nessuno | 2026-09-10 | di chi aggiungerà il prossimo `AuditEventType` | saldato da ADR 0037 §14 |
@@ -1449,6 +1449,7 @@ nuova. Un pagamento resta l'ultima parola. Il primo è il debito di ADR 0065 §6
 | ADR 0052 §15 — il «ferma» a metà di uno step del browser | 2026-09-29 | di M6.3c | saldato da ADR 0054 §11 |
 | ADR 0053 §2 — il runner della CI, da fissare entro il 2026-10-19 | 2026-09-30 | di M6.3c | saldato da ADR 0054 §1 |
 | ADR 0054 §16 — il passo 8 della prova a mano, entro domenica 2026-10-04 | 2026-10-02 | del giro di domenica della prova di M6.3c, su `main` | saldato da ADR 0055 §7 |
+| ADR 0063 §12 — il costo dei test di M13.9, sopra la soglia di ADR 0052 §16 | 2026-10-13 | di M9.5, la milestone sulla disciplina della suite | ridichiarato in ADR 0069 §4 |
 | ADR 0065 §6 — un processo del browser lasciato su ubuntu da un test non identificato | 2026-10-14 | di M13.13, la milestone dei file dal browser | ridichiarato in ADR 0066 §10 |
 
 <!-- fine del blocco generato: i debiti datati -->

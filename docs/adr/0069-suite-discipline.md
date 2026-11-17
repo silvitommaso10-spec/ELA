@@ -4,13 +4,14 @@
   (`docs/milestones/M9.5.md`, la SPEC e la review delle tre SPEC a `ad1826c`, decisioni 56–81), per diventare Accettata
   con un commit suo dopo la prova a mano della sezione 33 di `docs/GETTING_STARTED.md` sull'ultimo commit del branch
   (decisione 81). **Le «Righe riviste» che questo ADR porta sono scritte**, con il marchio sulla riga «Stato:»
-  dell'ADR che rivede — ADR 0052.
+  degli ADR che rivede — ADR 0052 e ADR 0063.
 - **Data:** 2026-11-17
 - **Riferimenti spec:** §48, §51, §53
 - **Milestone:** [M9.5](../milestones/M9.5.md)
 - **Continua:** ADR 0031 §6 (un test afferma solo ciò di cui ha costruito le precondizioni), ADR 0035 §7 (la forma di
   un debito datato), ADR 0006 §13 (si aspetta un evento, mai una durata), ADR 0026 §6 (un tetto di tempo in un test
-  misura la macchina). **Paga** ADR 0047 §18 e ADR 0041 §5; **rivede** come si applica la soglia di ADR 0052 §16 (§3).
+  misura la macchina). **Paga** ADR 0047 §18 e ADR 0041 §5; **rivede** come si applica la soglia di ADR 0052 §16 (§3); **ridichiara** il
+  debito di ADR 0063 §12, a carico di M13.11 (§4).
 
 ## Contesto
 
@@ -119,7 +120,10 @@ cambiamento — è in `tests/architecture/test_the_trees_are_read_for_their_cont
 scritture sugli alberi: due, tutte e due in un dizionario della regola. `test_every_audit_event_type_has_a_writer`, che
 la registrazione eredita per nome, legge i nomi d'attributo di ogni modulo una volta per processo. **Nessun caso è
 tolto**: gli id raccolti prima e dopo sono gli stessi, confrontati come liste, e i casi che sono i mutanti delle regole
-muoiono ancora. I numeri di prima sono nel documento della milestone; quelli di dopo, con i due giri del «dopo» (§4).
+muoiono ancora. I numeri di prima sono nel documento della milestone. **Dopo**, nei due giri del «dopo» a
+`05f8675` (§4): i test di architettura pesano 186,24 s e 210,37 s di lavoro, il **9,00 %** e il **7,61 %** del tempo dei
+test, contro 772,15 s e 894,91 s, il 29,02 % e il 29,52 %, a `8220b20`. Il dopo conta anche la regola nuova degli skip.
+`test_violation_is_reported` scende da 243,05 s a 52,79 s (`.git/m9.5-reference/tempo/quota-giri-dopo-1-2.txt`).
 
 **Il test che lo difendeva si è girato**:
 `tests/docs/test_adr_parallel.py::test_the_tests_that_waited_wait_for_an_event_or_say_why`.
@@ -136,17 +140,54 @@ posto solo che nomina un binario vero lanciato — `PROFILE_BROWSER`, `CLAUDE_CO
 `tests/machines.py`, e la marca che la raccolta mette dove un test prende il browser del profilo —; `of_a_binary` lo
 dice dalle marche, mai da un elenco di file. **Vale per le milestone future, prima dei loro numeri.**
 
-### 4. Il debito di ADR 0063 §12: la regola c'è, la misura no
+### 4. Un debito datato: il debito di ADR 0063 §12, ridichiarato — la parte di M13.9 senza binario, sopra la soglia
 
-**La regola che lo pagherebbe è decisa** (§3, decisione 79): la soglia vale due volte, per la parte di M13.9 che non
-lancia il binario e per quella che lo lancia. **Si misura sui due giri del «dopo»** — `make check` con
-`--durations=0` nelle condizioni di ADR 0052 §16 —, con la costruzione del Core contata per milestone e
-`detect-secrets` fuori con la sua ragione (decisione 78). **Il 2026-11-17 quei due giri non si sono fatti**: il Mac era a
-batteria — una delle condizioni di ADR 0052 §16 mancava —, e la regola della misura dice che allora non si fanno e si
-scrive (decisione 81). **Il debito resta aperto, a carico di M9.5**: non è pagato e non è ridichiarato, e
-`docs/STATO.md` §6 lo dice. Si misura con i due giri, nelle condizioni, prima che questo ADR diventi Accettata; se le
-due parti di M13.9 stanno sotto il 10 % è pagato da questa regola, e questa sezione prende il titolo del pagamento; se
-no è ridichiarato a carico di M13.11, con i numeri.
+**Debito a carico di M13.11, la milestone del browser sul PC**, dichiarato il **2026-11-17**, dai due giri del «dopo»
+di M9.5, con la regola di §3 (decisione 79 della review a `ad1826c`, decisione 93 della review a `42bac98`). **Una parte
+di M13.9 sta sopra il 10 %, e la regola dice che allora il debito non è pagato: passa di mano.**
+
+**La misura.** Due giri di `make check` con `--durations=0 --durations-min=0` a `05f8675`, nelle condizioni della misura
+di M9.5 (`.git/m9.5-reference/tempo/`: `conditions.py`, `run_make_check.py`; `giro-dopo-1-run.txt` e
+`giro-dopo-2-run.txt`, tutti e due «CONTA»). Il secondo giro è partito al secondo tentativo, quando le condizioni sono
+tornate: la prima volta un processo del sistema stava sopra il 25 % di un core (`giro-dopo-2-nota.txt`). **Gli id di
+M13.9** sono quelli del giro conforme del 13 ottobre, attribuiti da git (`by_milestone.py`), letti dal lato largo; dei
+1195, oggi se ne raccolgono 1183. **Del binario o no** lo dicono le marche (`of_a_binary`, §3): 35 sono del binario — i
+test del browser del profilo, in `test_account_browser.py` e `test_account_login.py`. **La parte c, contata per
+milestone** (`conta_costruzioni.py`): delle 1598 costruzioni del Core della suite, 260 sono dei test di M13.9 — già nel
+loro tempo — e 1338 degli altri. Ognuna di queste paga il ritardo misurato il 13 ottobre, +3,20 ms, e in più ci sono undici
+import a +4,39 ms: **c = 4,33 s**, tutto sulla parte senza binario. **`detect-secrets` è fuori**, con la sua ragione
+(decisione 78): legge ogni file che git conosce. Riletto qui, come la decisione chiedeva: **30,85 s** (17,14 s il
+30 settembre, 30,20 s il 14 novembre). I numeri interi sono in `m13.9-dopo.txt`.
+
+| Giro | `make check` | Del binario | Senza binario, con c | M13.9 in una parte |
+|---|---|---|---|---|
+| 1 | 357,31 s | 10,43 s — **3,32 %** | 32,85 s — **10,46 %** | 43,28 s — 13,78 % |
+| 2 | 423,93 s | 13,54 s — **3,63 %** | 37,74 s — **10,13 %** | 51,28 s — 13,76 % |
+
+Le percentuali sono quelle della soglia: «sopra un `make check` senza M13.9» (ADR 0052 §16). Come quota del giro, la
+parte senza binario è il 9,19 % e l'8,90 %. Con il rapporto della copertura intero sulla stessa parte, la lettura più
+larga, è il 10,66 % e il 10,29 %.
+
+**Che cosa decide.** **La parte c**: senza di lei la parte senza binario starebbe all'8,96 % e all'8,86 %. Il ritardo di
++3,20 ms a costruzione è di tutto il branch misurato il 13 ottobre, M13.4b–M13.9, e qui è contato tutto su M13.9: è il
+lato largo che ADR 0052 §16 prescrive. Quanto di quel ritardo sia di M13.9 non è misurato, e oggi non si può misurare:
+non c'è un albero «senza la sola M13.9». Perché la parte stesse sotto nei due giri, il ritardo di M13.9 dovrebbe essere
+sotto i 2,22 ms a costruzione. **E il denominatore**: la riparazione dei test di architettura (§2) ha tolto agli altri
+test più di quanto il debito pesasse — il tempo dei test è sceso da 2660,74 s a 2068,64 s di lavoro —, e la quota di
+M13.9 è salita senza che nessuno toccasse i suoi test. È ciò che la SPEC di M9.5 aveva previsto: «togliere tempo agli
+altri lo peggiora».
+
+**Dove pesa** (`m13.9-dopo-per-file.txt`): `test_account_window.py`, `test_console_browser.py`,
+`test_browser_routes.py`, `tests/api/test_vault.py`, `test_no_password_anywhere.py` e
+`tests/infrastructure/machine/test_vault.py`, ciascuno fra lo 0,5 e l'1,1 % del tempo dei test; poi la parte c.
+
+**Lo paga M13.11, con la stessa regola**: i due giri del «dopo» al suo ultimo commit, nelle condizioni, con le due parti
+lette così. Se stanno sotto il 10 % è pagato. Se no, la milestone si ferma e lo dice, con i numeri.
+
+**La difesa più piccola**:
+`tests/docs/test_adr_accounts.py::test_the_debt_of_the_cost_changes_hands_with_its_numbers_and_who_inherits_it_says_so`
+tiene questa sezione nella forma che `docs/STATO.md` legge, con i suoi numeri, e tiene che M13.11 la nomini fra ciò che
+eredita.
 
 ### 5. Un debito datato: le attese che nessun elenco conosceva
 
@@ -215,8 +256,9 @@ mancato a M13.4g il 2026-11-12: un rosso diceva il suo worker, e niente di ciò 
 
 - Uno skip sul sistema che un test copre fa rossa la suite, per ogni condizione della macchina, ricavato dalle
   dichiarazioni del posto solo; un test che non gira su nessun job lo dice; uno `skipif` scritto altrove è rosso.
-- Le liste dei saltati di `make check` e di `make check-linux` sono le stesse prima e dopo, file per file, salvo la riga
-  detta in anticipo (decisione 66): il test del registro, che ora gira su ubuntu.
+- Le liste dei saltati di `make check` e di `make check-linux` sono le stesse prima e dopo, file per file, salvo le righe
+  dette in anticipo: il test del registro, che ora gira su ubuntu (decisione 66), e `test_permissions_bite.py`, che
+  fuori da un runner era saltato ed è tolto con la sua guardia (decisione 95).
 - Il primo giro della CI è la misura delle dichiarazioni: se un runner non ha ciò che una dichiarazione dice, quel rosso
   si legge e la dichiarazione si corregge con la misura del runner, in un commit — mai saltando, mai rilanciando
   (decisione 64).
@@ -225,3 +267,4 @@ mancato a M13.4g il 2026-11-12: un rosso diceva il suo worker, e niente di ciò 
 con la sezione di questo ADR a cui guardare.
 
 - **ADR 0052** §16 — «la soglia del 10 %» di un giro conforme: per una milestone che porta un binario vero vale due volte, per la parte dei suoi test che non lancia il binario e per quella che lo lancia, ciascuna dentro il giro all'ultimo commit della milestone; la parte del binario si deriva dalle marche del posto solo (§3).
+- **ADR 0063** §12 — il debito del costo dei test di M13.9, «a carico di M9.5»: misurato con la regola di §3 nei due giri del «dopo», la parte senza binario sta sopra il 10 %, e il debito passa di mano, a carico di M13.11 (§4).

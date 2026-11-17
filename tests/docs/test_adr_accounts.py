@@ -341,19 +341,55 @@ CHARGED_TO = (
 )
 
 
-def test_the_debt_of_the_cost_is_dated_charged_and_named_by_who_pays_it() -> None:
-    """Decision 165 of M13.9. The tests of this milestone cost more than the threshold of ADR
-    0052 §16 allows, and the merge was made with the numbers written down as a dated debt: the
-    section has the form STATO reads, it carries the numbers of the conforming run, and the
-    milestone it is charged to names it among what it inherits. The day it is paid — by time
-    taken away, or by a rule M9.5 proposes with numbers of its own — the payment is written in an
-    ADR, and this test is turned."""
-    text = adr_text()
+REDECLARED = (
+    "### 4. Un debito datato: il debito di ADR 0063 §12, ridichiarato — la parte di M13.9 senza "
+    "binario, sopra la soglia"
+)
+REDECLARED_TO = (
+    "**Debito a carico di M13.11, la milestone del browser sul PC**, dichiarato il **2026-11-17**"
+)
+OLD_ROW = (
+    "| ADR 0063 §12 — il costo dei test di M13.9, sopra la soglia di ADR 0052 §16 | 2026-10-13 "
+    "| di M9.5, la milestone sulla disciplina della suite | ridichiarato in ADR 0069 §4 |"
+)
+NEW_ROW = (
+    "| ADR 0069 §4 — il debito di ADR 0063 §12, ridichiarato — la parte di M13.9 senza binario, "
+    "sopra la soglia | 2026-11-17 | di M13.11, la milestone del browser sul PC | **aperto** |"
+)
+PART = re.compile(
+    r"^\| (\d) \| [\d,]+ s \| [\d,]+ s — \*\*([\d,]+) %\*\* \| [\d,]+ s — \*\*([\d,]+) %\*\* \|",
+    re.MULTILINE,
+)
+"""A row of the two runs of the «after»: the run, and the two parts over a ``make check`` without
+M13.9 — of the binary, and without it."""
 
-    assert THE_DEBT in text
+
+def test_the_debt_of_the_cost_changes_hands_with_its_numbers_and_who_inherits_it_says_so() -> None:
+    """Decision 165 of M13.9 dated the debt and charged it to M9.5; decisions 79 and 93 of M9.5
+    (the reviews at ``ad1826c`` and ``42bac98``) measured it on the two runs of the «after», with
+    the rule of ADR 0069 §3 — the threshold twice, for the part of the binary and for the part
+    without. **Turned on 2026-11-17**: the part without the binary stays above 10 % in both runs,
+    so the debt is not paid, it changes hands. This section of ADR 0063 stays as the merge left it,
+    with its numbers; the debt that carries it is ADR 0069 §4, a dated debt whose heading says which
+    debt it redeclares — the form STATO reads —, charged to M13.11, with the two runs and the part
+    above the threshold; M13.11 names it among what it inherits; and STATO says it of both rows —
+    the old one no longer open, the new one open."""
+    text = adr_text()
     section = text.split(THE_DEBT, 1)[1].split("\n## ", 1)[0]
     assert CHARGED_TO in section
     for number in ("12,65 %", "16,19 %", "8,18 s"):
         assert number in section, number
-    discipline = (ADR_PATH.parents[1] / "milestones" / "M9.5.md").read_text(encoding="utf-8")
-    assert "ADR 0063 §12" in discipline
+    redeclared = (ADR_PATH.parent / "0069-suite-discipline.md").read_text(encoding="utf-8")
+    assert REDECLARED in redeclared
+    debt = redeclared.split(REDECLARED, 1)[1].split("\n### ", 1)[0]
+    assert REDECLARED_TO in debt
+    parts = PART.findall(debt)
+    assert [run for run, _, _ in parts] == ["1", "2"]
+    over = [float(rest.replace(",", ".")) for _, _, rest in parts]
+    assert any(one >= 10 for one in over), "below 10 % in both parts the rule pays it: not this"
+    assert "**Lo paga M13.11, con la stessa regola**" in debt
+    inherits = (ADR_PATH.parents[1] / "milestones" / "M13.11.md").read_text(encoding="utf-8")
+    inherited = inherits.split("## Che cosa eredita", 1)[1].split("\n## ", 1)[0]
+    assert "ADR 0069 §4" in inherited and "ADR 0063 §12" in inherited
+    stato = (ADR_PATH.parents[1] / "STATO.md").read_text(encoding="utf-8")
+    assert OLD_ROW in stato and NEW_ROW in stato
