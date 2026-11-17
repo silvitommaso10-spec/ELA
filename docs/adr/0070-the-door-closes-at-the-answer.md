@@ -1,10 +1,16 @@
 # 0070. La porta degli scaricamenti si dice chiusa alla risposta del browser
 
-- **Stato:** **Proposta** il **2026-11-17**, con l'implementazione di M13.13b sul branch `m9.5-la-pulizia-della-suite`
-  (`docs/milestones/M13.13b.md`, la SPEC e la review delle tre SPEC a `ad1826c`, decisioni 59–63), per diventare
-  Accettata con un commit suo dopo la prova a mano della sezione 33 di `docs/GETTING_STARTED.md` sull'ultimo commit del
-  branch (decisione 81). **Le «Righe riviste» che questo ADR porta sono scritte**, con il marchio sulla riga «Stato:»
-  dell'ADR che rivede — ADR 0066.
+- **Stato:** **Accettata** il **2026-11-17**, con un commit suo (decisione 111 dell'ultima review del branch
+  `m9.5-la-pulizia-della-suite`): la prova a mano della sezione 33 di `docs/GETTING_STARTED.md` è passata a `fa3377a`,
+  l'ultimo commit del branch su origin (`~/Downloads/prova-m9.5-20261117-133606.txt`: 21 PASSATI al primo giro, 0
+  FALLITI). **Che cosa ha mostrato**: i passi 2 e 3 — nella cartella il file chiesto e nient'altro, con il browser vuoto
+  e con quello del profilo. **Che cosa no**: il passo 4 è finito `browser.download_not_started` in meno di 30 secondi e
+  l'interruzione non l'ha esercitata. **L'interruzione la prova il test, non la mano**:
+  `test_a_download_that_is_cut_short_is_cancelled_and_nothing_of_it_stays`,
+  `test_a_download_the_time_of_its_step_cuts_leaves_nothing_in_the_folder` e
+  `test_what_is_announced_while_the_door_closes_is_cancelled_and_taken_away`, sui due browser
+  (`tests/infrastructure/machine/test_the_files_of_a_page.py`). **Le «Righe riviste» che questo ADR porta sono
+  scritte**, con il marchio sulla riga «Stato:» dell'ADR che rivede — ADR 0066.
 - **Data:** 2026-11-17
 - **Riferimenti spec:** §19, §33
 - **Milestone:** [M13.13b](../milestones/M13.13b.md)

@@ -1,6 +1,7 @@
 """ADR 0070 — the door of the downloads says itself closed at the browser's answer (M13.13b) —
-held to the tree: a ``Proposta`` until the proof by hand of the branch, the ADR it revises saying so
-on its state line, the facts of its measure written, and the three states in the code.
+held to the tree: accepted after the proof by hand of the branch, saying what it showed, the ADR
+it revises saying so on its state line, the facts of its measure written, and the three states in
+the code.
 """
 
 from __future__ import annotations
@@ -37,11 +38,34 @@ def revised_by_their_state(mark: str, exclude: Path) -> set[str]:
     }
 
 
-def test_it_is_a_proposal_until_the_proof_of_its_branch() -> None:
+THE_PROOF = "`~/Downloads/prova-m9.5-20261117-133606.txt`"
+PASSED_ON = "`fa3377a`"
+WHAT_PROVES_THE_CUT = (
+    "test_a_download_that_is_cut_short_is_cancelled_and_nothing_of_it_stays",
+    "test_a_download_the_time_of_its_step_cuts_leaves_nothing_in_the_folder",
+    "test_what_is_announced_while_the_door_closes_is_cancelled_and_taken_away",
+)
+"""The tests that prove the cut short download: step 4 of the proof did not exercise it."""
+FILES_OF_A_PAGE = ROOT / "tests" / "infrastructure" / "machine" / "test_the_files_of_a_page.py"
+
+
+def test_it_is_accepted_and_its_state_says_what_the_proof_showed_and_what_the_tests_prove() -> None:
+    """Decision 111 of the last review of M9.5: accepted with a commit of its own, once the proof
+    by hand had passed on the last commit of the branch on origin. The state says which file and
+    which commit, what the proof showed — steps 2 and 3 —, and that the cut short download is
+    proved by the tests and not by the hand, because step 4 ended with no download started; the
+    tests it names are there."""
     said = " ".join(status_of(ADR_PATH.read_text(encoding="utf-8")).split())
 
-    assert said.startswith("**Proposta** il **2026-11-17**")
+    assert said.startswith("**Accettata** il **2026-11-17**")
     assert "la sezione 33 di `docs/GETTING_STARTED.md`" in said
+    assert THE_PROOF in said and PASSED_ON in said
+    assert "**L'interruzione la prova il test, non la mano**" in said
+    assert "`browser.download_not_started`" in said
+    tests = FILES_OF_A_PAGE.read_text(encoding="utf-8")
+    for name in WHAT_PROVES_THE_CUT:
+        assert f"`{name}`" in said, name
+        assert f"async def {name}(" in tests, name
 
 
 def test_the_adrs_it_revises_say_so_on_their_state_line_and_no_other_does() -> None:
