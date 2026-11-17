@@ -46,6 +46,7 @@ __all__ = [
     "Tool",
     "any_moment",
     "check_decision",
+    "under_a_policy",
 ]
 
 FIRST_WRITE = "the first write to the disk"
@@ -97,6 +98,18 @@ ADR 0063 §7; decision 41): «is this a moment in which ELA must not?» — the 
 async def any_moment() -> str | None:
     """The answer for a tool nobody handed a question to: there is no wrong moment."""
     return None
+
+
+def under_a_policy(decision: PermissionDecision) -> bool:
+    """Whether ``decision`` rests on a standing policy of §59 and on nothing else (M13.15, ADR 0071;
+    answer 38 of the review of its SPEC): an authorization, and no approval behind it.
+
+    **Only then.** The Guardian copies :attr:`~ela.domain.Authorization.approval_id` into every
+    decision it allows on a grant, so a yes always carries it; any other decision — a yes, a
+    session's word, a decision with no grant at all — takes the road of a yes, which refuses
+    without what its question named: a mistake here falls on the safe side.
+    """
+    return decision.authorization_id is not None and decision.approval_id is None
 
 
 def check_decision(
@@ -218,7 +231,16 @@ class Tool(ABC):
         works on a path — the default of :meth:`prospect`, for its reason."""
         return Prospect()
 
-    async def prospect_place(self, place: str) -> Prospect:
+    async def prospect_covered(
+        self, arguments: JsonMapping, task: TaskId | None = None
+    ) -> Prospect:
+        """**This tool's :meth:`prospect`** (M13.15, ADR 0071; answer 39): what a call a policy
+        covers would meet now. A tool whose question reads more than what could refuse the call —
+        an upload, which reads and measures the file — overrides it, with the same refusals from
+        the same function."""
+        return await self.prospect(arguments, task)
+
+    async def prospect_place(self, place: str, values: tuple[str, ...] = ()) -> Prospect:
         """**A refusal**, unlike :meth:`prospect` (M13.14, ADR 0068): a tool that has not said how
         to look at a place has no policy that names one, and a default «it would start» would be
         a defence that only looks active. The tools a policy of a ``HIGH`` covers override it."""

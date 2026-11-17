@@ -159,9 +159,11 @@ __all__ = [
     "UserIntent",
     "UtcDatetime",
     "WorstCase",
+    "amount",
     "ela_home",
     "is_text",
     "listed",
+    "noun",
     "visible",
 ]
 
@@ -1270,6 +1272,12 @@ class PolicyTerms(_DomainModel):
     route: str | None = None
     model: str | None = None
     on_the_core: bool = False
+    by_value: str | None = None
+    """The argument a policy names **by value** beside its scope (M13.15, ADR 0071; decision 6): the
+    site of a file from the browser, the entry of the vault of a login. A fifth class of the closed
+    world, and a term — it changes what a policy covers: a call is covered only if its value is one
+    of those the policy names (:attr:`PolicyBounds.values`). ``None`` for every row saved before
+    M13.15, and for every capability whose policies name their scope only."""
 
 
 class PolicyWords(_DomainModel):
@@ -1285,6 +1293,11 @@ class PolicyWords(_DomainModel):
 
     does: str
     goes: str
+    together: str | None = None
+    """The product a policy with a second dimension covers, in the capability's words (M13.15,
+    ADR 0071; decision 6) — «every one of these folders with every one of these sites». The
+    catalogue wants it on a capability whose terms name an argument :attr:`PolicyTerms.by_value`,
+    and refuses it on one whose terms do not."""
 
 
 class Covered(_DomainModel):
@@ -1325,6 +1338,12 @@ class PolicyBounds(_DomainModel):
     """A copy of what the capability's sessions covered the day the policy was born, or ``None``
     — as for every policy born before M13.9, whose stored rows carry no such field. Compared with
     today's declaration beside the terms (M13.9, decision 29)."""
+    values: tuple[str, ...] = ()
+    """The values of the argument the terms name :attr:`~PolicyTerms.by_value` that the policy
+    covers (M13.15, ADR 0071; decisions 6 and 10): sites, or the ids of entries of the vault.
+    **Never shown**: an id of an entry is the plan's (ADR 0063 §9), and no route, page or event of
+    the audit reads this field — what the birth showed of them is in the grant's metadata. Empty for
+    every row saved before M13.15, whose terms name no such argument: no migration."""
 
 
 class CapabilitySpec(_DomainModel):
@@ -2695,6 +2714,24 @@ def is_text(value: object) -> bool:
     if isinstance(value, tuple | list):
         return all(is_text(one) for one in value)
     return True
+
+
+def amount(how_many: int, one: str, many: str) -> str:
+    """``how_many`` and its noun, singular for one and plural for any other number (M13.15, ADR
+    0071; decision 21): «1 use», «2 uses», «1 giorno», «0 giorni».
+
+    **The one place the singular is decided**: the API and the command line call it with English
+    words, the Command Center with Italian ones, and :func:`ela.api.companion.counted` asks it for
+    its own. A number never wears a hand-written «(s)» on a surface of the policies.
+    """
+    return f"{how_many} {noun(how_many, one, many)}"
+
+
+def noun(how_many: int, one: str, many: str) -> str:
+    """The noun for ``how_many``: ``one`` for one, ``many`` for any other number — **the decision
+    itself** (M13.15, ADR 0071; decision 21), which :func:`amount` and the companion's ``counted``
+    read and nobody writes again."""
+    return one if how_many == 1 else many
 
 
 def listed(items: tuple[str, ...] | list[str]) -> str:

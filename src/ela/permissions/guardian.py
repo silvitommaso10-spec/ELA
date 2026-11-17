@@ -60,6 +60,7 @@ from ela.domain import (
     StepId,
     Task,
     TaskStep,
+    amount,
 )
 from ela.permissions.capabilities import validate_arguments
 from ela.permissions.errors import InvalidArgumentsError
@@ -89,8 +90,12 @@ __all__ = [
     "Rule",
 ]
 
-POLICY_VERSION: Final = "v0.4"
+POLICY_VERSION: Final = "v0.5"
 """Which policy produced a decision; recorded in every decision and every audit event.
+
+**``v0.5`` since M13.15** (ADR 0071; decision 2): the login and the four files from the browser
+declare policy terms, and a policy of yours covers them — a Guardian that allows what it could
+not; and a decision allowed on a grant says which approval it rests on, ``approval_id``.
 
 **``v0.4`` since M13.14** (ADR 0068; decision 6): a ``HIGH`` that declares policy terms reads a row
 of its own, ``APPROVAL_UNLESS_POLICY``, and a policy of yours covers it — a Guardian that allows
@@ -244,6 +249,10 @@ class PermissionGuardian:
             task_id=None if task is None else task.id,
             step_id=None if step is None else step.id,
             authorization_id=None if authorization is None else authorization.id,
+            # Which approval the grant rests on (M13.15, ADR 0071; answer 38): copied from the
+            # grant, whose invariant binds a yes to its approval. A policy has none, and a tool
+            # reads the difference — the one road where no question named what it must use.
+            approval_id=None if authorization is None else authorization.approval_id,
             expires_at=self._expiry(verdict, now),
             metadata=metadata,
         )
@@ -648,7 +657,10 @@ def _unusable(
     elif authorization.expires_at is not None and authorization.expires_at <= now:
         return f"authorization {authorization.id} expired at {authorization.expires_at.isoformat()}"
     if authorization.max_uses is not None and uses >= authorization.max_uses:
-        return f"authorization {authorization.id} was used {uses} of {authorization.max_uses} times"
+        return (
+            f"authorization {authorization.id} was used {uses} of "
+            f"{amount(authorization.max_uses, 'use', 'uses')}"
+        )
     return None
 
 

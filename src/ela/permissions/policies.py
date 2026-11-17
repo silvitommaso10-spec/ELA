@@ -6,8 +6,9 @@ yes, with a scope — the sites, the folders —, the limits per call the capabi
 uses if the user sets them, and an end. It makes a call autonomous **without lowering any level**
 (decision 2): a capability is covered only if it declares what a policy must bound (decision 1),
 and since M13.14 that includes a ``HIGH`` which does — ``fs.write``, ``browser.act``,
-``browser.act_as_you`` — but never one that launches a program, and never a ``CRITICAL`` (ADR
-0068).
+``browser.act_as_you``, and since M13.15 the login and the four files from the browser, which name a
+second dimension by value (ADR 0071) — but never one that launches a program, and never a
+``CRITICAL`` (ADR 0068).
 
 **One predicate** (decision 4), :func:`shortfall`: the first reason a policy does not cover a call,
 or none, in the order of :data:`GAPS`. The Guardian reads it in two slices — :data:`UNCOVERED`
@@ -27,7 +28,7 @@ Pure, like ``authorizations.py``: no clock, no ids, no store — ``now`` is the 
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
@@ -40,6 +41,7 @@ from ela.domain import (
     CapabilitySpec,
     JsonValue,
     PolicyBounds,
+    amount,
 )
 from ela.permissions.capabilities import is_valid_scope_entry, is_valid_value
 from ela.permissions.errors import PolicyRefusedError
@@ -54,6 +56,8 @@ __all__ = [
     "POLICY_CHECKS",
     "POLICY_PROSPECT",
     "SHORT_ID",
+    "SHOWN_RESOLVED",
+    "SHOWN_VALUES",
     "UNCOVERED",
     "UNUSABLE",
     "WHY_DAYS",
@@ -69,6 +73,8 @@ __all__ = [
     "scope_is_a_list",
     "short_id",
     "shortfall",
+    "shown_at_birth",
+    "shown_of",
     "state_of",
     "why_lines",
 ]
@@ -89,6 +95,13 @@ SHORT_ID: Final = 8
 question already uses for a machine (M13.3, decision 10)."""
 
 POLICY_PROSPECT: Final = "A call that a standing policy of yours would cover."
+
+SHOWN_RESOLVED: Final = "resolved"
+"""The key of the metadata of a policy that keeps each place of its scope as its birth resolved
+it (M13.15, ADR 0071)."""
+SHOWN_VALUES: Final = "values"
+"""The key of the metadata of a policy that keeps each value of its second dimension as a surface
+may show it — never an id of an entry (M13.15, ADR 0071)."""
 """ELA's own sentence for every free argument the tool's prospect needs (decision 7): the goal of a
 session. It is never saved, never in the audit, and never sent anywhere."""
 
@@ -116,6 +129,9 @@ class Gap(StrEnum):
     """The terms say ``on_the_core`` and the step is not placed on the Core — on a node, or where
     the caller did not say (M13.14, ADR 0068; decision 10): the policy's folder is the Core's."""
     SITE = "SITE"
+    VALUE = "VALUE"
+    """The terms name an argument by value (M13.15, ADR 0071; decision 6), and the call does not
+    carry it, or carries one the policy does not name: the second dimension, beside the scope."""
     LIMIT = "LIMIT"
     ARGUMENT = "ARGUMENT"
     """The call carries an argument the policy's terms do not call a limit, the scope or free."""
@@ -125,7 +141,14 @@ GAPS: Final[tuple[Gap, ...]] = tuple(Gap)
 """The order, read by the table of ADR 0062: the first gap found is the reason."""
 UNUSABLE: Final[tuple[Gap, ...]] = (Gap.REVOKED, Gap.EXPIRED, Gap.EXHAUSTED)
 """The half that says *usable* (ADR 0011 §6): a policy here asks, it is never denied."""
-UNCOVERED: Final[tuple[Gap, ...]] = (Gap.TERMS, Gap.ELSEWHERE, Gap.SITE, Gap.LIMIT, Gap.ARGUMENT)
+UNCOVERED: Final[tuple[Gap, ...]] = (
+    Gap.TERMS,
+    Gap.ELSEWHERE,
+    Gap.SITE,
+    Gap.VALUE,
+    Gap.LIMIT,
+    Gap.ARGUMENT,
+)
 """The half that says *covers*: a policy here is never handed over by the executor."""
 
 
@@ -171,7 +194,10 @@ def _expired(policy: Authorization, capability: CapabilitySpec, call: _Call) -> 
 def _exhausted(policy: Authorization, capability: CapabilitySpec, call: _Call) -> str | None:
     if policy.max_uses is None or call.uses < policy.max_uses:
         return None
-    return f"policy {short_id(policy.id)} was used {call.uses} of its {policy.max_uses} times"
+    return (
+        f"policy {short_id(policy.id)} was used {call.uses} of its "
+        f"{amount(policy.max_uses, 'use', 'uses')}"
+    )
 
 
 def _terms(policy: Authorization, capability: CapabilitySpec, call: _Call) -> str | None:
@@ -212,6 +238,22 @@ def _site(policy: Authorization, capability: CapabilitySpec, call: _Call) -> str
     return f"a value of {names} is not among those of policy {short_id(policy.id)}"
 
 
+def _value(policy: Authorization, capability: CapabilitySpec, call: _Call) -> str | None:
+    """The second dimension (M13.15, ADR 0071; decision 6): the value of the argument the terms
+    name by value is one of the policy's — compared as written, never resolved. **A call that does
+    not carry it is not covered**: an entry the plan does not name is no entry of the policy. The
+    sentence names the argument and never a value: an id of an entry is the plan's (ADR 0063 §9)."""
+    bounds = policy.bounds
+    assert bounds is not None  # ``TERMS`` runs first, in every slice that reaches this
+    name = bounds.terms.by_value
+    if name is None:
+        return None
+    value = call.arguments.get(name)
+    if isinstance(value, str) and value in bounds.values:
+        return None
+    return f"a value of {name} is not among those of policy {short_id(policy.id)}"
+
+
 def _number(value: object) -> Decimal | None:
     """A limit as a number: an ``int`` (never a ``bool``) or a text ``Decimal`` reads, finite."""
     if isinstance(value, bool) or not isinstance(value, int | str):
@@ -244,6 +286,8 @@ def _argument(policy: Authorization, capability: CapabilitySpec, call: _Call) ->
     assert bounds is not None  # ``TERMS`` runs first, in every slice that reaches this
     terms = bounds.terms
     allowed = {*terms.limits, *terms.free, *capability.scoped_arguments}
+    if terms.by_value is not None:
+        allowed.add(terms.by_value)
     for name in call.arguments:
         if name in allowed:
             continue
@@ -263,6 +307,7 @@ _CHECKS: Final[dict[Gap, Check]] = {
     Gap.TERMS: _terms,
     Gap.ELSEWHERE: _elsewhere,
     Gap.SITE: _site,
+    Gap.VALUE: _value,
     Gap.LIMIT: _limit,
     Gap.ARGUMENT: _argument,
 }
@@ -478,6 +523,10 @@ class PolicyCheck(StrEnum):
     CATALOGUE = "CATALOGUE"
     ADMITS = "ADMITS"
     SCOPE = "SCOPE"
+    VALUES = "VALUES"
+    """The values of the argument the terms name by value, and only theirs (M13.15, ADR 0071;
+    decision 6): at least one, each valid for its argument's schema, none twice — and none at all
+    for a capability that names nothing by value."""
     LIMITS = "LIMITS"
     USES = "USES"
     """How many uses: none, for no limit, or a whole number from 1 up, with no maximum — the
@@ -499,10 +548,47 @@ class PolicyRequest:
     limits: Mapping[str, str]
     days: int
     uses: int | None = None
+    values: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    """The values of the argument the capability names by value, under its name (M13.15, ADR
+    0071): ``{"site": (...)}``, ``{"entry": (...)}`` — empty for one that names nothing by
+    value."""
 
 
 def _refused(check: PolicyCheck, reason: str) -> PolicyRefusedError:
     return PolicyRefusedError(check, reason)
+
+
+def _values(request: PolicyRequest, capability: CapabilitySpec) -> tuple[str, ...]:
+    """The values of ``request`` for the argument the capability names by value — exactly that
+    argument, at least one value, each valid for its schema, none twice (M13.15, ADR 0071). **No
+    sentence repeats a value**: an id of an entry of the vault is the plan's (ADR 0063 §9)."""
+    assert capability.policy_terms is not None
+    name = capability.policy_terms.by_value
+    asked = sorted(request.values)
+    if name is None:
+        if asked:
+            raise _refused(
+                PolicyCheck.VALUES, f"a policy of {capability.id} names nothing by value: {asked}"
+            )
+        return ()
+    if asked != [name]:
+        raise _refused(
+            PolicyCheck.VALUES,
+            f"a policy of {capability.id} names its {name} values, and only them: given {asked}",
+        )
+    values = tuple(request.values[name])
+    schema = _properties(capability)[name]
+    if (
+        not values
+        or len(set(values)) != len(values)
+        or not all(isinstance(one, str) and is_valid_value(schema, one) for one in values)
+    ):
+        raise _refused(
+            PolicyCheck.VALUES,
+            f"the {name} values of a policy of {capability.id} are one or more valid ones, none "
+            "twice",
+        )
+    return values
 
 
 def _limits(request: PolicyRequest, capability: CapabilitySpec) -> dict[str, JsonValue]:
@@ -569,6 +655,7 @@ def authorization_from_policy(
             PolicyCheck.SCOPE,
             f"the scope of a policy of {capability.id} is one or more of {list(capability.scope)}",
         )
+    values = _values(request, capability)
     limits = _limits(request, capability)
     uses = request.uses
     if uses is not None and (type(uses) is not int or uses < 1):
@@ -590,6 +677,37 @@ def authorization_from_policy(
         granted_by=granted_by,
         expires_at=now + timedelta(days=days),
         max_uses=uses,
-        bounds=PolicyBounds(terms=capability.policy_terms, limits=limits, covers=capability.covers),
+        bounds=PolicyBounds(
+            terms=capability.policy_terms, limits=limits, covers=capability.covers, values=values
+        ),
         metadata={"origin": "policy"},
+    )
+
+
+def shown_at_birth(
+    policy: Authorization, *, resolved: Sequence[str | None], values: Sequence[str]
+) -> Authorization:
+    """``policy`` with what its birth showed (M13.15, ADR 0071; decisions 10 and 15, answer 43):
+    each place of the scope as the Core's disk named it, and each value of the second dimension as
+    a surface may show it — a site as itself, an entry of the vault by its name and its masked
+    username, **never its id**. Words in the metadata, not terms: an entry renamed in the vault
+    revokes nothing, and the views say what was approved. Nobody saves it but the route."""
+    metadata: dict[str, JsonValue] = {
+        **policy.metadata,
+        SHOWN_RESOLVED: list(resolved),
+        SHOWN_VALUES: list(values),
+    }
+    return policy.model_copy(update={"metadata": metadata})
+
+
+def shown_of(policy: Authorization) -> tuple[tuple[str | None, ...], tuple[str, ...]] | None:
+    """What :func:`shown_at_birth` kept of ``policy``, or ``None`` for a policy born before
+    M13.15 — whose views say «—»."""
+    resolved = policy.metadata.get(SHOWN_RESOLVED)
+    values = policy.metadata.get(SHOWN_VALUES)
+    if not isinstance(resolved, list | tuple) or not isinstance(values, list | tuple):
+        return None
+    return (
+        tuple(one if isinstance(one, str) else None for one in resolved),
+        tuple(one for one in values if isinstance(one, str)),
     )

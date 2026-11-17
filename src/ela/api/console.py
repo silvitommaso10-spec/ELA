@@ -30,6 +30,7 @@ forward through the loopback can be seen by eye.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import datetime
 from typing import Annotated, Final
 from urllib.parse import parse_qsl
 from uuid import UUID
@@ -94,6 +95,7 @@ from ela.domain import (
     PrivacyLevel,
     StepState,
     TaskState,
+    amount,
     listed,
     visible,
 )
@@ -874,10 +876,32 @@ ENDED: Final[Mapping[str, str]] = {
 
 
 def _uses(one: PolicyOut) -> str:
-    """«3 di 10, ne restano 7», or «3, senza limite di usi» (M13.14, ADR 0068)."""
+    """«3 di 10, 7 rimasti», «1 di 2, 1 rimasto», or «3, senza limite di usi» (M13.14, ADR 0068;
+    the plural decided by :func:`~ela.domain.amount`, M13.15)."""
     if one.max_uses is None:
         return f"{one.uses}, senza limite di usi"
-    return f"{one.uses} di {one.max_uses}, ne restano {one.remaining}"
+    left = 0 if one.remaining is None else one.remaining
+    return f"{one.uses} di {one.max_uses}, {amount(left, 'rimasto', 'rimasti')}"
+
+
+def _expires(moment: datetime) -> str:
+    """When a policy ends, with the date beside the time (M13.15, ADR 0071; answer 47): a policy
+    lives from one day to ninety, and the time alone does not say which day."""
+    local = moment.astimezone()
+    return f"il {local:%Y-%m-%d} alle {local:%H:%M}"
+
+
+def _shown_scope(scope: tuple[str, ...], resolved: tuple[str | None, ...] | None) -> str:
+    """Each entry as written, and beside it the place as the Core's disk named it, whole — in the
+    visible borders of :func:`~ela.domain.listed`, since a folder may hold any character."""
+    if resolved is None:
+        return listed(list(scope))
+    return listed(
+        [
+            entry if place is None else f"{entry} = {place}"
+            for entry, place in zip(scope, resolved, strict=True)
+        ]
+    )
 
 
 def _actions(one: PolicyOut, seen: bool) -> str:
@@ -906,7 +930,26 @@ def _policy(one: PolicyOut, seen: bool) -> pages.Markup:
         pages.fragment(HERE, "pair", key="Livello", value=one.risk),
         pages.fragment(HERE, "pair", key="Che cosa fa senza chiederti", value=one.does or "—"),
         pages.fragment(
-            HERE, "pair", key="Ambito", value=listed(one.scope) if seen else "resta sul Mac"
+            HERE,
+            "pair",
+            key="Ambito",
+            value=_shown_scope(one.scope, one.resolved) if seen else "resta sul Mac",
+        ),
+        *(
+            []
+            if one.by_value is None
+            else [
+                pages.fragment(
+                    HERE,
+                    "pair",
+                    key=VALUES_KEY.get(one.by_value, one.by_value),
+                    value=(
+                        ("—" if one.values is None else listed(list(one.values)))
+                        if seen
+                        else "restano sul Mac"
+                    ),
+                )
+            ]
         ),
         pages.fragment(
             HERE,
@@ -915,8 +958,8 @@ def _policy(one: PolicyOut, seen: bool) -> pages.Markup:
             value=", ".join(f"{name}={value}" for name, value in one.limits.items()),
         ),
         pages.fragment(HERE, "pair", key="Modello", value=one.model or "—"),
-        pages.fragment(HERE, "pair", key="Scade", value=when(one.expires_at)),
         pages.fragment(HERE, "pair", key="Usi", value=_uses(one)),
+        pages.fragment(HERE, "pair", key="Scade", value=_expires(one.expires_at)),
         pages.fragment(HERE, "pair", key="Ultime azioni", value=_actions(one, seen)),
         pages.fragment(
             HERE,
@@ -945,6 +988,7 @@ def _policy_form(terms: TermsOut) -> pages.Markup:
         description=terms.description,
         words=terms.risk if terms.does is None else f"{terms.risk}: {terms.does}",
         sites=pages.joined(pages.fragment(HERE, "policy-site", site=one) for one in terms.scope),
+        values=_values_of(terms),
         limits=pages.joined(
             pages.fragment(
                 HERE,
@@ -956,6 +1000,35 @@ def _policy_form(terms: TermsOut) -> pages.Markup:
         ),
         days_min=terms.days_min,
         days_max=terms.days_max,
+    )
+
+
+VALUES_KEY: Final[Mapping[str, str]] = {"site": "Siti", "entry": "Voci del vault"}
+"""How the console names the second dimension of a policy (M13.15, ADR 0071), by the argument."""
+
+
+def _values_of(terms: TermsOut) -> pages.Markup:
+    """The second dimension of the form (M13.15, ADR 0071): the declared sites to tick, for a file
+    from the browser; for a login a field where you write the id of an entry, read in the vault's
+    own app — ELA lists no entry for anybody. Nothing for a capability that names nothing by
+    value."""
+    if terms.by_value is None:
+        return pages.joined([])
+    if terms.choices:
+        return pages.fragment(
+            HERE,
+            "policy-values",
+            by_value=terms.by_value,
+            key=VALUES_KEY.get(terms.by_value, terms.by_value),
+            choices=pages.joined(
+                pages.fragment(HERE, "policy-value", value=one) for one in terms.choices
+            ),
+        )
+    return pages.fragment(
+        HERE,
+        "policy-entry",
+        by_value=terms.by_value,
+        capability=terms.capability,
     )
 
 
@@ -971,9 +1044,12 @@ def _request_of(body: bytes) -> dict[str, object]:
     """The form of a policy: the sites ticked — a key repeated —, a field per limit, the days."""
     pairs = parse_qsl(body.decode("utf-8", "replace"))
     fields = dict(pairs)
+    by_value = fields.get("by_value", "")
+    values = [value for key, value in pairs if key == "value" and value]
     return {
         "capability": fields.get("capability", ""),
         "scope": [value for key, value in pairs if key == "scope"],
+        "values": {by_value: values} if by_value else {},
         "limits": {
             key.removeprefix("limit-"): value for key, value in pairs if key.startswith("limit-")
         },
@@ -1014,19 +1090,10 @@ async def policy_preview(request: Request, ela: ElaDep, identity: IdentityDep) -
     )
 
 
-def _scope_of(shown: PreviewOut) -> str:
-    """Each entry as written, and beside it the place as the Core's disk names it, whole (answer
-    20 of the review of the SPEC of M13.14): what is approved names what counts — in the visible
-    borders of :func:`~ela.domain.listed`, since a folder may hold any character."""
-    return listed(
-        [
-            entry if place is None else f"{entry} = {place}"
-            for entry, place in zip(shown.scope, shown.resolved, strict=True)
-        ]
-    )
-
-
 def _preview_pairs(shown: PreviewOut) -> pages.Markup:
+    """The preview, in the order of ADR 0068 §9 (M13.15, answer 47): the level, what it does, where
+    it goes, the scope with each folder whole, the values of the second dimension and the product,
+    the limits, the uses, and the end with its date."""
     return pages.joined(
         [
             pages.fragment(HERE, "pair", key="Livello", value=shown.risk),
@@ -1034,20 +1101,35 @@ def _preview_pairs(shown: PreviewOut) -> pages.Markup:
                 HERE, "pair", key="Che cosa fa senza chiederti", value=shown.does or "—"
             ),
             pages.fragment(HERE, "pair", key="Dove va", value=shown.goes or "—"),
-            pages.fragment(HERE, "pair", key="Ambito", value=_scope_of(shown)),
+            pages.fragment(
+                HERE, "pair", key="Ambito", value=_shown_scope(shown.scope, shown.resolved)
+            ),
+            *(
+                []
+                if shown.by_value is None
+                else [
+                    pages.fragment(
+                        HERE,
+                        "pair",
+                        key=VALUES_KEY.get(shown.by_value, shown.by_value),
+                        value=listed(list(shown.values)),
+                    ),
+                    pages.fragment(HERE, "pair", key="Insieme", value=shown.together),
+                ]
+            ),
             pages.fragment(
                 HERE,
                 "pair",
                 key="Tetti per sessione",
                 value=", ".join(f"{name}={value}" for name, value in shown.limits.items()),
             ),
+            pages.fragment(HERE, "pair", key="Usi", value=shown.uses),
             pages.fragment(
                 HERE,
                 "pair",
                 key="Scade",
-                value=f"fra {shown.days} giorni, il {when(shown.expires_at)}",
+                value=f"fra {amount(shown.days, 'giorno', 'giorni')}, {_expires(shown.expires_at)}",
             ),
-            pages.fragment(HERE, "pair", key="Usi", value=shown.uses),
             pages.fragment(HERE, "pair", key="Dove gira", value=shown.on_the_core or "—"),
             pages.fragment(HERE, "pair", key="Modello", value=shown.model or "—"),
             pages.fragment(HERE, "pair", key="Che cosa esce", value=shown.sends or "—"),
@@ -1063,6 +1145,10 @@ def _hidden(body: PolicyIn, shown: PreviewOut) -> pages.Markup:
         ("capability", body.capability),
         *(("scope", one) for one in body.scope),
         *((f"limit-{name}", value) for name, value in body.limits.items()),
+        # The second dimension, back to the same console: for a login the ids of the entries —
+        # the field of the creation (decision 10, answer 45), in a page nobody keeps (no-store).
+        *(("by_value", name) for name in body.values),
+        *(("value", one) for values in body.values.values() for one in values),
         ("days", str(body.days)),
         *((("uses", str(body.uses)),) if body.uses is not None else ()),
         ("model", shown.model or ""),

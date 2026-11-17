@@ -1,0 +1,31 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M13.15 (sezione 34, passo 6): lo stesso caricamento con il browser del",
+    "profilo, sotto la policy di browser.upload_as_you.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "caricare come me il file della prova dalla cartella su",
+  "steps": [
+    {
+      "id": "c0de1a28-0000-4b00-8a00-000000001506",
+      "goal": "caricare come me il file della prova dalla cartella su",
+      "required_capabilities": [
+        "browser.upload_as_you"
+      ],
+      "arguments": {
+        "site": "testpages.eviltester.com",
+        "path": "/pages/files/file-upload/",
+        "file_field": "#fileinput",
+        "expect_text": "Upload successful!",
+        "purpose": "la prova a mano delle policy sul login e sui file",
+        "file": "ELA/prova-m13.15/su/da-caricare.txt"
+      },
+      "risk": "HIGH",
+      "expected_result": "la pagina dice che il file è arrivato",
+      "success_conditions": [
+        "browser.expect_visible"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}

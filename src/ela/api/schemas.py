@@ -1601,6 +1601,11 @@ class PolicyIn(BaseModel):
     limits: dict[str, str] = Field(default_factory=dict)
     days: int
     uses: StrictInt | None = None
+    values: dict[str, tuple[str, ...]] = Field(default_factory=dict)
+    """The values of the argument the capability names by value, under its name (M13.15, ADR
+    0071): ``{"site": [...]}`` for a file from the browser, ``{"entry": [...]}`` for a login — the
+    ids of the entries, written by the user after reading them in the vault's own app: **the field
+    of the creation**, the one place an id comes in, and none goes out."""
 
 
 class PolicyConfirmIn(PolicyIn):
@@ -1634,6 +1639,12 @@ class TermsOut(BaseModel):
     goes: str | None
     on_the_core: bool
     scope: tuple[str, ...]
+    by_value: str | None
+    """The argument a policy of it names by value beside the scope (M13.15, ADR 0071): ``site``,
+    ``entry``, or ``None``."""
+    choices: tuple[str, ...]
+    """What the form offers for that argument: the declared sites for ``site``; nothing for
+    ``entry``, whose ids the user writes — ELA lists no entry of the vault for anybody."""
     limits: tuple[LimitOut, ...]
     uncovered: tuple[str, ...]
     free: tuple[str, ...]
@@ -1667,7 +1678,17 @@ class PolicyOut(BaseModel):
     capability: CapabilityId
     risk: str
     does: str | None
+    goes: str | None
     scope: tuple[str, ...]
+    resolved: tuple[str | None, ...] | None
+    """Each entry of the scope as its birth resolved it on the Core's disk (M13.15, ADR 0071;
+    answer 43), ``None`` for a policy born before M13.15. ``LOCAL_ONLY``."""
+    by_value: str | None
+    """The argument the policy names by value, or ``None``."""
+    values: tuple[str, ...] | None
+    """What its birth showed of the values of that argument: the sites; the entries of the vault
+    by their name and their username masked — **never an id** (decision 10). ``None`` for a
+    policy born before M13.15. ``LOCAL_ONLY``."""
     limits: dict[str, str]
     uncovered: tuple[str, ...]
     model: str | None
@@ -1712,11 +1733,19 @@ class PreviewOut(BaseModel):
     """For each entry of the scope, the place as the Core's disk names it, whole — the folder of
     a policy that touches a file —, or ``None`` where the tool resolves nothing (answer 20 of the
     review of the SPEC of M13.14): what is approved names what counts. ``LOCAL_ONLY``."""
+    by_value: str | None
+    """The argument the policy names by value beside the scope (M13.15, ADR 0071), or ``None``."""
+    values: tuple[str, ...]
+    """Each value of that argument as a surface may show it: a site as itself; an entry of the
+    vault by its name and its username masked — **never its id** (decision 10). ``LOCAL_ONLY``."""
+    together: str
+    """The product the policy covers, in the capability's words — «every one of these folders
+    with every one of these sites» —; empty for a policy that names nothing by value."""
     limits: dict[str, str]
     days: int
     expires_at: datetime
     uses: str
-    """«at most N uses», or «no limit of uses»."""
+    """«at most 1 use», «at most N uses», or «no limit of uses»."""
     on_the_core: str
     """For a policy that covers only the Core, the sentence that says so; empty otherwise."""
     model: str | None
@@ -1730,7 +1759,10 @@ class PreviewOut(BaseModel):
 
 
 class RevokedOut(BaseModel):
-    """A policy revoked, and the sentence that says a session it already covered goes on."""
+    """A policy revoked, and — only for the policy of a guided session — what goes on (M13.15, ADR
+    0071; decision 20, answer 40): the sentence of the session, derived from the model's route its
+    declaration names, and the one of the reads, derived from what it ``covers``. ``None`` for
+    every other policy: a revocation of a write or of a login has no session that goes on."""
 
     policy: PolicyOut
-    running: str
+    running: str | None

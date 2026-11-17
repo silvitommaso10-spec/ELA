@@ -10,6 +10,12 @@ the hand test asks before creating, since its ``run`` captures what a command pr
 
 ``--limit`` is generic and repeatable: this command knows no limit's name, it sends them, and the
 route judges them against the capability's declaration — ``ela policy list`` says which they are.
+
+**Since M13.15** (ADR 0071) a policy of a file from the browser names its sites, ``--site``, and
+one of a login the entries of your vault, ``--entry``, by the id you read in the vault's own app:
+the one place an id comes in. It stays an instant on this machine's command line, and it is not a
+credential; no output of ELA ever prints it back — an entry is shown by its name and its masked
+username.
 """
 
 from __future__ import annotations
@@ -23,7 +29,7 @@ import typer
 from ela.cli import client
 from ela.cli.errors import REFUSED, fail, handled
 from ela.cli.output import Json, emit, fields, table
-from ela.domain import listed
+from ela.domain import amount, listed
 
 __all__ = ["YES", "Ambiguous", "app", "in_a_terminal", "resolved"]
 
@@ -57,17 +63,34 @@ def _limits(written: Sequence[str]) -> dict[str, str]:
     return limits
 
 
-def _scope_text(scope: Sequence[str], resolved: Sequence[str | None]) -> str:
+VALUE_OPTIONS: Final = {"site": "--site", "entry": "--entry"}
+"""The option that gives the values of each argument a policy names by value (M13.15)."""
+
+
+def _scope_text(scope: Sequence[str], resolved: Sequence[str | None] | None) -> str:
     """Each entry of the scope as written, and beside it the place as the Core's disk names it,
     whole, where the tool resolves one (answer 20 of the review of the SPEC of M13.14) — in the
     visible borders of :func:`~ela.domain.listed`, since a folder may hold any character (M13.2,
     decision 12)."""
+    if resolved is None:
+        return listed(list(scope))
     return listed(
         [
             entry if place is None else f"{entry} = {place}"
             for entry, place in zip(scope, resolved, strict=True)
         ]
     )
+
+
+def _values_text(shown: Mapping[str, Any]) -> list[tuple[str, Any]]:
+    """The second dimension, as the route showed it — sites, or entries by their name and their
+    masked username, never an id —, and the product the policy covers (M13.15, ADR 0071)."""
+    if shown.get("by_value") is None:
+        return []
+    return [
+        (f"{shown['by_value']} values", listed(list(shown["values"]))),
+        ("together", shown["together"]),
+    ]
 
 
 def _preview_text(shown: Mapping[str, Any]) -> str:
@@ -79,9 +102,10 @@ def _preview_text(shown: Mapping[str, Any]) -> str:
             ("does, without asking", shown["does"]),
             ("goes", shown["goes"]),
             ("scope", _scope_text(shown["scope"], shown["resolved"])),
+            *_values_text(shown),
             ("limits", ", ".join(f"{name}={value}" for name, value in shown["limits"].items())),
             ("uses", shown["uses"]),
-            ("expires", f"in {shown['days']} day(s), at {shown['expires_at']}"),
+            ("expires", f"in {amount(shown['days'], 'day', 'days')}, at {shown['expires_at']}"),
             ("where", shown["on_the_core"] or None),
             ("model", shown["model"]),
             ("sends", shown["sends"] or None),
@@ -109,16 +133,30 @@ def create(
     uses: Annotated[
         int | None, typer.Option("--uses", help="how many uses at most; none for no limit")
     ] = None,
+    site: Annotated[
+        list[str] | None,
+        typer.Option("--site", help="a site a policy of a file from the browser covers"),
+    ] = None,
+    entry: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--entry", help="the id of an entry of your vault a policy of browser.login covers"
+        ),
+    ] = None,
     confirm: Annotated[bool, typer.Option("--confirm", help="create without asking")] = False,
     as_json: Json = False,
 ) -> None:
     """Show the preview of a policy, and create it — with --confirm, or with «s» in a terminal."""
+    if site and entry:
+        fail(REFUSED, "a policy names sites or entries by value, not both: --site or --entry")
+    values = {"site": list(site)} if site else ({"entry": list(entry)} if entry else {})
     body: dict[str, Any] = {
         "capability": capability,
         "scope": list(scope or ()),
         "limits": _limits(limit or ()),
         "days": days,
         "uses": uses,
+        "values": values,
     }
     with client.connect() as api:
         shown = api.post("/policies/preview", body)
@@ -148,7 +186,8 @@ def _row(one: Mapping[str, Any]) -> Sequence[Any]:
         one["short"],
         one["capability"],
         one["risk"],
-        listed(one["scope"]),
+        _scope_text(one["scope"], one.get("resolved")),
+        "—" if one.get("values") is None else listed(list(one["values"])),
         ", ".join(f"{name}={value}" for name, value in one["limits"].items()),
         one["expires_at"],
         _uses(one),
@@ -186,6 +225,7 @@ def list_policies(
                 "capability",
                 "level",
                 "scope",
+                "values",
                 "limits",
                 "expires",
                 "uses",
@@ -208,8 +248,10 @@ def _bounds(terms: Mapping[str, Any]) -> str:
     """What a policy of one capability must bound: its limits, or «no limit to set» for one that
     declares none (M13.14, ADR 0068) — and what it never covers."""
     limits = ", ".join(f"--limit {limit['name']}=…" for limit in terms["limits"])
+    by_value = terms.get("by_value")
+    named = "" if by_value is None else f"; {VALUE_OPTIONS.get(by_value, by_value)} …"
     return (
-        f"{terms['capability']}: {limits or 'no limit to set'}; "
+        f"{terms['capability']}: {limits or 'no limit to set'}{named}; "
         f"never covered: {', '.join(terms['uncovered']) or '—'}"
     )
 
@@ -234,8 +276,8 @@ def revoke(
     policy: Annotated[str, typer.Argument(help="The policy's id, or its first eight characters.")],
     as_json: Json = False,
 ) -> None:
-    """Revoke a live policy. A session it already covered goes on until it ends: the stop of a task
-    is `ela task cancel`."""
+    """Revoke a live policy. A guided session it already covered goes on until it ends: the stop of
+    a task is `ela task cancel`."""
     with client.connect() as api:
         listed_ = api.get("/policies", client.query(all="true"))["policies"]
         try:
@@ -245,4 +287,7 @@ def revoke(
         if found is None:
             fail(REFUSED, f"no policy {policy}")
         payload = api.post(f"/policies/{found}/revoke")
-    emit(payload, as_json, f"revoked policy {payload['policy']['short']}\n{payload['running']}")
+    said = f"revoked policy {payload['policy']['short']}"
+    if payload.get("running"):
+        said = f"{said}\n{payload['running']}"
+    emit(payload, as_json, said)

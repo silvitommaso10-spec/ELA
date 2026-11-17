@@ -701,6 +701,7 @@ def select_authorization(
     targets: Sequence[object],
     now: datetime,
     on_the_core: bool = False,
+    last_used: Mapping[AuthorizationId, datetime] | None = None,
 ) -> Candidate | None:
     """The grant to hand the Guardian for this call, or ``None`` (ADR 0013 §3). Pure.
 
@@ -714,10 +715,15 @@ def select_authorization(
     elsewhere (M13.14, ADR 0068).
 
     Grants bound to this step come first, then the rest, in store order. The first covering and
-    usable candidate wins; failing that, the first covering one (so the Guardian's reason — and
-    the request for approval — names why it could not be used); failing that, nothing. A grant
-    that does not cover is never handed over: the Guardian would read it as the caller's
-    incoherence and deny (ADR 0011 §6).
+    usable candidate wins; failing that, a grant bound to this step; failing that, **the covering
+    policy that ended last** (M13.15, ADR 0071; decision 19) — so the Guardian's reason, the one
+    sentence of the request for approval, names the nearest of the reasons the lines «why I ask»
+    list; failing that, nothing. When a policy ended is derived from the data, never from an order
+    of the gaps written by hand: the first of its revocation, its expiry if it is past, and the
+    instant of its last use if its uses are spent — ``last_used``, read by the caller from the
+    audit; a policy spent with no instant there ended, at the nearest the data say, when it was
+    born. A grant that does not cover is never handed over: the Guardian would read it as the
+    caller's incoherence and deny (ADR 0011 §6).
     """
     covering = [
         candidate
@@ -728,7 +734,28 @@ def select_authorization(
     for candidate in covering:
         if _usable(candidate, now, capability, arguments):
             return candidate
-    return covering[0] if covering else None
+    if not covering or covering[0][0].step_id == step.id:
+        return covering[0] if covering else None
+    used = {} if last_used is None else last_used
+    # ``max`` keeps the first of equal instants: store order among the ones that ended together.
+    return max(covering, key=lambda candidate: ended_at(*candidate, now=now, last_used=used))
+
+
+def ended_at(
+    grant: Authorization, uses: int, *, now: datetime, last_used: Mapping[AuthorizationId, datetime]
+) -> datetime:
+    """When ``grant`` stopped being usable (M13.15, ADR 0071; decision 19): the first of its
+    revocation, its expiry if it is past at ``now``, and the instant of its last use if its uses are
+    spent — ``last_used``, or its ``created_at`` when the audit holds no instant of a use, the
+    nearest the data give. A grant still usable at ``now`` has not ended: ``now``."""
+    instants = []
+    if grant.revoked_at is not None:
+        instants.append(grant.revoked_at)
+    if grant.expires_at is not None and grant.expires_at <= now:
+        instants.append(grant.expires_at)
+    if grant.max_uses is not None and uses >= grant.max_uses:
+        instants.append(last_used.get(grant.id, grant.created_at))
+    return min(instants) if instants else now
 
 
 def _covers(
@@ -1085,8 +1112,12 @@ class Executor:
             # §6-bis reads before a question — is read here, before the use is spent. A refusal
             # fails the step with the tool's code: no use spent, no tool, nothing written. Only for
             # a ``HIGH`` under a policy; a guided session covered by one stays as M13.12 made it.
+            # **The prospect of a covered call** (M13.15, ADR 0071; answer 39): the same refusals,
+            # and nothing only a question needs — an upload reads no byte of its file here.
             prospect = await (
-                tool.prospect(arguments, task.id) if there is None else tool.asserted(arguments)
+                tool.prospect_covered(arguments, task.id)
+                if there is None
+                else tool.asserted(arguments)
             )
             if prospect.refusal is not None:
                 return await self._fail(task, graph, decision, authorization, prospect.refusal)
@@ -2044,8 +2075,27 @@ class Executor:
             targets=targets,
             now=now,
             on_the_core=on_the_core,
+            last_used=await self._last_used(candidates),
         )
         return (None, 0) if selected is None else selected
+
+    async def _last_used(self, candidates: Sequence[Candidate]) -> dict[AuthorizationId, datetime]:
+        """The instant of the last use of each policy whose uses are spent (M13.15, ADR 0071;
+        decision 19): its last ``TOOL_EXECUTED``, the read the views of the policies make. Only
+        for those: a policy that can still be used needs no instant, and asks the audit nothing."""
+        found: dict[AuthorizationId, datetime] = {}
+        for grant, uses in candidates:
+            if grant.approval_id is not None or grant.max_uses is None or uses < grant.max_uses:
+                continue
+            events = await self._audit.read(
+                authorization_id=grant.id,
+                event_type=AuditEventType.TOOL_EXECUTED,
+                limit=1,
+                newest_first=True,
+            )
+            if events:
+                found[grant.id] = events[0].created_at
+        return found
 
     # ----------------------------------------------------------------------------------
     # The outcomes that stop the call: ask, fail

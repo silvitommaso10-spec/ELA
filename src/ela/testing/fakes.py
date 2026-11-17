@@ -1898,6 +1898,12 @@ class FakeTool:
         that wants a place refused sets it."""
         self.looked_at: tuple[str, ...] = ()
         """Every place :meth:`prospect_place` was asked about, in order."""
+        self.looked_with: tuple[tuple[str, ...], ...] = ()
+        """The values each of those asks carried (M13.15), in the same order."""
+        self.covered: Prospect | None = None
+        """What :meth:`prospect_covered` answers when a test sets it (M13.15)."""
+        self.covered_asks: tuple[dict[str, object], ...] = ()
+        """Every :meth:`prospect_covered` ask, in order."""
         self.bound: WorstCase | ErrorMetadata | None = None
 
     @property
@@ -1929,10 +1935,21 @@ class FakeTool:
         default — and never what :attr:`prospects` says, so a test sees which one was asked."""
         return self.assertions
 
-    async def prospect_place(self, place: str) -> Prospect:
-        """Whether a call could start in ``place`` (M13.14): whatever the test set in
-        :attr:`places`, and the place is remembered in :attr:`looked_at`."""
+    async def prospect_covered(
+        self, arguments: JsonMapping, task: TaskId | None = None
+    ) -> Prospect:
+        """What a covered call would meet (M13.15): whatever the test set in :attr:`covered`, or
+        — by default, as for :class:`~ela.tools.base.Tool` — :meth:`prospect`'s answer. Each ask is
+        remembered in :attr:`covered_asks`, so a test sees which of the two was asked."""
+        self.covered_asks = (*self.covered_asks, dict(arguments))
+        return self.prospects if self.covered is None else self.covered
+
+    async def prospect_place(self, place: str, values: tuple[str, ...] = ()) -> Prospect:
+        """Whether a call could start in ``place`` (M13.14) with each of ``values`` (M13.15):
+        whatever the test set in :attr:`places`, and the place and its values are remembered in
+        :attr:`looked_at` and :attr:`looked_with`."""
         self.looked_at = (*self.looked_at, place)
+        self.looked_with = (*self.looked_with, values)
         return self.places
 
     async def worst_case(self, arguments: JsonMapping) -> WorstCase | ErrorMetadata | None:

@@ -185,7 +185,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **70** | `docs/adr/NNNN-*.md` |
+| ADR scritti | **71** | `docs/adr/NNNN-*.md` |
 | Milestone | **105, di cui 83 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **74** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **16** | `pyproject.toml` |
@@ -1344,7 +1344,10 @@ in quei due posti. La costruisce **M13.14** ([`milestones/M13.14.md`](milestones
 la dichiarazione alla costruzione del catalogo — «no policy reaches a HIGH (ADR 0045 §3)». **Fino a lei il codice è quello
 di oggi**, e nessuna policy raggiunge una `HIGH`. ***Annotato il 2026-11-13***: M13.14 è fatta, con la prova a mano
 passata, e [ADR 0068](adr/0068-policies-on-high.md) è Accettata: da lei una policy raggiunge `fs.write`, `browser.act` e
-`browser.act_as_you`.
+`browser.act_as_you`. ***Annotato il 2026-11-17***: M13.15 porta le policy al login e alle quattro capability dei file dal
+browser, con una seconda dimensione — i siti di un file, le voci del vault di un login — ([ADR
+0071](adr/0071-policies-on-login-and-files.md), Proposta fino alla prova a mano della sezione 34): dopo di lei l'unica
+`HIGH` che chiede a ogni uso è `terminal.run`, fino a [M13.16](milestones/M13.16.md).
 
 *Perché:* Tommaso vuole decidere una volta, lui, che cosa ELA fa da sola, invece di rispondere ogni volta alla stessa
 domanda. §59 lo prevede — «Puoi modificare liberamente i file dentro questa cartella» è una policy su `fs.write`, che in

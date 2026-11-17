@@ -5777,10 +5777,14 @@ nello scope della capability.
 `terminal.run`, che lancia un programma, e `browser.login`, una `HIGH` senza termini fino a M13.15. La prova di M13.12 è
 passata il 2026-10-10 con i due di allora.
 
+***Rivisto il 2026-11-17*** (M13.15, ADR 0071): da M13.15 il login dichiara i suoi termini, e il secondo rifiuto di questo
+passo è diventato `browser.read_as_you`, una `MEDIUM` che nessuna milestone ha dichiarato. Nessuna `HIGH` del catalogo
+resta senza termini, salvo `terminal.run`, che il suo programma ferma prima.
+
 <!-- prova: 3.comando -->
 ```
 uv run ela policy create terminal.run --scope bin/echo --days 1 --confirm
-uv run ela policy create browser.login --scope example.com --days 1 --confirm
+uv run ela policy create browser.read_as_you --scope example.com --days 1 --confirm
 uv run ela policy create browser.guided --scope www.youtube.com --limit max_cost_usd=0.05 --limit looks=10 --limit seconds=300 --days 1 --confirm
 uv run ela policy create browser.guided --scope www.wikipedia.org --limit max_cost_usd=1.10 --limit looks=10 --limit seconds=300 --days 1 --confirm
 ```
@@ -5788,7 +5792,7 @@ uv run ela policy create browser.guided --scope www.wikipedia.org --limit max_co
 <!-- prova: 3.atteso -->
 ```
 policy.refused: ADMITS: terminal.run launches a program the plan chooses:
-policy.refused: ADMITS: browser.login is HIGH and declares no terms:
+policy.refused: ADMITS: no milestone has said what a policy must bound for browser.read_as_you
 policy.would_not_start: guided.cap_below_one_call:
 policy.refused: SCOPE: the scope of a policy of browser.guided
 ```
@@ -7423,6 +7427,11 @@ gestures 0
 error browser.file_changed
 ```
 
+***Annotato il 2026-11-17*** (M13.15, risposta 46 della review della sua SPEC): l'atteso «outcome failed» qui sopra non
+nomina la ragione del fallimento — la nomina il blocco dopo, `browser.file_changed` —, e resta com'è, nella forma della
+prova del 2026-11-11. Da M13.15 un atteso che aspetta un fallimento ne nomina la ragione nel suo blocco, e
+`tests/docs/test_prova_failures_name_their_reason.py` lo tiene, con questo passo fra i due di prima.
+
 Dopo il passo 7 nella cartella della prova restano i due file — `da-una-frase.bin` e `da-caricare.txt` —: la prossima
 prova li toglie da sé, al passo 1.
 
@@ -7890,8 +7899,12 @@ outcome waiting_approval
 
 <!-- prova: 5.perché -->
 ```
-policy <id della policy 5> was used 1 of its 1 times
+policy <id della policy 5> was used 1 of its 1 use
 ```
+
+***Rivisto il 2026-11-17*** (M13.15, ADR 0071; risposta 42 della review della sua SPEC): fino a M13.15 la frase diceva «was
+used 1 of its 1 times», ed è quella che la prova di M13.14 ha visto il 2026-11-13; da M13.15 il singolare si decide in un
+posto solo, e la parola «times» non c'è più.
 
 <!-- prova: 5.no -->
 ```
@@ -8288,6 +8301,506 @@ ELA/prova-m9.5/ solo come-te.bin vuoto.bin
 `browser.download_not_started` — il gesto fatto, nessuno scaricamento avviato, niente scritto —, in meno di 30 secondi.
 L'atteso «outcome failed» non distingue le due cose. L'interruzione la provano i test della porta (ADR 0070); il passo
 da rifare è in conto a [M13.15](milestones/M13.15.md).
+
+***Annotato il 2026-11-17, con il perché*** (M13.15, punto F del censimento, risposta 49 della review della sua SPEC): il
+servizio dietro `httpbin.org` rifiuta ogni durata sopra i 10 secondi — `/drip?duration=60` risponde `400`, in JSON,
+«invalid duration: duration 1m0s longer than 10s» —; il browser apre quel JSON come una pagina, e per il tool una pagina
+e non un file è `browser.download_not_started`. Nessun sito dichiarato tiene uno scaricamento oltre i 30 secondi del tool:
+**il passo non si rifà**, e la sezione 34 dice che l'interruzione la provano i test.
+
+## 34. Le policy sul login e sui file dal browser: la prova a mano di M13.15
+
+> **Scritta con l'implementazione il 2026-11-17** (`milestones/M13.15.md`, la bozza della sezione 34 nella SPEC e le
+> risposte 48–52 della sua review), e `tests/docs/test_prova_m13_15.py` tiene lo script allineato a questa sezione, e ne
+> cammina i passi meccanici con lo script contro un'ELA vera di prova. La si fa **sul Mac, senza il PC**, sull'**ultimo
+> commit del branch** `m13.15-le-policy-al-login-e-ai-file`, con lo script `scripts/prova_m13_15.py`: dopo, sul branch
+> cambiano solo `docs/`, `tests/` e `scripts/generate_stato.py`.
+
+Da M13.15 **una policy che crei tu può coprire il login e i file dal browser** — `browser.download`,
+`browser.download_as_you`, `browser.upload`, `browser.upload_as_you`, `browser.login` —, con **una seconda dimensione**:
+una policy di un file nomina **le cartelle e i siti**, e copre ogni cartella con ogni sito; una di login nomina **i siti
+e le voci del tuo vault**, per id, e copre ogni sito con ogni voce ([ADR 0071](adr/0071-policies-on-login-and-files.md)).
+Sotto una di queste policy **nessuno guarda il file prima che esca**, e un login **entra senza che tu sia davanti**: una
+finestra del browser di ELA compare e prende la tastiera. **Il vault lo apri sempre tu**: a vault chiuso un login coperto
+non scrive niente e non spende un uso.
+
+**La regola pratica, per te**: una policy di caricamento o di scaricamento solo su una cartella fatta apposta, mai sulla
+cartella `ELA` intera né su Documents; una policy di login solo con la voce e il sito che servono, e pochi usi; mai una
+policy «come te» su GitHub. **L'interruzione di uno scaricamento non ha un passo**: nessun sito dichiarato tiene uno
+scaricamento oltre i 30 secondi del tool — `httpbin.org` rifiuta ogni durata sopra i 10 —, e la provano i test della
+porta, `test_a_download_that_is_cut_short_is_cancelled_and_nothing_of_it_stays`,
+`test_a_download_the_time_of_its_step_cuts_leaves_nothing_in_the_folder` e
+`test_what_is_announced_while_the_door_closes_is_cancelled_and_taken_away`, non la mano.
+
+**Che cosa serve**: `ELA_FS_ROOT` e `ELA_FS_SCOPE` come nella sezione 15, con lo scope `ELA`; in `ELA_BROWSER_SITES`
+`httpbin.org`, `testpages.eviltester.com` e `news.ycombinator.com`; il profilo del browser dichiarato e libero; **nessuna
+policy viva** delle cinque; il tuo account di `news.ycombinator.com` con la sua voce nel vault, e **l'id della voce**, che
+leggi nell'app di Bitwarden; ed ELA **riavviata dal branch**. **Nessuna chiamata al modello**. **Lo script non lancia mai
+`bw`**, non tocca il `.env`, il database né `ela serve`, e scrive solo dentro `ELA/prova-m13.15/`. **Le policy le crei
+tu**, al «crei la policy?»; ognuna ha un tetto agli usi uguale agli usi che la prova pianifica, più uno — il login 2 —, e
+dove un passo aspetta un rifiuto prima della spesa lo script guarda che lo step sia coperto e che gli usi non si muovano.
+
+Lo script stampa **PASSATO**, **FALLITO**, **SALTATO** o **FERMATO** per ogni passo, e scrive tutto in
+`~/Downloads/prova-m13.15-<data>.txt`, **senza il percorso intero di un file, senza il nome utente e senza l'id della
+voce**: quelli stanno sullo schermo. Dei tipi della sezione 32 usa `comando`, `atteso`, `occhio`, `schermo`, `crea`,
+`policy`, `perché`, `no`, `nessuna`, `console` e `file`, con le stesse parole, e i suoi:
+
+- **`mano`**: ciò che fai tu — aprire o chiudere il vault, uscire da un sito —: lo script te lo dice e aspetta Invio.
+- **`voce`**: lo script ti chiede l'id della voce, senza mostrarlo, e lo mette al posto di `<id della voce>` nei comandi e
+  nel piano del login, che scrive in un file temporaneo fuori dal repository, `600`, e toglie sempre alla fine del passo.
+  Nel file della prova i comandi hanno `<id della voce>`.
+- **`risultato`**: la dimensione e lo sha256 che il risultato del caricamento dice, confrontati con quelli che lo script
+  calcola dal file.
+- **`nomi`**: lo script dà al secondo file il primo come secondo nome.
+- **`assente`**: parole che l'uscita del comando **non** deve avere.
+- **`ambigua`**: se il login senza `entry` si ferma prima della domanda con `vault.entry_ambiguous` — più di una voce per
+  quel sito nel tuo vault —, il passo è **SALTATO** con la sua ragione, e non finge una domanda che non può nascere.
+- **`coperta`**: lo step del task è stato deciso **«covered by policy …»** da quella policy — lo dice l'evento della sua
+  decisione nell'audit —, anche quando poi fallisce prima della spesa: il rifiuto è venuto sulla strada della policy, e
+  non su quella di una domanda.
+
+**Se la prova si ferma a metà**, lo script revoca prima di uscire le policy che ha creato e sono ancora vive, e toglie il
+piano temporaneo.
+
+```
+uv run python scripts/prova_m13_15.py
+```
+
+### 1. Prima
+
+Lo script controlla, e stampa **PASSATO** per ciascuno: il Mac è sull'ultimo commit del branch su `origin`, con l'albero
+pulito; ELA risponde, e gira dal codice del branch — l'anteprima dell'API ha `by_value` —; la radice e lo scope ammettono
+`ELA/prova-m13.15/`; i tre siti sono dichiarati; il profilo è libero; nessuna policy viva delle cinque. Poi prepara la
+cartella della prova: toglie i file che una prova di prima ha lasciato, **solo quelli dei suoi piani e i due suoi**, e si
+ferma se ci trova altro; crea `giu/`, `su/` e `fuori/`, e scrive `su/da-caricare.txt` e `fuori/fuori.txt`.
+
+### 2. Uno scaricamento sotto la sua policy
+
+L'anteprima la guardi sullo schermo; poi uno scaricamento da `httpbin.org` in `giu/` parte **senza domanda**.
+
+<!-- prova: 2.schermo -->
+```
+uv run ela policy create browser.download --scope ELA/prova-m13.15/giu --site httpbin.org --days 1 --uses 2
+```
+
+<!-- prova: 2.occhio -->
+```
+Qui sopra, sullo schermo, l'anteprima dice HIGH, che ELA scarica ciò che questi siti mandano in queste cartelle e che il contenuto lo sceglie il sito, non il piano; accanto a giu la cartella intera sul tuo disco; il sito httpbin.org e «every one of these folders with every one of these sites»; «at most 2 uses», la scadenza di domani con la data, e ciò che non copre mai. È ciò che vuoi approvare?
+```
+
+<!-- prova: 2.crea -->
+```
+uv run ela policy create browser.download --scope ELA/prova-m13.15/giu --site httpbin.org --days 1 --uses 2
+```
+
+<!-- prova: 2.comando -->
+```
+uv run ela task create "Scarica il file della prova nella cartella giu." --json
+uv run ela task plan <id> --file docs/examples/policy-download-giu.json
+uv run ela task run <id>
+```
+
+<!-- prova: 2.atteso -->
+```
+outcome completed
+```
+
+<!-- prova: 2.comando -->
+```
+uv run ela task show <id>
+```
+
+<!-- prova: 2.atteso -->
+```
+policy <id della policy 2>
+```
+
+<!-- prova: 2.file -->
+```
+ELA/prova-m13.15/giu/scaricato.bin 1024 600
+```
+
+<!-- prova: 2.policy -->
+```
+<id della policy 2> LIVE usi 1 di 2 azioni 1
+```
+
+### 3. Uno scaricamento come te, sotto un'altra policy
+
+Un consenso non si eredita: la policy del passo 2 non copre `browser.download_as_you`. Una sua, e lo scaricamento con il
+tuo profilo parte senza domanda; `giu/` tiene i due file e nient'altro.
+
+<!-- prova: 3.crea -->
+```
+uv run ela policy create browser.download_as_you --scope ELA/prova-m13.15/giu --site httpbin.org --days 1 --uses 2
+```
+
+<!-- prova: 3.comando -->
+```
+uv run ela task create "Scarica come me il file della prova nella cartella giu." --json
+uv run ela task plan <id> --file docs/examples/policy-download-as-you-giu.json
+uv run ela task run <id>
+```
+
+<!-- prova: 3.atteso -->
+```
+outcome completed
+```
+
+<!-- prova: 3.file -->
+```
+ELA/prova-m13.15/giu/come-te.bin 2048 600
+ELA/prova-m13.15/giu/ solo come-te.bin scaricato.bin
+```
+
+<!-- prova: 3.policy -->
+```
+<id della policy 3> LIVE usi 1 di 2 azioni 1
+```
+
+### 4. Uno scaricamento da un sito fuori dalla policy
+
+Da `testpages.eviltester.com`, che la policy del passo 2 non nomina: **chiede**, e la domanda dice perché; di' no.
+
+<!-- prova: 4.comando -->
+```
+uv run ela task create "Scarica un file da un sito che la policy non nomina." --json
+uv run ela task plan <id> --file docs/examples/policy-download-fuori.json
+uv run ela task run <id>
+```
+
+<!-- prova: 4.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 4.perché -->
+```
+a value of site is not among those of policy <id della policy 2>
+```
+
+<!-- prova: 4.no -->
+```
+uv run ela task deny <id> --approval <approval-id>
+```
+
+<!-- prova: 4.file -->
+```
+ELA/prova-m13.15/giu/da-un-altro-sito.bin assente
+```
+
+### 5. Un caricamento sotto la sua policy
+
+Un file di `su/` verso `testpages.eviltester.com`, **senza domanda**: il risultato dice la dimensione e lo sha256 dei byte
+usciti, e lo script li confronta con quelli che calcola lui dal file.
+
+<!-- prova: 5.schermo -->
+```
+uv run ela policy create browser.upload --scope ELA/prova-m13.15/su --site testpages.eviltester.com --days 1 --uses 2
+```
+
+<!-- prova: 5.occhio -->
+```
+Qui sopra, sullo schermo, l'anteprima dice HIGH, che ELA dà a questi siti qualunque file di queste cartelle e che nessuno guarda il file prima che esca; che il contenuto esce da questa macchina e non si riprende; accanto a su la cartella intera sul tuo disco e il sito testpages.eviltester.com; «at most 2 uses» e la scadenza con la data. È ciò che vuoi approvare?
+```
+
+<!-- prova: 5.crea -->
+```
+uv run ela policy create browser.upload --scope ELA/prova-m13.15/su --site testpages.eviltester.com --days 1 --uses 2
+```
+
+<!-- prova: 5.comando -->
+```
+uv run ela task create "Carica il file della prova dalla cartella su." --json
+uv run ela task plan <id> --file docs/examples/policy-upload-su.json
+uv run ela task run <id>
+```
+
+<!-- prova: 5.atteso -->
+```
+outcome completed
+```
+
+<!-- prova: 5.risultato -->
+```
+ELA/prova-m13.15/su/da-caricare.txt
+```
+
+<!-- prova: 5.policy -->
+```
+<id della policy 5> LIVE usi 1 di 2 azioni 1
+```
+
+### 6. Un caricamento come te, sotto un'altra policy
+
+<!-- prova: 6.crea -->
+```
+uv run ela policy create browser.upload_as_you --scope ELA/prova-m13.15/su --site testpages.eviltester.com --days 1 --uses 2
+```
+
+<!-- prova: 6.comando -->
+```
+uv run ela task create "Carica come me il file della prova dalla cartella su." --json
+uv run ela task plan <id> --file docs/examples/policy-upload-as-you-su.json
+uv run ela task run <id>
+```
+
+<!-- prova: 6.atteso -->
+```
+outcome completed
+```
+
+<!-- prova: 6.risultato -->
+```
+ELA/prova-m13.15/su/da-caricare.txt
+```
+
+<!-- prova: 6.policy -->
+```
+<id della policy 6> LIVE usi 1 di 2 azioni 1
+```
+
+### 7. Due caricamenti che chiedono
+
+Verso `httpbin.org`, un sito che la policy del passo 5 non nomina; e di `fuori/fuori.txt`, una cartella che non nomina.
+Tutti e due **chiedono**; di' no tutte e due le volte.
+
+<!-- prova: 7.comando -->
+```
+uv run ela task create "Carica il file della prova verso un altro sito." --json
+uv run ela task plan <id> --file docs/examples/policy-upload-httpbin.json
+uv run ela task run <id>
+```
+
+<!-- prova: 7.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 7.perché -->
+```
+a value of site is not among those of policy <id della policy 5>
+```
+
+<!-- prova: 7.no -->
+```
+uv run ela task deny <id> --approval <approval-id>
+```
+
+<!-- prova: 7.comando -->
+```
+uv run ela task create "Carica un file di una cartella che la policy non nomina." --json
+uv run ela task plan <id> --file docs/examples/policy-upload-fuori.json
+uv run ela task run <id>
+```
+
+<!-- prova: 7.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 7.perché -->
+```
+a value of file is not among those of policy <id della policy 5>
+```
+
+<!-- prova: 7.no -->
+```
+uv run ela task deny <id> --approval <approval-id>
+```
+
+### 8. Il file con due nomi
+
+Lo script fa di `su/due-nomi.txt` un secondo nome di `fuori/fuori.txt`. Il caricamento è coperto dalla policy del passo
+5, e **fallisce prima della spesa**: `path.hard_link`, niente esce, e gli usi della policy non si muovono.
+
+<!-- prova: 8.nomi -->
+```
+ELA/prova-m13.15/su/due-nomi.txt ELA/prova-m13.15/fuori/fuori.txt
+```
+
+<!-- prova: 8.comando -->
+```
+uv run ela task create "Carica il file della prova che ha due nomi." --json
+uv run ela task plan <id> --file docs/examples/policy-upload-due-nomi.json
+uv run ela task run <id>
+```
+
+<!-- prova: 8.atteso -->
+```
+outcome failed
+reason fail: EXECUTING -> FAILED (path.hard_link:
+```
+
+<!-- prova: 8.coperta -->
+```
+<id della policy 5>
+```
+
+<!-- prova: 8.policy -->
+```
+<id della policy 5> LIVE usi 1 di 2 azioni 1
+```
+
+### 9. Il vault, e la policy di login
+
+Apri il vault: incolla nel tuo terminale la riga intera che stampa `uv run ela vault status`, e scrivi la password
+principale quando il programma del vault la chiede. Poi scrivi l'id della voce di `news.ycombinator.com`, letto nell'app
+di Bitwarden. L'anteprima dice il sito, **il nome della voce e il nome utente mascherato** — mai l'id —, che una finestra
+del browser di ELA prende la tastiera e che il vault lo apri tu.
+
+<!-- prova: 9.mano -->
+```
+Apri il vault con la riga intera che stampa uv run ela vault status, incollata nel tuo terminale.
+```
+
+<!-- prova: 9.voce -->
+```
+<id della voce>
+```
+
+<!-- prova: 9.schermo -->
+```
+uv run ela policy create browser.login --scope news.ycombinator.com --entry <id della voce> --days 1 --uses 2
+```
+
+<!-- prova: 9.occhio -->
+```
+Qui sopra, sullo schermo, l'anteprima dice HIGH, il sito news.ycombinator.com, la tua voce con il suo nome e il nome utente mascherato — e non l'id —, che una finestra del browser di ELA compare e prende la tastiera mentre scrive, e che il vault lo apri tu; «at most 2 uses» e la scadenza con la data. È ciò che vuoi approvare?
+```
+
+<!-- prova: 9.crea -->
+```
+uv run ela policy create browser.login --scope news.ycombinator.com --entry <id della voce> --days 1 --uses 2
+```
+
+### 10. Un login sotto la sua policy
+
+Se il browser di ELA è già dentro Hacker News, esci a mano dalla sua finestra prima. Mentre la finestra è davanti **non
+toccare la tastiera**: il login entra senza domanda, e la pagina dice che sei dentro — lo dice il verifier.
+
+<!-- prova: 10.mano -->
+```
+Se il browser di ELA è dentro news.ycombinator.com, apri la sua finestra con uv run ela browser open, esci da Hacker News con «logout», e chiudi la finestra. Poi, finché la finestra del login è davanti, non toccare la tastiera.
+```
+
+<!-- prova: 10.comando -->
+```
+uv run ela task create "Entra in Hacker News con la voce della policy." --json
+uv run ela task plan <id> --file docs/examples/policy-login-ycombinator.json
+uv run ela task run <id>
+```
+
+<!-- prova: 10.atteso -->
+```
+outcome completed
+```
+
+<!-- prova: 10.policy -->
+```
+<id della policy 9> LIVE usi 1 di 2 azioni 1
+```
+
+### 11. Un login senza la voce, che chiede
+
+Con il vault **ancora aperto** — la domanda di un login legge il vault prima di comporsi —: un login senza `entry`
+**chiede**; di' no. Se il tuo vault ha più di una voce per `news.ycombinator.com`, il login si ferma prima della domanda
+con `vault.entry_ambiguous`, e il passo è SALTATO.
+
+<!-- prova: 11.comando -->
+```
+uv run ela task create "Entra in Hacker News senza nominare una voce." --json
+uv run ela task plan <id> --file docs/examples/policy-login-senza-voce.json
+uv run ela task run <id>
+```
+
+<!-- prova: 11.ambigua -->
+```
+vault.entry_ambiguous
+```
+
+<!-- prova: 11.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 11.perché -->
+```
+a value of entry is not among those of policy <id della policy 9>
+```
+
+<!-- prova: 11.no -->
+```
+uv run ela task deny <id> --approval <approval-id>
+```
+
+### 12. Il vault chiuso
+
+Chiudi il vault. Lo stesso login coperto **non entra**: `vault.locked`, prima della spesa — niente scritto, e gli usi
+della policy non si muovono.
+
+<!-- prova: 12.mano -->
+```
+Chiudi il vault: uv run ela vault close, nel tuo terminale.
+```
+
+<!-- prova: 12.comando -->
+```
+uv run ela task create "Entra in Hacker News con il vault chiuso." --json
+uv run ela task plan <id> --file docs/examples/policy-login-ycombinator.json
+uv run ela task run <id>
+```
+
+<!-- prova: 12.atteso -->
+```
+outcome failed
+reason fail: EXECUTING -> FAILED (vault.locked:
+```
+
+<!-- prova: 12.coperta -->
+```
+<id della policy 9>
+```
+
+<!-- prova: 12.policy -->
+```
+<id della policy 9> LIVE usi 1 di 2 azioni 1
+```
+
+### 13. La console
+
+<!-- prova: 13.console -->
+```
+/console/policies
+```
+
+<!-- prova: 13.occhio -->
+```
+Nella vista delle policy della console, le policy vive della prova dicono HIGH, che cosa fanno senza chiederti, gli usi e le ultime azioni; accanto a quelle dei file le cartelle intere e i siti; accanto a quella del login la tua voce con il suo nome e il nome utente mascherato, e mai l'id. È così?
+```
+
+### 14. Dopo
+
+La revoca delle policy della prova: nessuna viva, e la revoca di una di queste non dice niente di una sessione.
+
+<!-- prova: 14.comando -->
+```
+uv run ela policy revoke <id della policy 2>
+uv run ela policy revoke <id della policy 3>
+uv run ela policy revoke <id della policy 5>
+uv run ela policy revoke <id della policy 6>
+uv run ela policy revoke <id della policy 9>
+```
+
+<!-- prova: 14.assente -->
+```
+goes on until it ends
+```
+
+<!-- prova: 14.nessuna -->
+```
+nessuna policy viva
+```
 
 ## Dove guardare dopo
 

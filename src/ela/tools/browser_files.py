@@ -1,7 +1,8 @@
 """The files from the browser (M13.13, ADR 0066): **a download is judged as an ``fs.write``, an
 upload as an ``fs.read``, and the question names the file**.
 
-Four capabilities, all ``HIGH``, each asking at every use: ``browser.download`` and
+Four capabilities, all ``HIGH``, each asking at every use unless a policy of its own covers it
+(M13.15, ADR 0071): ``browser.download`` and
 ``browser.upload`` on ELA's empty browser, ``browser.download_as_you`` and
 ``browser.upload_as_you`` on the one with the user's accounts — capabilities of their own,
 because a consent is not inherited (ADR 0034).
@@ -16,10 +17,12 @@ because a consent is not inherited (ADR 0034).
   ways; an upload what ``fs.read`` refuses, and a file larger than a page can be given
   (:data:`FILE_TOO_LARGE`).
 * **An upload gives bytes and a name, never a path.** ELA reads the file when it composes the
-  question — a regular file, never through a link — and the size and the sha256 travel with the
-  yes; after the yes it reads it again, and a file that is not the one the question named does
-  not leave (:data:`FILE_CHANGED`). Giving the file is the first gesture, and from that instant
-  the page holds a file: the adapter lets it ask nothing of another origin.
+  question — a regular file with one name, never through a link, nothing of ELA's — and the size
+  and the sha256 travel with the yes; after the yes it reads it again, and a file that is not the
+  one the question named does not leave (:data:`FILE_CHANGED`). **Under a policy** (M13.15, ADR
+  0071) no question was asked: the file is read once, and the result says the size and the sha256
+  of the bytes that left. Giving the file is the first gesture, and from that instant the page
+  holds a file: the adapter lets it ask nothing of another origin.
 * **A download is written under a name the site does not choose**, in the folder of the target,
   by a door that is closed for every other page and every other instant; then the file takes the
   plan's name — created without replacing, or replacing when ``overwrite`` says so — and the mode
@@ -73,7 +76,7 @@ from ela.ports import (
     TaskStop,
 )
 from ela.tools.account import ACCOUNT_CODES, _OnTheProfile
-from ela.tools.base import ARGUMENTS_INVALID, Outcome
+from ela.tools.base import ARGUMENTS_INVALID, Outcome, under_a_policy
 from ela.tools.browser import (
     ANOTHER_PAGE,
     BROWSER_CODES,
@@ -103,16 +106,21 @@ from ela.tools.browser import (
 from ela.tools.fs import (
     CREATES,
     DIRECTORY_MODE,
+    ELA_S_OWN,
     FILE,
     FILE_MODE,
+    HARD_LINK,
     IO_ERROR,
     NO_ROOT,
     OVERWRITE_MISMATCH,
     READ_REFUSALS,
     WRITE_REFUSALS,
+    MoreThanOneName,
+    looked_for_a_folder,
     looked_for_a_read,
     looked_for_a_write,
     measured,
+    more_than_one_name_read,
     read_bytes,
 )
 from ela.tools.paths import PATH_CODES, classify, resolve_workspace
@@ -217,6 +225,10 @@ OVERWRITES_BY_DOWNLOAD: Final = (
 )
 LEAVES: Final = "is read and given to the site: its name and its bytes leave this machine"
 """What happens to the file of an upload, in the question's place of ``fs.read``'s sentence."""
+DOWNLOADS_IN: Final = "downloads into this folder"
+"""What a policy of a download lets ELA do in a place, in the tool's words (M13.15, ADR 0071)."""
+GIVES_FROM: Final = "gives the files of this folder"
+"""What a policy of an upload lets ELA do in a place, in the tool's words (M13.15, ADR 0071)."""
 NAMED_SIZE: Final = "size"
 NAMED_DIGEST: Final = "digest"
 """What the question of an upload named of the file, kept beside the approval and handed back
@@ -250,6 +262,28 @@ def _refusal(refused: Outcome, tool_name: str) -> Prospect:
             retryable=refused.retryable,
         )
     )
+
+
+async def _place(
+    tool: BrowserDownloadTool | BrowserUploadTool, place: str, sites: tuple[str, ...], does: str
+) -> Prospect:
+    """Whether a call of one of the four could start now in ``place`` with each of ``sites`` — one
+    entry of the scope of a policy and its second dimension, at its birth (M13.15, ADR 0071;
+    decisions 6 and 7). In the order of every call (ADR 0066 §4): each site among the declared ones,
+    the browser and for the two «as you» the profile, then the folder — **the one function**
+    ``fs.write`` asks too: there, a folder, inside the root without a link, and nothing of ELA's in
+    both directions, for a reader as for a writer. The answer names the folder as this disk does."""
+    for site in sites:
+        refused = _undeclared(tool._browsing, site)  # noqa: SLF001 — the tool's own boundary
+        if refused is not None:
+            return _refusal(refused, tool.name)
+    missing = await tool._installed()  # noqa: SLF001 — the look every call of the tool takes
+    if missing is not None:
+        return _refusal(missing, tool.name)
+    refused, target = looked_for_a_folder(tool.root, place, protected=tool.protected, does=does)
+    if refused is not None or target is None:
+        return _refusal(refused or Outcome({}, IO_ERROR, "the folder was not judged"), tool.name)
+    return Prospect(target=target)
 
 
 def _undeclared(browsing: Browsing, site: str) -> Outcome | None:
@@ -366,6 +400,11 @@ class BrowserDownloadTool(_BrowserTool):
             return looked
         assert isinstance(looked, _Download)  # noqa: S101 — a download never continues
         return _undeclared(self._browsing, looked.visit.site) or looked
+
+    async def prospect_place(self, place: str, values: tuple[str, ...] = ()) -> Prospect:
+        """Whether a download could start now into ``place`` from each of ``values``, the sites of
+        a policy (M13.15, ADR 0071): :func:`_place`."""
+        return await _place(self, place, values, DOWNLOADS_IN)
 
     async def prospect(self, arguments: JsonMapping, task: TaskId | None = None) -> Prospect:
         """The shape, the site, the browser, then the root and the file as ``fs.write`` judges
@@ -647,14 +686,27 @@ class AccountDownloadTool(_OnTheProfile, BrowserDownloadTool):
 
 class BrowserUploadTool(BrowserActTool):
     """Gives one file under the root to a page of a declared site, then fills and clicks
-    (**HIGH**): the bytes ELA read, and the name — never the path."""
+    (**HIGH**): the bytes ELA read, and the name — never the path.
+
+    **Two roads** (M13.15, ADR 0071; answer 38 of the review of its SPEC). Under a yes, the
+    question named the file's size and sha256, ELA reads the file again after the yes and gives it
+    only if they agree (ADR 0066 §6). **Under a policy no question was asked**: ELA reads the file
+    **once**, gives the page exactly those bytes, and the result says their size and sha256 — the
+    road taken only for a decision that rests on a policy and on nothing else
+    (:func:`~ela.tools.base.under_a_policy`). On both, a file that reaches what ELA uses to exist
+    or that has more than one name is refused (decision 7, answer 36), and the result carries
+    ``size`` and ``digest`` of what left — never the audit (ADR 0066 §5)."""
 
     error_codes: ClassVar[frozenset[str]] = (
         (BrowserActTool.error_codes - {NO_PAGE_TO_CONTINUE})
         | {SITE_NOT_DECLARED, NOT_A_FILE_FIELD, FILE_CHANGED, FILE_TOO_LARGE, NO_ROOT, IO_ERROR}
+        | {ELA_S_OWN, HARD_LINK}
         | READ_REFUSALS
     )
-    output_keys: ClassVar[frozenset[str]] = BrowserActTool.output_keys - {LEFT_WHILE_WAITING}
+    output_keys: ClassVar[frozenset[str]] = (BrowserActTool.output_keys - {LEFT_WHILE_WAITING}) | {
+        NAMED_SIZE,
+        NAMED_DIGEST,
+    }
     does: ClassVar[str] = UPLOADS
     continuing: ClassVar[str] = ""
     """Never: an upload opens its own page, and the page that holds a file is nobody else's."""
@@ -667,6 +719,7 @@ class BrowserUploadTool(BrowserActTool):
         clock: Clock,
         ids: IdGenerator,
         *,
+        protected: Mapping[str, Path],
         name: str = BROWSER_UPLOAD_TOOL_NAME,
         pages: TaskPages,
         capability_id: CapabilityId = BROWSER_UPLOAD,
@@ -675,11 +728,18 @@ class BrowserUploadTool(BrowserActTool):
             self, capability_id, browsing, browser, clock, ids, name=name, pages=pages
         )
         self._root = resolve_workspace(root)
+        # What ELA uses to exist (M13.15, ADR 0071; decision 7): no read of an upload reaches it.
+        self._protected: Mapping[str, Path] = MappingProxyType(dict(protected))
 
     @property
     def root(self) -> Path:
         """The resolved root: ``ELA_FS_ROOT``, never created here."""
         return self._root
+
+    @property
+    def protected(self) -> Mapping[str, Path]:
+        """What ELA uses to exist, named: ``fs.read``'s list, and no upload reads it."""
+        return self._protected
 
     def _gestures(self, arguments: JsonMapping, site: str, address: str) -> Outcome | _Call:
         file, field, click = (
@@ -722,21 +782,37 @@ class BrowserUploadTool(BrowserActTool):
         assert isinstance(looked, _Upload)  # noqa: S101 — an upload never continues
         return _undeclared(self._browsing, looked.visit.site) or looked
 
-    async def _read(self, file: str) -> Outcome | tuple[Target, bytes]:
-        """The file as ``fs.read`` judges it, then its bytes — never through a link, never more
-        than a page can be given: asked of the disk before a byte is read."""
-        refused, target = looked_for_a_read(self._root, file)
+    def _judged(self, file: str) -> Outcome | Target:
+        """**What an upload refuses before a byte is read, in one place** (M13.15, ADR 0071; answer
+        39): the file as ``fs.read`` judges it — the root, the classification, what ELA uses to
+        exist, a second name — and its size asked of the disk. The question's road and the
+        policy's call this, so the same refusal has the same code on both."""
+        refused, target = looked_for_a_read(self._root, file, protected=self._protected)
         if refused is not None or target is None:
             return refused or Outcome({}, IO_ERROR, "the file was not judged")
         try:
             if os.lstat(self._root / file).st_size > UPLOAD_MAX_BYTES:
                 return self._too_large(file)
-            data = await asyncio.to_thread(read_bytes, self._root / file)
+        except OSError as error:
+            return Outcome({}, IO_ERROR, f"{type(error).__name__}: {error.strerror or error}")
+        return target
+
+    async def _read(self, file: str) -> Outcome | tuple[Target, bytes]:
+        """The file as :meth:`_judged` judges it, then its bytes — **at most the limit and one
+        byte more** (decision 51): a file that grew after it was measured is refused without the
+        rest being read; regular and with one name, asked of the descriptor that reads."""
+        judged = self._judged(file)
+        if isinstance(judged, Outcome):
+            return judged
+        try:
+            data = await asyncio.to_thread(read_bytes, self._root / file, at_most=UPLOAD_MAX_BYTES)
+        except MoreThanOneName:
+            return Outcome({}, HARD_LINK, more_than_one_name_read(file))
         except OSError as error:
             return Outcome({}, IO_ERROR, f"{type(error).__name__}: {error.strerror or error}")
         if len(data) > UPLOAD_MAX_BYTES:
             return self._too_large(file)
-        return target, data
+        return judged, data
 
     def _too_large(self, file: str) -> Outcome:
         return Outcome(
@@ -746,13 +822,18 @@ class BrowserUploadTool(BrowserActTool):
             "given: no question is asked",
         )
 
+    async def _would_start(self, arguments: JsonMapping, task: TaskId | None) -> Outcome | _Upload:
+        """The shape, the site, the browser: what every road of an upload begins with."""
+        looked = self._looked(arguments)
+        if not isinstance(looked, Outcome):
+            looked = await self._installed(task) or looked
+        return looked
+
     async def prospect(self, arguments: JsonMapping, task: TaskId | None = None) -> Prospect:
         """The shape, the site, the browser, then the root and the file as ``fs.read`` judges
         them. **The question names the file as it is now**: its resolved path, its size and its
         sha256 — and those two go with the yes, to be asked of the file again after it."""
-        looked = self._looked(arguments)
-        if not isinstance(looked, Outcome):
-            looked = await self._installed(task) or looked
+        looked = await self._would_start(arguments, task)
         if isinstance(looked, Outcome):
             return _refusal(looked, self.name)
         read = await self._read(looked.file)
@@ -766,6 +847,27 @@ class BrowserUploadTool(BrowserActTool):
             named={NAMED_SIZE: size, NAMED_DIGEST: digest},
         )
 
+    async def prospect_covered(
+        self, arguments: JsonMapping, task: TaskId | None = None
+    ) -> Prospect:
+        """**Every refusal of :meth:`prospect`, and not a byte read** (M13.15, ADR 0071; decision
+        3, answer 39): under a policy no question is composed, so nothing is measured — the
+        shape, the site, the browser, the root, the file, what ELA uses to exist, a second name and
+        the size the disk says. The use is spent only after this says the call would start."""
+        looked = await self._would_start(arguments, task)
+        if isinstance(looked, Outcome):
+            return _refusal(looked, self.name)
+        judged = self._judged(looked.file)
+        if isinstance(judged, Outcome):
+            return _refusal(judged, self.name)
+        return Prospect(target=replace(judged, does=LEAVES), visit=looked.visit)
+
+    async def prospect_place(self, place: str, values: tuple[str, ...] = ()) -> Prospect:
+        """Whether an upload could start now from ``place`` to each of ``values``, the sites of a
+        policy (M13.15, ADR 0071): :func:`_place` — **not** the look at a site a gesture inherits,
+        which would say «it would start» of any folder."""
+        return await _place(self, place, values, GIVES_FROM)
+
     async def _decided(
         self,
         decision: PermissionDecision,
@@ -773,8 +875,10 @@ class BrowserUploadTool(BrowserActTool):
         stop: TaskStop,
         named: JsonMapping,
     ) -> Outcome:
-        """ELA reads the file again, itself, and gives the page **those** bytes: a file that is
-        not the one the question named — by size or by sha256 — does not leave."""
+        """ELA reads the file, itself, and gives the page **those** bytes. Under a yes, a file
+        that is not the one the question named — by size or by sha256 — does not leave. Under a
+        policy there is no question to compare with: the file is read once, and what leaves is
+        what the result says."""
         looked = self._looked(arguments)
         if isinstance(looked, Outcome):
             return looked
@@ -782,9 +886,9 @@ class BrowserUploadTool(BrowserActTool):
         if isinstance(read, Outcome):
             return replace(read, output={"gestures": 0})
         _, data = read
-        if (
-            named.get(NAMED_SIZE) != len(data)
-            or named.get(NAMED_DIGEST) != hashlib.sha256(data).hexdigest()
+        size, digest = len(data), hashlib.sha256(data).hexdigest()
+        if not under_a_policy(decision) and (
+            named.get(NAMED_SIZE) != size or named.get(NAMED_DIGEST) != digest
         ):
             return Outcome(
                 {"gestures": 0},
@@ -794,9 +898,15 @@ class BrowserUploadTool(BrowserActTool):
             )
         name = Path(looked.file).name
         given = GivenFile(name, mimetypes.guess_type(name)[0] or OCTET_STREAM, data)
-        return await self._ran(
+        ran = await self._ran(
             replace(looked, task=decision.task_id, step=decision.step_id, given=given), stop
         )
+        gestures = ran.output.get("gestures")
+        if not isinstance(gestures, int) or gestures < 1:
+            return ran
+        # What left, said of the bytes that left: the size and the sha256 of exactly what was
+        # given — in the result and on the surfaces, never in the audit (ADR 0066 §5).
+        return replace(ran, output={**ran.output, NAMED_SIZE: size, NAMED_DIGEST: digest})
 
     async def _work(self, call: _Call, opened: Opened, done: _Done, stop: TaskStop) -> Outcome:
         """**Giving the file is the first gesture.** Its field is awaited with the stop, has to be
@@ -861,6 +971,7 @@ class AccountUploadTool(_OnTheProfile, BrowserUploadTool):
         clock: Clock,
         ids: IdGenerator,
         *,
+        protected: Mapping[str, Path],
         name: str = BROWSER_UPLOAD_AS_YOU_TOOL_NAME,
         pages: TaskPages,
     ) -> None:
@@ -871,6 +982,7 @@ class AccountUploadTool(_OnTheProfile, BrowserUploadTool):
             browser,
             clock,
             ids,
+            protected=protected,
             name=name,
             pages=pages,
             capability_id=BROWSER_UPLOAD_AS_YOU,

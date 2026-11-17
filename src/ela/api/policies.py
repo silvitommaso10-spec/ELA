@@ -10,9 +10,10 @@ The birth is the pure function's, then **«partirebbe»** (decision 7): the tool
 asked the same prospect that precedes a question, at the limits and on the sites of the policy, with
 ELA's own sentence where the call needs one — a policy no session could use now is a defence that
 seems active, and the tool's refusal is the creation's. **For a capability whose scope is one value
-per call** — ``fs.write``, ``browser.act``, ``browser.act_as_you`` — there is no call to build: the
-tool is asked about each place of the scope, in order, and the first refusal is the creation's; the
-place as the Core's disk names it is what the preview shows beside the entry (M13.14, ADR 0068).
+per call** — ``fs.write``, the gestures, the login and the four files from the browser — there is no
+call to build: the tool is asked about each place of the scope, in order, with the values of the
+second dimension (M13.15, ADR 0071), and the first refusal is the creation's; the place as the
+Core's disk names it is what the preview shows beside the entry (M13.14, ADR 0068).
 The preview is the same road without a write; the confirmation carries the model the preview named,
 and a prospect that names another refuses it.
 """
@@ -51,6 +52,7 @@ from ela.domain import (
     AuthorizationId,
     CapabilitySpec,
     JsonValue,
+    amount,
 )
 from ela.permissions import (
     MAX_DAYS,
@@ -63,14 +65,17 @@ from ela.permissions import (
     prospect_arguments,
     scope_is_a_list,
     short_id,
+    shown_at_birth,
+    shown_of,
     state_of,
 )
-from ela.ports import Guided, NotFoundError
+from ela.ports import Guided, NotFoundError, ShownEntry
 
 __all__ = [
     "ENDED_DAYS",
+    "READS_GO_ON",
     "RECENT_MAX",
-    "RUNNING",
+    "SESSION_GOES_ON",
     "PolicyNotLiveError",
     "PolicyPreviewChangedError",
     "PolicyWouldNotStartError",
@@ -84,14 +89,17 @@ __all__ = [
 
 router = APIRouter(prefix="/policies", tags=["policies"])
 
-RUNNING: Final = (
-    "a session already running under it goes on until it ends: to stop it, ela task cancel <id>. "
-    "The reads it covers go on with it, up to its own looks, seconds and cost"
+SESSION_GOES_ON: Final = (
+    "a session already running under it goes on until it ends: to stop it, ela task cancel <id>"
 )
 """What a revocation says of a session it already covered (decision 5): the grant was spent
-before it, and the stop of a task is the «ferma». Since M13.9 (ADR 0063 §1; decision 29) a
-session with the profile covers the reads its model writes: a revocation does not stop those
-either, and whoever revokes reads that they go on to the session's own caps."""
+before it, and the stop of a task is the «ferma». **Only for the policy of a guided session**
+(M13.15, ADR 0071; decision 20, answer 40): one whose declaration names a model's route."""
+READS_GO_ON: Final = "The reads it covers go on with it, up to its own looks, seconds and cost"
+"""Since M13.9 (ADR 0063 §1; decision 29) a session with the profile covers the reads its model
+writes: a revocation does not stop those either. **Only for a policy whose capability declares what
+it ``covers``** (M13.15, ADR 0071; answer 40): the reads of ``browser.guided`` are ``browser.read``,
+which nothing covers."""
 
 
 RECENT_MAX: Final = 5
@@ -134,7 +142,8 @@ class PolicyNotLiveError(ApiError):
     def __init__(self, policy: Authorization, state: PolicyState, uses: int) -> None:
         assert policy.expires_at is not None  # a policy always ends: the domain's invariant
         if state is PolicyState.EXHAUSTED:
-            ended = f"was used {uses} of its {policy.max_uses} times"
+            assert policy.max_uses is not None  # exhausted: it has uses
+            ended = f"was used {uses} of its {amount(policy.max_uses, 'use', 'uses')}"
         else:
             ended = f"expired at {policy.expires_at.isoformat()}"
         super().__init__(f"policy {short_id(policy.id)} {ended}: there is nothing to revoke")
@@ -167,8 +176,9 @@ async def policies_of(ela: Ela, *, everything: bool) -> PoliciesOut:
             if not everything and state_of(grant, now, uses=uses) is not PolicyState.LIVE:
                 continue
             policies.append(await _out(grant, ela))
+    sites = tuple(ela.settings.browser.sites)
     admitting = tuple(
-        _terms_of(spec) for spec in ela.capabilities.specs() if no_policy_for(spec) is None
+        _terms_of(spec, sites) for spec in ela.capabilities.specs() if no_policy_for(spec) is None
     )
     return PoliciesOut(policies=tuple(policies), admitting=admitting)
 
@@ -190,13 +200,19 @@ async def _out(grant: Authorization, ela: Ela) -> PolicyOut:
     assert grant.bounds is not None and grant.expires_at is not None  # a policy
     uses = await ela.authorizations.uses(grant.id)
     spec = ela.capabilities.get(grant.capability_id)
+    shown = shown_of(grant)
     return PolicyOut(
         id=grant.id,
         short=short_id(grant.id),
         capability=grant.capability_id,
         risk=spec.risk.value,
         does=None if spec.policy_words is None else spec.policy_words.does,
+        goes=None if spec.policy_words is None else spec.policy_words.goes,
         scope=grant.scope,
+        resolved=None if shown is None else shown[0],
+        by_value=grant.bounds.terms.by_value,
+        # What the birth showed, and never ``bounds.values``: an id of an entry is the plan's.
+        values=None if shown is None else shown[1],
         limits={name: str(value) for name, value in grant.bounds.limits.items()},
         uncovered=grant.bounds.terms.uncovered,
         model=grant.bounds.terms.model,
@@ -241,7 +257,7 @@ def _targets(value: object) -> tuple[str | None, ...]:
     return tuple(one if isinstance(one, str) else None for one in value)
 
 
-def _terms_of(spec: CapabilitySpec) -> TermsOut:
+def _terms_of(spec: CapabilitySpec, sites: tuple[str, ...]) -> TermsOut:
     assert spec.policy_terms is not None  # ``no_policy_for`` said it admits one
     properties: Mapping[str, Any] = spec.input_schema.get("properties", {})  # type: ignore[assignment]
     words = spec.policy_words
@@ -253,6 +269,8 @@ def _terms_of(spec: CapabilitySpec) -> TermsOut:
         goes=None if words is None else words.goes,
         on_the_core=spec.policy_terms.on_the_core,
         scope=spec.scope,
+        by_value=spec.policy_terms.by_value,
+        choices=sites if spec.policy_terms.by_value == "site" else (),
         limits=tuple(
             LimitOut(
                 name=name,
@@ -280,7 +298,9 @@ async def _born(
     body: PolicyIn, ela: Ela, identity: Identity
 ) -> tuple[Authorization, CapabilitySpec, Guided | None, tuple[str | None, ...]]:
     """The grant the request asks for, what its prospect says, and each place of its scope as the
-    Core's disk names it — or the first refusal.
+    Core's disk names it — or the first refusal. **The grant carries what its birth showed**
+    (M13.15, ADR 0071): the places resolved, and the values of its second dimension as a surface may
+    show them — a site as itself, an entry by its name and its masked username.
 
     The pure checks of decision 6 first, then «partirebbe» (decision 7): nothing written yet.
     """
@@ -291,6 +311,7 @@ async def _born(
             limits=dict(body.limits),
             days=body.days,
             uses=body.uses,
+            values={name: tuple(values) for name, values in body.values.items()},
         ),
         catalogue=ela.capabilities,
         granted_by=identity.actor.id,
@@ -300,13 +321,22 @@ async def _born(
     spec = ela.capabilities.get(grant.capability_id)
     tool = ela.tools.get(spec.id)
     if not scope_is_a_list(spec):
-        # One value per call (M13.14, ADR 0068): the tool is asked about each place, in order.
+        # One value per call (M13.14, ADR 0068): the tool is asked about each place, in order —
+        # with every value of the second dimension (M13.15, ADR 0071): the product is covered.
+        assert grant.bounds is not None  # a policy
+        values = grant.bounds.values
         resolved: list[str | None] = []
+        shown: tuple[str, ...] = values
         for place in grant.scope:
-            looked = await tool.prospect_place(place)
+            looked = await tool.prospect_place(place, values)
             if looked.refusal is not None:
                 raise PolicyWouldNotStartError(looked.refusal.code, looked.refusal.message)
             resolved.append(None if looked.target is None else looked.target.resolved)
+            if looked.entries:
+                # An entry of the vault is shown by its name and its masked username, as the
+                # question of a login shows it — and the id it was asked by stays in ``bounds``.
+                shown = tuple(_entry_shown(one) for one in looked.entries)
+        grant = shown_at_birth(grant, resolved=resolved, values=shown)
         return grant, spec, None, tuple(resolved)
     prospect = await tool.prospect(prospect_arguments(grant, spec))
     if prospect.refusal is not None:
@@ -322,6 +352,11 @@ async def _born(
             f"reads {guided.model}",
         )
     return grant, spec, guided, tuple(None for _ in grant.scope)
+
+
+def _entry_shown(entry: ShownEntry) -> str:
+    """An entry of the vault as the views of a policy say it: its name, and its username masked."""
+    return entry.name if entry.username is None else f"{entry.name} ({entry.username})"
 
 
 @router.post("/preview")
@@ -344,10 +379,17 @@ async def preview_of(body: PolicyIn, ela: Ela, identity: Identity) -> PreviewOut
         goes=None if words is None else words.goes,
         scope=grant.scope,
         resolved=resolved,
+        by_value=grant.bounds.terms.by_value,
+        values=() if (shown := shown_of(grant)) is None else shown[1],
+        together="" if words is None or words.together is None else words.together,
         limits={name: str(value) for name, value in grant.bounds.limits.items()},
         days=body.days,
         expires_at=grant.expires_at,
-        uses="no limit of uses" if grant.max_uses is None else f"at most {grant.max_uses} uses",
+        uses=(
+            "no limit of uses"
+            if grant.max_uses is None
+            else f"at most {amount(grant.max_uses, 'use', 'uses')}"
+        ),
         on_the_core=ON_THE_CORE if grant.bounds.terms.on_the_core else "",
         model=model,
         sends="" if guided is None else guided.sends,
@@ -391,20 +433,50 @@ async def created(body: PolicyConfirmIn, ela: Ela, identity: Identity) -> Policy
             "route": terms.route,
             "model": terms.model,
             "on_the_core": terms.on_the_core,
+            "by_value": terms.by_value,
         },
         "expires_at": grant.expires_at.isoformat(),
         "days": body.days,
         "uses": grant.max_uses,
     }
+    payload.update(_values_audited(grant))
     await _audit(
         ela,
         identity.actor,
         AuditEventType.AUTHORIZATION_GRANTED,
         grant,
-        f"grant: policy {grant.id} for {spec.id}, {body.days} day(s)",
+        f"grant: policy {grant.id} for {spec.id}, {amount(body.days, 'day', 'days')}",
         payload,
     )
     return await _out(grant, ela)
+
+
+def _values_audited(grant: Authorization) -> dict[str, JsonValue]:
+    """What the audit of a birth says of the second dimension (M13.15, ADR 0071; decision 10,
+    answer 44): **how many** values, always — read from what the birth showed, never from the ids
+    —, and the values themselves only for sites. An entry of the vault: the count alone, neither
+    its id nor its name."""
+    assert grant.bounds is not None  # a policy
+    shown = shown_of(grant)
+    if grant.bounds.terms.by_value is None or shown is None:
+        return {}
+    said: dict[str, JsonValue] = {"values": len(shown[1])}
+    if grant.bounds.terms.by_value == "site":
+        said["sites"] = list(shown[1])
+    return said
+
+
+def running_of(grant: Authorization) -> str | None:
+    """What a revocation of ``grant`` says goes on (M13.15, ADR 0071; decision 20, answer 40),
+    derived from the terms the policy was born under: the session, for a policy whose declaration
+    names a model's route — a guided session —; and the reads, for one that also ``covers``
+    them. ``None`` for every other policy: nothing it covered goes on."""
+    assert grant.bounds is not None  # a policy
+    if grant.bounds.terms.route is None:
+        return None
+    if grant.bounds.covers is None:
+        return SESSION_GOES_ON
+    return f"{SESSION_GOES_ON}. {READS_GO_ON}"
 
 
 # ----------------------------------------------------------------------------------------
@@ -444,7 +516,7 @@ async def revoked_policy(policy_id: UUID, ela: Ela, identity: Identity) -> Revok
         f"revoke: policy {gone.id} for {gone.capability_id}",
         payload,
     )
-    return RevokedOut(policy=await _out(gone, ela), running=RUNNING)
+    return RevokedOut(policy=await _out(gone, ela), running=running_of(gone))
 
 
 async def _audit(
