@@ -91,9 +91,11 @@ per un difetto dello strumento detto in `riassunto.txt`):
 È il caso di uno scaricamento che la porta **non ha mai sentito** — l'annuncio trattenuto fino a dopo la cancellazione
 —: con questa decisione, nel prodotto, la porta lo sente in chiusura e lo annulla e lo toglie **prima** di `_shut` (§1).
 Se un browser annunciasse dopo la risposta (§2), quel file resterebbe così. **Non è riparato qui** (decisione 62): né
-la durata di `_shut` con uno scaricamento in corso, né il driver che vive qualche decina di millisecondi dopo. Di chi è
-— di Playwright, che chiude il browser con uno scaricamento a metà, o di ELA, che lo chiude così — è una domanda del
-riepilogo del branch.
+la durata di `_shut` con uno scaricamento in corso, né il driver che vive qualche decina di millisecondi dopo. **Resta
+dichiarato qui, senza una milestone sua** (decisione 92 della review a `42bac98`): dopo la riparazione **nessun
+cammino del prodotto ci arriva**, perché la porta annulla lo scaricamento prima di `_shut`. I numeri passano a M13.11,
+fra ciò che eredita: la durata di `_shut`, con il meccanismo non misurato, e il driver, come indizio per il debito di
+ADR 0066 §10 — un indizio, non una diagnosi.
 
 ### 5. I test
 

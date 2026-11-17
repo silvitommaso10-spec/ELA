@@ -42,6 +42,17 @@ esercitata da quella funzione nei due valori** della sua lettura, sulle tre macc
 `tests/tools/test_terminal_limits.py`, il modello del debito, e le due copie che `test_agent_session.py` ne aveva fatto,
 **sono tolte**: la guardia è l'hook, per ogni test.
 
+**E le due guardie simili non ci sono più** (decisione 95 della review a `42bac98`):
+`test_on_the_runners_the_permissions_bite` — il file `tests/tools/test_permissions_bite.py` — e
+`test_on_a_mac_the_two_spellings_are_one_folder_and_the_test_above_ran`. Dicevano una volta, da sole, ciò che la guardia
+dice per ogni test che ha bisogno di `PERMISSIONS_BITE` o di `IGNORES_CASE`: **una guardia sola**. Prima di toglierle,
+un mutante per ciascuna — la lettura che risponde «manca» dove la condizione deve valere —: la guardia ha fatto rossi
+gli undici test che prendono `PERMISSIONS_BITE`, sotto `GITHUB_ACTIONS=true`, e i cinque che prendono `IGNORES_CASE`, su
+questo Mac (`.git/m9.5-reference/guardie-95/mutanti-95.txt`); per ogni dichiarazione lo prova la funzione pura,
+`test_every_declaration_is_exercised_in_both_values_on_the_machines_of_the_ci` di `tests/test_machines.py`. Con loro è
+tolta `ON_A_RUNNER`, la condizione che solo la prima prendeva. Le liste dei saltati cambiano per una riga sola, detta
+prima: `test_permissions_bite.py`, che fuori da un runner era saltato.
+
 **Che cosa vuol dire «la macchina» quando è finta.** Ogni condizione si confronta con la macchina nella stessa lettura
 con cui scatta: una condizione sul sistema legge `platform.system()`, che `-p tests.foreign_machine` finge; una sul
 kernel legge `sys.platform` o `/proc`, che non finge. La guardia non ha un'idea della macchina sua.
@@ -80,7 +91,9 @@ registro, che non costruisce il browser, gira su ubuntu e sotto `make check-linu
 - **`test_a_cancelled_call_closes_the_microphone`** trova il registratore **per parentela** — il figlio che la chiamata
   ha avviato, con il suo istante di partenza — e non per nome fra tutti i processi della macchina: un processo
   qualunque con il nome del modulo lo faceva rosso (misurato il 2026-11-14); «si chiude» è un fatto quando la
-  cancellazione è risalita;
+  cancellazione è risalita. **Afferma che il registratore non c'è più, non chi l'ha ucciso** — asyncio uccide il figlio
+  di una chiamata rilasciata —: **la kill del lanciatore la tengono i tre test di `test_spawn.py`**, che il mutante «rialza
+  senza uccidere» lo prendono (decisione 91 della review a `42bac98`);
 - **`test_the_child_carries_its_own_deadline_and_outlives_nobody` non era un'attesa che decide** (decisione 69): il
   ciclo aspettava l'evento, l'uscita del figlio, e ciò che costa tempo è la scadenza del figlio, che è il soggetto. Ora
   `child.wait`, lo stesso evento senza cadenza;

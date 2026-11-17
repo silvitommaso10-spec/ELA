@@ -18,7 +18,6 @@ its own code.
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import pytest
@@ -300,16 +299,6 @@ def test_two_paths_are_one_folder_when_the_volume_says_so_and_never_when_one_nam
     assert _same_folder(real, tmp_path) is False
     assert _same_folder(tmp_path / "nothing", real) is False
     assert _same_folder(real, tmp_path / "nothing") is False
-
-
-def test_on_a_mac_the_two_spellings_are_one_folder_and_the_test_above_ran() -> None:
-    """A skip on the system a test covers turns the suite red: the browser with the profile runs
-    on the Mac, whose volume ignores case, and there the test of the two spellings on the real
-    volume is not one a count of skips may hide. Read through the one place (``tests/machines.py``,
-    M9.5), whose guard makes the same test red on the kernel of Darwin for every test that needs
-    it."""
-    missing = machines.missing_here(machines.IGNORES_CASE)
-    assert sys.platform != "darwin" or missing is None, missing
 
 
 def test_where_the_folder_is_is_asked_of_the_path_resolved(

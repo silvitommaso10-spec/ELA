@@ -283,16 +283,6 @@ IGNORES_CASE: Final = Condition(
     lambda machine: machine.kernel == "darwin",
     "on the system volume of macOS",
 )
-ON_A_RUNNER: Final = Condition(
-    "a runner of the CI",
-    lambda: (
-        None
-        if os.environ.get("GITHUB_ACTIONS") == "true"
-        else "GITHUB_ACTIONS is not set: this is not a runner"
-    ),
-    _on_a_runner,
-    "on a runner of the CI",
-)
 
 
 def _in_a_thread(work: Callable[[], Any]) -> Any:

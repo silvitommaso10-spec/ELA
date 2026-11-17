@@ -70,6 +70,14 @@ async def test_a_cancelled_call_closes_the_microphone(tmp_path) -> None:  # type
 
     An orphaned ``say`` is ELA still talking; an orphaned recorder is **ELA still listening after
     being told to stop**, and nobody hears that happen.
+
+    **What this asserts**: the recorder, found by its parentage — the child the call started —, is
+    no process any more once the cancellation has come back. **Not who killed it**: when the
+    cancelled call is let go, asyncio closes the child's transport and kills it too
+    (``BaseSubprocessTransport.close``), so a launcher that raised again without killing passes
+    here (measured on 2026-11-17, ``.git/m9.5-reference/mutanti-m9.5.txt``). **The kill of the
+    launcher is held by the three tests of the cancellation in** ``test_spawn.py``, which catch that
+    mutant (decision 91 of M9.5's review at ``42bac98``; ADR 0069 §2).
     """
     started = asyncio.get_running_loop().create_future()
 

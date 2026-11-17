@@ -47,7 +47,13 @@ marker: a verdict of durations."""
 async def cancelled_while_it_runs(start: Any, said: Path, started: list[int]) -> int:
     """Start the call, wait for the child to say its pid — an event, under a ceiling —, cancel the
     call, and answer the pid once the cancellation has come back. The pid goes into ``started`` as
-    soon as it is read, so the test can kill the child whatever happens after."""
+    soon as it is read, so the test can kill the child whatever happens after.
+
+    **The verdict is the state, not the ceiling.** Against a launcher that waits for the child's own
+    end, the ceiling fires and cancels this coroutine where it awaits the call; that cancellation is
+    swallowed by ``pytest.raises(asyncio.CancelledError)``, so the timeout does not raise, the pid
+    comes back, and the assertion after it speaks — the child outlived the call, which is true
+    (decision 98 of M9.5's review at ``42bac98``)."""
     task = asyncio.create_task(start)
     async with asyncio.timeout(CEILING):
         while not said.exists():
@@ -120,7 +126,9 @@ async def test_a_cancelled_wait_kills_the_child_instead_of_orphaning_it() -> Non
     The child says its pid first and never ends by itself: after the cancellation has come back —
     the launcher kills and reaps before it raises again (``_wait``, ``_kill``) — the pid is no
     process. Neither a launcher that raised without killing nor one that waited for the child's own
-    end passes: the first leaves it alive, the second never comes back.
+    end passes: the first leaves it alive; against the second the ceiling's cancellation is
+    swallowed by ``pytest.raises``, and the assertion after says that the child outlived the call
+    (:func:`cancelled_while_it_runs`).
     """
     with tempfile.TemporaryDirectory() as directory:
         said = Path(directory) / "pid"
