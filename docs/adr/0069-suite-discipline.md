@@ -1,10 +1,11 @@
 # 0069. La disciplina della suite: un posto solo per gli skip, i test che aspettano un evento, e il costo di un binario vero
 
-- **Stato:** **Proposta** il **2026-11-17**, con l'implementazione di M9.5 sul branch `m9.5-la-pulizia-della-suite`
-  (`docs/milestones/M9.5.md`, la SPEC e la review delle tre SPEC a `ad1826c`, decisioni 56–81), per diventare Accettata
-  con un commit suo dopo la prova a mano della sezione 33 di `docs/GETTING_STARTED.md` sull'ultimo commit del branch
-  (decisione 81). **Le «Righe riviste» che questo ADR porta sono scritte**, con il marchio sulla riga «Stato:»
-  degli ADR che rivede — ADR 0052 e ADR 0063.
+- **Stato:** **Accettata** il **2026-11-17**, con un commit suo, dopo il commit delle decisioni 108–110 (`7db60f6`;
+  decisione 112 dell'ultima review del branch `m9.5-la-pulizia-della-suite`). **Nessuna prova a mano sua**: M9.5 non
+  tocca ciò che ELA installa e serve — `src/` e `apps/`; sul branch li tocca solo `4d05eb4`, di M13.13b —, e lo dice
+  quella review. **La CI verde sui tre job** a `fa3377a` (giro 44077076515: `make check` su ubuntu e su macOS, la suite
+  del nodo su Windows), e le liste dei saltati quelle dette in anticipo. **Le «Righe riviste» che questo ADR porta sono
+  scritte**, con il marchio sulla riga «Stato:» degli ADR che rivede — ADR 0052 e ADR 0063.
 - **Data:** 2026-11-17
 - **Riferimenti spec:** §48, §51, §53
 - **Milestone:** [M9.5](../milestones/M9.5.md)

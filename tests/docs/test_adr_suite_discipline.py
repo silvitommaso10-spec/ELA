@@ -1,7 +1,7 @@
 """ADR 0069 — the discipline of the suite (M9.5) — held to the tree.
 
-It is a ``Proposta`` until the proof by hand of the branch (decision 81 of the review at
-``ad1826c``); the ADR it revises says so on its state line; and **the dated debt it writes**, the
+It is accepted with no proof by hand of its own (decision 112 of the last review of the branch);
+the ADRs it revises say so on their state lines; and **the dated debt it writes**, the
 waits no list knew, charged to M9.8, has the smallest defence there is, in the form of ADR 0035 §7:
 each of the twenty-two waits is still in its function. The day somebody repairs one, the test
 below fails: write the payment in an ADR, and turn this round.
@@ -41,11 +41,16 @@ def revised_by_their_state(mark: str, exclude: Path) -> set[str]:
     }
 
 
-def test_it_is_a_proposal_until_the_proof_of_its_branch() -> None:
+def test_it_is_accepted_without_a_proof_by_hand_of_its_own_and_says_why() -> None:
+    """Decision 112 of the last review of M9.5: accepted with a commit of its own, after the commit
+    of decisions 108–110, and with no proof by hand of its own — M9.5 does not touch what ELA
+    installs and serves. The state says so, with the run of the CI green on the three jobs."""
     said = " ".join(status_of(ADR_PATH.read_text(encoding="utf-8")).split())
 
-    assert said.startswith("**Proposta** il **2026-11-17**")
-    assert "la sezione 33 di `docs/GETTING_STARTED.md`" in said
+    assert said.startswith("**Accettata** il **2026-11-17**")
+    assert "**Nessuna prova a mano sua**" in said
+    assert "`src/` e `apps/`" in said
+    assert "giro 44077076515" in said and "`7db60f6`" in said
 
 
 def test_the_adrs_it_revises_say_so_on_their_state_line_and_no_other_does() -> None:
