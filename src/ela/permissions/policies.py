@@ -95,6 +95,8 @@ SHORT_ID: Final = 8
 question already uses for a machine (M13.3, decision 10)."""
 
 POLICY_PROSPECT: Final = "A call that a standing policy of yours would cover."
+"""ELA's own sentence for every free argument the tool's prospect needs (decision 7): the goal of a
+session. It is never saved, never in the audit, and never sent anywhere."""
 
 SHOWN_RESOLVED: Final = "resolved"
 """The key of the metadata of a policy that keeps each place of its scope as its birth resolved
@@ -102,8 +104,6 @@ it (M13.15, ADR 0071)."""
 SHOWN_VALUES: Final = "values"
 """The key of the metadata of a policy that keeps each value of its second dimension as a surface
 may show it — never an id of an entry (M13.15, ADR 0071)."""
-"""ELA's own sentence for every free argument the tool's prospect needs (decision 7): the goal of a
-session. It is never saved, never in the audit, and never sent anywhere."""
 
 
 def short_id(authorization_id: AuthorizationId) -> str:

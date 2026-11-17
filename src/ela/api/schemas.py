@@ -1682,13 +1682,14 @@ class PolicyOut(BaseModel):
     scope: tuple[str, ...]
     resolved: tuple[str | None, ...] | None
     """Each entry of the scope as its birth resolved it on the Core's disk (M13.15, ADR 0071;
-    answer 43), ``None`` for a policy born before M13.15. ``LOCAL_ONLY``."""
+    answer 43), ``None`` for a policy born before M13.15 or whose scope is not one value per call
+    — a guided session's, whose scope is its sites. ``LOCAL_ONLY``."""
     by_value: str | None
     """The argument the policy names by value, or ``None``."""
     values: tuple[str, ...] | None
     """What its birth showed of the values of that argument: the sites; the entries of the vault
     by their name and their username masked — **never an id** (decision 10). ``None`` for a
-    policy born before M13.15. ``LOCAL_ONLY``."""
+    policy born before M13.15 or that names nothing by value. ``LOCAL_ONLY``."""
     limits: dict[str, str]
     uncovered: tuple[str, ...]
     model: str | None

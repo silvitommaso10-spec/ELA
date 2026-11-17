@@ -8340,7 +8340,7 @@ porta, `test_a_download_that_is_cut_short_is_cancelled_and_nothing_of_it_stays`,
 `httpbin.org`, `testpages.eviltester.com` e `news.ycombinator.com`; il profilo del browser dichiarato e libero; **nessuna
 policy viva** delle cinque; il tuo account di `news.ycombinator.com` con la sua voce nel vault, e **l'id della voce**, che
 leggi nell'app di Bitwarden; ed ELA **riavviata dal branch**. **Nessuna chiamata al modello**. **Lo script non lancia mai
-`bw`**, non tocca il `.env`, il database né `ela serve`, e scrive solo dentro `ELA/prova-m13.15/`. **Le policy le crei
+`bw`**, non tocca il `.env`, il database né `ela serve`, e dentro la radice scrive solo in `ELA/prova-m13.15/`. **Le policy le crei
 tu**, al «crei la policy?»; ognuna ha un tetto agli usi uguale agli usi che la prova pianifica, più uno — il login 2 —, e
 dove un passo aspetta un rifiuto prima della spesa lo script guarda che lo step sia coperto e che gli usi non si muovano.
 

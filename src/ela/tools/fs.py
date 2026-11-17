@@ -143,7 +143,8 @@ descriptor that reads, with ``fstat``, not only on the path."""
 
 NOT_A_FOLDER: Final = "fs.not_a_folder"
 """A place a policy would name is a file (M13.14, ADR 0068; answer 25): a policy of ``fs.write``
-names folders, and only :meth:`FsWriteTool.prospect_place` answers with it."""
+names folders, and so does one of the four files from the browser (M13.15, ADR 0071) — the
+answer of :func:`looked_for_a_folder`, which the births of all of them call."""
 
 FOLDER: Final = "folder"
 """What a place of a policy is called: the tool's word, beside :data:`FILE`."""
@@ -668,7 +669,8 @@ def _read(target: Path, at_most: int | None = None) -> bytes:
 
     ``fstat`` on the open descriptor reconfirms the regular file the classification saw, **with one
     name** (M13.15): between the two something could have changed, and what is read is what the
-    descriptor holds. With ``at_most``, at most that many bytes and one more.
+    descriptor holds. With ``at_most``, at most that many bytes and one more — **to the byte**: no
+    read asks for more than what is left to the limit and one, whatever the size of a piece.
     """
     descriptor = os.open(target, READ_FLAGS)
     try:
@@ -679,11 +681,13 @@ def _read(target: Path, at_most: int | None = None) -> bytes:
             raise MoreThanOneName(HARD_LINK)
         chunks: list[bytes] = []
         size = 0
-        while chunk := os.read(descriptor, CHUNK):
+        limit = None if at_most is None else at_most + 1
+        while limit is None or size < limit:
+            chunk = os.read(descriptor, CHUNK if limit is None else min(CHUNK, limit - size))
+            if not chunk:
+                break
             chunks.append(chunk)
             size += len(chunk)
-            if at_most is not None and size > at_most:
-                break
     finally:
         os.close(descriptor)
     return b"".join(chunks)

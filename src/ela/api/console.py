@@ -921,14 +921,16 @@ def _actions(one: PolicyOut, seen: bool) -> str:
 
 
 def _policy(one: PolicyOut, seen: bool) -> pages.Markup:
-    """One policy: its level and what it does without asking, what it covers, until when, its
-    uses and its last actions, who created it — and «Revoca» while it is live."""
+    """One policy: its level, what it does without asking and where what it moves goes (M13.15,
+    proposal 11), what it covers, until when, its uses and its last actions, who created it — and
+    «Revoca» while it is live."""
     who = one.created_by.name or one.created_by.identity
     live = one.state == PolicyState.LIVE.value
     pairs = [
         *([] if live else [pages.fragment(HERE, "pair", key="Stato", value=ENDED[one.state])]),
         pages.fragment(HERE, "pair", key="Livello", value=one.risk),
         pages.fragment(HERE, "pair", key="Che cosa fa senza chiederti", value=one.does or "—"),
+        pages.fragment(HERE, "pair", key="Dove va", value=one.goes or "—"),
         pages.fragment(
             HERE,
             "pair",

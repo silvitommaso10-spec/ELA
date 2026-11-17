@@ -1342,7 +1342,8 @@ class PolicyBounds(_DomainModel):
     """The values of the argument the terms name :attr:`~PolicyTerms.by_value` that the policy
     covers (M13.15, ADR 0071; decisions 6 and 10): sites, or the ids of entries of the vault.
     **Never shown**: an id of an entry is the plan's (ADR 0063 §9), and no route, page or event of
-    the audit reads this field — what the birth showed of them is in the grant's metadata. Empty for
+    the audit shows or serializes this field — the birth reads it, to ask the tool about each
+    value, and what it showed of them is in the grant's metadata. Empty for
     every row saved before M13.15, whose terms name no such argument: no migration."""
 
 
@@ -2721,8 +2722,9 @@ def amount(how_many: int, one: str, many: str) -> str:
     0071; decision 21): «1 use», «2 uses», «1 giorno», «0 giorni».
 
     **The one place the singular is decided**: the API and the command line call it with English
-    words, the Command Center with Italian ones, and :func:`ela.api.companion.counted` asks it for
-    its own. A number never wears a hand-written «(s)» on a surface of the policies.
+    words, the Command Center with Italian ones, and :func:`ela.api.companion.counted` asks
+    :func:`noun` for its own. A number never wears a hand-written «(s)» on a surface of the
+    policies.
     """
     return f"{how_many} {noun(how_many, one, many)}"
 

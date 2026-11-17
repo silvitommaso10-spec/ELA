@@ -21,7 +21,9 @@ di M13.14 con le loro parole, e i suoi:
 * ``nomi``: un secondo nome del secondo file, dato al primo;
 * ``assente``: parole che l'uscita del comando non deve avere;
 * ``ambigua``: il login senza ``entry`` fermato prima della domanda da ``vault.entry_ambiguous`` —
-  più voci per quel sito nel vault — fa il passo SALTATO, con la sua ragione (risposta 48).
+  più voci per quel sito nel vault — fa il passo SALTATO, con la sua ragione (risposta 48);
+* ``coperta``: lo step del task deciso «covered by policy …» da quella policy, letto nell'evento
+  della sua decisione nell'audit, anche quando poi fallisce prima della spesa.
 
 **Il file della prova non porta il percorso intero di un file, il nome utente né l'id di una voce**:
 stanno sullo schermo. Se la prova si ferma a metà, lo script revoca le policy che ha creato e sono
@@ -35,6 +37,7 @@ import getpass
 import hashlib
 import json
 import os
+import re
 import sys
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
@@ -190,18 +193,24 @@ def outside_vocabulary(todo: Mapping[int, Sequence[base.Block]]) -> list[str]:
 
 ROOT_WORD: Final = "<la radice>"
 """What the file says where the declared root is: a file's whole path stays on the screen."""
+ENTRIES_WORD: Final = "<le voci, sullo schermo>"
+"""What the file says where a command printed the entries of a policy of login — their names and
+their usernames masked: the file is without the username (decision 26), and they stay on the
+screen, where the preview of step 9 shows them."""
+ENTRIES_LINE: Final = re.compile(r"^(\s*entry values\s+)\S.*$", re.MULTILINE)
 
 
 def masked(text: str, proof: Proof) -> str:
-    """``text`` without the declared root, the home of whoever runs the proof, and the id of the
-    entry (decision 26): a file's whole path and an id stay on the screen."""
+    """``text`` without the declared root, the home of whoever runs the proof, the id of the
+    entry, and the entries a command printed by name and masked username (decision 26): a file's
+    whole path, an id and a username stay on the screen."""
     for one in sorted({str(proof.root), str(proof.root.resolve())}, key=len, reverse=True):
         if one not in ("", "."):
             text = text.replace(one, ROOT_WORD)
     text = m14.private(text, proof.home)
     if proof.entry:
         text = text.replace(proof.entry, ENTRY)
-    return text
+    return ENTRIES_LINE.sub(lambda line: line.group(1) + ENTRIES_WORD, text)
 
 
 def with_the_entry(line: str, proof: Proof) -> str:

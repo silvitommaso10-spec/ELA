@@ -128,7 +128,9 @@ policy di due siti, non nasce. **L'id si salva come lo nomina il vault**: il con
 **Ciò che la nascita ha mostrato si salva con la policy**, nei metadati del grant — le cartelle risolte, e i valori come
 una superficie li può mostrare: un sito com'è, una voce con il suo nome e il nome utente mascherato. Parole, non termini:
 una voce rinominata nel vault non revoca niente, e le viste dicono ciò che è stato approvato. Vale per ogni policy che
-nasce da M13.15 in poi, `fs.write` compresa; una policy di prima non ha niente salvato, e le viste dicono «—».
+nasce da M13.15 in poi **il cui scope è un valore per chiamata** — `fs.write`, i gesti, il login e le quattro —; una
+policy di sessione guidata, il cui scope sono i siti di una sessione, non ha una cartella da risolvere né una seconda
+dimensione e non salva niente, come una policy di prima: le viste dicono «—».
 
 ### 4. I caricamenti sotto una policy
 
@@ -260,13 +262,16 @@ nega una policy consegnata per un'altra.
 **L'anteprima**, nell'ordine di ADR 0068 §9 — anche nella console, che metteva la scadenza prima degli usi —: il
 livello; `does`; `goes`; lo scope con la cartella risolta; i valori — i siti, o le voci con nome e nome utente mascherato
 —; il prodotto; i tetti; gli usi; la scadenza **con la data**; il Core; ciò che non copre mai. **`PolicyOut`** guadagna
-`goes`, `resolved`, `by_value` e `values` — ciò che la nascita ha mostrato —, e `ela policy list` e la console li
-mostrano. **Nella CLI** `--site` e `--entry`, ripetibili; **nella console** le caselle dei siti dichiarati, o il campo
+`goes`, `resolved`, `by_value` e `values` — ciò che la nascita ha mostrato —; la console li mostra tutti, `goes` come
+«Dove va» accanto a ciò che la policy fa, ed `ela policy list` le cartelle risolte e i valori, con `goes` nell'anteprima
+e nel `--json`. **Nella CLI** `--site` e `--entry`, ripetibili; **nella console** le caselle dei siti dichiarati, o il campo
 «Id della voce», che l'`input` nascosto fra l'anteprima e la creazione riporta alla stessa console: è il campo di
 creazione, in una pagina `no-store`.
 
-**L'id di una voce non si mostra mai**: né in una risposta delle rotte, né in un'uscita della CLI, né nel testo della
-console, né in una frase di rifiuto — anche dove un `422` potrebbe ripetere ciò che ha ricevuto —, né nell'audit.
+**L'id di una voce non si mostra mai sulle superfici delle policy**: né in una risposta delle rotte `/policies`, né in
+un'uscita di `ela policy`, né nel testo della console, né in una frase di rifiuto — anche dove un `422` potrebbe ripetere
+ciò che ha ricevuto —, né nell'audit. Il piano di un login coperto lo porta, e quello è del piano (sotto, «Ciò che questo
+ADR dichiara e non risolve»).
 **L'audit della nascita** porta lo scope e, per i file, i siti; per il login **quante voci**, né l'id né il nome.
 Nessuna rotta serializza un grant intero. **Dichiarato**: l'id passato con `--entry` sta un istante nella riga di comando
 della macchina di chi la lancia, e non è una credenziale.
@@ -306,6 +311,9 @@ In parole semplici:
   policy nomina la voce, non l'account che la voce tiene oggi.
 - **Gli usi contano le spese, non gli effetti** (ADR 0062 §2).
 - **Lo schermo bloccato non è misurato** (§6).
+- **Il piano di un login coperto porta l'id della voce** in `entry` (§6): l'id è del piano (ADR 0063 §9), e
+  `ela task show` e `GET /tasks/{id}` mostrano gli argomenti di uno step, l'id compreso, come per ogni login con `entry`
+  da M13.9. Le superfici delle policy non lo mostrano (§9); il file della prova lo maschera (`scripts/prova_m13_15.py`).
 - **Ciò che ADR 0070 §2 e §4 dichiarano**: il browser annuncia uno scaricamento prima di scriverlo; la chiusura di 30
   secondi del browser del profilo con uno scaricamento in corso, passata a M13.11.
 - **La finestra fra lo sguardo al percorso e l'`open`** resta quella di `ela/tools/fs.py`, per un posto protetto; per un
@@ -329,9 +337,14 @@ In parole semplici:
 con la sezione di questo ADR a cui guardare.
 
 - **ADR 0062** §1, §3, §4, §7 — la quinta classe del mondo chiuso, `by_value`; `PolicyRequest` con i valori e il controllo `VALUES`; il gap `VALUE`; la «partirebbe» con i valori (§2, §3).
-- **ADR 0063** §5, §9 — la ragione della finestra, «chi approva è presente», falsa sotto una policy; «la domanda lo dice … e in nessun altro posto»: lo dice anche l'anteprima di una policy di login; e l'id della voce, che riceve anche il campo di creazione di una policy, e che nessuna superficie mostra (§6, §9).
+- **ADR 0063** §2, §5, §9 — sotto una policy il sì è la spesa: prima della spesa nessuna password lascia l'adapter, e
+  dopo la voce si legge una volta sola; la ragione della finestra, «chi approva è presente», falsa sotto una policy; «la domanda lo dice … e in nessun altro posto»: lo dice anche l'anteprima di una policy di login; e l'id della voce, che riceve anche il campo di creazione di una policy, e che nessuna superficie mostra (§6, §9).
 - **ADR 0066** §4, §5, §6 — le quattro chiedono a ogni uso salvo una policy loro; sotto una policy un caricamento legge una volta, senza una domanda che fissi dimensione e sha256, e il risultato le dice; i posti protetti e i file con più nomi anche in lettura (§4).
-- **ADR 0068** §2, §6, §7, §9 — l'esempio del login senza termini e «il login e le quattro capability dei file chiedono a ogni uso fino a M13.15»; la firma di `prospect_place`; la lista dei posti va anche a chi legge; l'ordine dell'anteprima, con i valori e il prodotto (§1, §3, §4, §9).
+- **ADR 0068** §2, §5, §6, §7, §9 e «Ciò che questo ADR dichiara e non risolve» — l'esempio del login senza termini;
+  la frase di `EXHAUSTED` e del `409`, «… of its 5 uses», e il gap `VALUE`, che la tabella del suo giorno non ha; la
+  firma di `prospect_place`; la lista dei posti va anche a chi legge; l'ordine dell'anteprima, con i valori e il
+  prodotto; «il login e le quattro capability dei file chiedono a ogni uso fino a M13.15», che M13.15 compie (§1, §2,
+  §3, §4, §9, §10).
 
 Le altre conseguenze:
 
