@@ -3,12 +3,12 @@
 
 **The trigger, measured** (``docs/milestones/M13.13c.md``, the measures of decisions 104 and 114):
 Chrome for Testing 153 falls at a new download when, at its launch, ``Default/History`` holds
-downloads that completed — from the second to the fourth download on a test profile, with or without
-the window, with or without ELA's door. The rows of the three tables of the downloads taken out
-before each launch, it does not fall: zero crashes in thirty runs on new profiles, and the three
-profiles that had already fallen work again. The browser puts the rows back by itself at its launch,
-from its own store of the downloads: what ELA takes away is what the history holds **at the
-launch**.
+downloads that completed — with ELA's tool from the second to the fourth download on a test
+profile, with or without the window; with Playwright's own download, without ELA's door, at the
+third or the seventh. The rows of the three tables of the downloads taken out before each launch,
+it does not fall: zero crashes in sixty runs on new profiles, and the three profiles that had
+already fallen work again. The browser puts the rows back by itself at its launch (measured; from
+where is read, not measured): what ELA takes away is what the history holds **at the launch**.
 
 What ELA does, and only that (decision 116): before a guided launch, with the folder free, the rows
 of :data:`~ela.infrastructure.machine.account.DOWNLOAD_TABLES` deleted **without reading one**; no
@@ -203,7 +203,9 @@ async def test_a_profile_already_in_the_state_that_makes_the_browser_fall_works_
 ) -> None:
     """Criterion 2: a profile whose history already holds a completed download — made here by
     Playwright's own download, on the same binary with ELA's arguments, as the measure A7 did —
-    works again with ELA: the next downloads succeed."""
+    works again with ELA: the ten downloads after it succeed. The state is built by a download
+    and not by a crash, which would write a report of the system at every green run (decision
+    117)."""
     browser = account.chrome(profile)
     profile.mkdir(mode=0o700, exist_ok=True)
     adapter._prepared(profile, driven=False)  # noqa: SLF001 — the window's preparation: no S1
@@ -219,7 +221,7 @@ async def test_a_profile_already_in_the_state_that_makes_the_browser_fall_works_
         await context.close()
     assert completed(profile) >= 1, "the state is not built"
 
-    await downloads(browser, site.origin, root(tmp_path), 5)
+    await downloads(browser, site.origin, root(tmp_path), 10)
 
 
 # ----------------------------------------------------------------------------------------------

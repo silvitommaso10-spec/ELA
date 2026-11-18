@@ -28,7 +28,9 @@ di M13.14 con le loro parole, e i suoi:
   dall'API — e il file dello scaricamento è comparso nella cartella, lo script manda lui ``ela task
   cancel``. Lo step deve finire entro il tempo del tool più il limite di una chiusura, con
   ``browser.stopped``; se lo scaricamento finisce prima del «ferma», o il sito non risponde, il
-  passo è SALTATO con la sua ragione.
+  passo è SALTATO con la sua ragione;
+* ``intatto`` (M13.13c, decisione 118): se il profilo è com'era dal 2026-11-17 — sì, e il passo 3
+  è la prova a mano del criterio 2 di M13.13c; no, e il passo è FALLITO con la sua ragione.
 
 **Ogni** ``ela task run`` **ha un limite, 120 s** (M13.9d, decisione 84): una guardia e non una
 misura. Al limite il comando della CLI è chiuso — il figlio dello script, non ELA —, il passo è
@@ -129,8 +131,10 @@ down; a guard, and not a measure. A step of ELA that never ends would hold the p
 it did on 2026-11-17."""
 STOP_SECONDS: Final = 35
 """From the stop of the task to the end of its step, at most (decision 94): the tool's time, 30
-s, and the limit of a closing, ``BROWSER_CLOSE_GRACE_SECONDS`` (ADR 0072 §1). Read on the clock of
-the script, which waits for the run to return."""
+s, and the limit of a closing, ``BROWSER_CLOSE_GRACE_SECONDS``. A download hears the stop at once,
+and this is the bound step 14 holds it to; the worst case of ADR 0072 §1, a formula of the
+constants, is wider — a tool that hears the stop only at its own point (answer 107). Read on the
+clock of the script, which waits for the run to return."""
 UNTOUCHED: Final = (
     "il profilo è com'era: il passo 3 è la prova a mano del criterio 2 di M13.13c (ADR 0073)"
 )

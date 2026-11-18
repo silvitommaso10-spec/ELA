@@ -16,8 +16,9 @@
 Il 2026-11-17 alle 23:30, nella prova a mano di M13.15, il browser del profilo è caduto al passo 3, uno scaricamento con
 `browser.download_as_you`. Era il terzo scaricamento sul profilo vero, contando i file delle prove. M13.9d ha fatto sì che
 ELA lo dica subito, `browser.failed` «the browser ended by itself», invece di restare appesa (ADR 0072 §3). La serie della
-decisione 85 l'ha riprodotto su un profilo di prova: due scaricamenti riusciti, poi il crash a ogni corsa, con la stessa
-firma, `EXC_BAD_ACCESS` a `0xcdcdcdcdcdcdcdcd` sul thread principale del browser.
+decisione 85 l'ha riprodotto su un profilo di prova: due scaricamenti riusciti, poi il crash a ogni corsa. Dei cinque
+rapporti, uno ha la firma del crash vero, `EXC_BAD_ACCESS` a `0xcdcdcdcdcdcdcdcd` sul thread principale del browser, e
+gli altri quattro sono `EXC_BREAKPOINT` sullo stesso cammino.
 
 ## Decisione
 
@@ -27,8 +28,9 @@ Le misure delle decisioni 104 e 114, e A5, tutte su profili di prova (`docs/mile
 profili, fino a dieci corse, con la regola scritta prima dei numeri.
 
 - **Chrome for Testing 153.0.8010.12 cade a uno scaricamento nuovo quando, al lancio, `Default/History` ha scaricamenti
-  completi.** Il primo crash viene dalla seconda alla quarta corsa, su ogni profilo: senza finestra, **con la finestra**
-  (A5), e **anche senza la porta di ELA**, con lo scaricamento di Playwright com'è (A7). L'innesco è del browser.
+  completi.** Con il tool di ELA il primo crash viene dalla seconda alla quarta corsa, su ogni profilo, senza finestra e
+  **con la finestra** (A5). Cade **anche senza la porta di ELA**, con lo scaricamento di Playwright com'è, alla terza o
+  alla settima (A7). L'innesco è del browser.
 - **Non è il file che manca** (A1), **né il file del piano** (A2), **né lo stesso indirizzo** (A4).
 - **Con le righe degli scaricamenti tolte da `History` prima di ogni lancio, il browser non cade**: 0 crash in 60 corse
   su profili nuovi (A3 due volte). **Un profilo che era già caduto torna a funzionare**: 0 in 30 corse (M1), e 0 in 12 con
@@ -84,15 +86,16 @@ di ELA parte con la finestra ed è guidato, e la fa.
 - **Chi rimette le righe**, e se un aggiornamento del binario cambierà l'innesco o le tabelle. Se le tabelle cambiano,
   l'operazione non diventa un niente silenzioso: non tocca niente, e lo dice (§2); e il test del criterio 1 sul binario del
   lock torna rosso.
-- **I rapporti di crash del sistema**: il sistema ne tiene al più 25 per Chrome for Testing, e non ne scrive uno per ogni
-  crash. Il giro rosso dei test di questo ADR ne ha scritto uno (`m13.13c/rapporti-dopo-i-rossi.txt`).
+- **I rapporti di crash del sistema**: il sistema non ne scrive uno per ogni crash — 4 per i 24 crash della seconda
+  misura —, e ne ha tolti di vecchi, tre dei cinque della serie della decisione 85, copiati prima nell'officina. Il giro
+  rosso dei test di questo ADR ne ha scritto uno (`m13.13c/rapporti-dopo-i-rossi.txt`).
 
 ### 7. I test
 
 - `tests/infrastructure/machine/test_the_profile_forgets_its_downloads.py`:
   - sul binario vero, solo sul Mac, i criteri 1 e 2, rossi sul codice di prima: dieci scaricamenti e l'undicesimo, con i
     file che restano, una riga sentinella di `urls` che resta, e il cookie del sito che torna; e un profilo con uno
-    scaricamento completo fatto da Playwright, sul quale i cinque dopo riescono;
+    scaricamento completo fatto da Playwright, sul quale i dieci dopo riescono;
   - l'operazione: le sole tre tabelle; nessuna riga letta; la finestra che non la fa; il profilo nuovo; il link; le
     tabelle che non sono quelle attese; la ragione detta e il lancio che va avanti.
 - `tests/composition/test_browser_wiring.py`: la riga, dove la scrive la chiusura di ELA.

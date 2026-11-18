@@ -8371,6 +8371,8 @@ voce**: quelli stanno sullo schermo. Dei tipi della sezione 32 usa `comando`, `a
   scaricamento è comparso nella cartella, manda lui `ela task cancel`. Lo step deve finire entro il tempo del tool più il
   limite di una chiusura, **35 secondi dal «ferma»**, con `browser.stopped`. Se lo scaricamento finisce prima del
   «ferma», o il sito non risponde, il passo è **SALTATO** con la sua ragione.
+- **`intatto`**: lo script ti chiede se il profilo del browser di ELA è com'era dal 2026-11-17. Sì, e il passo 3 è la
+  prova a mano del criterio 2 di M13.13c; no, e il passo è **FALLITO** con la sua ragione.
 
 **Se la prova si ferma a metà**, lo script revoca prima di uscire le policy che ha creato e sono ancora vive, e toglie il
 piano temporaneo.

@@ -696,8 +696,8 @@ def _downloads_forgotten(profile: Path) -> str | None:
     0073). Measured on the binary of the lock: when, at its launch, the history holds downloads that
     completed, the browser falls at a new download — with or without the window, with or without
     ELA's door —; with those rows taken away before each launch it does not, and a profile that had
-    fallen works again. The browser puts the rows back by itself at its launch, from its own store
-    of the downloads: what it shows in its list does not change (measured).
+    fallen works again. The browser puts the rows back by itself at its launch — measured; from
+    where is read, not measured —: what it shows in its list does not change (measured).
 
     Only what decision 116 lets: the folder is free — the opening looked at it, and this runs before
     the launch —; the file is a file of its own, never followed through a link; the three statements

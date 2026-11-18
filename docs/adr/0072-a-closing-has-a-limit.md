@@ -191,6 +191,11 @@ allo stesso modo, e il test apre una pagina di nuovo dopo l'uccisione.
   nemmeno la cancellazione, è un difetto di ELA, e la riga lo dice.
 - **Uno stop alzato senza la chiusura di ELA dopo**: le chiusure aspettano la grazia che non viene. Nel prodotto lo
   stop è sempre seguito dalla chiusura (ADR 0038 §11).
+- **L'avviso di asyncio dopo un'uccisione del driver** (risposta 108): «Future exception was never retrieved», con
+  «Connection closed while reading from the driver». Il future è di Playwright, `on_error_future` del trasporto del client:
+  quando il driver muore il trasporto vi mette l'eccezione, e se nessuna chiamata era in volo nessuno la guarda. Nella
+  suite è una riga dell'uscita; nel prodotto andrebbe nel log di asyncio, su stderr di `ela serve` (letto, non misurato).
+  **Non si zittisce** con un filtro né con un gestore globale, che nasconderebbero gli altri.
 
 ### 11. I test
 
@@ -207,8 +212,10 @@ allo stesso modo, e il test apre una pagina di nuovo dopo l'uccisione.
   - il file annunciato tolto anche quando la chiusura della porta non finisce;
   - il caso peggiore dopo il «ferma», contro la formula di §1 (risposta 107).
   
-  **Rossi sul codice di prima**, ciascuno per la sua ragione: `m13.9d/rossi-prima-riassunto.txt`, e per gli ultimi tre,
-  aggiunti dopo il ripasso dei mutanti, `rossi-prima-2.txt` e `rossi-prima-3.txt`. Nessuno scrive un
+  **Rossi sul codice di prima**, ciascuno per la sua ragione: `m13.9d/rossi-prima-riassunto.txt`, e per i tre aggiunti
+  dopo il ripasso dei mutanti — il browser che muore prima dell'annuncio, l'uso di una pagina, il file annunciato —
+  `rossi-prima-2.txt` e `rossi-prima-3.txt`. Il caso peggiore della risposta 107 è un limite scritto, verde sul codice di
+  allora: lo prova il mutante 12 di M13.13c, il primo limite quattro volte più lungo, che il test fa morire. Nessuno scrive un
   rapporto di crash sulla macchina: la morte si costruisce con `SIGSTOP` e `SIGKILL` (decisione 89).
 - `tests/architecture/test_every_member_of_the_browser_passes_the_guard.py`, la regola di §2.
 - `tests/composition/test_browser_wiring.py` e `tests/api/test_server.py`: la riga, la costante, e `said`.
@@ -229,7 +236,7 @@ allo stesso modo, e il test apre una pagina di nuovo dopo l'uccisione.
 con la sezione di questo ADR a cui guardare.
 
 - **ADR 0052** §10 — «una scadenza sola attorno a tutto il lavoro del port»: dopo la scadenza la chiusura ha il suo limite, che non è di Playwright ma di ELA (§1).
-- **ADR 0054** §11 — il «ferma» a metà di uno step del browser chiude entro il tempo del tool più il limite, per la strada della scadenza (§1).
+- **ADR 0054** §11 — il «ferma» a metà di uno step del browser chiude entro il caso peggiore di §1, la formula delle costanti, per la strada della scadenza (§1).
 - **ADR 0063** §4 — l'uccisione non è solo alla grazia della chiusura di ELA: anche al limite di una chiusura, e la cartella del profilo resta come lì (§1, §9).
 - **ADR 0066** §8, punto 4 — la fine di uno scaricamento si aspetta entro il tempo del tool; la chiusura della porta, dopo, ha il limite; e il browser che finisce da sé la sveglia (§1, §3).
 - **ADR 0070** §1, §4 — «nessuna attesa: il tempo resta quello del tool»: la porta aspetta la risposta al suo `deny` al più il limite, e non aspetta un browser finito; la chiusura di 30,0 s con uno scaricamento in corso è tagliata al limite, il driver ucciso e il file annunciato tolto (§1, §3, §4, §7).
