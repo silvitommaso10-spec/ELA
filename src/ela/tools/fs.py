@@ -39,6 +39,7 @@ import hashlib
 import os
 import stat
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import ClassVar, Final
@@ -67,6 +68,7 @@ __all__ = [
     "ASSERTED_OVERWRITES",
     "ASSERTED_READS",
     "FS_READ",
+    "FS_READ_MAX_BYTES",
     "FS_READ_TOOL_NAME",
     "FS_WRITE",
     "FS_WRITE_TOOL_NAME",
@@ -84,6 +86,7 @@ __all__ = [
     "IO_ERROR",
     "NO_ROOT",
     "OVERWRITE_MISMATCH",
+    "TOO_LARGE",
     "FsReadTool",
     "FsWriteTool",
 ]
@@ -94,6 +97,15 @@ FS_READ_TOOL_NAME: Final = "fs-read"
 FS_WRITE_TOOL_NAME: Final = "fs-write"
 
 IO_ERROR: Final = "io.error"
+TOO_LARGE: Final = "fs.too_large"
+"""A read of a file larger than :data:`FS_READ_MAX_BYTES` (M13.17, ADR 0074; decision 11): refused
+before the question, and at the read when the file grew — with the two sizes, never a hash."""
+
+FS_READ_MAX_BYTES: Final = 8 * 1024 * 1024
+"""The most ``fs.read`` reads of one file (M13.17, ADR 0074): the largest size measured that the
+road of the result bears, in the time of the loop (E2: each piece under 250 ms, the longest under
+500) **and** in the memory of the Core (E4: a peak at most twice the rest) — 8 MiB. A read's own
+ceiling: a task with several reads sums them on the road of the results."""
 OVERWRITE_MISMATCH: Final = "fs.overwrite_mismatch"
 """What was approved is not what the disk says now, in either direction (M13.1 dec. Q)."""
 
@@ -234,6 +246,7 @@ class FsReadTool(Tool):
             ELA_S_OWN,
             HARD_LINK,
             NO_ANSWER,
+            TOO_LARGE,
         }
     )
     output_keys: ClassVar[frozenset[str]] = frozenset({"path", "bytes", "content"})
@@ -306,7 +319,18 @@ class FsReadTool(Tool):
         path = arguments.get("path")
         if not isinstance(path, str):
             return Outcome({}, ARGUMENTS_INVALID, "path must be a string"), None
-        return looked_for_a_read(self._root, path, protected=self._protected)
+        refused, target = looked_for_a_read(self._root, path, protected=self._protected)
+        if refused is not None or target is None:
+            return refused, target
+        # The size as the disk says it now (M13.17, ADR 0074; decision 11): the question names it,
+        # and a file over the ceiling is refused before the question.
+        try:
+            size = os.lstat(self._root / path).st_size
+        except OSError as error:
+            return Outcome({}, IO_ERROR, f"{type(error).__name__}: {error.strerror or error}"), None
+        if size > FS_READ_MAX_BYTES:
+            return Outcome({}, TOO_LARGE, _too_large(path, size)), None
+        return None, replace(target, size=size)
 
     async def _run(self, arguments: JsonMapping, stop: TaskStop) -> Outcome:
         try:
@@ -322,11 +346,14 @@ class FsReadTool(Tool):
         path = arguments["path"]
         assert isinstance(path, str)
         try:
-            data = read_bytes(self._root / path)
+            data = read_bytes(self._root / path, at_most=FS_READ_MAX_BYTES)
         except MoreThanOneName:
             return Outcome({}, HARD_LINK, more_than_one_name_read(path))
         except OSError as error:
             return Outcome({}, IO_ERROR, f"{type(error).__name__}: {error.strerror or error}")
+        if len(data) > FS_READ_MAX_BYTES:
+            # The file grew between the look and the read: the same refusal, with what was read.
+            return Outcome({}, TOO_LARGE, _too_large(path, len(data), grew=True))
         try:
             content = data.decode("utf-8")
         except UnicodeDecodeError:
@@ -660,6 +687,20 @@ def _ela_s_own(target: Path, protected: Mapping[str, Path]) -> str | None:
         if within(target, place) or within(place, target):
             return what
     return None
+
+
+def _too_large(path: str, size: int, *, grew: bool = False) -> str:
+    """The two sizes, never a hash (ADR 0045 §8): the path and the numbers. A file that grew after
+    the look says so: the bytes read stop one past the ceiling."""
+    if grew:
+        return (
+            f"{path!r} grew past {FS_READ_MAX_BYTES} bytes, the most fs.read reads, after it was "
+            f"looked at ({size} read): nothing was returned"
+        )
+    return (
+        f"{path!r} is {size} bytes, and fs.read reads at most {FS_READ_MAX_BYTES}: no question "
+        "is asked"
+    )
 
 
 def _reaches(path: str, what: str) -> str:

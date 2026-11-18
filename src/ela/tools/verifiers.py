@@ -68,7 +68,14 @@ from ela.tools.captures import (
 )
 from ela.tools.disk import NO_ANSWER, Disk, DiskSilent
 from ela.tools.echo import CORE_ECHO
-from ela.tools.fs import ELA_S_OWN, FS_READ, FS_WRITE, which_place
+from ela.tools.fs import (
+    ELA_S_OWN,
+    FS_READ,
+    FS_READ_MAX_BYTES,
+    FS_WRITE,
+    read_bytes,
+    which_place,
+)
 from ela.tools.listen import PERCEPTION_LISTEN
 from ela.tools.model import MODEL_COMPLETE, routing_arguments
 from ela.tools.notes import WORKSPACE_WRITE_NOTE
@@ -383,6 +390,9 @@ class _FsVerifier(Verifier):
         | {FS_CONTENT_MISMATCH, FS_UNREADABLE, NO_ANSWER, ELA_S_OWN}
     )
 
+    reads_at_most: ClassVar[int | None] = None
+    """How much of the file the verifier rereads: all of it, unless the capability has a ceiling."""
+
     def __init__(
         self,
         capability_id: CapabilityId,
@@ -416,6 +426,10 @@ class _FsVerifier(Verifier):
             return PathProblem(ELA_S_OWN, f"reaches {what}: a verifier of ELA never reads it")
         if not reading:
             return b""
+        if self.reads_at_most is not None:
+            # A read is reread at most its ceiling and one byte (M13.17, ADR 0074): a file larger
+            # than what the tool may have read cannot hold what it returned.
+            return read_bytes(self._root / path, at_most=self.reads_at_most)
         return WriteNoteVerifier._read(self._root / path)  # noqa: SLF001
 
     @abstractmethod
@@ -510,6 +524,8 @@ class FsReadVerifier(_FsVerifier):
         disk: Disk | None = None,
     ) -> None:
         super().__init__(FS_READ, root, name=name, protected=protected, disk=disk)
+
+    reads_at_most: ClassVar[int | None] = FS_READ_MAX_BYTES
 
     def _expected(self, arguments: JsonMapping, result: ExecutionResult) -> str | None:
         content = result.output.get("content")

@@ -2317,6 +2317,10 @@ class Executor:
             asked["target"] = target.resolved
             asked["does"] = target.does
             asked["label"] = target.label
+            if visit is None and target.size is not None:
+                # A read (M13.17, ADR 0074; decision 11): the size of the file as the disk said it
+                # when the question was composed — what is approved names what counts.
+                asked["size"] = target.size
         if invocation is not None:
             asked["runs"] = invocation.runs
             asked["arguments"] = list(invocation.arguments)
