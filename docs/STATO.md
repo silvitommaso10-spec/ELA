@@ -146,6 +146,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.9b` | Implementata | La pagina d'errore del browser non è un altro sito |
 | 13 — Il permesso prima dell'azione | `M13.9c` | Implementata | Solo l'adapter del vault lancia il programma del vault |
 | 13 — Il permesso prima dell'azione | `M13.9d` | Proposta | Un lancio del browser del profilo che a volte non arriva |
+| 13 — Il permesso prima dell'azione | `M13.9e` | Proposta | Un lancio del browser del profilo che in un test, una volta, non è arrivato |
 | 13 — Il permesso prima dell'azione | `M13.10` | Implementata | Più passi e i file: una sessione del browser fra gli step, una sequenza di gesti, e i file che entrano ed escono |
 | 13 — Il permesso prima dell'azione | `M13.10b` | Implementata | La domanda a occhio del login, nella prova di M13.10, chiede ciò che non mostra |
 | 13 — Il permesso prima dell'azione | `M13.11` | Proposta | Il browser sul PC: le capacità di M13.9 e M13.10 sul nodo Windows, e il verdetto che torna in busta |
@@ -187,7 +188,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **71** | `docs/adr/NNNN-*.md` |
-| Milestone | **106, di cui 83 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **107, di cui 83 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **74** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **16** | `pyproject.toml` |
 | Port | **36** | i `Protocol` di `src/ela/ports.py` |

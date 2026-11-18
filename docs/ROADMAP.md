@@ -142,6 +142,12 @@ rosso di un test un caso del prodotto, sull'ELA vera: la prova del 2026-11-17 a 
 browser del profilo è caduto 1,28 s dopo il lancio, e lo step non è più finito. La SPEC è in
 [`M13.9d.md`](milestones/M13.9d.md).
 
+***Annotato il 2026-11-18*** (risposta 90 della review della SPEC di M13.9d): **M13.9d si chiude con la parte del
+prodotto**, una chiusura del browser ha un limite. **Il rosso di `make check` a `4e4adc5`** — un lancio del browser del
+profilo non arrivato in 180 s, in un test — **è ridichiarato in `M13.9e`**, Proposta, fuori dalla fila: si riapre al
+prossimo rosso di un test che lancia il browser del profilo per un lancio non arrivato, e quel giro, con il log della
+suite, è la misura.
+
 - `M9.2` — Proposta — Le liste che restano scritte a mano
 - `M9.7` — Proposta — Ogni blocco della guida che mostra un'uscita della CLI è confrontato con la CLI
 - `M9.8` — Proposta — Le attese che nessun elenco conosceva
@@ -150,6 +156,7 @@ browser del profilo è caduto 1,28 s dopo il lancio, e lo step non è più finit
 - `M13.4g` — Proposta — Il click che apre un'altra pagina, con il browser del profilo: un'azione che a volte non dice la sua pagina
 - `M13.6` — Proposta — Spostare un lavoro già in corso: il ripiazzamento, quando due capability sanno dichiararsi ripetibili
 - `M13.9d` — Proposta — Un lancio del browser del profilo che a volte non arriva
+- `M13.9e` — Proposta — Un lancio del browser del profilo che in un test, una volta, non è arrivato
 - `M14.1c` — Proposta — Il caso peggiore senza prezzo: un ramo e un rifiuto che nessun produttore raggiunge
 - **WhatsApp Web con il profilo di ELA**, senza un numero: nessuna milestone finché la causa della barra di
   caricamento ferma non è nota ([ADR 0065](adr/0065-browser-steps.md) §5, punto 9).
