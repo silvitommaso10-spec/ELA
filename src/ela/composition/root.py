@@ -647,6 +647,17 @@ def history_kept(kind: str) -> str:
     )
 
 
+def _history_said(said: Callable[[str], None] | None) -> Callable[[str], None]:
+    """Who the browser of the profile tells why the downloads of its history were not forgotten:
+    the line of :func:`history_kept`, written by ``said`` — and by nobody when nobody said where."""
+
+    def told(kind: str) -> None:
+        if said is not None:
+            said(history_kept(kind))
+
+    return told
+
+
 def _kills_said(said: Callable[[str], None] | None) -> Callable[[tuple[str, ...]], None]:
     """Who a browser tells the names of what a closing of its killed: the line of
     :func:`killed_at_a_closing`, written by ``said`` — and by nobody when nobody said where."""
@@ -985,6 +996,7 @@ async def build(
                 closing=BROWSER_CLOSE_GRACE_SECONDS,
                 killed=_kills_said(said),
                 ended=_window_trail(audit, clock, ids),
+                unforgotten=_history_said(said),
                 on_a_screen=a_session_of_the_screen(probe),
             )
         # The vault (M13.9, ADR 0063 §2): the program of ``ELA_VAULT_PROGRAM``, with the same four

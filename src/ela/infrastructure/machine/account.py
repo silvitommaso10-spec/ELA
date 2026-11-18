@@ -250,6 +250,12 @@ HISTORY_FILE: Final = (PROFILE, "History")
 """The database where the browser keeps its history, and in it the downloads it remembers."""
 DOWNLOAD_TABLES: Final = ("downloads", "downloads_url_chains", "downloads_slices")
 """The three tables of the downloads in :data:`HISTORY_FILE` (M13.13c, ADR 0073)."""
+FORGET: Final = tuple(f"DELETE FROM {table}" for table in DOWNLOAD_TABLES)
+"""What ELA asks of :data:`HISTORY_FILE`, and nothing else: the rows of the three tables of the
+downloads, deleted **without one being read** — no ``WHERE``, no other table (decision 116)."""
+NOT_A_FILE: Final = "NotARegularFile"
+"""Why the downloads were not forgotten when :data:`HISTORY_FILE` is a link, a folder or anything
+but a file: it is not followed, and nothing in it is touched."""
 LOGINS: Final = (PROFILE, "Login Data")
 LOCK: Final = "SingletonLock"
 """The link the browser leaves in its folder while it runs: ``<host>-<pid>``."""
@@ -679,8 +685,54 @@ def _prepared(profile: Path, *, driven: bool) -> str | None:
         handle.write(written)
     fresh.replace(file)
     _taken_away(profile / REPORTS)
-    if driven:
-        _taken_away(profile.joinpath(*SERVICE_WORKERS))
+    if not driven:
+        return None
+    _taken_away(profile.joinpath(*SERVICE_WORKERS))
+    return _downloads_forgotten(profile)
+
+
+def _downloads_forgotten(profile: Path) -> str | None:
+    """**The rows of the downloads taken out of the history before a guided launch** (M13.13c, ADR
+    0073). Measured on the binary of the lock: when, at its launch, the history holds downloads that
+    completed, the browser falls at a new download — with or without the window, with or without
+    ELA's door —; with those rows taken away before each launch it does not, and a profile that had
+    fallen works again. The browser puts the rows back by itself at its launch, from its own store
+    of the downloads: what it shows in its list does not change (measured).
+
+    Only what decision 116 lets: the folder is free — the opening looked at it, and this runs before
+    the launch —; the file is a file of its own, never followed through a link; the three statements
+    of :data:`FORGET` and nothing else, in one transaction, so that when the tables are not the ones
+    expected nothing is taken away at all. **No row is read.** A history that is not there yet — a
+    new profile — is nothing to forget. What it returns is why the rows were not forgotten — the
+    type of what stopped it —, or ``None``: the launch goes on either way (decision 112)."""
+    history = profile.joinpath(*HISTORY_FILE)
+    try:
+        mode = history.lstat().st_mode
+    except FileNotFoundError:
+        return None
+    except OSError as error:
+        return type(error).__name__
+    if not stat.S_ISREG(mode):
+        return NOT_A_FILE
+    try:
+        database = sqlite3.connect(
+            f"{history.as_uri()}?mode=rw", uri=True, timeout=0, isolation_level=None
+        )
+    except sqlite3.Error as error:
+        return type(error).__name__
+    try:
+        database.execute("BEGIN IMMEDIATE")
+        try:
+            for statement in FORGET:
+                database.execute(statement)
+        except sqlite3.Error as error:
+            database.execute("ROLLBACK")
+            return type(error).__name__
+        database.execute("COMMIT")
+    except sqlite3.Error as error:
+        return type(error).__name__
+    finally:
+        database.close()
     return None
 
 
@@ -1034,14 +1086,17 @@ class AccountChrome(PlaywrightBrowser):
         """:func:`_prepared`, in a thread — and what the system says of a folder that cannot be
         written does not leave: its type, never its text, which names the path."""
         refused: str | None = None
+        kept: str | None = None
         try:
-            await asyncio.to_thread(_prepared, profile, driven=driven)
+            kept = await asyncio.to_thread(_prepared, profile, driven=driven)
         except OSError as error:
             refused = type(error).__name__
         if refused is not None:
             raise BrowserFailed(
                 f"the folder of {PROFILE_VARIABLE} could not be prepared for a launch ({refused})"
             )
+        if kept is not None:
+            self._unforgotten(kept)
 
     async def occupied(self) -> str | None:
         return await self._holder(await self._folder())
