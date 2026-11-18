@@ -20,7 +20,13 @@ from collections.abc import Mapping, Sequence
 from ela.domain import CapabilitySpec
 from ela.permissions.capabilities import is_valid_scope_entry
 
-__all__ = ["scope_covers", "targets_of", "within_scope"]
+__all__ = ["SCOPE_IS_SHOWN", "scope_covers", "targets_of", "within_scope"]
+
+SCOPE_IS_SHOWN = "uv run ela diagnostics shows it"
+"""Where the scope a denial no longer prints is read (M13.17, ADR 0074; answer 37 of the review of
+its SPEC): **one place**, ``ela diagnostics`` and its route, derived from the catalogue. A denial
+of the rule ``SCOPE`` names its targets and never the list — a list of folders, sites or programs
+would reach the audit, the console, the phone and, for the sites, a provider."""
 
 
 def targets_of(spec: CapabilitySpec, arguments: Mapping[str, object]) -> tuple[object, ...]:

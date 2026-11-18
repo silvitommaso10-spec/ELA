@@ -75,7 +75,7 @@ from ela.permissions.rows import (
     no_session_of,
     row_of,
 )
-from ela.permissions.scope import scope_covers, targets_of
+from ela.permissions.scope import SCOPE_IS_SHOWN, scope_covers, targets_of
 from ela.ports import AuditLog, CapabilityRegistryPort, Clock, IdGenerator, NotFoundError
 
 __all__ = [
@@ -344,8 +344,10 @@ class PermissionGuardian:
             return _Verdict(
                 PermissionOutcome.DENIED,
                 Rule.SCOPE,
-                f"targets {_describe(targets)} of {capability.id} are not within scope "
-                f"{list(registered.scope)}",
+                # The targets, never the list (M13.17, ADR 0074; answer 37): the scope is read in
+                # one place, and the sentence says which.
+                f"targets {_describe(targets)} of {capability.id} are not within its scope "
+                f"({SCOPE_IS_SHOWN})",
                 risk,
                 targets,
             )
@@ -355,8 +357,10 @@ class PermissionGuardian:
             return _Verdict(
                 PermissionOutcome.DENIED,
                 Rule.SCOPE,
-                f"targets {_describe(targets)} of {capability.id} are not within the step's "
-                f"scope {list(step.within)}",
+                # The targets, never the sites of the session (M13.17, ADR 0074; answer 37): its
+                # question named them.
+                f"targets {_describe(targets)} of {capability.id} are not within the sites of "
+                "the step's session, which its question named",
                 risk,
                 targets,
             )

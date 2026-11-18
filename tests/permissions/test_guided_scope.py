@@ -142,7 +142,8 @@ def test_a_site_the_capability_covers_and_the_session_does_not_is_denied_by_scop
     decision = guardian().decide(browser_read(SITES), READ, step=step)
     assert decision.outcome is PermissionOutcome.DENIED
     assert decision.metadata["rule"] == Rule.SCOPE.value
-    assert "not within the step's scope" in decision.reason
+    assert "not within the sites of the step's session" in decision.reason
+    assert "www.youtube.com" not in decision.reason, "the target, never the session's sites"
 
 
 def test_an_empty_within_covers_nothing() -> None:

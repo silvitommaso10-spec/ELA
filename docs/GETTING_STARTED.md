@@ -3733,7 +3733,7 @@ uv run ela task run <id>
 <!-- prova: 2.atteso -->
 ```
 outcome        denied
-reason         deny_by_decision: EXECUTING -> DENIED (targets ['example.org'] of browser.read are not within scope ['example.com', 'httpbin.org'])
+reason         deny_by_decision: EXECUTING -> DENIED (targets ['example.org'] of browser.read are not within its scope (uv run ela diagnostics shows it))
 state          DENIED
 steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000002
 stopped step   —
@@ -3749,7 +3749,7 @@ uv run ela task run <id>
 <!-- prova: 2.atteso -->
 ```
 outcome        denied
-reason         deny_by_decision: EXECUTING -> DENIED (targets ['example.org'] of browser.read are not within scope ['example.com', 'httpbin.org'])
+reason         deny_by_decision: EXECUTING -> DENIED (targets ['example.org'] of browser.read are not within its scope (uv run ela diagnostics shows it))
 state          DENIED
 steps handled  —
 stopped step   —
@@ -3757,6 +3757,11 @@ stopped step   —
 
 La seconda corsa trova il task chiuso e non tratta nessuno step; **la ragione è la stessa**. Prima di M13.1c la
 seconda diceva `reason —`.
+
+***Riscritto il 2026-11-18*** (M13.17, [ADR 0074](adr/0074-filesystem-up-to-the-home.md); risposta 37 della review della
+sua SPEC): fino a M13.17 la frase stampava l'elenco dei siti dichiarati, `are not within scope ['example.com',
+'httpbin.org']`. Da M13.17 un diniego della regola `SCOPE` nomina i bersagli e mai l'elenco, e dice dove lo scope si
+legge: `uv run ela diagnostics`, alla riga `scopes`. Gli eventi già nell'audit tengono la frase di prima.
 
 ### 3. Un fallimento, due volte
 

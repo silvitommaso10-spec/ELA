@@ -24,6 +24,7 @@ from ela.permissions import (
     production_catalogue,
     terminal_run,
 )
+from ela.permissions.scope import SCOPE_IS_SHOWN
 from ela.testing.fakes import FakeAuditLog, FakeCapabilityRegistry, FakeClock, FakeIdGenerator
 from tests.domain.examples import NOW, STEP_ID
 
@@ -152,12 +153,14 @@ def test_a_climb_out_of_a_declared_program_never_reaches_a_resolution() -> None:
 
 
 def test_an_absolute_path_is_not_the_grammar_and_is_denied() -> None:
-    """The first thing somebody writing a plan by hand gets wrong: the scope is shown without the
-    slash, in the reason, so the reader sees how to write it."""
+    """The first thing somebody writing a plan by hand gets wrong. Since M13.17 (ADR 0074; answer
+    37) the reason names the target and says where the scope is read — ``ela diagnostics``, which
+    shows it without the slash, so the reader sees how to write it —, and never the list."""
     outcome, rule, reason = decide("/usr/bin/git")
 
     assert (outcome, rule) == (PermissionOutcome.DENIED, Rule.SCOPE)
-    assert "'usr/bin/git'" in reason
+    assert "'/usr/bin/git'" in reason and SCOPE_IS_SHOWN in reason
+    assert "'usr/bin/git'" not in reason
 
 
 def test_a_link_nobody_declared_is_denied_even_when_it_leads_to_a_declared_program() -> None:
@@ -178,9 +181,10 @@ def test_a_declared_link_is_not_denied_by_the_scope_wherever_it_leads() -> None:
     assert rule != Rule.SCOPE
 
 
-def test_no_program_declared_denies_every_call_with_the_empty_scope_in_the_reason() -> None:
-    """Decision 16: ``[]`` makes ELA start, and the Guardian already knows how to say no to it."""
+def test_no_program_declared_denies_every_call_and_says_where_the_scope_is_read() -> None:
+    """Decision 16: ``[]`` makes ELA start, and the Guardian already knows how to say no to it —
+    since M13.17 with the target and where the empty scope is read (answer 37)."""
     outcome, rule, reason = decide("usr/bin/git", programs=())
 
     assert (outcome, rule) == (PermissionOutcome.DENIED, Rule.SCOPE)
-    assert "scope []" in reason
+    assert "'usr/bin/git'" in reason and SCOPE_IS_SHOWN in reason
