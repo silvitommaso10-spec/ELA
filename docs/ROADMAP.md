@@ -148,6 +148,13 @@ profilo non arrivato in 180 s, in un test — **è ridichiarato in `M13.9e`**, P
 prossimo rosso di un test che lancia il browser del profilo per un lancio non arrivato, e quel giro, con il log della
 suite, è la misura.
 
+***Annotato il 2026-11-18*** (decisione 103 della review della fermata di M13.9d a `5082459`): **il crash della prova
+del 2026-11-17 è un difetto di `browser.download_as_you`**, che c'è da M13.13 — dal terzo scaricamento con il browser del
+profilo sullo stesso profilo, Chrome for Testing cade al gesto —, ed è registrato in **`M13.13c`**, su
+`m13.15-le-policy-al-login-e-ai-file`. **La prova a mano di M13.15 non può passare prima di M13.13c**; la sua SPEC si
+scrive su quel branch dopo la misura che ne isola l'innesco (decisioni 104 e 105). M13.9d si chiude con ciò che ha
+fatto, e ADR 0071 e ADR 0072 restano Proposta fino alla prova.
+
 - `M9.2` — Proposta — Le liste che restano scritte a mano
 - `M9.7` — Proposta — Ogni blocco della guida che mostra un'uscita della CLI è confrontato con la CLI
 - `M9.8` — Proposta — Le attese che nessun elenco conosceva
@@ -157,6 +164,7 @@ suite, è la misura.
 - `M13.6` — Proposta — Spostare un lavoro già in corso: il ripiazzamento, quando due capability sanno dichiararsi ripetibili
 - `M13.9d` — Proposta — Un lancio del browser del profilo che a volte non arriva
 - `M13.9e` — Proposta — Un lancio del browser del profilo che in un test, una volta, non è arrivato
+- `M13.13c` — Proposta — Il browser del profilo che cade allo scaricamento, dal terzo sullo stesso profilo
 - `M14.1c` — Proposta — Il caso peggiore senza prezzo: un ramo e un rifiuto che nessun produttore raggiunge
 - **WhatsApp Web con il profilo di ELA**, senza un numero: nessuna milestone finché la causa della barra di
   caricamento ferma non è nota ([ADR 0065](adr/0065-browser-steps.md) §5, punto 9).

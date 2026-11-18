@@ -167,8 +167,12 @@ allo stesso modo, e il test apre una pagina di nuovo dopo l'uccisione.
 
 ### 10. Ciò che questo ADR dichiara e non risolve
 
-- **Perché Chrome for Testing è caduto** il 2026-11-17: la misura è la serie della decisione 85, scritta in M13.9d. ELA
-  lo dice con il codice di §3 e non resta appesa.
+- **Perché Chrome for Testing è caduto** il 2026-11-17: la serie della decisione 85, scritta in M13.9d, l'ha riprodotto
+  dal terzo scaricamento con il browser del profilo sullo stesso profilo. È un difetto di `browser.download_as_you`, ed è
+  di [M13.13c](../milestones/M13.13c.md) (decisione 103). ELA lo dice con il codice di §3 e non resta appesa.
+- **L'uccisione al limite nell'esito dello step e nell'audit**: è detta su stderr di `ela serve`, nella forma dello stop
+  (§5), e non nell'esito dello step né nell'audit. Portarla lì vuole una strada nel port del browser, ed è in conto a
+  [M13.11](../milestones/M13.11.md), che lo tocca (risposta 98).
 - **Il rosso di `4e4adc5`**, un lancio non arrivato in 180 s in un test: è di [M13.9e](../milestones/M13.9e.md), fuori
   dalla fila.
 - **Un lavoro lasciato** resta nel ciclo finché non finisce da sé. Il limite gli ha già ucciso il driver; se non sente

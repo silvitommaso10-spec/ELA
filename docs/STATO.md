@@ -153,6 +153,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.12` | Implementata | Le policy di §59: una policy che Tommaso si crea rende autonoma un'azione `MEDIUM`, a partire da `browser.guided` |
 | 13 — Il permesso prima dell'azione | `M13.13` | Implementata | I file dal browser: uno scaricamento è un `fs.write`, un caricamento un `fs.read` |
 | 13 — Il permesso prima dell'azione | `M13.13b` | Implementata | Uno scaricamento interrotto che a volte lascia il suo file a metà |
+| 13 — Il permesso prima dell'azione | `M13.13c` | Proposta | Il browser del profilo che cade allo scaricamento, dal terzo sullo stesso profilo |
 | 13 — Il permesso prima dell'azione | `M13.14` | Implementata | Le policy di Tommaso arrivano alle azioni HIGH |
 | 13 — Il permesso prima dell'azione | `M13.15` | Proposta | Le policy di Tommaso arrivano al login e ai file dal browser |
 | 13 — Il permesso prima dell'azione | `M13.16` | Proposta | Il terminale sotto le policy di Tommaso, con un confine dimostrato |
@@ -188,7 +189,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **72** | `docs/adr/NNNN-*.md` |
-| Milestone | **107, di cui 83 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **108, di cui 83 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **74** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **16** | `pyproject.toml` |
 | Port | **36** | i `Protocol` di `src/ela/ports.py` |
