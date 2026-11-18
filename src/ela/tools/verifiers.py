@@ -31,8 +31,10 @@ import hashlib
 import os
 import stat
 from abc import abstractmethod
+from collections.abc import Mapping
 from datetime import timedelta
 from pathlib import Path
+from types import MappingProxyType
 from typing import ClassVar, Final
 
 from ela.domain import (
@@ -66,7 +68,7 @@ from ela.tools.captures import (
 )
 from ela.tools.disk import NO_ANSWER, Disk, DiskSilent
 from ela.tools.echo import CORE_ECHO
-from ela.tools.fs import FS_READ, FS_WRITE
+from ela.tools.fs import ELA_S_OWN, FS_READ, FS_WRITE, which_place
 from ela.tools.listen import PERCEPTION_LISTEN
 from ela.tools.model import MODEL_COMPLETE, routing_arguments
 from ela.tools.notes import WORKSPACE_WRITE_NOTE
@@ -376,14 +378,24 @@ class _FsVerifier(Verifier):
     own copy of this verifier — never by the Core's (corrected with M13.14)."""
     conditions: ClassVar[frozenset[str]] = frozenset({FS_FILE_EXISTS, FS_CONTENT_MATCHES})
     failure_codes: ClassVar[frozenset[str]] = (
-        COMMON_FAILURE_CODES | PATH_CODES | {FS_CONTENT_MISMATCH, FS_UNREADABLE, NO_ANSWER}
+        COMMON_FAILURE_CODES
+        | PATH_CODES
+        | {FS_CONTENT_MISMATCH, FS_UNREADABLE, NO_ANSWER, ELA_S_OWN}
     )
 
     def __init__(
-        self, capability_id: CapabilityId, root: Path | str, *, name: str, disk: Disk | None = None
+        self,
+        capability_id: CapabilityId,
+        root: Path | str,
+        *,
+        name: str,
+        protected: Mapping[str, Path],
+        disk: Disk | None = None,
     ) -> None:
         super().__init__(capability_id, name=name)
         self._root = resolve_workspace(root)
+        # What ELA uses to exist (M13.17, ADR 0074; decision 8): no verifier reads it either.
+        self._protected: Mapping[str, Path] = MappingProxyType(dict(protected))
         # The guard of the look and the read (M13.17, ADR 0074).
         self._disk = Disk() if disk is None else disk
 
@@ -399,6 +411,9 @@ class _FsVerifier(Verifier):
         problem = classify(self._root, path)
         if problem is not None:
             return problem
+        what = which_place(self._root / path, self._protected)
+        if what is not None:
+            return PathProblem(ELA_S_OWN, f"reaches {what}: a verifier of ELA never reads it")
         if not reading:
             return b""
         return WriteNoteVerifier._read(self._root / path)  # noqa: SLF001
@@ -462,9 +477,14 @@ class FsWriteVerifier(_FsVerifier):
     """``fs.write``: the file holds the ``body`` that was approved."""
 
     def __init__(
-        self, root: Path | str, *, name: str = FS_WRITE_VERIFIER_NAME, disk: Disk | None = None
+        self,
+        root: Path | str,
+        *,
+        protected: Mapping[str, Path],
+        name: str = FS_WRITE_VERIFIER_NAME,
+        disk: Disk | None = None,
     ) -> None:
-        super().__init__(FS_WRITE, root, name=name, disk=disk)
+        super().__init__(FS_WRITE, root, name=name, protected=protected, disk=disk)
 
     def _expected(self, arguments: JsonMapping, result: ExecutionResult) -> str | None:
         body = arguments.get("body")
@@ -482,9 +502,14 @@ class FsReadVerifier(_FsVerifier):
     """
 
     def __init__(
-        self, root: Path | str, *, name: str = FS_READ_VERIFIER_NAME, disk: Disk | None = None
+        self,
+        root: Path | str,
+        *,
+        protected: Mapping[str, Path],
+        name: str = FS_READ_VERIFIER_NAME,
+        disk: Disk | None = None,
     ) -> None:
-        super().__init__(FS_READ, root, name=name, disk=disk)
+        super().__init__(FS_READ, root, name=name, protected=protected, disk=disk)
 
     def _expected(self, arguments: JsonMapping, result: ExecutionResult) -> str | None:
         content = result.output.get("content")

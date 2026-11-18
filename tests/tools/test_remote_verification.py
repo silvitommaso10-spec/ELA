@@ -148,6 +148,7 @@ def production(tmp_path: Path, provider: FakeModelProvider) -> VerifierRegistry:
         sessions=a_session(),
         audit=FakeAuditLog(),
         accounts=an_account_browser(),
+        protected={},
     )
 
 

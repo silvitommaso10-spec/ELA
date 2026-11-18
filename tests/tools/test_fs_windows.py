@@ -83,7 +83,7 @@ async def test_a_read_returns_exactly_the_bytes_on_the_disk(root: Path) -> None:
 async def test_the_verifier_sees_a_carriage_return_the_body_does_not_have(root: Path) -> None:
     (root / "ELA" / "c.md").write_bytes(b"a\r\nb\r\n")
 
-    failures = await FsWriteVerifier(root).verify(
+    failures = await FsWriteVerifier(root, protected={}).verify(
         (FS_CONTENT_MATCHES,),
         {"path": "ELA/c.md", "body": "a\nb\n", "overwrite": True},
         EXECUTION_RESULT.model_copy(

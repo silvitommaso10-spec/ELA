@@ -290,6 +290,7 @@ def _production(
         sessions=a_session(),
         audit=FakeAuditLog(),
         accounts=an_account_browser(),
+        protected={},
     )
     return tools, verifiers, captures
 

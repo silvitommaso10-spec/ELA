@@ -111,7 +111,7 @@ async def test_an_order_it_cannot_verify_is_not_acted_on(tmp_path: Path) -> None
 async def test_the_verdict_names_conditions_and_codes_and_never_a_message(tmp_path: Path) -> None:
     """A failure's message names the path, which is the user's content (§57): only the condition
     and the code travel."""
-    verifier = FsReadVerifier(tmp_path)
+    verifier = FsReadVerifier(tmp_path, protected={})
     missing = allowed(CapabilityId("fs.read"))
     result = _read_result(missing)
 
@@ -131,7 +131,10 @@ async def test_a_verifier_that_raises_travels_as_the_name_of_its_type(tmp_path: 
             raise OSError("segreto.md is on fire")
 
     verdict = await verdict_of(
-        Broken(tmp_path), (FS_FILE_EXISTS,), {"path": "x"}, _read_result(allowed(FS_WRITE))
+        Broken(tmp_path, protected={}),
+        (FS_FILE_EXISTS,),
+        {"path": "x"},
+        _read_result(allowed(FS_WRITE)),
     )
 
     assert verdict == {"conditions": [FS_FILE_EXISTS], "failed": [], "exception": "OSError"}

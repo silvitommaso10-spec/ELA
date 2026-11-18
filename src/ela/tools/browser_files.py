@@ -123,6 +123,7 @@ from ela.tools.fs import (
     measured,
     more_than_one_name_read,
     read_bytes,
+    which_place,
 )
 from ela.tools.paths import PATH_CODES, PathProblem, classify, resolve_workspace
 from ela.tools.verifiers import LOOK_GRACE_SECONDS, BrowserActVerifier, _PageVerifier
@@ -647,6 +648,15 @@ class BrowserDownloadTool(_BrowserTool):
             made["status"] = status
         if Path(got.name).name != got.name or got.name in {"", ".", ".."}:
             return Outcome(made, FAILED, "the browser named what it wrote outside the folder")
+        # The target is looked at again with the function of ``fs.write`` before the file is placed
+        # (M13.17, ADR 0074; decision 8): the window of the download is the whole download, and
+        # what ELA uses to exist may have come under the folder meanwhile.
+        refused, _ = looked_for_a_write(
+            self._root, call.file, call.overwrite, protected=self._protected
+        )
+        if refused is not None:
+            _removed(left)
+            return replace(refused, output=made)
         try:
             if not stat.S_ISREG(os.lstat(left).st_mode):
                 return Outcome(made, FAILED, "what the browser left in the folder is not a file")
@@ -1087,19 +1097,22 @@ class FileDownloadedVerifier(Verifier):
     """The disk of this machine: neither capability travels."""
     conditions: ClassVar[frozenset[str]] = frozenset({FILE_DOWNLOADED})
     failure_codes: ClassVar[frozenset[str]] = (
-        COMMON_FAILURE_CODES | PATH_CODES | {FILE_MISMATCH, FILE_UNREADABLE, NO_ANSWER}
+        COMMON_FAILURE_CODES | PATH_CODES | {FILE_MISMATCH, FILE_UNREADABLE, NO_ANSWER, ELA_S_OWN}
     )
 
     def __init__(
         self,
         root: Path | str,
         *,
+        protected: Mapping[str, Path],
         disk: Disk | None = None,
         name: str = BROWSER_DOWNLOAD_VERIFIER_NAME,
         capability_id: CapabilityId = BROWSER_DOWNLOAD,
     ) -> None:
         super().__init__(capability_id, name=name)
         self._root = resolve_workspace(root)
+        # What ELA uses to exist (M13.17, ADR 0074; decision 8): no verifier reads it either.
+        self._protected: Mapping[str, Path] = MappingProxyType(dict(protected))
         # The guard of the look and the read (M13.17, ADR 0074).
         self._disk = Disk() if disk is None else disk
 
@@ -1156,6 +1169,9 @@ class FileDownloadedVerifier(Verifier):
         problem = classify(self._root, file)
         if problem is not None:
             return problem
+        what = which_place(self._root / file, self._protected)
+        if what is not None:
+            return PathProblem(ELA_S_OWN, f"reaches {what}: a verifier of ELA never reads it")
         return measured(self._root / file)
 
 
@@ -1166,10 +1182,17 @@ class AccountFileDownloadedVerifier(FileDownloadedVerifier):
         self,
         root: Path | str,
         *,
+        protected: Mapping[str, Path],
         disk: Disk | None = None,
         name: str = BROWSER_DOWNLOAD_AS_YOU_VERIFIER_NAME,
     ) -> None:
-        super().__init__(root, disk=disk, name=name, capability_id=BROWSER_DOWNLOAD_AS_YOU)
+        super().__init__(
+            root,
+            protected=protected,
+            disk=disk,
+            name=name,
+            capability_id=BROWSER_DOWNLOAD_AS_YOU,
+        )
 
 
 class UploadVerifier(BrowserActVerifier):

@@ -565,7 +565,7 @@ def test_a_tool_that_must_be_verified_on_the_node_without_its_verifier_is_refuse
 
     with pytest.raises(ConfigurationError, match="fs.read"):
         carried(tools, VerifierRegistry(()))
-    carried(tools, VerifierRegistry((FsReadVerifier(tmp_path),)))
+    carried(tools, VerifierRegistry((FsReadVerifier(tmp_path, protected={}),)))
 
 
 @pytest.mark.parametrize(

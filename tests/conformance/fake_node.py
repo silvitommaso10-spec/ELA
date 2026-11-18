@@ -87,7 +87,10 @@ class FakeNode:
             )
             self._tools[FS_READ] = FsReadTool(fs_root, clock, self._ids, protected={})
             self._tools[FS_WRITE] = writer
-            self._verifiers = {FS_READ: FsReadVerifier(fs_root), FS_WRITE: FsWriteVerifier(fs_root)}
+            self._verifiers = {
+                FS_READ: FsReadVerifier(fs_root, protected={}),
+                FS_WRITE: FsWriteVerifier(fs_root, protected={}),
+            }
         self.order: Mapping[str, Any] | None = None
         """The last order this node received, as it received it."""
         self.held: dict[str, Any] | None = None

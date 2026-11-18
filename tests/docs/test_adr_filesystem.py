@@ -66,6 +66,7 @@ def verifiers_today(tmp_path: Path):  # type: ignore[no-untyped-def]
         sessions=a_session(),
         audit=FakeAuditLog(),
         accounts=an_account_browser(),
+        protected={},
     )
 
 

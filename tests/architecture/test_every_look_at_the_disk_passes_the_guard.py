@@ -130,11 +130,13 @@ def decision(capability_id: CapabilityId) -> PermissionDecision:
     )
 
 
-def registries(tmp_path: Path, disk: Disk) -> tuple[list[ToolPort], list[VerifierPort]]:
+def registries(
+    tmp_path: Path, disk: Disk, protected: Mapping[str, Path] | None = None
+) -> tuple[list[ToolPort], list[VerifierPort]]:
     """The Core's registries, as the composition builds them, with a site declared and the files
     of the calls there; and a node's, on the same root."""
     root = tmp_path / "files"
-    (root / "ELA").mkdir(parents=True)
+    (root / "ELA").mkdir(parents=True, exist_ok=True)
     for name in ("a.md", "prova.txt"):
         (root / "ELA" / name).write_text("una riga")
     browsing = Browsing(sites=(SITE,))
@@ -171,7 +173,7 @@ def registries(tmp_path: Path, disk: Disk) -> tuple[list[ToolPort], list[Verifie
         vault=a_door(),
         not_now=any_moment,
         pages=FakeTaskPages(),
-        protected={},
+        protected={} if protected is None else protected,
         disk=disk,
     )
     verifiers = production_verifiers(
@@ -186,6 +188,7 @@ def registries(tmp_path: Path, disk: Disk) -> tuple[list[ToolPort], list[Verifie
         sessions=a_session(),
         audit=FakeAuditLog(),
         accounts=FakeAccountBrowser(page),
+        protected={} if protected is None else protected,
         disk=disk,
     )
     node = node_tools(
@@ -200,12 +203,15 @@ def registries(tmp_path: Path, disk: Disk) -> tuple[list[ToolPort], list[Verifie
         voice_id=None,
         model="m",
         fs_root=root,
-        protected={},
+        protected={} if protected is None else protected,
         disk=disk,
     )
     return (
         [*core.tools(), *node.tools()],
-        [*verifiers.verifiers(), *node_verifiers(root, disk).verifiers()],
+        [
+            *verifiers.verifiers(),
+            *node_verifiers(root, {} if protected is None else protected, disk).verifiers(),
+        ],
     )
 
 

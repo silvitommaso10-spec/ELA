@@ -342,12 +342,18 @@ def test_a_site_whose_name_only_holds_localhost_is_a_site(
 # ----------------------------------------------------------------------------------------
 
 
-async def test_the_tools_that_write_under_the_root_are_handed_the_list_of_the_core(
+async def test_every_tool_and_verifier_under_the_root_is_handed_the_list_of_the_core(
     ela: Ela, settings: Settings
 ) -> None:
-    """``fs.write`` and the two downloads: the list the root was checked against at the start-up,
-    and no write of ELA's reaches it — under a yes or under a policy."""
+    """Derived, not listed (M13.17, ADR 0074; decision 8 (ii)): every tool and every verifier of
+    the composition that declares ``under_the_root`` is handed the list of the Core — the one the
+    start-up derived —, and the guard of the process."""
     own = settings.ela_s_own()
+    found = [*ela.tools.tools(), *ela.verifiers.verifiers()]
+    under = [one for one in found if one.under_the_root]
 
-    for capability in (FS_WRITE, BROWSER_DOWNLOAD, BROWSER_DOWNLOAD_AS_YOU):
-        assert dict(ela.tools.get(capability).protected) == own, capability  # type: ignore[attr-defined]
+    assert {str(one.capability_id) for one in under} >= {str(FS_WRITE), str(BROWSER_DOWNLOAD)}
+    for one in under:
+        assert dict(one._protected) == own, one.name  # type: ignore[attr-defined]  # noqa: SLF001
+        assert one.disk is ela.disk, one.name  # type: ignore[attr-defined]
+    assert BROWSER_DOWNLOAD_AS_YOU in {one.capability_id for one in under}

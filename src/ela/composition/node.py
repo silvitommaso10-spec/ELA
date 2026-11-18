@@ -375,7 +375,7 @@ def build_node(
         # One guard of the disk for the node (M13.17, ADR 0074), shared by its tools and verifiers.
         disk=disk,
     )
-    verifiers = node_verifiers(config.filesystem.root, disk)
+    verifiers = node_verifiers(config.filesystem.root, config.own(), disk)
     carried(tools, verifiers)
 
     return NodeWorld(

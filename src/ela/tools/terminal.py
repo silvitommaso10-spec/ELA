@@ -35,8 +35,10 @@ from __future__ import annotations
 
 import asyncio
 import codecs
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 from typing import ClassVar, Final
 
 from ela.domain import (
@@ -62,13 +64,14 @@ from ela.ports import (
 )
 from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool
 from ela.tools.disk import NO_ANSWER, Disk, DiskSilent
-from ela.tools.fs import NO_ROOT
+from ela.tools.fs import ELA_S_OWN, NO_ROOT
 from ela.tools.paths import (
     PATH_CODES,
     PATH_IS_DIRECTORY,
     PATH_NOT_REGULAR,
     classify,
     resolve_workspace,
+    within,
 )
 from ela.tools.programs import (
     NO_PROGRAM,
@@ -221,6 +224,7 @@ class TerminalRunTool(Tool):
             TIMEOUT,
             STOPPED,
             NO_ANSWER,
+            ELA_S_OWN,
             *PATH_CODES - {PATH_IS_DIRECTORY, PATH_NOT_REGULAR},
         }
     )
@@ -260,6 +264,7 @@ class TerminalRunTool(Tool):
         clock: Clock,
         ids: IdGenerator,
         *,
+        protected: Mapping[str, Path],
         disk: Disk | None = None,
         name: str = TERMINAL_TOOL_NAME,
     ) -> None:
@@ -267,6 +272,8 @@ class TerminalRunTool(Tool):
         self._terminal = terminal
         self._root = resolve_workspace(terminal.root)
         self._launcher = launcher
+        # What ELA uses to exist (M13.17, ADR 0074; answer 38): a command never starts from it.
+        self._protected: Mapping[str, Path] = MappingProxyType(dict(protected))
         # The guard of the look at the folder a command starts from (M13.17, ADR 0074).
         self._disk = Disk() if disk is None else disk
 
@@ -417,12 +424,30 @@ class TerminalRunTool(Tool):
         refused = _a_folder(self._root, self._terminal.scope)
         if refused is not None:
             return refused
-        if cwd is None:
-            return scope
-        refused = _a_folder(scope, cwd)
-        if refused is not None:
-            return refused
-        return scope / cwd
+        folder = scope if cwd is None else scope / cwd
+        if cwd is not None:
+            refused = _a_folder(scope, cwd)
+            if refused is not None:
+                return refused
+        return self._never_ela_s(folder, "" if cwd is None else cwd)
+
+    def _never_ela_s(self, folder: Path, cwd: str) -> Path | Outcome:
+        """**A command never starts from a folder of ELA's** (ADR 0047 §6, «mai la cartella di
+        ELA»; M13.17, ADR 0074, answer 38): a folder that *is* a place of ELA's, or *lies inside*
+        one, is ``path.ela_s_own``. Not one that holds a place: the folder is not a boundary — a
+        program admitted reaches ELA's places from anywhere —, and a refusal there would look like
+        a defence and protect nothing."""
+        resolved = folder.resolve()
+        for what, place in self._protected.items():
+            if within(resolved, place):
+                written = cwd or self._terminal.scope
+                return Outcome(
+                    {},
+                    ELA_S_OWN,
+                    f"{written!r} is, or lies inside, {what}: a command never starts from a "
+                    "folder of ELA's",
+                )
+        return folder
 
     async def _run(self, arguments: JsonMapping, stop: TaskStop) -> Outcome:
         looked = await self._look(arguments)

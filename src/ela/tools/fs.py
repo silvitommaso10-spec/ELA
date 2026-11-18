@@ -78,6 +78,7 @@ __all__ = [
     "NOT_A_FOLDER",
     "MoreThanOneName",
     "WRITES_IN",
+    "which_place",
     "OVERWRITES",
     "READS",
     "IO_ERROR",
@@ -643,6 +644,13 @@ def looked_for_a_write(
             return Outcome({}, HARD_LINK, _more_than_one_name(path)), None
     does = OVERWRITES if there else CREATES
     return None, Target(resolved=str(target), exists=there, does=does, label=FILE)
+
+
+def which_place(target: Path, protected: Mapping[str, Path]) -> str | None:
+    """Which place of ``protected`` the target is, holds or lies within — by its spelling and by
+    what the volume says (:func:`~ela.tools.paths.within`) —, or ``None``. Public since M13.17
+    (ADR 0074): the verifiers and the placing of a download ask the same question."""
+    return _ela_s_own(target, protected)
 
 
 def _ela_s_own(target: Path, protected: Mapping[str, Path]) -> str | None:

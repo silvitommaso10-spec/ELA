@@ -1140,6 +1140,8 @@ async def build(
             sessions=agents,
             audit=audit,
             accounts=accounts,
+            # What ELA uses to exist (M13.17, ADR 0074): no verifier reads it either.
+            protected=settings.ela_s_own(),
             disk=disk,
         )
 

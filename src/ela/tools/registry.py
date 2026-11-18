@@ -387,7 +387,7 @@ def production_tools(
             FsWriteTool(fs_root, clock, ids, protected=protected, disk=disk),
             # The terminal (M13.2): the programs with the identity of the start-up, the scope of
             # M13.1 for the folder, and the launcher the composition built around the stop signal.
-            TerminalRunTool(terminal, launcher, clock, ids, disk=disk),
+            TerminalRunTool(terminal, launcher, clock, ids, protected=protected, disk=disk),
             # The browser (M13.4): the declared sites and their origins, and one browser of ELA's
             # own, empty for every page. Not in :func:`node_tools`: it does not travel (form A).
             BrowserReadTool(browsing, browser, clock, ids, pages=pages),
@@ -510,7 +510,9 @@ def node_tools(
     return ToolRegistry(tools)
 
 
-def node_verifiers(fs_root: Path | None, disk: Disk | None = None) -> VerifierRegistry:
+def node_verifiers(
+    fs_root: Path | None, protected: Mapping[str, Path], disk: Disk | None = None
+) -> VerifierRegistry:
     """What a node verifies on its own machine: :data:`VERIFIED_ON_THE_NODE`, on its root (M13.3).
 
     Beside :func:`node_tools` and for its reason — a list that is read and pinned, not a subset
@@ -522,7 +524,10 @@ def node_verifiers(fs_root: Path | None, disk: Disk | None = None) -> VerifierRe
         return VerifierRegistry(())
     disk = Disk() if disk is None else disk
     return VerifierRegistry(
-        (FsReadVerifier(fs_root, disk=disk), FsWriteVerifier(fs_root, disk=disk))
+        (
+            FsReadVerifier(fs_root, protected=protected, disk=disk),
+            FsWriteVerifier(fs_root, protected=protected, disk=disk),
+        )
     )
 
 
@@ -539,6 +544,7 @@ def production_verifiers(
     sessions: AgentSession,
     audit: AuditLog,
     accounts: AccountBrowser,
+    protected: Mapping[str, Path],
     disk: Disk | None = None,
 ) -> VerifierRegistry:
     """The verifiers of :func:`production_tools`, one per capability.
@@ -559,8 +565,8 @@ def production_verifiers(
             # The same class, a second capability: two permissions over one act, verified by the
             # same two conditions (ADR 0034 §6). What differs is which grant was spent.
             SpeakVerifier(VOICE_SPEAK_ONLINE, name=ONLINE_SPEECH_VERIFIER_NAME),
-            FsReadVerifier(fs_root, disk=disk),
-            FsWriteVerifier(fs_root, disk=disk),
+            FsReadVerifier(fs_root, protected=protected, disk=disk),
+            FsWriteVerifier(fs_root, protected=protected, disk=disk),
             # The same identities the tool compares with: one table, fixed once (M13.2 dec. 4).
             TerminalRunVerifier(programs),
             # The same browser the tools opened the page in: the verifier looks at that page, and
@@ -576,8 +582,8 @@ def production_verifiers(
             BrowserGuidedVerifier(gestures, sessions, audit, kind=SESSION_AS_YOU),
             # A download is verified on the disk it was written to; an upload on the page that
             # received the file, in the browser that opened it.
-            FileDownloadedVerifier(fs_root, disk=disk),
-            AccountFileDownloadedVerifier(fs_root, disk=disk),
+            FileDownloadedVerifier(fs_root, protected=protected, disk=disk),
+            AccountFileDownloadedVerifier(fs_root, protected=protected, disk=disk),
             UploadVerifier(browser, browser_seconds),
             AccountUploadVerifier(accounts, browser_seconds),
         )

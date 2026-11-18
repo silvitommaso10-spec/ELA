@@ -226,8 +226,8 @@ def test_the_verifier_rows_are_the_running_verifiers(tmp_path: Path) -> None:
     }
     rows = {capability: row for capability, row in rows.items() if capability in FILE_CAPABILITIES}
     running = (
-        FileDownloadedVerifier(tmp_path),
-        AccountFileDownloadedVerifier(tmp_path),
+        FileDownloadedVerifier(tmp_path, protected={}),
+        AccountFileDownloadedVerifier(tmp_path, protected={}),
         UploadVerifier(FakeBrowser(), 30.0),
         AccountUploadVerifier(FakeAccountBrowser(), 30.0),
     )

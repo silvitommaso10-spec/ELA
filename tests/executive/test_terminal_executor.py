@@ -164,7 +164,7 @@ def terminal_parts(
         temporary="/tmp/tu",
         argument_limits=ArgumentLimits(total=1 << 20, one=1 << 20),
     )
-    tool = TerminalRunTool(settings, launcher, FakeClock(), UuidGenerator())
+    tool = TerminalRunTool(settings, launcher, FakeClock(), UuidGenerator(), protected={})
     return entry, tool, TerminalRunVerifier(programs), launcher
 
 
