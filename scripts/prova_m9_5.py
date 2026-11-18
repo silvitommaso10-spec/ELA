@@ -79,11 +79,11 @@ def outside_vocabulary(todo: Mapping[int, Sequence[base.Block]]) -> list[str]:
     return wrong
 
 
-def scope_admits(scope: str) -> str | None:
+def scope_admits(scope: Sequence[str]) -> str | None:
     """Why the declared scope does not admit the folder of the proof, or ``None``."""
-    if within_scope([scope], f"{FOLDER}/vuoto.bin"):
+    if within_scope(list(scope), f"{FOLDER}/vuoto.bin"):
         return None
-    return f"e lo scope dichiarato, {scope!r}, non ammette {FOLDER}/"
+    return f"e nessuna cartella dello scope dichiarato, {list(scope)!r}, ammette {FOLDER}/"
 
 
 def planned_names(todo: Mapping[int, Sequence[base.Block]]) -> frozenset[str]:

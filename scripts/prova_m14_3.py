@@ -529,6 +529,12 @@ class Turn:
     child_id: str | None = None
     approval_id: str | None = None
     last: str = ""
+    code: int = 0
+    """The exit of the last command of the block (M13.17, decision 18): an error is said by the
+    code, never by a word of the output."""
+    failed_screen: str | None = None
+    """The reason of a ``schermo`` whose command ended in an error (M13.17, decision 18): an eye
+    that follows asks nothing — the screen does not show what it would ask about."""
     background: subprocess.Popen[str] | None = None
     background_line: str = ""
 

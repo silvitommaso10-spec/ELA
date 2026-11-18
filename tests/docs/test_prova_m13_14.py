@@ -386,16 +386,17 @@ def test_the_home_never_enters_what_the_script_writes(tmp_path: Path) -> None:
     assert str(home) not in module.private(f"{home.resolve()}/x", home)
 
 
-@pytest.mark.parametrize("scope", ["ELA", "ELA/prova-m13.14"])
-def test_a_scope_that_admits_the_folder_of_the_proof_passes(scope: str) -> None:
+@pytest.mark.parametrize("scope", [("ELA",), ("ELA/prova-m13.14",), ("Documents", "ELA")], ids=str)
+def test_a_scope_that_admits_the_folder_of_the_proof_passes(scope: tuple[str, ...]) -> None:
+    """Since M13.17 the scope is a list (ADR 0074): one of its folders admitting is enough."""
     assert script().scope_admits(scope) is None
 
 
-@pytest.mark.parametrize("scope", ["ELA/altro", "altrove"])
-def test_a_scope_that_does_not_admit_the_folder_stops_the_proof(scope: str) -> None:
+@pytest.mark.parametrize("scope", [("ELA/altro",), ("altrove", "Documents")], ids=str)
+def test_a_scope_that_does_not_admit_the_folder_stops_the_proof(scope: tuple[str, ...]) -> None:
     why = script().scope_admits(scope)
 
-    assert why is not None and scope in why
+    assert why is not None and repr(list(scope)) in why
 
 
 def planned() -> Mapping[str, frozenset[str]]:

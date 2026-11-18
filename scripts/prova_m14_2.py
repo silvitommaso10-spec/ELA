@@ -207,6 +207,7 @@ def read_code_catalogue() -> dict[str, dict[str, Any]]:
         sessions=None,  # type: ignore[arg-type]
         audit=None,  # type: ignore[arg-type]
         accounts=None,  # type: ignore[arg-type]
+        protected={},  # since M13.17: the places of ELA's, never read to name a vocabulary
     )
     return code_catalogue(
         production_catalogue().specs(),

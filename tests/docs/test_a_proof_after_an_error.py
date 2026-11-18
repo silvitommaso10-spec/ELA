@@ -23,6 +23,7 @@ from typing import Any
 
 import pytest
 
+from tests.composition.support import _only_the_declared_environment  # noqa: F401 — the fixture
 from tests.docs.test_prova_m13_15 import script
 
 PREVIEW = (
@@ -212,3 +213,17 @@ def test_a_preview_that_exits_with_an_error_without_saying_ela_is_still_an_error
     written = "\n".join(proof.report.lines)
     assert asked == [] and "ha creato una policy" not in written
     assert "nessuna policy è nata" in written
+
+
+def test_an_eye_that_finds_a_screen_ended_in_an_error_asks_nothing(tmp_path: Path) -> None:
+    """The second line (decision 18 (c)): a script that caught the ``Stop`` of the screen would
+    still find the mark on the turn, and the eye would not be asked."""
+    module = script()
+    asked: list[str] = []
+    proof = a_proof(tmp_path, Api([]), asked)
+    turn = module.guided.Turn(failed_screen=ERROR)
+
+    with pytest.raises(module.base.Stop):
+        module.a_block(9, module.base.Block(9, "occhio", "È ciò che vuoi?"), turn, proof, str)
+
+    assert asked == []

@@ -550,13 +550,18 @@ def a_step(
 # ----------------------------------------------------------------------------------------
 
 
-def scope_admits(scope: str) -> str | None:
-    """Why the declared scope is not the one the proof needs — it admits the folder of the
-    proof —, or ``None``. A scope is one path (:data:`OUTSIDE`): the one that admits the folder
-    does not admit the file of step 4, and nothing here asks it twice."""
-    if within_scope([scope], f"{FOLDER}/da-una-frase.bin"):
+def scope_admits(scope: Sequence[str]) -> str | None:
+    """Why the declared scope is not the one the proof needs — one of its folders admits the
+    folder of the proof —, or ``None``. Since M13.17 the scope is a list of folders (ADR 0074); the
+    file of step 4 (:data:`OUTSIDE`) must lie outside all of them: with one folder that was
+    certain, with a list it is asked."""
+    if within_scope(list(scope), OUTSIDE):
+        return (
+            f"e lo scope dichiarato, {list(scope)!r}, ammette {OUTSIDE}, che il passo 4 vuole fuori"
+        )
+    if within_scope(list(scope), f"{FOLDER}/da-una-frase.bin"):
         return None
-    return f"e lo scope dichiarato, {scope!r}, non ammette {FOLDER}/"
+    return f"e nessuna cartella dello scope dichiarato, {list(scope)!r}, ammette {FOLDER}/"
 
 
 def planned_names(todo: Mapping[int, Sequence[base.Block]]) -> frozenset[str]:
@@ -600,7 +605,7 @@ def emptied(root: Path, report: base.Report, names: frozenset[str]) -> str | Non
     return None
 
 
-def declared_root() -> tuple[Path, str]:
+def declared_root() -> tuple[Path, tuple[str, ...]]:
     from ela.composition.settings import FilesystemSettings
 
     declared = FilesystemSettings()

@@ -47,6 +47,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -310,13 +311,13 @@ def created_short(printed: str) -> str | None:
     return None if found is None else found.group(1)
 
 
-def scope_admits(scope: str) -> str | None:
+def scope_admits(scope: Sequence[str]) -> str | None:
     """Why the declared scope does not admit the folder of the proof, or ``None``."""
     from ela.permissions.scope import within_scope
 
-    if within_scope([scope], f"{FOLDER}/uno/prova.md"):
+    if within_scope(list(scope), f"{FOLDER}/uno/prova.md"):
         return None
-    return f"e lo scope dichiarato, {scope!r}, non ammette {FOLDER}/"
+    return f"e nessuna cartella dello scope dichiarato, {list(scope)!r}, ammette {FOLDER}/"
 
 
 # ----------------------------------------------------------------------------------------
@@ -423,6 +424,7 @@ def a_command(line: str, turn: guided.Turn, proof: Proof) -> None:
     done = base.heard(line, base.run(line))
     printed = done.stdout + done.stderr
     turn.last += printed
+    turn.code = done.returncode or turn.code
     for one in printed.rstrip("\n").splitlines():
         report.say(f"    | {private(one, proof.home)}")
     if guided.CREATE in f" {line} ":
@@ -432,7 +434,7 @@ def a_command(line: str, turn: guided.Turn, proof: Proof) -> None:
 
 
 def commands(lines: Sequence[str], turn: guided.Turn, proof: Proof) -> None:
-    turn.last = ""
+    turn.last, turn.code = "", 0
     for line in lines:
         a_command(filled(line, turn, proof), turn, proof)
 
@@ -446,7 +448,9 @@ def policies_of(api: base.Api, *, everything: bool = False) -> list[Mapping[str,
 
 def on_the_screen(number: int, block: base.Block, turn: guided.Turn, proof: Proof) -> None:
     """``schermo``: what the eye has to look at, put in front of it — on the screen alone, whole.
-    The file says which command was shown."""
+    The file says which command was shown. **A command that ends in an error** — its exit says so
+    — fails the step with its reason and stops the proof (M13.17, decision 18): the eye that
+    follows would be asked about what the screen does not show."""
     for line in block.lines:
         asked = filled(line, turn, proof)
         done = base.heard(asked, base.run(asked))
@@ -454,6 +458,37 @@ def on_the_screen(number: int, block: base.Block, turn: guided.Turn, proof: Proo
         for one in (done.stdout + done.stderr).rstrip("\n").splitlines():
             print(f"    | {one}", flush=True)
         proof.report.say(f"    $ {asked} — l'uscita è sullo schermo, non in questo file")
+        screen_failed(number, done, turn, proof, lambda text: private(text, proof.home))
+
+
+def screen_failed(
+    number: int,
+    done: subprocess.CompletedProcess[str],
+    turn: guided.Turn,
+    proof: Proof,
+    masked: Callable[[str], str],
+) -> None:
+    """:func:`prova_m6_3c.screen_failed`, and the turn remembers it: an eye of the same step asks
+    nothing after it (M13.17, decision 18 (c))."""
+    reason = base.the_error(done.returncode, done.stdout + done.stderr)
+    if reason is not None:
+        turn.failed_screen = masked(reason)
+    base.screen_failed(number, done, proof.report, masked)
+
+
+def a_creation_failure(code: int, printed: str, born: bool) -> str | None:
+    """What ``crea`` says when the preview is not the one it expects, or ``None`` (M13.17,
+    decision 18 (b)): **three outcomes, one sentence each** — a policy born of the preview, a
+    preview that ended in an error and created nothing, an output without «not created» and
+    without an error."""
+    if born:
+        return "l'anteprima ha creato una policy: ce n'è una viva in più"
+    reason = base.the_error(code, printed)
+    if reason is not None:
+        return f"l'anteprima è finita in errore: {reason} — nessuna policy è nata"
+    if NOT_CREATED not in printed:
+        return "l'uscita dell'anteprima non dice «not created», e non c'è un errore"
+    return None
 
 
 def a_creation(number: int, block: base.Block, turn: guided.Turn, proof: Proof) -> None:
@@ -464,9 +499,9 @@ def a_creation(number: int, block: base.Block, turn: guided.Turn, proof: Proof) 
     before = {str(one["id"]) for one in live(policies_of(proof.api))}
     commands([line], turn, proof)
     after = {str(one["id"]) for one in live(policies_of(proof.api))}
-    if NOT_CREATED not in turn.last or after != before:
-        printed = private(turn.last, proof.home)
-        proof.report.failure(number, "l'anteprima ha creato una policy", printed)
+    failed = a_creation_failure(turn.code, turn.last, after != before)
+    if failed is not None:
+        proof.report.failure(number, private(failed, proof.home), private(turn.last, proof.home))
         raise base.Stop(NO_POLICY)
     if not base.yes_or_no(proof.ask, f"[{number}] Crei la policy? (s/n) "):
         raise base.Stop(SAID_NO)
@@ -566,6 +601,10 @@ def a_block(number: int, block: base.Block, turn: guided.Turn, proof: Proof) -> 
         else:
             report.passed(number, "l'uscita è quella attesa")
     elif kind == "occhio":
+        if turn.failed_screen is not None:
+            # Never asked after a screen that ended in an error (M13.17, decision 18 (c)): what
+            # the eye would be asked about is not on the screen.
+            raise base.Stop(f"lo schermo è finito in errore: {turn.failed_screen}")
         text = filled(block.body, turn, proof)
         report.looked(number, text, base.yes_or_no(proof.ask, f"[{number}] {text} (s/n) "))
     elif kind == "schermo":
@@ -643,7 +682,7 @@ def leftovers(proof: Proof) -> None:
 # ----------------------------------------------------------------------------------------
 
 
-def declared_root() -> tuple[Path, str]:
+def declared_root() -> tuple[Path, tuple[str, ...]]:
     from ela.composition.settings import FilesystemSettings
 
     declared = FilesystemSettings()

@@ -448,6 +448,7 @@ def on_the_screen(number: int, block: base.Block, turn: guided.Turn, proof: Proo
         for one in (done.stdout + done.stderr).rstrip("\n").splitlines():
             print(f"    | {one}", flush=True)
         proof.report.say(f"    $ {asked} — {ON_THE_SCREEN}")
+        base.screen_failed(number, done, proof.report, lambda text: text)
 
 
 def an_entry_on_the_screen(number: int, block: base.Block, proof: Proof) -> None:
