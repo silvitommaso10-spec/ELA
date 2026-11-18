@@ -38,10 +38,12 @@ istante che si misura in centinaia di millisecondi.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import platform
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -361,15 +363,52 @@ class Report:
 # ----------------------------------------------------------------------------------------
 
 
-def run(line: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S602 — the lines are the guide's, read from the repository
+def run(line: str, limit: float | None = None) -> subprocess.CompletedProcess[str]:
+    """A command of the guide, waited for to its end. **With** ``limit`` (M13.9d, decision 84) —
+    a guard in seconds, given by the script that wants one, with no default: the scripts before
+    do not change — the command runs in a group of its own, and past the limit the group is
+    killed, which is the command of the CLI and never ELA, and :class:`Overdue` says it."""
+    if limit is None:
+        return subprocess.run(  # noqa: S602 — the lines are the guide's, read from the repository
+            line,
+            shell=True,
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    with subprocess.Popen(  # noqa: S602 — as above
         line,
         shell=True,
         cwd=ROOT,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
-        check=False,
-    )
+        start_new_session=True,
+    ) as process:
+        try:
+            printed, said = process.communicate(timeout=limit)
+        except subprocess.TimeoutExpired:
+            closed(process)
+            raise Overdue(line, limit) from None
+    return subprocess.CompletedProcess(line, process.returncode, printed, said)
+
+
+def closed(process: subprocess.Popen[str]) -> None:
+    """The group of a command of the guide that ran past its limit, killed, and the command
+    collected: what it had started goes with it, and nothing of it is waited for again."""
+    with contextlib.suppress(ProcessLookupError):
+        os.killpg(process.pid, signal.SIGKILL)
+    process.communicate()
+
+
+class Overdue(Exception):
+    """A command of the guide did not return within the limit its script gave it (M13.9d,
+    decision 84): it was closed, and what follows in the file is the reason."""
+
+    def __init__(self, line: str, limit: float) -> None:
+        self.line, self.limit = line, limit
+        super().__init__(f"«{line}» non è tornato in {limit:g} s: lo script l'ha chiuso")
 
 
 class Silent(Exception):

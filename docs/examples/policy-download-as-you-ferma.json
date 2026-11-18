@@ -1,0 +1,31 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M13.9d (sezione 34, passo 14): un file di httpbin.org che arriva in nove",
+    "secondi, con il browser del profilo, sotto la policy di browser.download_as_you del passo 3. Lo script",
+    "ferma il task mentre il file arriva: nella cartella non deve restare niente di questo scaricamento.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "scaricare come me un file che arriva piano, e fermarlo mentre arriva",
+  "steps": [
+    {
+      "id": "c0de1a28-0000-4b00-8a00-000000001514",
+      "goal": "scaricare come me un file che arriva piano, e fermarlo mentre arriva",
+      "required_capabilities": [
+        "browser.download_as_you"
+      ],
+      "arguments": {
+        "site": "httpbin.org",
+        "path": "/drip?duration=9&numbytes=10&code=200&delay=0",
+        "file": "ELA/prova-m13.15/giu/fermato.bin",
+        "overwrite": false,
+        "purpose": "la prova a mano del «ferma» mentre il file arriva"
+      },
+      "risk": "HIGH",
+      "expected_result": "nessun file: lo script ferma il task mentre il file arriva",
+      "success_conditions": [
+        "browser.file_downloaded"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}

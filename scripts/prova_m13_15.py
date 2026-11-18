@@ -23,7 +23,16 @@ di M13.14 con le loro parole, e i suoi:
 * ``ambigua``: il login senza ``entry`` fermato prima della domanda da ``vault.entry_ambiguous`` —
   più voci per quel sito nel vault — fa il passo SALTATO, con la sua ragione (risposta 48);
 * ``coperta``: lo step del task deciso «covered by policy …» da quella policy, letto nell'evento
-  della sua decisione nell'audit, anche quando poi fallisce prima della spesa.
+  della sua decisione nell'audit, anche quando poi fallisce prima della spesa;
+* ``ferma`` (M13.9d, decisione 94): ``ela task run`` in sfondo; quando lo step è RUNNING — letto
+  dall'API — e il file dello scaricamento è comparso nella cartella, lo script manda lui ``ela task
+  cancel``. Lo step deve finire entro il tempo del tool più il limite di una chiusura, con
+  ``browser.stopped``; se lo scaricamento finisce prima del «ferma», o il sito non risponde, il
+  passo è SALTATO con la sua ragione.
+
+**Ogni** ``ela task run`` **ha un limite, 120 s** (M13.9d, decisione 84): una guardia e non una
+misura. Al limite il comando della CLI è chiuso — il figlio dello script, non ELA —, il passo è
+FALLITO con la sua ragione, ``ela task show`` del task va nel file, e la prova si ferma.
 
 **Il file della prova non porta il percorso intero di un file, il nome utente né l'id di una voce**:
 stanno sullo schermo. Se la prova si ferma a metà, lo script revoca le policy che ha creato e sono
@@ -38,8 +47,10 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import sys
 import tempfile
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -67,6 +78,7 @@ KINDS: Final = (
     "assente",
     "ambigua",
     "coperta",
+    "ferma",
 )
 LOOKS: Final[Mapping[str, str]] = {
     "occhio": "una domanda all'occhio di Tommaso, su ciò che ha davanti",
@@ -108,6 +120,28 @@ SKIPPED_AMBIGUOUS: Final = (
     "domanda con vault.entry_ambiguous: la domanda non può nascere, e il passo non la finge"
 )
 NO_ENTRY: Final = "senza l'id della voce i passi del login non hanno niente da misurare"
+RUN: Final = "uv run ela task run "
+RUN_LIMIT: Final = 120
+"""The guard of every ``ela task run`` of the proof, in seconds (M13.9d, decision 84): four times
+the tool's time and the limit of a closing, 35 s, rounded — a guard, and not a measure. A step of
+ELA that never ends would hold the proof for ever, as it did on 2026-11-17."""
+STOP_SECONDS: Final = 35
+"""From the stop of the task to the end of its step, at most (decision 94): the tool's time, 30
+s, and the limit of a closing, ``BROWSER_CLOSE_GRACE_SECONDS`` (ADR 0072 §1). Read on the clock of
+the script, which waits for the run to return."""
+STOPPED: Final = "browser.stopped"
+UNREACHABLE: Final = "browser.unreachable"
+STOP_REASON: Final = "la prova a mano di M13.9d: il «ferma» mentre il file arriva"
+LOOK: Final = 0.2
+"""How often the script asks the API and the folder, while it waits for an event of theirs."""
+SKIPPED_FINISHED: Final = (
+    "lo step è finito prima che il «ferma» potesse arrivare mentre il file arriva: non c'è niente "
+    "da fermare, e il passo non lo finge"
+)
+SKIPPED_UNREACHABLE: Final = (
+    "il sito non ha risposto, e lo scaricamento non è cominciato: il «ferma» non ha niente da "
+    "interrompere"
+)
 
 Report = base.Report
 
@@ -159,6 +193,12 @@ def a_names_line(line: str) -> tuple[str, str]:
     return words[0], words[1]
 
 
+def a_run_line(line: str) -> str:
+    if line != f"{RUN}<id>":
+        raise ValueError(f"{line!r} is not «{RUN}<id>»")
+    return line
+
+
 READERS: Final[Mapping[str, Callable[[str], object]]] = {
     **m14.READERS,
     "mano": a_hand_line,
@@ -168,6 +208,7 @@ READERS: Final[Mapping[str, Callable[[str], object]]] = {
     "assente": m14.a_said,
     "ambigua": m14.the_words(AMBIGUOUS),
     "coperta": lambda line: _a_covering_line(line),
+    "ferma": a_run_line,
 }
 
 
@@ -243,12 +284,31 @@ def removed(proof: Proof) -> None:
         path.unlink(missing_ok=True)
 
 
+def ran(line: str) -> Any:
+    """A command of the section: ``ela task run`` with its guard (decision 84), the rest as ever."""
+    return base.run(line, RUN_LIMIT) if line.startswith(RUN) else base.run(line)
+
+
+def overdue(late: base.Overdue, turn: guided.Turn, proof: Proof) -> None:
+    """A run past its guard: FALLITO with its reason, the state of the task in the file — what
+    ELA was doing —, and the proof stops: the steps after would measure something else."""
+    proof.report.failure(proof.current, masked(str(late), proof))
+    if turn.task_id is not None:
+        shown = base.run(f"uv run ela task show {turn.task_id}")
+        for one in (shown.stdout + shown.stderr).rstrip("\n").splitlines():
+            proof.report.say(f"    | {masked(one, proof)}")
+    raise base.Stop(masked(str(late), proof))
+
+
 def a_command(line: str, turn: guided.Turn, proof: Proof) -> None:
     """One command: the file gets the line with the placeholder and the output masked."""
     report = proof.report
     report.say(f"    $ {masked(line, proof)}")
     sent = with_the_entry(line, proof)
-    done = base.heard(sent, base.run(sent))
+    try:
+        done = base.heard(sent, ran(sent))
+    except base.Overdue as late:
+        overdue(late, turn, proof)
     printed = done.stdout + done.stderr
     turn.last += printed
     for one in printed.rstrip("\n").splitlines():
@@ -453,6 +513,108 @@ def covered(number: int, block: base.Block, turn: guided.Turn, proof: Proof) -> 
         proof.report.failure(number, f"nessuna decisione dice «covered by policy {mine[1]}»")
 
 
+def step_state(task: Mapping[str, Any]) -> str | None:
+    """The state of the one step of a task, as the API says it."""
+    steps = task.get("steps") or ()
+    return str(steps[0].get("state")) if steps else None
+
+
+def arrived(folder: Path, before: frozenset[str]) -> list[str]:
+    """What appeared in ``folder`` since ``before``: the file of a download that has begun."""
+    return sorted(set(os.listdir(folder)) - before)
+
+
+def stop_failures(result: Mapping[str, Any] | None, seconds: float) -> list[str]:
+    """What ``ferma`` finds wrong once the step has ended: its code, and how long it took from
+    the stop — the tool's time and the limit of a closing at most."""
+    failures: list[str] = []
+    code = None if result is None else (result.get("error") or {}).get("code")
+    if code != STOPPED:
+        failures.append(f"lo step è finito con {code}, non con {STOPPED}")
+    if seconds > STOP_SECONDS:
+        failures.append(
+            f"lo step è finito {seconds:.1f} s dopo il «ferma», non entro {STOP_SECONDS}"
+        )
+    return failures
+
+
+def skipped_because(result: Mapping[str, Any] | None) -> str | None:
+    """Why a step that ended before the stop came is SALTATO: it finished, or the site did not
+    answer; ``None`` when it ended in any other way — which is a failure, said by the caller."""
+    if result is None:
+        return None
+    if result.get("status") == "SUCCEEDED":
+        return SKIPPED_FINISHED
+    if (result.get("error") or {}).get("code") == UNREACHABLE:
+        return SKIPPED_UNREACHABLE
+    return None
+
+
+def stopped_while_arriving(number: int, block: base.Block, turn: guided.Turn, proof: Proof) -> None:
+    """``ferma`` (decision 94): the run in the background; **the events it waits for are the
+    API's and the folder's** — the step RUNNING, and the file of the download in the folder —, and
+    then the stop of the task, sent by the script. The step must end with ``browser.stopped``,
+    within :data:`STOP_SECONDS` of the stop."""
+    (line,) = block.lines
+    report = proof.report
+    folder = proof.root / FOLDER / "giu"
+    before = frozenset(os.listdir(folder))
+    sent = m14.filled(line, turn, proof)  # type: ignore[arg-type]
+    report.say(f"    $ {masked(sent, proof)} — in sfondo")
+    running = base.started(sent)
+    deadline = time.monotonic() + RUN_LIMIT
+    began = False
+    while running.poll() is None and time.monotonic() < deadline:
+        if not began:
+            began = step_state(proof.api.get(f"/tasks/{turn.task_id}")) == "RUNNING"
+        if began and arrived(folder, before):
+            break
+        time.sleep(LOOK)
+    if running.poll() is None and time.monotonic() >= deadline:
+        running.kill()
+        overdue(base.Overdue(sent, RUN_LIMIT), turn, proof)
+    if running.poll() is not None:
+        printed, _ = running.communicate()
+        turn.last = printed or ""
+        result = last_result(proof, turn)
+        why = skipped_because(result)
+        if why is None:
+            report.failure(
+                number, "lo step è finito da sé prima del «ferma»", masked(turn.last, proof)
+            )
+            return
+        report.skipped(number, why)
+        raise Skipped
+    report.say(
+        f"    lo step è RUNNING e il file è nella cartella: {', '.join(arrived(folder, before))}"
+    )
+    stop = f"uv run ela task cancel {turn.task_id} --reason {shlex.quote(STOP_REASON)}"
+    asked = time.monotonic()
+    cancelled = base.heard(stop, base.run(stop))
+    report.say(f"    $ uv run ela task cancel {turn.task_id} — il «ferma» dello script")
+    try:
+        printed, _ = running.communicate(timeout=RUN_LIMIT)
+    except Exception:  # noqa: BLE001 — a run that does not end within its guard is said below
+        running.kill()
+        overdue(base.Overdue(sent, RUN_LIMIT), turn, proof)
+    seconds = time.monotonic() - asked
+    turn.last = (printed or "") + cancelled.stdout
+    for one in turn.last.rstrip("\n").splitlines():
+        report.say(f"    | {masked(one, proof)}")
+    failures = stop_failures(last_result(proof, turn), seconds)
+    if failures:
+        report.failure(number, "; ".join(failures))
+    else:
+        report.passed(
+            number, f"fermato mentre il file arrivava: {STOPPED}, {seconds:.1f} s dopo il «ferma»"
+        )
+
+
+def last_result(proof: Proof, turn: guided.Turn) -> Mapping[str, Any] | None:
+    results = proof.api.get(f"/tasks/{turn.task_id}/results")
+    return results[-1] if results else None
+
+
 def ambiguous(number: int, turn: guided.Turn, proof: Proof) -> None:
     if AMBIGUOUS in turn.last:
         proof.report.skipped(number, SKIPPED_AMBIGUOUS)
@@ -489,6 +651,8 @@ def a_block(
         ambiguous(number, turn, proof)
     elif kind == "coperta":
         covered(number, block, turn, proof)
+    elif kind == "ferma":
+        stopped_while_arriving(number, block, turn, proof)
     else:
         m14.a_block(number, block, turn, proof)  # type: ignore[arg-type]
 

@@ -8330,19 +8330,24 @@ non scrive niente e non spende un uso.
 
 **La regola pratica, per te**: una policy di caricamento o di scaricamento solo su una cartella fatta apposta, mai sulla
 cartella `ELA` intera né su Documents; una policy di login solo con la voce e il sito che servono, e pochi usi; mai una
-policy «come te» su GitHub. **L'interruzione di uno scaricamento non ha un passo**: nessun sito dichiarato tiene uno
-scaricamento oltre i 30 secondi del tool — `httpbin.org` rifiuta ogni durata sopra i 10 —, e la provano i test della
-porta, `test_a_download_that_is_cut_short_is_cancelled_and_nothing_of_it_stays`,
+policy «come te» su GitHub. **L'interruzione di uno scaricamento per il tempo del tool non ha un passo**: nessun sito
+dichiarato tiene uno scaricamento oltre i 30 secondi del tool — `httpbin.org` rifiuta ogni durata sopra i 10 —, e la
+provano i test della porta, `test_a_download_that_is_cut_short_is_cancelled_and_nothing_of_it_stays`,
 `test_a_download_the_time_of_its_step_cuts_leaves_nothing_in_the_folder` e
-`test_what_is_announced_while_the_door_closes_is_cancelled_and_taken_away`, non la mano.
+`test_what_is_announced_while_the_door_closes_is_cancelled_and_taken_away`, non la mano. **Il «ferma» mentre il file
+arriva ha un passo, il 14** (M13.9d): `httpbin.org` manda un file in nove secondi, e lo script ferma il task mentre
+arriva.
 
 **Che cosa serve**: `ELA_FS_ROOT` e `ELA_FS_SCOPE` come nella sezione 15, con lo scope `ELA`; in `ELA_BROWSER_SITES`
 `httpbin.org`, `testpages.eviltester.com` e `news.ycombinator.com`; il profilo del browser dichiarato e libero; **nessuna
 policy viva** delle cinque; il tuo account di `news.ycombinator.com` con la sua voce nel vault, e **l'id della voce**, che
 leggi nell'app di Bitwarden; ed ELA **riavviata dal branch**. **Nessuna chiamata al modello**. **Lo script non lancia mai
 `bw`**, non tocca il `.env`, il database né `ela serve`, e dentro la radice scrive solo in `ELA/prova-m13.15/`. **Le policy le crei
-tu**, al «crei la policy?»; ognuna ha un tetto agli usi uguale agli usi che la prova pianifica, più uno — il login 2 —, e
-dove un passo aspetta un rifiuto prima della spesa lo script guarda che lo step sia coperto e che gli usi non si muovano.
+tu**, al «crei la policy?»; ognuna ha un tetto agli usi uguale agli usi che la prova pianifica, più uno — il login 2, e
+3 quella del passo 3, che il passo 14 usa di nuovo —, e dove un passo aspetta un rifiuto prima della spesa lo script
+guarda che lo step sia coperto e che gli usi non si muovano. **Ogni `ela task run` ha un limite di 120 secondi**: una
+guardia, non una misura. Al limite lo script chiude il comando, il passo è **FALLITO** con la sua ragione, `ela task show`
+del task va nel file, e la prova si ferma.
 
 Lo script stampa **PASSATO**, **FALLITO**, **SALTATO** o **FERMATO** per ogni passo, e scrive tutto in
 `~/Downloads/prova-m13.15-<data>.txt`, **senza il percorso intero di un file, senza il nome utente e senza l'id della
@@ -8362,6 +8367,10 @@ voce**: quelli stanno sullo schermo. Dei tipi della sezione 32 usa `comando`, `a
 - **`coperta`**: lo step del task è stato deciso **«covered by policy …»** da quella policy — lo dice l'evento della sua
   decisione nell'audit —, anche quando poi fallisce prima della spesa: il rifiuto è venuto sulla strada della policy, e
   non su quella di una domanda.
+- **`ferma`**: lo script lancia `ela task run` in sfondo; quando lo step è RUNNING — lo dice l'API — e il file dello
+  scaricamento è comparso nella cartella, manda lui `ela task cancel`. Lo step deve finire entro il tempo del tool più il
+  limite di una chiusura, **35 secondi dal «ferma»**, con `browser.stopped`. Se lo scaricamento finisce prima del
+  «ferma», o il sito non risponde, il passo è **SALTATO** con la sua ragione.
 
 **Se la prova si ferma a metà**, lo script revoca prima di uscire le policy che ha creato e sono ancora vive, e toglie il
 piano temporaneo.
@@ -8436,7 +8445,7 @@ tuo profilo parte senza domanda; `giu/` tiene i due file e nient'altro.
 
 <!-- prova: 3.crea -->
 ```
-uv run ela policy create browser.download_as_you --scope ELA/prova-m13.15/giu --site httpbin.org --days 1 --uses 2
+uv run ela policy create browser.download_as_you --scope ELA/prova-m13.15/giu --site httpbin.org --days 1 --uses 3
 ```
 
 <!-- prova: 3.comando -->
@@ -8459,7 +8468,7 @@ ELA/prova-m13.15/giu/ solo come-te.bin scaricato.bin
 
 <!-- prova: 3.policy -->
 ```
-<id della policy 3> LIVE usi 1 di 2 azioni 1
+<id della policy 3> LIVE usi 1 di 3 azioni 1
 ```
 
 ### 4. Uno scaricamento da un sito fuori dalla policy
@@ -8783,11 +8792,40 @@ reason fail: EXECUTING -> FAILED (vault.locked:
 Nella vista delle policy della console, le policy vive della prova dicono HIGH, che cosa fanno senza chiederti, gli usi e le ultime azioni; accanto a quelle dei file le cartelle intere e i siti; accanto a quella del login la tua voce con il suo nome e il nome utente mascherato, e mai l'id. È così?
 ```
 
-### 14. Dopo
+### 14. Il «ferma» mentre il file arriva
+
+Uno scaricamento come te da `httpbin.org` di un file che arriva in nove secondi, sotto la policy del passo 3 (M13.9d).
+Lo script lancia `ela task run` in sfondo, aspetta che lo step sia RUNNING e che il file dello scaricamento compaia in
+`giu/`, e manda lui il «ferma». Lo step finisce con `browser.stopped` entro 35 secondi dal «ferma», e in `giu/` non resta
+niente di quello scaricamento. Se lo scaricamento finisce prima del «ferma», o il sito non risponde, il passo è SALTATO.
+
+<!-- prova: 14.comando -->
+```
+uv run ela task create "Scarica come me un file che arriva piano, e fermalo mentre arriva." --json
+uv run ela task plan <id> --file docs/examples/policy-download-as-you-ferma.json
+```
+
+<!-- prova: 14.ferma -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 14.file -->
+```
+ELA/prova-m13.15/giu/fermato.bin assente
+ELA/prova-m13.15/giu/ solo come-te.bin scaricato.bin
+```
+
+<!-- prova: 14.policy -->
+```
+<id della policy 3> LIVE usi 2 di 3 azioni 2
+```
+
+### 15. Dopo
 
 La revoca delle policy della prova: nessuna viva, e la revoca di una di queste non dice niente di una sessione.
 
-<!-- prova: 14.comando -->
+<!-- prova: 15.comando -->
 ```
 uv run ela policy revoke <id della policy 2>
 uv run ela policy revoke <id della policy 3>
@@ -8796,12 +8834,12 @@ uv run ela policy revoke <id della policy 6>
 uv run ela policy revoke <id della policy 9>
 ```
 
-<!-- prova: 14.assente -->
+<!-- prova: 15.assente -->
 ```
 goes on until it ends
 ```
 
-<!-- prova: 14.nessuna -->
+<!-- prova: 15.nessuna -->
 ```
 nessuna policy viva
 ```
