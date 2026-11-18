@@ -356,6 +356,33 @@ def test_the_run_of_the_stop_has_one_guard_from_its_launch_and_is_closed_with_it
     assert report.failures == 1 and f"non è tornato in {guard:g} s" in str(stopped.value)
 
 
+@pytest.mark.parametrize(("answer", "passed"), [("s", True), ("n", False)])
+def test_whether_the_profile_is_as_it_was_decides_what_step_3_proves(
+    tmp_path: Path, answer: str, passed: bool
+) -> None:
+    """M13.13c, decision 118: before step 3 nothing is cleaned by hand. Yes, and the step is the
+    proof by hand of criterion 2; no, and the script says it FALLITO, with why."""
+    module = script()
+    report = module.Report(io.StringIO())
+    asked: list[str] = []
+
+    def ask(question: str) -> str:
+        asked.append(question)
+        return answer
+
+    proof = module.Proof(None, report, ask, root=tmp_path)
+    block = SimpleNamespace(lines=("Il profilo è com'era?",), kind="intatto")
+
+    module.a_block(3, block, module.guided.Turn(), proof, lambda _: "")
+
+    written = "\n".join(report.lines)
+    assert asked == ["[3] Il profilo è com'era? (s/n) "]
+    if passed:
+        assert report.failures == 0 and module.UNTOUCHED in written
+    else:
+        assert report.failures == 1 and module.TOUCHED in written
+
+
 def test_a_stop_is_judged_by_its_code_and_by_the_time_from_the_stop() -> None:
     """Decision 94: ``browser.stopped`` within 35 s of the stop passes; another code, or later,
     fails; a step that ended before the stop is SALTATO when it finished or the site did not

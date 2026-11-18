@@ -8443,6 +8443,17 @@ ELA/prova-m13.15/giu/scaricato.bin 1024 600
 Un consenso non si eredita: la policy del passo 2 non copre `browser.download_as_you`. Una sua, e lo scaricamento con il
 tuo profilo parte senza domanda; `giu/` tiene i due file e nient'altro.
 
+**Prima di questo passo non si pulisce niente a mano** (M13.13c, decisione 118). Il profilo del browser di ELA è, con ogni
+probabilità, già nello stato che faceva cadere il browser — scaricamenti completi nella sua storia, quelli delle sezioni 30
+e 33 —, e questo passo è **la prova a mano che torna a funzionare**, il criterio 2 di M13.13c e di
+[ADR 0073](adr/0073-the-profile-forgets-its-downloads.md). Lo script te lo chiede: se l'hai pulito, lo dice FALLITO, perché
+la prova non può più essere quella.
+
+<!-- prova: 3.intatto -->
+```
+Dal 2026-11-17 non hai pulito a mano il profilo del browser di ELA: né la lista degli scaricamenti, né la cronologia, né la sua cartella. È così?
+```
+
 <!-- prova: 3.crea -->
 ```
 uv run ela policy create browser.download_as_you --scope ELA/prova-m13.15/giu --site httpbin.org --days 1 --uses 3

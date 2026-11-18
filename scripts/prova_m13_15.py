@@ -79,6 +79,7 @@ KINDS: Final = (
     "ambigua",
     "coperta",
     "ferma",
+    "intatto",
 )
 LOOKS: Final[Mapping[str, str]] = {
     "occhio": "una domanda all'occhio di Tommaso, su ciò che ha davanti",
@@ -130,6 +131,16 @@ STOP_SECONDS: Final = 35
 """From the stop of the task to the end of its step, at most (decision 94): the tool's time, 30
 s, and the limit of a closing, ``BROWSER_CLOSE_GRACE_SECONDS`` (ADR 0072 §1). Read on the clock of
 the script, which waits for the run to return."""
+UNTOUCHED: Final = (
+    "il profilo è com'era: il passo 3 è la prova a mano del criterio 2 di M13.13c (ADR 0073)"
+)
+TOUCHED: Final = (
+    "il profilo è stato pulito a mano: il passo 3 non prova il criterio 2 di M13.13c, e ADR 0073 "
+    "non si accetta con questa prova"
+)
+"""What ``intatto`` says (M13.13c, decision 118): the real profile is, with every likelihood, in the
+state that makes the browser fall, and step 3 is the proof by hand that it works again — unless it
+was cleaned by hand before."""
 STOPPED: Final = "browser.stopped"
 UNREACHABLE: Final = "browser.unreachable"
 STOP_REASON: Final = "la prova a mano di M13.9d: il «ferma» mentre il file arriva"
@@ -210,6 +221,7 @@ READERS: Final[Mapping[str, Callable[[str], object]]] = {
     "ambigua": m14.the_words(AMBIGUOUS),
     "coperta": lambda line: _a_covering_line(line),
     "ferma": a_run_line,
+    "intatto": m14.a_said,
 }
 
 
@@ -444,6 +456,16 @@ def a_hand(number: int, block: base.Block, proof: Proof) -> None:
     proof.ask(f"[{number}] Premi Invio quando hai fatto. ")
 
 
+def untouched(number: int, block: base.Block, proof: Proof) -> None:
+    """``intatto`` (M13.13c, decision 118): whether the profile is as it was. Yes, and the step is
+    the proof by hand of criterion 2; no, and the script says the proof cannot be that."""
+    question = " ".join(block.lines)
+    if base.yes_or_no(proof.ask, f"[{number}] {question} (s/n) "):
+        proof.report.passed(number, UNTOUCHED)
+    else:
+        proof.report.failure(number, TOUCHED)
+
+
 def an_entry(number: int, proof: Proof, secret: Callable[[str], str]) -> None:
     """``voce``: the id, asked without echo, kept in memory; the file says only that it was
     given."""
@@ -656,6 +678,8 @@ def a_block(
         covered(number, block, turn, proof)
     elif kind == "ferma":
         stopped_while_arriving(number, block, turn, proof)
+    elif kind == "intatto":
+        untouched(number, block, proof)
     else:
         m14.a_block(number, block, turn, proof)  # type: ignore[arg-type]
 
