@@ -1248,6 +1248,7 @@ async def test_from_ela_s_stop_on_not_even_the_hop_of_a_redirect_leaves(
 
 PAUSED = r"""
 import asyncio, platform, sys
+from ela.composition.root import BROWSER_CLOSE_GRACE_SECONDS
 from ela.infrastructure.machine import PlaywrightBrowser
 from ela.infrastructure.machine import browser as adapter
 from ela.testing.fakes import FakeStop
@@ -1265,7 +1266,7 @@ async def main() -> None:
     adapter._Gate._told = deaf
     browser = PlaywrightBrowser(
         asyncio.Event(), environment={}, kept=asyncio.Event().wait, system=platform.system(),
-        closing=CLOSING,
+        closing=BROWSER_CLOSE_GRACE_SECONDS,
     )
     opened = await browser.open(inside + "/", lambda url: True, FakeStop())
     print(" ".join(str(pid) for pid in browser._driver_pids()), flush=True)

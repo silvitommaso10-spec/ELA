@@ -65,6 +65,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import contextvars
 import functools
 import json
 import logging
@@ -76,7 +77,7 @@ import weakref
 from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Final, Literal, TypeVar
+from typing import Any, Concatenate, Final, Literal, TypeVar
 from uuid import uuid4
 
 import playwright
@@ -219,6 +220,72 @@ def _nobody_is_told_of_a_kill(names: tuple[str, ...]) -> None:
 
 
 @dataclass
+class _Run:
+    """What one member of the port has asked of the drivers (M13.9d, ADR 0072): the processes of
+    the drivers it started or used — what the guard kills when that member, cancelled, has not
+    ended within the limit."""
+
+    drivers: list[asyncio.subprocess.Process] = field(default_factory=list)
+
+
+_RUN: contextvars.ContextVar[_Run | None] = contextvars.ContextVar("ela_browser_run", default=None)
+"""The member of the port the code running now is part of: set by the guard for the task it runs
+the member in, and inherited by what that task starts."""
+
+
+def _used(process: asyncio.subprocess.Process | None) -> None:
+    """The driver ``process`` is used by the member running now: if that member, cancelled, has
+    not ended within the limit, the guard kills it."""
+    run = _RUN.get()
+    if run is not None and process is not None and process not in run.drivers:
+        run.drivers.append(process)
+
+
+def _outside_any_run(work: Coroutine[Any, Any, None]) -> asyncio.Task[None]:
+    """A task that is part of no member of the port: what lasts beyond the member that starts it
+    — the task ELA's stop wakes, the deadline of a page handed to the verifier."""
+    token = _RUN.set(None)
+    try:
+        return asyncio.create_task(work)
+    finally:
+        _RUN.reset(token)
+
+
+def _guarded[B: PlaywrightBrowser, **P, T](
+    member: Callable[Concatenate[B, P], Coroutine[Any, Any, T]],
+) -> Callable[Concatenate[B, P], Coroutine[Any, Any, T]]:
+    """**The guard** (M13.9d, ADR 0072): ``member`` runs in a task of its own, and a cancellation
+    of whoever waits for it has a limit (:meth:`PlaywrightBrowser._within_the_limit`). A member
+    called from inside another runs as it is: the outer one holds the guard. The mark it leaves,
+    :data:`GUARDED`, is what the rule of the architecture reads."""
+
+    @functools.wraps(member)
+    async def guarded(self: B, /, *args: P.args, **kwargs: P.kwargs) -> T:
+        if _RUN.get() is not None:
+            return await member(self, *args, **kwargs)
+        return await self._within_the_limit(member(self, *args, **kwargs))
+
+    setattr(guarded, GUARDED, True)
+    return guarded
+
+
+def _collected(task: asyncio.Future[Any]) -> None:
+    """What a task ELA stopped waiting for ended with, retrieved: nobody is told of it later."""
+    if not task.cancelled():
+        task.exception()
+
+
+async def _whichever(*waits: Awaitable[Any]) -> None:
+    """Wait for the first of ``waits`` to end, and stop waiting for the others."""
+    pending = [asyncio.ensure_future(one) for one in waits]
+    try:
+        await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        for one in pending:
+            one.cancel()
+
+
+@dataclass
 class _Open:
     """One page, and everything that runs for it: closed together."""
 
@@ -235,6 +302,11 @@ class _Open:
     asked by the gate about a request and by every use of the page about where the page is."""
     door: _Door
     """The door of the downloads of the page: closed, and telling what knocks (M13.13)."""
+    driver: asyncio.subprocess.Process
+    """The process of the driver of the page: what the limit of a closing kills (M13.9d)."""
+    ended: asyncio.Event
+    """Set when the context of the page has closed — ELA closed it, or **the browser ended by
+    itself** (M13.9d, decision 81)."""
     documents: list[int | None] = field(default_factory=list)
     """The status of every document the main frame asked for, in the order they were asked: the
     last is the page's own, and ``None`` for one that never came (M13.9, decision 106)."""
@@ -298,6 +370,13 @@ class PlaywrightBrowser:
         self._drivers: weakref.WeakSet[Any] = weakref.WeakSet()
         # The question the kill asks the kernel of what it killed — «is it still there?».
         self._known: Callable[[int], bool] = _alive
+        self._limits: set[asyncio.Task[None]] = set()
+        """The waits that give a closing, or a cancelled member, its limit (M13.9d): apart from
+        :attr:`_closing`, which holds what closes something — a close of the profile waits for
+        that, and a wait for a limit is not a closing."""
+        self._doomed: dict[int, asyncio.Future[None]] = {}
+        """The drivers a kill of this adapter is ending now, by pid: a second kill waits for the
+        first, and never kills or names them twice."""
 
     def _launch(self) -> dict[str, Any]:
         return {
@@ -315,7 +394,7 @@ class PlaywrightBrowser:
     def _watch(self) -> None:
         """Close every page the moment the stop signal is raised: once per browser adapter."""
         if self._watching is None or self._watching.done():
-            self._watching = asyncio.create_task(self._close_all_on_stop())
+            self._watching = _outside_any_run(self._close_all_on_stop())
 
     async def _close_all_on_stop(self) -> None:
         """Close every page once the stop is raised, and **do not end while anything of this
@@ -323,14 +402,20 @@ class PlaywrightBrowser:
         nobody waits for any more, because their caller was cancelled; and what an opening that
         was in flight when the stop was raised will close when it gets to look at the stop — it
         puts nothing in the table and no closing in the set until then, so the stop waits for it.
-        No opening begins after the stop, so this ends."""
+        No opening begins after the stop, so this ends.
+
+        **And the waits that give a closing its limit** (M13.9d): each ends within its limit, the
+        kill and the limit again. Waited for one at a time and read again after each, so that a
+        closing the limit has left — out of :attr:`_closing` by then — is not waited for."""
         await self._stopping.wait()
-        while self._pages or self._closing or self._opening:
+        while self._pages or self._closing or self._opening or self._limits:
             for page in list(self._pages):
                 await self.close(page)
-            if self._closing:
-                await asyncio.wait(self._closing)
-            await self._settled.wait()
+            pending = {*self._closing, *self._limits}
+            if pending:
+                await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+            else:
+                await self._settled.wait()
 
     def _carried(self, work: Coroutine[Any, Any, None]) -> asyncio.Task[None]:
         """Run a closing in a task of the adapter's own, held until it ends (M13.4b): whoever
@@ -341,25 +426,124 @@ class PlaywrightBrowser:
         task.add_done_callback(self._closing.discard)
         return task
 
-    async def _driver(self) -> Playwright:
-        """Playwright's driver, started in a task of its own (M13.4b). An opening cancelled while
-        the driver starts has nothing in its hands to stop — the process is nobody's yet —, so the
-        start is left to end, and what it started is stopped then."""
+    def _closed(
+        self,
+        work: Coroutine[Any, Any, None],
+        drivers: Callable[[], Sequence[asyncio.subprocess.Process]],
+        swept: Callable[[], None] | None = None,
+    ) -> asyncio.Task[None]:
+        """**A closing with its limit** (M13.9d, ADR 0072): ``work`` carried (:meth:`_carried`),
+        and the wait that gives it its limit **from its start** — a closing nobody cancels has one
+        too. Past the limit ``drivers`` are killed with what they started, and ``swept`` takes away
+        from the disk what the closing would have. Returns that wait: it ends when the closing
+        does, or when the limit has done its part."""
+        return self._limited_by(self._carried(work), drivers, swept)
+
+    def _limited_by(
+        self,
+        task: asyncio.Task[Any],
+        drivers: Callable[[], Sequence[asyncio.subprocess.Process]],
+        swept: Callable[[], None] | None = None,
+    ) -> asyncio.Task[None]:
+        waiting = _outside_any_run(self._limited(task, drivers, swept))
+        self._limits.add(waiting)
+        waiting.add_done_callback(self._limits.discard)
+        return waiting
+
+    async def _within_the_limit(self, work: Coroutine[Any, Any, _T]) -> _T:
+        """The guard's own part (M13.9d, ADR 0072): ``work`` in a task of its own, the drivers it
+        starts or uses written as it goes (:func:`_used`). **When whoever waits for it is
+        cancelled** — the tool's time, the stop of a task, a cancelled run —, the task is cancelled
+        and given its limit (:meth:`_limited`), and the cancellation goes on as what it is: turned
+        into anything else, the tool's deadline would not fire. A task already done when the
+        cancellation came answers with what it did."""
+        run = _Run()
+        token = _RUN.set(run)
+        try:
+            task = asyncio.ensure_future(work)
+        finally:
+            _RUN.reset(token)
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            if task.done() and not task.cancelled():
+                return task.result()
+            task.cancel()
+            await asyncio.shield(self._limited_by(task, lambda: run.drivers))
+            raise
+
+    async def _limited(
+        self,
+        task: asyncio.Future[Any],
+        drivers: Callable[[], Sequence[asyncio.subprocess.Process]],
+        swept: Callable[[], None] | None,
+    ) -> None:
+        """**The limit** (M13.9d, ADR 0072). ``task`` is waited for at most the limit; past it:
+
+        1. ``drivers`` are killed with whatever they started, by parentage (:meth:`_kill_these`) —
+           and with the driver dead, every call of Playwright's in flight fails;
+        2. ``swept``, disk work, once the kernel knows none of them;
+        3. ``task`` is waited for at most the limit again — and past that it is **left**:
+           cancelled, out of :attr:`_closing`, and named beside what was killed (:data:`LEFT`).
+
+        What was killed, and what was left, is told — once."""
+        await asyncio.wait({task}, timeout=self._limit)
+        if not task.done() and self._stopping.is_set():
+            # ELA is stopping: its own close kills what is left, past its grace, and says it as its
+            # own (M13.4e, :meth:`settle`). The limit of a closing does not race it.
+            await asyncio.wait({task})
+        if task.done():
+            _collected(task)
+            return
+        killed = await self._kill_these(drivers())
+        if swept is not None:
+            swept()
+        await asyncio.wait({task}, timeout=self._limit)
+        if task.done():
+            _collected(task)
+        else:
+            task.cancel()
+            task.add_done_callback(_collected)
+            if isinstance(task, asyncio.Task):
+                self._closing.discard(task)
+            killed = (*killed, LEFT)
+        if killed:
+            self._say_killed(killed)
+
+    def _say_killed(self, names: tuple[str, ...]) -> None:
+        """Tell who the composition said what a closing that passed its limit killed. **A
+        failure of the telling is not the closing's**: said here by its type, and the closing
+        ends all the same."""
+        try:
+            self._told(names)
+        except Exception as error:  # noqa: BLE001 — whatever it raised, the kill is done
+            _LOG.error(
+                "a kill of a closing of the browser could not be told (%s)", type(error).__name__
+            )
+
+    async def _driver(self) -> tuple[Playwright, asyncio.subprocess.Process]:
+        """Playwright's driver, started in a task of its own (M13.4b), and its process — the
+        member running now uses it (:func:`_used`). An opening cancelled while the driver starts
+        has nothing in its hands to stop — the process is nobody's yet —, so the start is left to
+        end, and what it started is stopped then: **a closing with its limit** (M13.9d), which
+        kills the process the start had begun, if it is there."""
         manager = async_playwright()
         self._drivers.add(manager)
         starting = asyncio.create_task(manager.start())
         try:
             playwright = await asyncio.shield(starting)
         except asyncio.CancelledError:
-            self._carried(_stopped_once_started(starting))
+            self._closed(_stopped_once_started(starting), lambda: _running(manager))
             raise
-        if _process_of(manager) is None:
+        process = _process_of(manager)
+        if process is None:
             # Where Playwright keeps the process of its driver is the one thing of its insides,
             # beside a message, this adapter reads (M13.4e): without it ELA's close could not kill
             # what was started here — so nothing is started.
             await _quietly(playwright.stop)
             raise BrowserFailed("the process of the browser's driver cannot be read")
-        return playwright
+        _used(process)
+        return playwright, process
 
     def _driver_pids(self) -> list[int]:
         """The drivers this adapter started that have not ended, by pid."""
@@ -397,9 +581,32 @@ class PlaywrightBrowser:
 
     async def _kill(self) -> tuple[str, ...]:
         """``SIGKILL`` to every driver this adapter started and to whatever each of them started,
-        and their names. Returns when the kernel knows none of them: a driver is ELA's child and
-        its end is an event; a browser is its driver's, and is asked of the kernel."""
-        drivers = self._running_drivers()
+        and their names: :meth:`_kill_these` of every driver that runs."""
+        return await self._kill_these(self._running_drivers())
+
+    async def _kill_these(self, drivers: Sequence[asyncio.subprocess.Process]) -> tuple[str, ...]:
+        """``SIGKILL`` to ``drivers`` and to whatever each of them started, by parentage, and their
+        names (M13.4e; since M13.9d of the drivers it is given, not only of all). Returns when the
+        kernel knows none of them. **A driver another kill of this adapter is ending is waited
+        for, and neither killed nor named again**: two limits that expire together say one kill."""
+        theirs = [self._doomed[one.pid] for one in drivers if one.pid in self._doomed]
+        mine = [one for one in drivers if one.returncode is None and one.pid not in self._doomed]
+        ending: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+        for one in mine:
+            self._doomed[one.pid] = ending
+        try:
+            names = await self._killing(mine) if mine else ()
+        finally:
+            for one in mine:
+                self._doomed.pop(one.pid, None)
+            ending.set_result(None)
+        if theirs:
+            await asyncio.wait(theirs)
+        return names
+
+    async def _killing(self, drivers: Sequence[asyncio.subprocess.Process]) -> tuple[str, ...]:
+        """The kill itself: a driver is ELA's child and its end is an event; a browser is its
+        driver's, and is asked of the kernel."""
         table = await _processes()
         doomed: list[tuple[int, str]] = []
         for driver in drivers:
@@ -449,6 +656,7 @@ class PlaywrightBrowser:
             for found in folder.glob("chrome-headless-shell-*/chrome-headless-shell")
         )
 
+    @_guarded
     async def open(self, address: str, allowed: Callable[[str], bool], stop: TaskStop) -> Opened:
         self._refuse_if_stopping()
         self._watch()
@@ -464,7 +672,11 @@ class PlaywrightBrowser:
                 self._settled.set()
 
     async def _made(
-        self, playwright: Playwright, token: str, allowed: Callable[[str], bool]
+        self,
+        playwright: Playwright,
+        driver: asyncio.subprocess.Process,
+        token: str,
+        allowed: Callable[[str], bool],
     ) -> _Open:
         """A page of a browser just started, in the table under ``token``, **and nothing asked of
         any site yet**: its gate on and proved, the door of its downloads closed and telling, the
@@ -478,11 +690,17 @@ class PlaywrightBrowser:
             raise
         context.set_default_timeout(0)
         context.set_default_navigation_timeout(0)
+        # The end of the browser, heard (M13.9d, decision 81): its context closes when the browser
+        # dies, on the two browsers — measured, a few milliseconds after a SIGKILL, with a call of
+        # the door still without an answer. And when ELA closes it, which is the same to whoever
+        # waits.
+        ended = asyncio.Event()
+        context.on("close", lambda _closed: ended.set())
         refused: list[str] = []
         page = await self._paged(context)
         try:
             gate = await self._gated(context, page, allowed, refused)
-            door = await self._doored(context, gate)
+            door = await self._doored(context, gate, ended)
         except BrowserError:
             raise
         except Exception as error:
@@ -497,16 +715,28 @@ class PlaywrightBrowser:
         documents: list[int | None] = []
         page.on("request", lambda request: _asked(documents, request, page))
         page.on("response", lambda response: _answered(documents, response, page))
-        made = _Open(playwright, browser, context, page, refused, gate, allowed, door, documents)
+        made = _Open(
+            playwright,
+            browser,
+            context,
+            page,
+            refused,
+            gate,
+            allowed,
+            door,
+            driver,
+            ended,
+            documents,
+        )
         self._pages[token] = made
         await self._navigations_of(made)
         return made
 
     async def _opened(self, address: str, allowed: Callable[[str], bool], stop: TaskStop) -> Opened:
-        playwright = await self._driver()
+        playwright, driver = await self._driver()
         token = uuid4().hex
         try:
-            made = await self._made(playwright, token, allowed)
+            made = await self._made(playwright, driver, token, allowed)
             page, gate, refused = made.page, made.gate, made.refused
             # The last instant before the site sees anything (M6.3c, ADR 0054 §3): a stopped task
             # leaves here with ToolStopped, and the page and its browser are closed below. **No
@@ -541,10 +771,10 @@ class PlaywrightBrowser:
         except asyncio.CancelledError:
             # The tool's deadline, or a cancelled run: close what was started, and let the
             # cancellation be what it is — turned into anything else, the deadline would not fire.
-            await asyncio.shield(self._carried(self._dropped(token, playwright)))
+            await asyncio.shield(self._closed(self._dropped(token, playwright), lambda: [driver]))
             raise
         except Exception as error:
-            await asyncio.shield(self._carried(self._dropped(token, playwright)))
+            await asyncio.shield(self._closed(self._dropped(token, playwright), lambda: [driver]))
             raise self._translated(error) from None
 
     async def _begun(self, playwright: Playwright) -> tuple[Chromium | None, BrowserContext]:
@@ -583,14 +813,14 @@ class PlaywrightBrowser:
         await gate.on()
         return gate
 
-    async def _doored(self, context: BrowserContext, gate: _Gate) -> _Door:
+    async def _doored(self, context: BrowserContext, gate: _Gate, ended: asyncio.Event) -> _Door:
         """The door of the downloads of the page, **closed and telling** (M13.13, ADR 0066): a
         session of the browser's own beside the gate's, as the door was measured, told which
         context the page is in by the browser itself."""
         session = await self._attached(context)
         targets = (await session.send("Target.getTargets"))["targetInfos"]
         (inside,) = [one["browserContextId"] for one in targets if one["targetId"] == gate.main]
-        door = _Door(session, str(inside))
+        door = _Door(session, str(inside), ended)
         await door.shut()
         return door
 
@@ -628,6 +858,7 @@ class PlaywrightBrowser:
         found = self._pages.get(page)
         if found is None:
             raise PageGone("no page of ELA's has this identifier any more")
+        _used(found.driver)
         return found
 
     async def _within(self, opened: _Open, *, made: bool = False) -> tuple[str, str | None]:
@@ -710,9 +941,11 @@ class PlaywrightBrowser:
         await self._within(opened, made=True)
         return done
 
+    @_guarded
     async def count(self, page: str, selector: str) -> int:
         return await self._on(page, lambda opened: opened.page.locator(selector).count())
 
+    @_guarded
     async def appeared(self, page: str, selector: str) -> int:
         """The engine's own wait, **strict**, on the selector itself (M13.10, measures (a) and (g)
         of its SPEC): it ends when the selector finds one visible element, and raises at once when
@@ -733,6 +966,7 @@ class PlaywrightBrowser:
 
         return await self._on(page, wait)
 
+    @_guarded
     async def field(self, page: str, selector: str) -> Field:
         async def read(opened: _Open) -> Field:
             element = opened.page.locator(selector)
@@ -742,9 +976,11 @@ class PlaywrightBrowser:
 
         return await self._on(page, read)
 
+    @_guarded
     async def fill(self, page: str, selector: str, value: str) -> None:
         await self._on(page, lambda opened: opened.page.locator(selector).fill(value))
 
+    @_guarded
     async def click(self, page: str, selector: str) -> None:
         """The click, and **which navigation it started**: the one the main frame asked for
         before the click returned — measured, 60 rounds of 60 —, or none (M13.9b)."""
@@ -756,19 +992,23 @@ class PlaywrightBrowser:
 
         await self._on(page, clicked)
 
+    @_guarded
     async def text(self, page: str, selector: str | None) -> str:
         return await self._on(
             page, lambda opened: opened.page.locator(selector or "body").inner_text()
         )
 
+    @_guarded
     async def title(self, page: str) -> str:
         return await self._on(page, lambda opened: opened.page.title())
 
+    @_guarded
     async def left(self, page: str) -> str | None:
         opened = self._page(page)
         await self._within(opened)
         return opened.refused[-1] if opened.refused else None
 
+    @_guarded
     async def unanswered(self, page: str) -> str | None:
         """The address the site did not answer at, when the page is the browser's own (M13.9b):
         the boundary asked before, and nothing of the page read."""
@@ -784,6 +1024,7 @@ class PlaywrightBrowser:
         opened = self._pages.get(page)
         return None if opened is None else opened.door.refused
 
+    @_guarded
     async def give(self, page: str, selector: str, file: GivenFile) -> None:
         """The bytes and the name, to an ``input`` of type ``file`` and to nothing else — asked
         of the page, because the engine would give a file to a text field without a word. **From
@@ -801,6 +1042,7 @@ class PlaywrightBrowser:
 
         await self._on(page, given)
 
+    @_guarded
     async def download(self, page: str, selector: str, stop: TaskStop, into: str) -> Downloaded:
         """A use of the page: the boundary asked before, and again once the download ended —
         and **what was downloaded on a page that ended elsewhere meanwhile is thrown away**, as
@@ -828,6 +1070,7 @@ class PlaywrightBrowser:
             raise DownloadNotStarted("the click started no download", left=got.left)
         return got
 
+    @_guarded
     async def downloaded_from(
         self, address: str, allowed: Callable[[str], bool], stop: TaskStop, into: str
     ) -> Downloaded:
@@ -847,10 +1090,10 @@ class PlaywrightBrowser:
     ) -> Downloaded:
         """A page of its own, the navigation to ``address`` made with the door open, and the
         page closed before this returns — whatever it returns or raises."""
-        playwright = await self._driver()
+        playwright, driver = await self._driver()
         token = uuid4().hex
         try:
-            made = await self._made(playwright, token, allowed)
+            made = await self._made(playwright, driver, token, allowed)
 
             async def navigate() -> bool:
                 try:
@@ -868,13 +1111,15 @@ class PlaywrightBrowser:
             got = await self._downloaded(made, navigate, stop, into)
             if isinstance(got, _NotStarted):
                 raise DownloadNotStarted("the address answered a page, not a file", left=got.left)
-            await asyncio.shield(self._carried(self._dropped(token, playwright)))
+            # A download that succeeded stays so, whatever its closing meets: within the limit,
+            # or past it with the driver killed — and said (M13.9d, decision 93).
+            await asyncio.shield(self._closed(self._dropped(token, playwright), lambda: [driver]))
             return got
         except asyncio.CancelledError:
-            await asyncio.shield(self._carried(self._dropped(token, playwright)))
+            await asyncio.shield(self._closed(self._dropped(token, playwright), lambda: [driver]))
             raise
         except Exception as error:
-            await asyncio.shield(self._carried(self._dropped(token, playwright)))
+            await asyncio.shield(self._closed(self._dropped(token, playwright), lambda: [driver]))
             raise self._translated(error) from None
 
     async def _downloaded(
@@ -911,21 +1156,30 @@ class PlaywrightBrowser:
             self._refuse_if_stopping()
             if not await gesture():
                 return _NotStarted(None)
-            await self._first_of(door.begun, opened.committed, gate.turned_away)
+            await self._first_of(opened, door.begun, opened.committed, gate.turned_away)
             if not door.begun.is_set():
                 left = opened.refused[seen] if len(opened.refused) > seen else None
                 return _NotStarted(left)
-            state = await self._stopped_or(door.ended)
+            state = await self._stopped_or(opened, door.ended)
             if state != DOOR_ENDED:
                 raise BrowserFailed("the download was interrupted before its end")
             ended = True
             return Downloaded(door.asked)
         finally:
-            await asyncio.shield(self._carried(door.done(Path(into), kept=ended)))
+            # The door's closing has its limit (M13.9d): past it the driver of the page is killed,
+            # and what the browser had announced for the gesture is taken away from the disk all
+            # the same, by identifier (decision 91).
+            await asyncio.shield(
+                self._closed(door.done(Path(into), kept=ended), lambda: [opened.driver], door.swept)
+            )
 
-    async def _first_of(self, *events: asyncio.Event) -> None:
-        """Wait for the first of ``events`` — or for ELA's stop, said as what it is."""
-        waits = [asyncio.ensure_future(one.wait()) for one in (*events, self._stopping)]
+    async def _first_of(self, opened: _Open, *events: asyncio.Event) -> None:
+        """Wait for the first of ``events`` — or for ELA's stop, or for **the end of the browser**
+        (M13.9d, decision 81), each said as what it is: a browser that died sends no event any
+        more, and the step ends now, not at the tool's time."""
+        waits = [
+            asyncio.ensure_future(one.wait()) for one in (*events, self._stopping, opened.ended)
+        ]
         try:
             await asyncio.wait(waits, return_when=asyncio.FIRST_COMPLETED)
         finally:
@@ -933,31 +1187,41 @@ class PlaywrightBrowser:
                 one.cancel()
         if self._stopping.is_set():
             raise BrowserStopped("ELA is stopping: the browser was closed")
+        if not any(one.is_set() for one in events):
+            raise BrowserFailed(ENDED)
 
-    async def _stopped_or(self, ended: asyncio.Future[str]) -> str:
-        """How a download ended — or ELA's stop, said as what it is."""
+    async def _stopped_or(self, opened: _Open, ended: asyncio.Future[str]) -> str:
+        """How a download ended — or ELA's stop, or the end of the browser, said as what it is."""
         halted = asyncio.ensure_future(self._stopping.wait())
-        either: set[asyncio.Future[Any]] = {ended, halted}
+        gone = asyncio.ensure_future(opened.ended.wait())
+        either: set[asyncio.Future[Any]] = {ended, halted, gone}
         try:
             await asyncio.wait(either, return_when=asyncio.FIRST_COMPLETED)
         finally:
             halted.cancel()
+            gone.cancel()
         if not ended.done():
-            raise BrowserStopped("ELA is stopping: the browser was closed")
+            if self._stopping.is_set():
+                raise BrowserStopped("ELA is stopping: the browser was closed")
+            raise BrowserFailed(ENDED)
         return ended.result()
 
     async def keep(self, page: str) -> None:
         opened = self._pages.get(page)
         if opened is not None:
-            opened.kept = asyncio.create_task(self._expire(page))
+            opened.kept = _outside_any_run(self._expire(page))
 
     async def _expire(self, page: str) -> None:
         """The last defence: a page handed to the verifier and never looked at is closed."""
         await self._kept()
         opened = self._pages.get(page)
         if opened is not None and not opened.looking:
+            # This task is the deadline: the close, which runs in a task of the guard's, is not
+            # to cancel it (M13.9d).
+            opened.kept = None
             await self.close(page)
 
+    @_guarded
     async def glance(
         self, page: str, *, selector: str | None, expect: str | None, seconds: float
     ) -> Glanced:
@@ -985,6 +1249,7 @@ class PlaywrightBrowser:
             opened.kept.cancel()
             opened.kept = None
 
+    @_guarded
     async def resume(self, page: str, allowed: Callable[[str], bool]) -> Opened:
         """A held page, taken back with the boundary of the step that continues — in the gate,
         which judges every request of the browser from now on, and in every use after —, and
@@ -1006,23 +1271,27 @@ class PlaywrightBrowser:
             waited=waited,
         )
 
+    @_guarded
     async def where(self, page: str) -> str | None:
         opened = self._pages.get(page)
         if opened is None:
             return None
+        _used(opened.driver)
         try:
             address, _ = await self._place(opened)
         except BrowserError:
             return _where(opened.page)
         return address
 
+    @_guarded
     async def close(self, page: str) -> None:
         opened = self._pages.pop(page, None)
         if opened is None:
             return
         if opened.kept is not None and opened.kept is not asyncio.current_task():
             opened.kept.cancel()
-        await asyncio.shield(self._carried(_shut(opened)))
+        _used(opened.driver)
+        await asyncio.shield(self._closed(_shut(opened), lambda: [opened.driver]))
 
 
 UNJUDGED: Final = "the boundary could not be asked about a request of the page: nothing was sent"
@@ -1081,11 +1350,20 @@ class _Door:
     deny travels the door is closing, and what is announced then is still the gesture's, or beside
     it, and is taken away; what is announced after the answer is refused. **One deny for one
     closing**: a closing on its way is awaited, never told again.
+
+    **A browser that ended is told nothing** (M13.9d, ADR 0072): ``ended`` is the end of its
+    context. Playwright 1.63.0 leaves without an answer a call in flight on a session of the
+    browser when the browser dies (measured), so the door stops waiting for its deny then, and
+    sends no other; and **what it takes away it takes from the disk alone** (:meth:`swept`), which
+    the limit of a closing does too once it has killed the browser.
     """
 
-    def __init__(self, session: CDPSession, context: str) -> None:
+    def __init__(self, session: CDPSession, context: str, ended: asyncio.Event) -> None:
         self._session = session
         self._context = context
+        self._ended = ended
+        self._folder: Path | None = None
+        self._kept = False
         self._state: _DoorState = "closed"
         self._shutting: set[asyncio.Future[None]] = set()
         self._others: list[str] = []
@@ -1106,8 +1384,12 @@ class _Door:
         )
 
     def _close(self) -> None:
-        """Close the door if it is open: closing now, one deny on its way, closed at its answer."""
+        """Close the door if it is open: closing now, one deny on its way, closed at its answer —
+        and closed at once for a browser that ended, which nothing is sent to."""
         if self._state != "open":
+            return
+        if self._ended.is_set():
+            self._state = "closed"
             return
         self._state = "closing"
         shutting = asyncio.ensure_future(self._closed())
@@ -1123,6 +1405,7 @@ class _Door:
     async def open_on(self, into: str) -> None:
         """Open on ``into``, for the gesture that follows."""
         self.asked, self._others = "", []
+        self._folder, self._kept = Path(into), False
         self.begun = asyncio.Event()
         self.ended = asyncio.get_running_loop().create_future()
         await self._session.send(
@@ -1158,14 +1441,34 @@ class _Door:
     async def done(self, folder: Path, *, kept: bool) -> None:
         """The gesture is over, whatever way: the door closed — at the browser's answer —, what
         was announced beside the download cancelled and taken away, and the download itself too
-        unless it is ``kept``."""
+        unless it is ``kept``. **With a browser that ended**, the answer is not waited for and
+        nothing is cancelled: what was announced is taken from the disk (M13.9d)."""
+        self._folder, self._kept = folder, kept
         self._close()
-        if self._shutting:
-            await asyncio.wait(self._shutting)
-        gone = [*self._others, *(() if kept or not self.asked else (self.asked,))]
-        for name in gone:
-            await _quietly(functools.partial(self._cancelled, name))
-            for left in (folder / name, folder / f"{name}.crdownload"):
+        if self._shutting and not self._ended.is_set():
+            await _whichever(asyncio.wait(self._shutting), self._ended.wait())
+        if not self._ended.is_set():
+            for name in self._gone():
+                await _quietly(functools.partial(self._cancelled, name))
+        self.swept()
+
+    def _gone(self) -> list[str]:
+        """What the browser announced for the gesture that does not stay: what was announced
+        beside it, and the download itself unless it is kept."""
+        return [*self._others, *(() if self._kept or not self.asked else (self.asked,))]
+
+    def swept(self) -> None:
+        """What the browser announced for the gesture and does not stay, taken away from the
+        folder **by identifier** — the name the browser gave it, and that name while it arrives —
+        and **never by resemblance**: a file of somebody else's that ends as the browser's do
+        stays. Disk work, and nothing asked of the browser (M13.9d, decision 91): what
+        :meth:`done` ends with, and what the limit of a closing does once it has killed the
+        browser, whatever ``done`` was waiting for. What the browser had not announced is not
+        known here, and stays declared (ADR 0070 §2)."""
+        if self._folder is None:
+            return
+        for name in self._gone():
+            for left in (self._folder / name, self._folder / f"{name}.crdownload"):
                 with contextlib.suppress(OSError):
                     left.unlink()
 
@@ -1481,6 +1784,13 @@ async def _stopped_once_started(starting: asyncio.Task[Playwright]) -> None:
     except Exception:  # noqa: BLE001 — a start that failed started nothing to stop
         return
     await _quietly(playwright.stop)
+
+
+def _running(manager: object) -> list[asyncio.subprocess.Process]:
+    """The process of the driver of ``manager``, if it has one that runs: what the limit of an
+    abandoned start kills."""
+    process = _process_of(manager)
+    return [] if process is None or process.returncode is not None else [process]
 
 
 def _process_of(manager: object) -> asyncio.subprocess.Process | None:

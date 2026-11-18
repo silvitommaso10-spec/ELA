@@ -97,6 +97,7 @@ from playwright.async_api import Error as PlaywrightError
 from ela.infrastructure.machine.browser import (
     TEMPORARY_PROFILE,
     PlaywrightBrowser,
+    _guarded,
     _nobody_is_told_of_a_kill,
     _Open,
     registry_folder,
@@ -1043,6 +1044,7 @@ class AccountChrome(PlaywrightBrowser):
 
     # A page ---------------------------------------------------------------------------------
 
+    @_guarded
     async def open(self, address: str, allowed: Callable[[str], bool], stop: TaskStop) -> Opened:
         self._refuse_if_stopping()
         await self._free()
@@ -1050,6 +1052,7 @@ class AccountChrome(PlaywrightBrowser):
         # opening that looks now finds this one.
         return await super().open(address, allowed, stop)
 
+    @_guarded
     async def downloaded_from(
         self, address: str, allowed: Callable[[str], bool], stop: TaskStop, into: str
     ) -> Downloaded:
@@ -1066,6 +1069,7 @@ class AccountChrome(PlaywrightBrowser):
             raise BrowserUnsupported(self._system)
         return await self._on_a_screen()
 
+    @_guarded
     async def open_shown(
         self, address: str, allowed: Callable[[str], bool], stop: TaskStop
     ) -> Opened:
@@ -1107,6 +1111,7 @@ class AccountChrome(PlaywrightBrowser):
         asked = await opened.page.locator(ONE_TIME_CODE).count()
         return replace(glanced, second_factor=asked > 0)
 
+    @_guarded
     async def field(self, page: str, selector: str) -> Field:
         async def read(opened: _Open) -> Field:
             element = opened.page.locator(selector)
@@ -1119,6 +1124,7 @@ class AccountChrome(PlaywrightBrowser):
 
         return await self._on(page, read)
 
+    @_guarded
     async def landed(self, page: str) -> Landed:
         """Where the page is once **the navigation the last click started has ended**, committed
         or failed, and the status of the document it ended on (decision 106 of M13.9; M13.9b,
@@ -1144,6 +1150,7 @@ class AccountChrome(PlaywrightBrowser):
 
         return await self._on(page, read)
 
+    @_guarded
     async def forms(self, page: str) -> tuple[PageForm, ...]:
         async def read(opened: _Open) -> tuple[PageForm, ...]:
             found = await opened.page.evaluate(FORMS_OF)
@@ -1151,6 +1158,7 @@ class AccountChrome(PlaywrightBrowser):
 
         return await self._on(page, read)
 
+    @_guarded
     async def fill_secret(self, page: str, selector: str, value: Secret) -> None:
         """Type what ``value`` holds. **The engine's own exception does not leave**, not even as
         the context of the one that does: its message names the call with what was typed
@@ -1172,6 +1180,7 @@ class AccountChrome(PlaywrightBrowser):
             raise failed
         await self._within(opened, made=True)
 
+    @_guarded
     async def holds(self, page: str, selector: str, value: Secret) -> str:
         """What the field holds of what ``value`` holds: read from the page and compared here,
         where the secret is opened to be typed — the tool gets one of three answers, and never
@@ -1190,13 +1199,16 @@ class AccountChrome(PlaywrightBrowser):
 
         return await self._on(page, read)
 
+    @_guarded
     async def close(self, page: str) -> None:
         """Close the page — **and return only when no closing of this adapter is in flight**
         (criterion 28): on a profile, whoever asks while another is already closing the page
         would otherwise be told «closed» with the browser still on the folder."""
         await super().close(page)
+        # Read again after each end: a closing the limit has left is out of the set by then, and
+        # the wait that left it ends — so it is not waited for (M13.9d).
         while others := self._closing - {asyncio.current_task()}:
-            await asyncio.wait(others)
+            await asyncio.wait({*others, *self._limits}, return_when=asyncio.FIRST_COMPLETED)
 
     # The window -----------------------------------------------------------------------------
 

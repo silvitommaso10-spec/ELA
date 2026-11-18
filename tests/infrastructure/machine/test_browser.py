@@ -363,7 +363,7 @@ async def nothing_left_behind(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[
     assert not still, f"a test of the real browser left something on this machine: {still} {whole}"
 
 
-CLOSINGS_OF_THE_ADAPTER = frozenset({"_shut", "_dropped", "_stopped_once_started"})
+CLOSINGS_OF_THE_ADAPTER = frozenset({"_shut", "_dropped", "_stopped_once_started", "_limited"})
 """The coroutines of the adapter that hold a call of Playwright's while they close something."""
 
 
@@ -1803,6 +1803,7 @@ async def test_on_any_system_a_declared_folder_of_browsers_is_where_it_looks(
 
 HOLDER = r"""
 import asyncio, platform, signal, sys
+from ela.composition.root import BROWSER_CLOSE_GRACE_SECONDS
 from ela.infrastructure.machine import PlaywrightBrowser
 from ela.testing.fakes import FakeStop
 
@@ -1810,7 +1811,7 @@ async def main() -> None:
     signal.signal(signal.SIGINT, signal.SIG_IGN)  # uvicorn keeps serving what is in flight
     browser = PlaywrightBrowser(
         asyncio.Event(), environment={}, kept=asyncio.Event().wait, system=platform.system(),
-        closing=CLOSING,
+        closing=BROWSER_CLOSE_GRACE_SECONDS,
     )
     opened = await browser.open(sys.argv[1], lambda url: True, FakeStop())
     print("ready", flush=True)
