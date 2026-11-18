@@ -123,7 +123,10 @@ non ha risposto e che cosa può ancora succedere:
 - **una scrittura abbandonata mentre guardava, o mentre faceva la sua cartella, non scrive mai**: il lavoro guarda il segno
   dell'abbandono prima di ogni passo che ha un effetto;
 - **una scrittura abbandonata dentro `open` o `write` può ancora arrivare sul disco** dopo che lo step è fallito, e la frase
-  lo dice: «the write may still happen when the disk answers».
+  lo dice: «the write may still happen when the disk answers»;
+- **uno scaricamento abbandonato prima di posare il file** non lascia niente: quando il disco risponde, ciò che il browser
+  aveva scritto con un nome suo è tolto, come per uno scaricamento caduto (ADR 0070), e il file non prende mai il nome del
+  piano.
 
 **Al più quattro attese abbandonate alla volta**: oltre, ogni nuovo gesto sul disco è `fs.no_answer` subito, con la frase
 che dice quante attese sono ferme e che finiscono quando il disco risponde. **Un «ferma» durante un'attesa** aspetta al più

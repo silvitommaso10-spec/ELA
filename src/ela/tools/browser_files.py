@@ -103,7 +103,15 @@ from ela.tools.browser import (
     boundary,
     origin_of,
 )
-from ela.tools.disk import MAKING_THE_FOLDER, NO_ANSWER, WRITING, Disk, DiskSilent, Gone
+from ela.tools.disk import (
+    MAKING_THE_FOLDER,
+    NO_ANSWER,
+    WRITING,
+    Abandoned,
+    Disk,
+    DiskSilent,
+    Gone,
+)
 from ela.tools.fs import (
     CREATES,
     DIRECTORY_MODE,
@@ -671,6 +679,12 @@ class BrowserDownloadTool(_BrowserTool):
                 os.link(left, target)
                 os.unlink(left)
             size, digest = measured(target)
+        except Abandoned:
+            # Given up before the file took the plan's name (M13.17, ADR 0074 §7): the step has
+            # failed with ``fs.no_answer``, and when the disk answers what the browser left is taken
+            # away, as for a download that fell — nothing of it stays (ADR 0070).
+            _removed(left)
+            raise
         except FileExistsError:
             _removed(left)
             return Outcome(

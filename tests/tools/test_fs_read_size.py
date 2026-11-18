@@ -173,3 +173,32 @@ class _WithLstat:
 
     def __getattr__(self, name: str) -> Any:
         return getattr(os, name)
+
+
+async def test_a_size_the_disk_will_not_say_refuses_before_the_question(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The look at the path passed, and the ``lstat`` of the size fails — injected: the refusal is
+    ``io.error``, with the type of the error, and no question is composed on a size nobody read."""
+    (root / "ELA" / "nota.md").write_text("x", encoding="utf-8")
+    looked = fs_module.looked_for_a_read
+    after: list[bool] = []
+
+    def the_look(*args: Any, **kwargs: Any) -> Any:
+        found = looked(*args, **kwargs)
+        after.append(True)
+        return found
+
+    def refuses(path: Any, *args: Any, **kwargs: Any) -> Any:
+        if after:
+            raise PermissionError(13, "Permission denied")
+        return os.lstat(path, *args, **kwargs)
+
+    monkeypatch.setattr(fs_module, "looked_for_a_read", the_look)
+    monkeypatch.setattr(fs_module, "os", _WithLstat(refuses))
+
+    seen = await reader(root).prospect({"path": "ELA/nota.md", "purpose": "la prova"})
+
+    assert seen.target is None
+    assert seen.refusal is not None and seen.refusal.code == fs_module.IO_ERROR
+    assert "PermissionError" in seen.refusal.message
