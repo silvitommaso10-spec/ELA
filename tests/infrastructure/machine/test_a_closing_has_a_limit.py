@@ -19,7 +19,10 @@ without an answer a call in flight on a session of the browser when the browser 
 * the driver stopped when the launch is asked of it;
 * two openings of the same browser, one whose driver answers no more;
 * a download that succeeded, and whose closing meets a driver that answers no more;
-* a closing that does not end even once its driver is killed — injected.
+* a closing that does not end even once its driver is killed — injected;
+* the browser that dies before its download is announced;
+* a use of a page whose driver answers no more;
+* the announced file taken away even when the closing of the door does not end.
 
 The limit is the test's own, short (:data:`LIMIT`): the composition gives ELA's,
 ``BROWSER_CLOSE_GRACE_SECONDS``.

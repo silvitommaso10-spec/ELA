@@ -402,6 +402,18 @@ def closed(process: subprocess.Popen[str]) -> None:
     process.communicate()
 
 
+def collected(process: subprocess.Popen[str], line: str, limit: float, within: float) -> str:
+    """What a command started ``alone`` printed, waited for at most ``within`` seconds — what is
+    left of its ``limit`` —; past them the command is closed with its group, and :class:`Overdue`
+    says it with its whole limit (M13.9d)."""
+    try:
+        printed, _ = process.communicate(timeout=max(0.0, within))
+    except subprocess.TimeoutExpired:
+        closed(process)
+        raise Overdue(line, limit) from None
+    return printed or ""
+
+
 class Overdue(Exception):
     """A command of the guide did not return within the limit its script gave it (M13.9d,
     decision 84): it was closed, and what follows in the file is the reason."""
@@ -457,7 +469,10 @@ def walk(
             return
 
 
-def started(line: str) -> subprocess.Popen[str]:
+def started(line: str, *, alone: bool = False) -> subprocess.Popen[str]:
+    """A command of the guide in the background. ``alone``, it runs in a group of its own, so
+    that :func:`closed` can close it and what it started (M13.9d); the scripts before do not ask
+    for it, and do not change."""
     return subprocess.Popen(  # noqa: S602 — as above
         line,
         shell=True,
@@ -465,6 +480,7 @@ def started(line: str) -> subprocess.Popen[str]:
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        start_new_session=alone,
     )
 
 

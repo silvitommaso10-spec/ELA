@@ -25,6 +25,7 @@ import json
 import re
 import stat
 import sys
+import threading
 import time
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
@@ -313,6 +314,48 @@ def test_a_run_past_its_guard_fails_the_step_writes_the_task_and_stops(
     assert "state EXECUTING" in written and "non è tornato in 120 s" in str(stopped.value)
 
 
+def test_the_run_of_the_stop_has_one_guard_from_its_launch_and_is_closed_with_its_group(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The negative case of step 14 (found by the re-read of M13.9d, decision 101): a run that
+    does not return after the stop is closed at the guard counted **from its launch** — not at a
+    guard more after the stop —, and **with its group**, the command and what it started, as every
+    other ``ela task run`` of the proof."""
+    module = script()
+    marker, guard, arrives = "37.0918", 3.0, 2.0
+    monkeypatch.setattr(module, "RUN_LIMIT", guard)
+    folder = tmp_path / module.FOLDER / "giu"
+    folder.mkdir(parents=True)
+    ran: list[str] = []
+
+    def run(line: str, limit: float | None = None) -> Any:
+        ran.append(line)
+        return module.base.subprocess.CompletedProcess(line, 0, "", "")
+
+    monkeypatch.setattr(module.base, "run", run)
+    report = module.Report(io.StringIO())
+    api = SimpleNamespace(get=lambda path: {"steps": [{"state": "RUNNING"}]})
+    proof = module.Proof(api, report, lambda _: "s", root=tmp_path)
+    proof.current = 14
+    turn = module.guided.Turn()
+    turn.task_id = "t-14"
+    # Two commands, so that the shell stays the parent of what it started.
+    block = SimpleNamespace(lines=(f"sleep {marker}; true",))
+    arriving = threading.Timer(arrives, (folder / "uno.crdownload").write_bytes, (b"y",))
+    began = time.monotonic()
+    arriving.start()
+
+    with pytest.raises(module.base.Stop) as stopped:
+        module.stopped_while_arriving(14, block, turn, proof)
+
+    took = time.monotonic() - began
+    assert any(line.startswith("uv run ela task cancel t-14") for line in ran), ran
+    assert took < arrives + guard - 1, f"a second guard after the stop: {took:.1f} s"
+    listed = module.base.processes()
+    assert not any(f"sleep {marker}" in command for command in listed.values()), "not its group"
+    assert report.failures == 1 and f"non è tornato in {guard:g} s" in str(stopped.value)
+
+
 def test_a_stop_is_judged_by_its_code_and_by_the_time_from_the_stop() -> None:
     """Decision 94: ``browser.stopped`` within 35 s of the stop passes; another code, or later,
     fails; a step that ended before the stop is SALTATO when it finished or the site did not
@@ -344,6 +387,9 @@ class World(WithABackground):
 
     def run(self, line: str, limit: float | None = None) -> Any:
         return super().run(line)
+
+    def started(self, line: str, *, alone: bool = False) -> Any:
+        return super().started(line)
 
 
 class Arriving(FakeAccountBrowser):

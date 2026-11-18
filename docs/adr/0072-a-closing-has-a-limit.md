@@ -64,7 +64,9 @@ nuovo, per ciò che l'uccisione non ha finito.
 
 **Il «ferma» passa per la stessa strada** (decisione 82). Lo scaricamento che arriva lo sente e cancella; gli altri tool
 lo sentono al loro punto (ADR 0054 §3), e l'operazione in volo finisce al tempo del tool. **Dal «ferma» alla fine dello
-step mai più del tempo del tool più il limite.**
+step: il tempo del tool più il limite, e l'uccisione**, quando l'uccisione finisce il lavoro — con il driver morto
+ogni chiamata in volo cade (§6). **Il caso peggiore è quello del criterio qui sopra**: il lavoro che nemmeno l'uccisione
+finisce ha il limite di nuovo, e poi è lasciato e detto.
 
 ### 2. Una guardia sola, a mondo chiuso
 
@@ -96,7 +98,9 @@ arriva 11 ms dopo con il browser del profilo e 4 ms dopo con quello vuoto, che d
 i casi il `deny` era ancora senza risposta. Da quella fine:
 - le attese degli eventi del browser (`_first_of`, `_stopped_or`) si svegliano, e lo step finisce **subito** con
   `browser.failed` «the browser ended by itself» (`ENDED`), invece di aspettare il tempo del tool;
-- la porta non manda più niente a un browser finito: né il `deny`, né la cancellazione dello scaricamento.
+- la porta non aspetta più la risposta di un browser finito. Il `deny` e la cancellazione dello scaricamento, mandati a
+  un browser finito, falliscono subito (misurato), e non sono aspettati; ciò che il browser aveva annunciato si toglie dal
+  disco (§4).
 
 **Che cosa sveglia la morte del driver, e che cosa no.** Con il driver morto le chiamate di Playwright in volo cadono;
 le attese di un evento (la fine di uno scaricamento) no. Le sveglia la fine del browser, oppure la cancellazione.
@@ -160,9 +164,9 @@ numero, e partono quasi insieme: senza questa regola l'uccisione dello stop sare
 
 ### 9. Che cosa trova il prossimo lancio su un profilo il cui browser è stato ucciso
 
-Il lock di un processo che non c'è più. `lock_holder` (`src/ela/infrastructure/machine/account.py:466`) lo dice
-libero, e Chrome for Testing lo riprende (misurato il 2026-11-18, 2 su 2). La preparazione della cartella (`_prepared`,
-`:654`) riscrive le preferenze e toglie i rapporti di Crashpad. È ciò che succede oggi dopo lo stop di ELA, che uccide
+Il lock di un processo che non c'è più. `lock_holder` (`src/ela/infrastructure/machine/account.py`) lo dice
+libero, e Chrome for Testing lo riprende (misurato il 2026-11-18, 2 su 2). La preparazione della cartella
+(`_prepared`) riscrive le preferenze e toglie i rapporti di Crashpad. È ciò che succede oggi dopo lo stop di ELA, che uccide
 allo stesso modo, e il test apre una pagina di nuovo dopo l'uccisione.
 
 ### 10. Ciò che questo ADR dichiara e non risolve
@@ -189,9 +193,13 @@ allo stesso modo, e il test apre una pagina di nuovo dopo l'uccisione.
   - il driver fermato al lancio;
   - un'apertura che uccide solo il suo driver;
   - uno scaricamento riuscito la cui chiusura è uccisa;
-  - una chiusura che non finisce nemmeno dopo l'uccisione.
+  - una chiusura che non finisce nemmeno dopo l'uccisione;
+  - il browser che muore prima dell'annuncio dello scaricamento;
+  - un uso di una pagina il cui driver non risponde più;
+  - il file annunciato tolto anche quando la chiusura della porta non finisce.
   
-  **Rossi sul codice di prima**, ciascuno per la sua ragione: `m13.9d/rossi-prima-riassunto.txt`. Nessuno scrive un
+  **Rossi sul codice di prima**, ciascuno per la sua ragione: `m13.9d/rossi-prima-riassunto.txt`, e per gli ultimi tre,
+  aggiunti dopo il ripasso dei mutanti, `rossi-prima-2.txt` e `rossi-prima-3.txt`. Nessuno scrive un
   rapporto di crash sulla macchina: la morte si costruisce con `SIGSTOP` e `SIGKILL` (decisione 89).
 - `tests/architecture/test_every_member_of_the_browser_passes_the_guard.py`, la regola di §2.
 - `tests/composition/test_browser_wiring.py` e `tests/api/test_server.py`: la riga, la costante, e `said`.
@@ -215,13 +223,14 @@ con la sezione di questo ADR a cui guardare.
 - **ADR 0054** §11 — il «ferma» a metà di uno step del browser chiude entro il tempo del tool più il limite, per la strada della scadenza (§1).
 - **ADR 0063** §4 — l'uccisione non è solo alla grazia della chiusura di ELA: anche al limite di una chiusura, e la cartella del profilo resta come lì (§1, §9).
 - **ADR 0066** §8, punto 4 — la fine di uno scaricamento si aspetta entro il tempo del tool; la chiusura della porta, dopo, ha il limite; e il browser che finisce da sé la sveglia (§1, §3).
-- **ADR 0070** §1, §4 — «nessuna attesa: il tempo resta quello del tool»: la porta aspetta la risposta al suo `deny` al più il limite, e non manda niente a un browser finito; la chiusura di 30,0 s con uno scaricamento in corso è tagliata al limite, il driver ucciso e il file annunciato tolto (§1, §3, §4, §7).
+- **ADR 0070** §1, §4 — «nessuna attesa: il tempo resta quello del tool»: la porta aspetta la risposta al suo `deny` al più il limite, e non aspetta un browser finito; la chiusura di 30,0 s con uno scaricamento in corso è tagliata al limite, il driver ucciso e il file annunciato tolto (§1, §3, §4, §7).
 
 Le altre conseguenze:
 
 - **Il port** non cambia: nessun membro e nessun campo. Cambiano gli argomenti con cui la composizione costruisce i due
   adapter — il limite e chi è avvisato di un'uccisione — e `build`, che prende `said`.
-- **Ogni costruzione degli adapter**, nei test e negli script, passa il limite di ELA.
+- **Ogni costruzione degli adapter**, nei test e negli script, passa un limite: quello di ELA, o uno corto che il test
+  dà da sé (§11).
 
 Con questo ADR le regole di architettura restano **settantaquattro**, i contratti di import-linter **sedici**, i port
 **trentasei**, le rotte dell'API **settantadue**, i comandi della CLI **trentanove**, le capability **ventidue**, le

@@ -122,9 +122,10 @@ SKIPPED_AMBIGUOUS: Final = (
 NO_ENTRY: Final = "senza l'id della voce i passi del login non hanno niente da misurare"
 RUN: Final = "uv run ela task run "
 RUN_LIMIT: Final = 120
-"""The guard of every ``ela task run`` of the proof, in seconds (M13.9d, decision 84): four times
-the tool's time and the limit of a closing, 35 s, rounded — a guard, and not a measure. A step of
-ELA that never ends would hold the proof for ever, as it did on 2026-11-17."""
+"""The guard of every ``ela task run`` of the proof, in seconds, counted from its launch (M13.9d,
+decision 84): four times the tool's time, 30 s, and the limit of a closing, 5 s — 125 s —, rounded
+down; a guard, and not a measure. A step of ELA that never ends would hold the proof for ever, as
+it did on 2026-11-17."""
 STOP_SECONDS: Final = 35
 """From the stop of the task to the end of its step, at most (decision 94): the tool's time, 30
 s, and the limit of a closing, ``BROWSER_CLOSE_GRACE_SECONDS`` (ADR 0072 §1). Read on the clock of
@@ -561,7 +562,9 @@ def stopped_while_arriving(number: int, block: base.Block, turn: guided.Turn, pr
     before = frozenset(os.listdir(folder))
     sent = m14.filled(line, turn, proof)  # type: ignore[arg-type]
     report.say(f"    $ {masked(sent, proof)} — in sfondo")
-    running = base.started(sent)
+    # The guard of every run, counted once from the launch, and the run in a group of its own:
+    # at the guard it is closed with what it started (the re-read of M13.9d).
+    running = base.started(sent, alone=True)
     deadline = time.monotonic() + RUN_LIMIT
     began = False
     while running.poll() is None and time.monotonic() < deadline:
@@ -571,7 +574,7 @@ def stopped_while_arriving(number: int, block: base.Block, turn: guided.Turn, pr
             break
         time.sleep(LOOK)
     if running.poll() is None and time.monotonic() >= deadline:
-        running.kill()
+        base.closed(running)
         overdue(base.Overdue(sent, RUN_LIMIT), turn, proof)
     if running.poll() is not None:
         printed, _ = running.communicate()
@@ -592,11 +595,11 @@ def stopped_while_arriving(number: int, block: base.Block, turn: guided.Turn, pr
     asked = time.monotonic()
     cancelled = base.heard(stop, base.run(stop))
     report.say(f"    $ uv run ela task cancel {turn.task_id} — il «ferma» dello script")
+    printed = ""
     try:
-        printed, _ = running.communicate(timeout=RUN_LIMIT)
-    except Exception:  # noqa: BLE001 — a run that does not end within its guard is said below
-        running.kill()
-        overdue(base.Overdue(sent, RUN_LIMIT), turn, proof)
+        printed = base.collected(running, sent, RUN_LIMIT, deadline - time.monotonic())
+    except base.Overdue as late:
+        overdue(late, turn, proof)
     seconds = time.monotonic() - asked
     turn.last = (printed or "") + cancelled.stdout
     for one in turn.last.rstrip("\n").splitlines():
