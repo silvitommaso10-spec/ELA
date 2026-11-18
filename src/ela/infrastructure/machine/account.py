@@ -721,14 +721,15 @@ def _downloads_forgotten(profile: Path) -> str | None:
     except sqlite3.Error as error:
         return type(error).__name__
     try:
-        database.execute("BEGIN IMMEDIATE")
+        cursor = database.cursor()
+        cursor.execute("BEGIN IMMEDIATE")
         try:
             for statement in FORGET:
-                database.execute(statement)
+                cursor.execute(statement)
         except sqlite3.Error as error:
-            database.execute("ROLLBACK")
+            cursor.execute("ROLLBACK")
             return type(error).__name__
-        database.execute("COMMIT")
+        cursor.execute("COMMIT")
     except sqlite3.Error as error:
         return type(error).__name__
     finally:
