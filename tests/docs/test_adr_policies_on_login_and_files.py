@@ -191,12 +191,17 @@ def test_a_revised_adr_that_does_not_say_so_is_found() -> None:
     assert revised_by_their_state(texts) == listed - {silent}
 
 
-def test_it_is_proposed_until_the_proof_and_the_index_says_so() -> None:
+def test_it_is_accepted_after_the_proof_and_the_index_says_so() -> None:
+    """Decision 127: accepted with a commit of its own once the proof passed, and its state line
+    says what the hand saw and what only the tests prove."""
     said = " ".join(status_of(adr_text()).split())
     index = (ADR_DIR / "README.md").read_text(encoding="utf-8")
     found = INDEX_ROW.findall(index)
 
-    assert said.startswith("**Proposta** il **2026-11-17**")
+    assert said.startswith("**Accettata** il **2026-11-18**")
     assert "la sezione 34 di `docs/GETTING_STARTED.md`" in said
     assert "`scripts/prova_m13_15.py`" in said
-    assert len(found) == 1 and found[0][1] == "Proposta"
+    assert "`~/Downloads/prova-m13.15-20261118-183240.txt`: 56 PASSATI al primo giro" in said
+    assert "**Che cosa ha visto la mano: i passi 2–13 e 15.**" in said
+    assert "**Che cosa prova solo il test**" in said
+    assert len(found) == 1 and found[0][1] == "Accettata"

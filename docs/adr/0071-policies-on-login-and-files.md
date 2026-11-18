@@ -1,9 +1,30 @@
 # 0071. Le policy di chi usa ELA arrivano al login e ai file dal browser
 
-- **Stato:** **Proposta** il **2026-11-17**, con l'implementazione di M13.15 (`docs/milestones/M13.15.md`: la SPEC, la
-  review della SPEC — le risposte 35–49 e le decisioni 50–53 —), per diventare Accettata con un commit suo dopo la
-  prova a mano della sezione 34 di `docs/GETTING_STARTED.md`, con `scripts/prova_m13_15.py`, sull'ultimo commit del
-  branch. Un ADR non basta se la prova a mano non è passata.
+- **Stato:** **Accettata** il **2026-11-18**, con un commit suo (decisione 127 dell'ultimo blocco del branch
+  `m13.15-le-policy-al-login-e-ai-file`): la prova a mano della sezione 34 di `docs/GETTING_STARTED.md`, con
+  `scripts/prova_m13_15.py`, è passata a `fe776f4`, l'ultimo commit del branch su origin, con l'albero pulito ed ELA
+  riavviata dal branch (`~/Downloads/prova-m13.15-20261118-183240.txt`: 56 PASSATI al primo giro, 0 FALLITI, 0 no, 0
+  SALTATI). **Che cosa ha visto la mano: i passi 2–13 e 15.**
+  - Le cinque sotto le loro policy, senza domanda: lo scaricamento e lo scaricamento come te (2, 3), il caricamento e il
+    caricamento come te (5, 6), il login di Hacker News con la voce della policy (10).
+  - Le domande che una policy non toglie, ciascuna con la sua ragione: un sito fuori (4, 7), un file fuori (7), una voce
+    fuori (11). A tutte Tommaso ha detto no.
+  - Il file con due nomi coperto dalla policy (8); il vault chiuso, che fa fallire lo step coperto con `vault.locked`
+    (12); la vista delle policy della console (13); e alla fine nessuna policy viva (15).
+  
+  **Chi ha visto che cosa.** Tommaso ha guardato le anteprime dei passi 2, 5 e 9 e la console del 13; ogni policy è nata
+  dopo il suo sì a «crei la policy?»; i no sono suoi; il vault l'ha aperto e chiuso lui; dal sito è uscito lui, e l'id
+  della voce l'ha dato lui. Il testo dopo il login l'ha visto il verifier. Lo script ha fatto i passi meccanici.
+  
+  **Che cosa prova solo il test**: il resto delle regole — la seconda dimensione nei due versi, i rifiuti alla nascita
+  con il loro codice, la spesa di ciò che riuscirebbe, l'id della voce che nessuna superficie mostra —, in
+  `tests/api/test_policies_on_login_and_files.py`, `tests/tools/test_files_and_login_under_a_policy.py` e in questo
+  test dei documenti.
+  
+  **Le prove che non sono passate restano scritte** in M13.15: quella del 2026-11-17, appesa al passo 3 (M13.9d,
+  M13.13c), e quella del 2026-11-18 alle 18:23, ferma al passo 9 perché l'id incollato a mano non era quello della voce.
+  ELA ha rifiutato la nascita con `vault.no_entry`, senza creare niente e senza mostrare l'id. **Le «Righe riviste» di
+  questo ADR hanno il loro marchio** sulle righe «Stato:» di ADR 0062, 0063, 0066 e 0068.
 - **Data:** 2026-11-17
 - **Riferimenti spec:** §19, §29, §30, §33, §57, §59, §65
 - **Milestone:** [M13.15](../milestones/M13.15.md)
