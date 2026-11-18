@@ -28,6 +28,7 @@ The limit is the test's own, short (:data:`LIMIT`): the composition gives ELA's,
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import signal
 import subprocess
@@ -43,7 +44,7 @@ from ela.domain import ExecutionResult, ExecutionStatus
 from ela.infrastructure.machine import browser as adapter
 from ela.infrastructure.machine.account import AccountChrome
 from ela.permissions import BROWSER_DOWNLOAD, BROWSER_DOWNLOAD_AS_YOU
-from ela.ports import Downloaded
+from ela.ports import BrowserFailed, Downloaded
 from ela.testing.fakes import FakeIdGenerator, FakeStop, FakeTaskPages
 from ela.tools.browser import FAILED, STOPPED, TIMEOUT
 from ela.tools.browser_files import AccountDownloadTool, BrowserDownloadTool
@@ -344,15 +345,18 @@ async def test_a_driver_and_a_browser_that_answer_no_more_are_killed_at_the_limi
         await browser.close(again.page)
 
 
+@pytest.mark.parametrize("ended_by", ["the tool's time", "the stop of the task"])
 async def test_a_driver_that_never_answers_the_launch_is_killed_at_the_limit(
-    made: Made, served: list[Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    made: Made, served: list[Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ended_by: str
 ) -> None:
     """The driver stopped when the launch is asked of it — the silence of a driver, built: no
-    answer to the launch, none to its abort. The tool's time ends the step, and the limit ends
-    the closing: the driver is killed."""
+    answer to the launch, none to its abort, and no closing begun. **Only the guard ends it**:
+    the tool's time or the stop of the task — the same road (decision 82) — cancels the opening,
+    and at the limit the driver is killed."""
     browser = made.browser
     a, _ = sites(served)
-    tool, capability, _into = download_tool(browser, a.origin, TOOL, tmp_path)
+    seconds = TOOL if ended_by == "the tool's time" else LONG_TOOL
+    tool, capability, _into = download_tool(browser, a.origin, seconds, tmp_path)
     kind = type(browser)
     launching = kind._begun
     frozen: list[int] = []
@@ -363,15 +367,21 @@ async def test_a_driver_that_never_answers_the_launch_is_killed_at_the_limit(
         return await launching(self, playwright)
 
     monkeypatch.setattr(kind, "_begun", frozen_first)
+    stop = FakeStop()
 
-    step = await started(tool, capability, FakeStop())
+    step = await started(tool, capability, stop)
     began = asyncio.get_running_loop().time()
-    await ended_within(
-        step, began + TOOL + WITHIN - asyncio.get_running_loop().time(), frozen, "the step"
-    )
+    if ended_by == "the stop of the task":
+        await until(lambda: frozen, "the driver stopped when the launch is asked of it")
+        stop.event.set()
+        cause = asyncio.get_running_loop().time()
+    else:
+        cause = began + TOOL
+    await ended_within(step, cause + WITHIN - asyncio.get_running_loop().time(), frozen, "the step")
 
     result = step.result()
-    assert result.error is not None and result.error.code == TIMEOUT, result.error
+    code = TIMEOUT if ended_by == "the tool's time" else STOPPED
+    assert result.error is not None and result.error.code == code, result.error
     assert frozen and left_running(frozen) == []
     assert made.killed == [(adapter.DRIVER,)]
 
@@ -466,7 +476,10 @@ async def test_a_closing_that_does_not_end_even_after_the_kill_is_left_and_said(
     never = asyncio.Event()
 
     async def never_ending(page: Any) -> None:
-        await never.wait()
+        # Deaf to the cancellation too: what the limit leaves is left, not ended.
+        while not never.is_set():
+            with contextlib.suppress(asyncio.CancelledError):
+                await never.wait()
 
     monkeypatch.setattr(adapter, "_shut", never_ending)
     killed = tree(browser._driver_pids())
@@ -480,6 +493,109 @@ async def test_a_closing_that_does_not_end_even_after_the_kill_is_left_and_said(
         settling = asyncio.ensure_future(browser.settle(lambda: asyncio.sleep(LIMIT)))
         await ended_within(settling, WITHIN, [], "ELA's close of the browser")
         assert settling.result() == ()
+    finally:
+        never.set()
+
+
+# ----------------------------------------------------------------------------------------------
+# The other parts of the guard: the end before the announcement, a use of a page, the door's
+# closing that never ends
+# ----------------------------------------------------------------------------------------------
+
+NOTHING: Final = '<button id="nothing">niente</button>'
+"""A page whose button starts nothing: the wait for the download's announcement does not end."""
+
+
+async def test_a_browser_that_dies_before_its_download_is_announced_is_said_at_once(
+    made: Made, served: list[Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The gesture is made, and the browser dies while ELA waits for what it led to — an
+    announcement, a page, a refusal: none comes from a browser that died. **The wait wakes at
+    the end of the browser** (decision 81), and the download says it at once."""
+    browser = made.browser
+    a, _ = sites(served)
+    a.pages[("GET", "/")] = (200, bounds.HTML, NOTHING)
+    into = folder(tmp_path)
+    waiting = asyncio.Event()
+    first_of = adapter.PlaywrightBrowser._first_of
+
+    async def told(self: Any, opened: Any, *events: asyncio.Event) -> None:
+        waiting.set()
+        await first_of(self, opened, *events)
+
+    monkeypatch.setattr(adapter.PlaywrightBrowser, "_first_of", told)
+    opened = await browser.open(a.origin + "/", only(a), FakeStop())
+
+    downloading = asyncio.ensure_future(
+        browser.download(opened.page, "#nothing", FakeStop(), str(into))
+    )
+    await until(waiting.is_set, "the wait for what the gesture led to")
+    dead = browsers_of(browser._driver_pids())
+    signalled(dead, signal.SIGKILL)
+    await ended_within(downloading, WITHIN, dead, "the download of a browser that died")
+
+    with pytest.raises(BrowserFailed, match=adapter.ENDED):
+        downloading.result()
+    assert os.listdir(into) == []
+
+
+async def test_a_use_of_a_page_whose_driver_answers_no_more_is_killed_at_its_limit(
+    made: Made, served: list[Any]
+) -> None:
+    """A use of a page — the wait for an element — whose driver and browser answer no more,
+    cancelled by whoever waited for it: **the guard kills the driver of that page**, the one it
+    was told the use asked (``_used``), and leaves nothing."""
+    browser = made.browser
+    a, _ = sites(served)
+    a.pages[("GET", "/")] = (200, bounds.HTML, NOTHING)
+    opened = await browser.open(a.origin + "/", only(a), FakeStop())
+    frozen = tree(browser._driver_pids())
+    signalled(frozen, signal.SIGSTOP)
+
+    waiting = asyncio.ensure_future(
+        asyncio.wait_for(browser.appeared(opened.page, "#never"), timeout=1.0)
+    )
+    await ended_within(waiting, 1.0 + WITHIN, frozen, "a use of a page whose driver was stopped")
+
+    with pytest.raises(TimeoutError):
+        waiting.result()
+    assert left_running(frozen) == []
+    assert len(made.killed) == 1 and adapter.DRIVER in made.killed[0], made.killed
+    assert adapter.LEFT not in made.killed[0]
+
+
+async def test_the_announced_file_goes_even_when_the_door_s_closing_does_not_end(
+    made: Made, served: list[Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The file arrives, the download is cancelled, and the door's closing does not end — not
+    even once the browser is killed: injected. **What the browser had announced goes all the
+    same**, from the disk, by the limit (decision 91); a file of somebody else's stays."""
+    slow = Slow()
+    served.append(slow)
+    browser = made.browser
+    into = folder(tmp_path)
+    (into / OTHERS).write_bytes(b"di qualcun altro")
+    never = asyncio.Event()
+
+    async def never_done(door: Any, place: Path, *, kept: bool) -> None:
+        while not never.is_set():
+            with contextlib.suppress(asyncio.CancelledError):
+                await never.wait()
+
+    monkeypatch.setattr(adapter._Door, "done", never_done)
+
+    downloading = asyncio.ensure_future(
+        browser.downloaded_from(slow.origin + "/slow.bin", only(slow), FakeStop(), str(into))
+    )
+    try:
+        await until(lambda: slow.half_sent.is_set() and arriving(browser, into), "half a file")
+        killed = tree(browser._driver_pids())
+        downloading.cancel()
+        await ended_within(downloading, WITHIN, killed, "a download whose door never closes")
+
+        assert sorted(os.listdir(into)) == [OTHERS]
+        assert left_running(killed) == []
+        assert any(adapter.LEFT in names for names in made.killed), made.killed
     finally:
         never.set()
 

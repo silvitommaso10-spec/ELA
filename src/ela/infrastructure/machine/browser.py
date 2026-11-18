@@ -1358,11 +1358,12 @@ class _Door:
     it, and is taken away; what is announced after the answer is refused. **One deny for one
     closing**: a closing on its way is awaited, never told again.
 
-    **A browser that ended is told nothing** (M13.9d, ADR 0072): ``ended`` is the end of its
+    **The end of the browser ends its wait** (M13.9d, ADR 0072): ``ended`` is the end of its
     context. Playwright 1.63.0 leaves without an answer a call in flight on a session of the
-    browser when the browser dies (measured), so the door stops waiting for its deny then, and
-    sends no other; and **what it takes away it takes from the disk alone** (:meth:`swept`), which
-    the limit of a closing does too once it has killed the browser.
+    browser when the browser dies (measured), so the door stops waiting for its deny then; a call
+    sent after the end fails at once (measured), and is not waited for. **What it takes away it
+    takes from the disk alone** (:meth:`swept`), which the limit of a closing does too once it has
+    killed the browser.
     """
 
     def __init__(self, session: CDPSession, context: str, ended: asyncio.Event) -> None:
@@ -1391,12 +1392,8 @@ class _Door:
         )
 
     def _close(self) -> None:
-        """Close the door if it is open: closing now, one deny on its way, closed at its answer —
-        and closed at once for a browser that ended, which nothing is sent to."""
+        """Close the door if it is open: closing now, one deny on its way, closed at its answer."""
         if self._state != "open":
-            return
-        if self._ended.is_set():
-            self._state = "closed"
             return
         self._state = "closing"
         shutting = asyncio.ensure_future(self._closed())
@@ -1448,15 +1445,14 @@ class _Door:
     async def done(self, folder: Path, *, kept: bool) -> None:
         """The gesture is over, whatever way: the door closed — at the browser's answer —, what
         was announced beside the download cancelled and taken away, and the download itself too
-        unless it is ``kept``. **With a browser that ended**, the answer is not waited for and
-        nothing is cancelled: what was announced is taken from the disk (M13.9d)."""
+        unless it is ``kept``. **With a browser that ended** the answer is not waited for: what was
+        announced is taken from the disk all the same (M13.9d)."""
         self._folder, self._kept = folder, kept
         self._close()
-        if self._shutting and not self._ended.is_set():
+        if self._shutting:
             await _whichever(asyncio.wait(self._shutting), self._ended.wait())
-        if not self._ended.is_set():
-            for name in self._gone():
-                await _quietly(functools.partial(self._cancelled, name))
+        for name in self._gone():
+            await _quietly(functools.partial(self._cancelled, name))
         self.swept()
 
     def _gone(self) -> list[str]:
