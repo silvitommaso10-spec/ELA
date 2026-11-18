@@ -1,12 +1,29 @@
 # 0073. Il browser del profilo dimentica i suoi scaricamenti prima di ogni lancio guidato
 
-- **Stato:** **Proposta** il **2026-11-18**, con l'implementazione di M13.13c (`docs/milestones/M13.13c.md`: la
-  registrazione, le misure delle decisioni 104 e 114, la SPEC e la sua review, le risposte 107–113 e le decisioni dalla
-  114). Diventa Accettata con un commit suo dopo la prova a mano (decisione 118). **La prova a mano del criterio 2 è il
-  passo 3 della sezione 34 di `docs/GETTING_STARTED.md`**, rifatta dall'inizio sull'ultimo commit del branch con
-  `scripts/prova_m13_15.py`, sul profilo vero, che è con ogni probabilità già nello stato che fa cadere il browser. Prima
-  del passo 3 non si pulisce niente a mano, e lo script lo chiede. Il criterio 1 e la finestra li provano il test e la
-  misura A5-S1, non la mano. **La riga dirà chi ha visto che cosa**, come quella di ADR 0070.
+- **Stato:** **Accettata** il **2026-11-18**, con un commit suo (decisione 127 dell'ultimo blocco del branch
+  `m13.15-le-policy-al-login-e-ai-file`): la sezione 34 di `docs/GETTING_STARTED.md`, rifatta dall'inizio con
+  `scripts/prova_m13_15.py`, è passata a `fe776f4`, l'ultimo commit del branch su origin
+  (`~/Downloads/prova-m13.15-20261118-183240.txt`: 56 PASSATI al primo giro, 0 FALLITI).
+  
+  **Che cosa ha visto la mano: il criterio 2.** Sul profilo vero, che il 2026-11-17 faceva cadere il browser al primo
+  scaricamento come te, e senza una pulizia a mano — lo script l'ha chiesto prima del passo 3, e la risposta è stata sì
+  nei due giri:
+  - **il passo 3, due volte**: nel giro delle 18:23, che si è poi fermato al passo 9 per un id incollato a mano
+    (`~/Downloads/prova-m13.15-20261118-182351.txt`), e in quello passato delle 18:32. Ogni volta `come-te.bin`, 2048
+    byte, `600`;
+  - **l'avvio del passo 14**: il file arrivava nella cartella quando lo script ha mandato il «ferma».
+  
+  Tre scaricamenti con il browser del profilo, e il browser non è caduto.
+  
+  **Che cosa non ha visto la mano**:
+  - **l'innesco costruito** lo provano i test, `test_a_profile_that_had_ten_downloads_of_ela_downloads_the_next` e
+    `test_a_profile_already_in_the_state_that_makes_the_browser_fall_works_again`
+    (`tests/infrastructure/machine/test_the_profile_forgets_its_downloads.py`);
+  - **la finestra** la prova la misura A5-S1, fatta con Tommaso davanti al Mac il 2026-11-18 (12 scaricamenti su 12 con
+    la finestra, su tre profili caduti), e non un test della suite: un browser con la finestra non si fa cadere nella
+    suite (ADR 0063 §4).
+  
+  **Le «Righe riviste» di questo ADR hanno il loro marchio** sulla riga «Stato:» di ADR 0063.
 - **Data:** 2026-11-18
 - **Riferimenti spec:** §19, §33, §57
 - **Milestone:** [M13.13c](../milestones/M13.13c.md)

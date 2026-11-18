@@ -38,13 +38,21 @@ def revised_by_their_state(mark: str, exclude: Path) -> set[str]:
     }
 
 
-def test_it_is_a_proposal_until_the_proof_by_hand_and_names_the_step_that_proves_it() -> None:
+def test_it_is_accepted_and_says_what_the_hand_saw_and_what_it_did_not() -> None:
+    """Decision 127: criterion 2 by hand — step 3 twice and the start of step 14, on the real
+    profile, cleaned by nobody —; the built trigger by the tests, named; the window by A5-S1."""
     said = " ".join(status_of(ADR_PATH.read_text(encoding="utf-8")).split())
+    tests = (
+        ROOT / "tests" / "infrastructure" / "machine" / "test_the_profile_forgets_its_downloads.py"
+    ).read_text(encoding="utf-8")
 
-    assert said.startswith("**Proposta** il **2026-11-18**")
-    assert "**La prova a mano del criterio 2 è il passo 3 della sezione 34" in said
-    assert "Prima del passo 3 non si pulisce niente a mano, e lo script lo chiede" in said
-    assert "**La riga dirà chi ha visto che cosa**" in said
+    assert said.startswith("**Accettata** il **2026-11-18**")
+    assert "**Che cosa ha visto la mano: il criterio 2.**" in said
+    assert "**il passo 3, due volte**" in said and "**l'avvio del passo 14**" in said
+    assert "senza una pulizia a mano" in said
+    for name in re.findall(r"`(test_[a-z_0-9]+)`", said):
+        assert f"async def {name}(" in tests, name
+    assert "**la finestra** la prova la misura A5-S1" in said
 
 
 def test_the_index_names_it_with_its_state() -> None:
@@ -52,7 +60,7 @@ def test_the_index_names_it_with_its_state() -> None:
 
     assert (
         "| [0073](0073-the-profile-forgets-its-downloads.md) | Il browser del profilo dimentica i "
-        "suoi scaricamenti prima di ogni lancio guidato | Proposta |" in index
+        "suoi scaricamenti prima di ogni lancio guidato | Accettata |" in index
     )
 
 
