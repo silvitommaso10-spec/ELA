@@ -23,8 +23,9 @@ run share is a coroutine, and the hash runs in ``asyncio.to_thread``.
 
 **What a program receives is decided here and executed to the letter by the launcher** (dec. 15):
 four environment variables and nothing else — the ``PATH`` below, ``HOME`` and ``TMPDIR`` computed
-by the composition once, ``LANG`` —, the end of a file on stdin, a folder inside the scope of M13.1
-and never ELA's own, a timeout, a breath between ``SIGTERM`` and ``SIGKILL``, and half of the
+by the composition once, ``LANG`` —, the end of a file on stdin, the first folder of the scope of
+M13.1 or one under it — and never one that is, or lies inside, a place of ELA's (M13.17, ADR 0074)
+—, a timeout, a breath between ``SIGTERM`` and ``SIGKILL``, and half of the
 ceiling for the head and half for the tail of each stream.
 
 **The folder is not a boundary, and the question says so** (dec. 6): the boundary of M13.1 holds for
@@ -177,10 +178,12 @@ class ArgumentLimits:
 class Terminal:
     """What the composition hands the tool, once, at start-up.
 
-    ``programs`` with the identities fixed there; ``root`` and ``scope`` are the pair of M13.1, and
-    a command starts in ``root/scope`` or below it; ``home`` and ``temporary`` are computed by the
-    composition with ``Path.home()`` and ``tempfile.gettempdir()`` — never read from ``os.environ``
-    here (ADR 0001) —; ``argument_limits`` is what the system passes to ``execve``.
+    ``programs`` with the identities fixed there; ``root`` is ``ELA_FS_ROOT`` and ``scope`` **the
+    first folder of** ``ELA_FS_SCOPE`` (M13.17, ADR 0074; answer 41 of the review of its SPEC — the
+    order of the list is the user's), and a command starts in ``root/scope`` or below it; ``home``
+    and ``temporary`` are computed by the composition with ``Path.home()`` and
+    ``tempfile.gettempdir()`` — never read from ``os.environ`` here (ADR 0001) —;
+    ``argument_limits`` is what the system passes to ``execve``.
     """
 
     programs: Programs

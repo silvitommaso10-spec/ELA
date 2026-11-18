@@ -1060,7 +1060,7 @@ def fs_read(fs_scope: Sequence[str] = UNDECLARED_FS_SCOPES) -> CapabilitySpec:
     return CapabilitySpec(
         id=FS_READ,
         created_at=PHASE_13_INTRODUCED_AT,
-        description="Reads one file inside the authorised folder, outside the workspace.",
+        description="Reads one file inside the authorised folders, outside the workspace.",
         risk=RiskLevel.MEDIUM,
         input_schema={
             "type": "object",
@@ -1104,7 +1104,7 @@ def fs_write(fs_scope: Sequence[str] = UNDECLARED_FS_SCOPES) -> CapabilitySpec:
     return CapabilitySpec(
         id=FS_WRITE,
         created_at=PHASE_13_INTRODUCED_AT,
-        description="Writes one file inside the authorised folder, outside the workspace.",
+        description="Writes one file inside the authorised folders, outside the workspace.",
         risk=RiskLevel.HIGH,
         input_schema={
             "type": "object",
@@ -1152,8 +1152,8 @@ def terminal_run(programs: Sequence[str] = UNDECLARED_PROGRAMS) -> CapabilitySpe
     and it would teach that what is not on it is safe.
 
     ``args`` is a **list** and reaches the process as one — never a string, never a shell. ``cwd``
-    is relative to the folder of the scope of M13.1; ``expect_exit`` is the code the plan expects,
-    and the verifier compares it (dec. 9). ``purpose`` is what the user reads (§30).
+    is relative to the first folder of the scope of M13.1 (M13.17); ``expect_exit`` is the code the
+    plan expects, and the verifier compares it (dec. 9). ``purpose`` is what the user reads (§30).
     """
     return CapabilitySpec(
         id=TERMINAL_RUN,
@@ -1697,7 +1697,7 @@ def browser_download(fs_scope: Sequence[str] = UNDECLARED_FS_SCOPES) -> Capabili
     return _a_file_capability(
         BROWSER_DOWNLOAD,
         "Downloads one file of a site you declared, in ELA's own empty browser, into a file "
-        "inside the authorised folder.",
+        "inside the authorised folders.",
         _download_schema(),
         fs_scope,
         _DOWNLOAD_FREE,
@@ -1719,7 +1719,7 @@ def browser_download_as_you(fs_scope: Sequence[str] = UNDECLARED_FS_SCOPES) -> C
     return _a_file_capability(
         BROWSER_DOWNLOAD_AS_YOU,
         "Downloads one file of a site you declared as you, with the browser of your accounts, "
-        "into a file inside the authorised folder.",
+        "into a file inside the authorised folders.",
         _download_schema(),
         fs_scope,
         _DOWNLOAD_FREE,
@@ -1749,7 +1749,7 @@ def browser_upload(fs_scope: Sequence[str] = UNDECLARED_FS_SCOPES) -> Capability
     return _a_file_capability(
         BROWSER_UPLOAD,
         "Gives one page of a site you declared, in ELA's own empty browser, one file of the "
-        "authorised folder, and sends it: what it sends cannot be taken back.",
+        "authorised folders, and sends it: what it sends cannot be taken back.",
         _upload_schema(),
         fs_scope,
         _UPLOAD_FREE,
@@ -1773,7 +1773,7 @@ def browser_upload_as_you(fs_scope: Sequence[str] = UNDECLARED_FS_SCOPES) -> Cap
     return _a_file_capability(
         BROWSER_UPLOAD_AS_YOU,
         "Gives one page of a site you declared, as you, with the browser of your accounts, one "
-        "file of the authorised folder, and sends it: what it sends cannot be taken back.",
+        "file of the authorised folders, and sends it: what it sends cannot be taken back.",
         _upload_schema(),
         fs_scope,
         _UPLOAD_FREE,
