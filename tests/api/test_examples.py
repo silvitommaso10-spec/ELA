@@ -177,10 +177,12 @@ def test_every_example_explains_itself() -> None:
     time of the tool cuts short; seventy-three since M13.15, the ten plans of section 34 — three
     downloads, five uploads and two logins, one of them with the placeholder of an entry;
     seventy-four since M13.9d, the plan of step 14 of section 34: a file of httpbin that arrives in
-    nine seconds, stopped while it arrives.
+    nine seconds, stopped while it arrives; eighty-two since M13.17, the eight plans of section 35 —
+    five writes that ask, the read whose question says the size, the write in Library the Guardian
+    refuses, and the write under a policy.
     """
     found = sorted(EXAMPLES.glob("*.json"))
-    assert len(found) == 74, [path.name for path in found]
+    assert len(found) == 82, [path.name for path in found]
     for path in found:
         plan = json.loads(path.read_text(encoding="utf-8"))
         assert NOTE in plan, path.name
@@ -692,14 +694,15 @@ async def test_the_plan_outside_the_scope_is_denied_without_asking_anybody(
 
 
 def test_the_paths_of_the_examples_are_the_scope_the_guide_tells_you_to_write() -> None:
-    """``ELA_FS_SCOPE=ELA`` in ``GETTING_STARTED.md``, and the plans walk the same folder.
+    """``ELA_FS_SCOPE=["ELA"]`` in ``GETTING_STARTED.md`` — the form M13.17 teaches —, and the plans
+    walk the same folder.
 
     An example whose path fell outside the scope of the guide would be denied in the reader's
     hands, with a message about a boundary they thought they had written correctly.
     """
     guide = (EXAMPLES.parent / "GETTING_STARTED.md").read_text(encoding="utf-8")
 
-    assert "ELA_FS_SCOPE=ELA" in guide
+    assert 'ELA_FS_SCOPE=["ELA"]' in guide
     assert fs_plan("fs-write.json")["steps"][0]["arguments"]["path"].startswith("ELA/")
     assert fs_plan("fs-read.json")["steps"][0]["arguments"]["path"].startswith("ELA/")
     assert not fs_plan("fs-outside-the-scope.json")["steps"][0]["arguments"]["path"].startswith(

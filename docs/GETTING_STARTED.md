@@ -108,17 +108,21 @@ default di ELA», e l'uscita è `exit 2` con:
 
 ```
 ela: .env does not set ELA_FS_ROOT, ELA_FS_SCOPE, ELA_TERMINAL_PROGRAMS and ELA_BROWSER_SITES, and ELA does not start without them: they have no default. Write them, for example:
-    ELA_FS_ROOT=/Users/you/Documents
-    ELA_FS_SCOPE=ELA
+    ELA_FS_ROOT=/Users/you
+    ELA_FS_SCOPE=["Documents", "Desktop"]
     ELA_TERMINAL_PROGRAMS=[]
     ELA_BROWSER_SITES=[]
-The folder is yours: ELA does not create it and does not choose it.
+The folder is yours: ELA does not create it and does not choose it. It may be your home, and never a folder above it.
+The folders are one line of JSON, each relative to ELA_FS_ROOT, and each must be there when ELA starts; a command of terminal.run starts from the first one. [] is not an answer: the scope opens at least one folder.
 The programs are one line of JSON, each relative to / — usr/bin/git is /usr/bin/git —, and [] is an answer: no program at all.
 The sites are one line of JSON, each a host name alone — example.com, without https:// —, and [] is an answer: no site at all.
 ```
 
 Fino a M13.1b `init` diceva che il token era «the only variable ELA requires» e, su questo stesso
 file, «nothing required is missing»: se lo leggi ancora, stai girando su codice precedente.
+
+***Riscritto il 2026-11-19*** (M13.17, [ADR 0074](adr/0074-filesystem-up-to-the-home.md)): fino a M13.17 gli esempi
+erano `ELA_FS_ROOT=/Users/you/Documents` ed `ELA_FS_SCOPE=ELA`, e la riga dei file non aveva una nota sua.
 
 **Nella verifica a mano di M13.1b, il 2026-09-22**: la seconda chiamata è uscita con `2` e ha
 nominato `ELA_FS_ROOT` ed `ELA_FS_SCOPE`, le obbligatorie di allora; `ELA_TERMINAL_PROGRAMS` è
@@ -127,32 +131,45 @@ entrata con M13.2, `ELA_BROWSER_SITES` con M13.4.
 Il database e il workspace stanno di default in `~/.ela/`. Per tenerli altrove, togli il commento
 a `ELA_DB_URL` e `ELA_WORKSPACE_DIR` nel `.env` appena scritto.
 
-### Due righe che **devono** essere scritte: la cartella dei tuoi file
+### Due righe che **devono** essere scritte: le cartelle dei tuoi file
 
 Da M13.1 ELA legge e scrive file **fuori dalla sua workspace**, e il confine glielo dichiari tu.
 Sono due righe, e **non hanno un default**: finché mancano, `ela serve` non parte e lo dice.
 
 ```
 ELA_FS_ROOT=/Users/tu/Documenti
-ELA_FS_SCOPE=ELA
+ELA_FS_SCOPE=["ELA"]
 ```
 
 `ELA_FS_ROOT` è una cartella **tua**, e ELA non la crea mai: se non c'è, ELA non parte e lo dice —
 e se sparisce dopo l'avvio, ogni chiamata rifiuta con `fs.no_root` —, invece di inventarsi un posto
-che non hai scelto. `ELA_FS_SCOPE` è la sola cartella dentro quella
-radice che `fs.read` e `fs.write` possono toccare — con l'esempio qui sopra,
-`/Users/tu/Documenti/ELA` — e **quella la crea la prima scrittura**, come la cartella delle note
-dentro la workspace: la radice è tua, ciò che sta dentro lo scope è lavoro di ELA.
+che non hai scelto. **Da M13.17 `ELA_FS_SCOPE` è un elenco**, una riga di JSON: le cartelle dentro la
+radice che le capability dei file possono toccare, ciascuna relativa alla radice — con l'esempio qui
+sopra una sola, `/Users/tu/Documenti/ELA`. **Ogni cartella dell'elenco la crei tu, prima di avviare
+ELA**: all'avvio ELA la guarda, la apre e la richiude senza leggerne i nomi, e se non c'è non parte.
+La riga di prima, `ELA_FS_SCOPE=ELA` senza le parentesi, è rifiutata con la sua riscrittura, e `[]` è
+rifiutato. **La prima cartella dell'elenco è quella da cui parte un comando del terminale.** I piani
+d'esempio di questa guida scrivono in `ELA/`, sotto questa radice.
+
+La radice può anche essere **la tua home**, con l'elenco delle cartelle che vuoi aprire — per esempio
+`ELA_FS_ROOT=/Users/tu` ed `ELA_FS_SCOPE=["Documents", "Desktop"]` —: è la sezione 35. Ciò che è aperto
+lo dicono `ela serve` all'avvio e `uv run ela diagnostics`, alla riga `files`.
 
 Che cosa ELA rifiuta all'avvio, e perché il messaggio te lo dice invece di lasciartelo scoprire:
 
-- una radice che **contiene o sta dentro** ciò che ELA usa per esistere — la workspace, il
-  database, le catture, il segreto di un nodo, il `.env`, il suo stesso codice. Per questo `~` non
-  va bene: contiene `~/.ela`;
+- una radice che **è, o sta dentro**, ciò che ELA usa per esistere — la workspace, il database, le
+  catture, il segreto di un nodo, `~/.ela`, il suo stesso codice —, e una radice **sopra la tua
+  home**, come `/Users`. Da M13.17 la radice **può contenere** i posti di ELA, e può essere la home:
+  nessuna lettura e nessuna scrittura di ELA li raggiunge, a ogni uso, con un sì o con una policy;
+- una cartella dell'elenco che non c'è, che è un file, un link, un posto di ELA, o che il sistema non
+  lascia guardare;
 - una radice che è un **link simbolico**. Su macOS è la forma che `~/Documents` prende quando
   «Scrivania e Documenti» di iCloud Drive è attivo: punta la variabile alla cartella vera,
   altrimenti ogni chiamata fallirebbe una per una senza spiegare perché;
 - una radice che non esiste.
+
+***Riscritto il 2026-11-19*** (M13.17): fino a M13.17 qui c'era una cartella sola, `ELA_FS_SCOPE=ELA`, che «la crea la
+prima scrittura», e una radice che non poteva contenere i posti di ELA — «per questo `~` non va bene: contiene `~/.ela`».
 
 **Scrivere qui dentro è irreversibile**: `fs.write` è la prima capability `HIGH` di ELA, ti chiede
 il permesso **ogni volta**, e nessuna policy potrà mai coprirla in anticipo — il rollback (§37) non
@@ -803,6 +820,11 @@ Da sapere prima di andare avanti:
   uno, sul Core — e segue le regole della radice del Core: esiste, non è un link, non contiene e non
   sta dentro `$HOME\.ela` né `$HOME\ELA`. Senza la riga il nodo non dichiara i due tool, e lo dice
   all'avvio. La prova di M13.3 l'aggiunge al file in §17, passo 2.
+  ***Annotato il 2026-11-19*** (M13.17, [ADR 0074](adr/0074-filesystem-up-to-the-home.md) §2): le regole della radice
+  del Core sono cambiate, e quelle del nodo con loro. Da M13.17 la radice del nodo **può contenere** `$HOME\.ela`,
+  `$HOME\ELA` e gli altri posti del nodo — nessuna lettura e nessuna scrittura del nodo li raggiunge —, e può essere la
+  home del nodo; non può esserne uno né starci dentro, e non può stare sopra la home. Il giorno in cui il PC prende
+  `main` con M13.17, una radice che oggi il nodo rifiuta perché contiene un suo posto sarà ammessa.
 
 ### 5. Il nodo: arruolato dal Mac, avviato sul PC
 
@@ -1246,6 +1268,15 @@ browser.
 
 ## 15. Il filesystem fuori dalla workspace: la prova a mano di M13.1
 
+***Annotato il 2026-11-19*** (M13.17, [ADR 0074](adr/0074-filesystem-up-to-the-home.md)): questa sezione è scritta con le due righe di prima — la radice
+sulla cartella Documenti, `ELA_FS_SCOPE=ELA` —, e con loro resta vera. Da M13.17 la seconda riga si scrive come un
+elenco, `ELA_FS_SCOPE=["ELA"]` — senza le parentesi ELA non parte —, e la cartella `ELA` deve esserci all'avvio. **Con
+la radice alla home la sezione non si fa**: lì `ELA` è l'albero di ELA, e una voce `ELA` ferma l'avvio. La prova dei file
+con la radice alla home è la sezione 35. **Due uscite di questa sezione sono cambiate**: il messaggio del passo 1 dice
+«ELA cannot start without the folders it may read and write», e la ragione del passo 5 nomina il bersaglio e dice
+dove lo scope si legge, «targets ['altrove/non-deve-esistere.md'] of fs.write are not within its scope (uv run ela
+diagnostics shows it)»: i blocchi qui sotto sono l'uscita del loro giorno.
+
 Da M13.1 ELA legge e scrive file **fuori dalla sua workspace**, e `fs.write` è la prima capability
 `HIGH` che abbia mai avuto: chiede il permesso **ogni volta**, e nessuna policy potrà coprirla in
 anticipo. Questa è la prova che quel confine tiene, e che la domanda dice la verità.
@@ -1531,6 +1562,13 @@ cui una domanda imparerà un fatto nuovo, ogni superficie o lo mostra o smette d
 > dalla macchina — la cartella, il timeout, gli id — è scritto come lo vedrai tu, e dove l'uscita è
 > lunga le righe tolte sono un `…`. Quelli del telefono e del Command Center li scrive la tua prova.
 > L'ADR è [0047](adr/0047-terminal.md).
+
+***Annotato il 2026-11-19*** (M13.17, [ADR 0074](adr/0074-filesystem-up-to-the-home.md)): da M13.17 un comando parte dalla **prima cartella** di
+`ELA_FS_SCOPE`, che è un elenco; con l'elenco di una voce, `["ELA"]`, è la cartella di prima. Il diniego `SCOPE` di un
+programma non dichiarato nomina il programma e non l'elenco dei programmi — «targets ['usr/bin/whoami'] of
+terminal.run are not within its scope (uv run ela diagnostics shows it)» —, e l'elenco si legge in `uv run ela
+diagnostics`, alla riga `scopes`. I blocchi qui sotto sono l'uscita del loro giorno; gli eventi già nell'audit tengono
+la frase di prima.
 
 Da M13.2 ELA esegue un programma su questo Mac e ne riporta l'uscita. `terminal.run` è `HIGH`, come
 `fs.write`: chiede **ogni volta**, e nessuna policy potrà coprirlo in anticipo.
@@ -2781,6 +2819,11 @@ Le uscite dei tre passi, integrali, in un file: `~/Downloads/m6.3b-prova.txt`. *
 > decide, e **allineata all'implementazione**: i piani sono in [`examples/`](examples/), e la suite li
 > manda a ELA byte per byte (`tests/api/test_examples_browser.py`); le frasi dei messaggi sono quelle
 > che il codice scrive. L'ADR è [0052](adr/0052-browser.md), `Proposta` fino a questa prova.
+
+***Annotato il 2026-11-19*** (M13.17, [ADR 0074](adr/0074-filesystem-up-to-the-home.md)): da M13.17 il diniego `SCOPE` di un sito non dichiarato nomina il
+sito e non l'elenco dei siti — «targets ['example.org'] of browser.read are not within its scope (uv run ela
+diagnostics shows it)» —, e l'elenco si legge in `uv run ela diagnostics`, alla riga `scopes`. I blocchi qui sotto
+sono l'uscita del loro giorno; gli eventi già nell'audit tengono la frase di prima.
 
 Da M13.4 ELA apre pagine in un browser suo. `browser.read` è `LOW`: dentro i siti che dichiari **non
 chiede**, e fuori nega. `browser.act` — riempire dei campi e cliccare — è `HIGH`, come `fs.write` e
@@ -7045,6 +7088,12 @@ Dopo il passo 5 ELA è ferma, e la prova finisce lì: ELA si riavvia a mano, com
 > (`~/Downloads/prova-m13.13-20261111-124909.txt`); [ADR 0066](adr/0066-browser-files.md) è Accettata, e com'è andata è
 > in `milestones/M13.13.md`, «La prova a mano, il 2026-11-11 — passata».
 
+***Annotato il 2026-11-19*** (M13.17, [ADR 0074](adr/0074-filesystem-up-to-the-home.md)): questa sezione è scritta con le due righe di prima — la radice
+sulla cartella Documenti, `ELA_FS_SCOPE=ELA` —, e con loro resta vera. Da M13.17 la seconda riga si scrive come un
+elenco, `ELA_FS_SCOPE=["ELA"]` — senza le parentesi ELA non parte —, e la cartella `ELA` deve esserci all'avvio. **Con
+la radice alla home la sezione non si fa**: lì `ELA` è l'albero di ELA, e una voce `ELA` ferma l'avvio. La prova dei file
+con la radice alla home è la sezione 35.
+
 Da M13.13 ELA **scarica un file** da un sito dentro la cartella che le hai dichiarato, e **dà a un sito un file** di
 quella cartella. Quattro capability, tutte `HIGH` — chiedono **a ogni uso**, e nessuna policy le copre —:
 `browser.download` e `browser.upload` nel browser vuoto di ELA, `browser.download_as_you` e `browser.upload_as_you` nel
@@ -7611,6 +7660,12 @@ non c'è niente da rimettere com'era: il `.env` non è cambiato.
 > [ADR 0068](adr/0068-policies-on-high.md) è Accettata, e com'è andata è in `milestones/M13.14.md`, «La prova a mano, il
 > 2026-11-13 — passata».
 
+***Annotato il 2026-11-19*** (M13.17, [ADR 0074](adr/0074-filesystem-up-to-the-home.md)): questa sezione è scritta con le due righe di prima — la radice
+sulla cartella Documenti, `ELA_FS_SCOPE=ELA` —, e con loro resta vera. Da M13.17 la seconda riga si scrive come un
+elenco, `ELA_FS_SCOPE=["ELA"]` — senza le parentesi ELA non parte —, e la cartella `ELA` deve esserci all'avvio. **Con
+la radice alla home la sezione non si fa**: lì `ELA` è l'albero di ELA, e una voce `ELA` ferma l'avvio. La prova dei file
+con la radice alla home è la sezione 35.
+
 Da M13.14 **una policy che crei tu può coprire un'azione `HIGH`**: `fs.write` nelle cartelle che scegli, e un invio con
 `browser.act` o `browser.act_as_you` sui siti che scegli. Dentro i suoi confini ELA la fa **senza chiederti niente**; il
 livello non si abbassa, e ogni azione resta nell'audit, in `ela policy list` e nella console. `terminal.run`, il login e
@@ -8126,6 +8181,12 @@ i link li ha già tolti lo script.
 > `tests/` e `scripts/generate_stato.py`. **Nessun login, nessun vault e nessuna chiamata al modello**: i piani sono
 > scritti, e il sito non vuole un account.
 
+***Annotato il 2026-11-19*** (M13.17, [ADR 0074](adr/0074-filesystem-up-to-the-home.md)): questa sezione è scritta con le due righe di prima — la radice
+sulla cartella Documenti, `ELA_FS_SCOPE=ELA` —, e con loro resta vera. Da M13.17 la seconda riga si scrive come un
+elenco, `ELA_FS_SCOPE=["ELA"]` — senza le parentesi ELA non parte —, e la cartella `ELA` deve esserci all'avvio. **Con
+la radice alla home la sezione non si fa**: lì `ELA` è l'albero di ELA, e una voce `ELA` ferma l'avvio. La prova dei file
+con la radice alla home è la sezione 35.
+
 Il branch tocca **una cosa sola di ciò che ELA installa e serve**: la porta degli scaricamenti dei due browser
 ([ADR 0070](adr/0070-the-door-closes-at-the-answer.md)). La porta, aperta per un gesto, **si dice chiusa quando il
 browser ha risposto al suo `deny`, non quando lo manda**: ciò che il browser annuncia mentre la chiusura viaggia è
@@ -8324,6 +8385,12 @@ e non un file è `browser.download_not_started`. Nessun sito dichiarato tiene un
 > cammina i passi meccanici con lo script contro un'ELA vera di prova. La si fa **sul Mac, senza il PC**, sull'**ultimo
 > commit del branch** `m13.15-le-policy-al-login-e-ai-file`, con lo script `scripts/prova_m13_15.py`: dopo, sul branch
 > cambiano solo `docs/`, `tests/` e `scripts/generate_stato.py`.
+
+***Annotato il 2026-11-19*** (M13.17, [ADR 0074](adr/0074-filesystem-up-to-the-home.md)): questa sezione è scritta con le due righe di prima — la radice
+sulla cartella Documenti, `ELA_FS_SCOPE=ELA` —, e con loro resta vera. Da M13.17 la seconda riga si scrive come un
+elenco, `ELA_FS_SCOPE=["ELA"]` — senza le parentesi ELA non parte —, e la cartella `ELA` deve esserci all'avvio. **Con
+la radice alla home la sezione non si fa**: lì `ELA` è l'albero di ELA, e una voce `ELA` ferma l'avvio. La prova dei file
+con la radice alla home è la sezione 35.
 
 Da M13.15 **una policy che crei tu può coprire il login e i file dal browser** — `browser.download`,
 `browser.download_as_you`, `browser.upload`, `browser.upload_as_you`, `browser.login` —, con **una seconda dimensione**:
