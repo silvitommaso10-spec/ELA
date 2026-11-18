@@ -22,7 +22,8 @@ without an answer a call in flight on a session of the browser when the browser 
 * a closing that does not end even once its driver is killed — injected;
 * the browser that dies before its download is announced;
 * a use of a page whose driver answers no more;
-* the announced file taken away even when the closing of the door does not end.
+* the announced file taken away even when the closing of the door does not end;
+* the worst case after the «ferma», against the formula written from the constants (answer 107).
 
 The limit is the test's own, short (:data:`LIMIT`): the composition gives ELA's,
 ``BROWSER_CLOSE_GRACE_SECONDS``.
@@ -46,10 +47,16 @@ from playwright.async_api._context_manager import PlaywrightContextManager
 from ela.domain import ExecutionResult, ExecutionStatus
 from ela.infrastructure.machine import browser as adapter
 from ela.infrastructure.machine.account import AccountChrome
-from ela.permissions import BROWSER_DOWNLOAD, BROWSER_DOWNLOAD_AS_YOU
+from ela.permissions import (
+    BROWSER_DOWNLOAD,
+    BROWSER_DOWNLOAD_AS_YOU,
+    BROWSER_READ,
+    BROWSER_READ_AS_YOU,
+)
 from ela.ports import BrowserFailed, Downloaded
 from ela.testing.fakes import FakeIdGenerator, FakeStop, FakeTaskPages
-from ela.tools.browser import FAILED, STOPPED, TIMEOUT
+from ela.tools.account import AccountReadTool
+from ela.tools.browser import FAILED, STOPPED, TIMEOUT, BrowserReadTool
 from ela.tools.browser_files import AccountDownloadTool, BrowserDownloadTool
 from tests.browser_leftovers import running
 from tests.infrastructure.machine import test_account_browser as account
@@ -565,6 +572,55 @@ async def test_a_use_of_a_page_whose_driver_answers_no_more_is_killed_at_its_lim
     assert left_running(frozen) == []
     assert len(made.killed) == 1 and adapter.DRIVER in made.killed[0], made.killed
     assert adapter.LEFT not in made.killed[0]
+
+
+async def test_the_worst_case_after_the_stop_ends_within_the_written_formula(
+    made: Made, served: list[Any]
+) -> None:
+    """Answer 107 of the review of M13.9d: **the worst case from the «ferma» to the end of the
+    step**, built. A tool that hears the «ferma» only at its own point — a read, whose call in
+    flight is a use of its page —, the driver and the browser frozen right after the page opened,
+    and the «ferma» then. The step ends within the formula of ADR 0072 §1, from the «ferma»,
+    written from the constants and not as a number: the tool's time, the limit, the kernel's wait
+    after the kill, the limit again."""
+    slow = Slow()
+    served.append(slow)
+    browser = made.browser
+    profiled = isinstance(browser, AccountChrome)
+    kind = AccountReadTool if profiled else BrowserReadTool
+    capability = BROWSER_READ_AS_YOU if profiled else BROWSER_READ
+    tool = kind(
+        browsing(slow.origin, ARRIVING_TOOL),
+        browser,
+        CLOCK,
+        FakeIdGenerator(),
+        pages=FakeTaskPages(),
+    )
+    stop = FakeStop()
+    frozen: list[int] = []
+    asked: list[float] = []
+    loop = asyncio.get_running_loop()
+    opening = browser.open
+
+    async def opened_then_frozen(address: str, allowed: Any, step_stop: Any) -> Any:
+        opened = await opening(address, allowed, step_stop)
+        frozen.extend(tree(browser._driver_pids()))
+        signalled(frozen, signal.SIGSTOP)
+        stop.event.set()
+        asked.append(loop.time())
+        return opened
+
+    browser.open = opened_then_frozen
+    arguments = {"site": SITE, "path": "/", "purpose": "la prova di M13.9d"}
+    step = asyncio.ensure_future(tool.execute(decision(capability), arguments, stop))
+    await until(lambda: asked or step.done(), "the page opened, frozen, and the stop")
+    assert asked and frozen, "the worst case was not built"
+
+    worst = ARRIVING_TOOL + LIMIT + adapter.GONE_SECONDS + LIMIT
+    await ended_within(step, asked[0] + worst - loop.time(), frozen, "the step")
+
+    assert left_running(frozen) == []
+    assert made.killed and adapter.DRIVER in made.killed[0], made.killed
 
 
 async def test_the_announced_file_goes_even_when_the_door_s_closing_does_not_end(

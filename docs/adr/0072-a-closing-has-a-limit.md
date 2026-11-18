@@ -64,9 +64,17 @@ nuovo, per ciò che l'uccisione non ha finito.
 
 **Il «ferma» passa per la stessa strada** (decisione 82). Lo scaricamento che arriva lo sente e cancella; gli altri tool
 lo sentono al loro punto (ADR 0054 §3), e l'operazione in volo finisce al tempo del tool. **Dal «ferma» alla fine dello
-step: il tempo del tool più il limite, e l'uccisione**, quando l'uccisione finisce il lavoro — con il driver morto
-ogni chiamata in volo cade (§6). **Il caso peggiore è quello del criterio qui sopra**: il lavoro che nemmeno l'uccisione
-finisce ha il limite di nuovo, e poi è lasciato e detto.
+step, il caso peggiore** (risposta 107 della review di M13.9d) si scrive dalle costanti, e non come un numero:
+
+il tempo del tool + `BROWSER_CLOSE_GRACE_SECONDS` + `GONE_SECONDS` + `BROWSER_CLOSE_GRACE_SECONDS`
+
+È il caso di un tool che sente il «ferma» solo al suo punto, con una chiamata in volo su un driver che non risponde: la
+chiamata finisce al tempo del tool, la chiusura aspetta il limite, l'uccisione aspetta il kernel, e ciò che nemmeno
+l'uccisione finisce ha il limite di nuovo, poi è lasciato e detto. Quando l'uccisione finisce il lavoro — con il driver
+morto ogni chiamata in volo cade (§6) — lo step finisce prima. Lo costruisce
+`test_the_worst_case_after_the_stop_ends_within_the_written_formula`, sui due browser: il driver e il browser fermati
+appena la pagina è aperta, e il «ferma» subito dopo. **La risposta 82 diceva «mai più del tempo del tool più il
+limite»: era più stretta del vero**, ed è corretta apertamente in M13.9d.
 
 ### 2. Una guardia sola, a mondo chiuso
 
@@ -196,7 +204,8 @@ allo stesso modo, e il test apre una pagina di nuovo dopo l'uccisione.
   - una chiusura che non finisce nemmeno dopo l'uccisione;
   - il browser che muore prima dell'annuncio dello scaricamento;
   - un uso di una pagina il cui driver non risponde più;
-  - il file annunciato tolto anche quando la chiusura della porta non finisce.
+  - il file annunciato tolto anche quando la chiusura della porta non finisce;
+  - il caso peggiore dopo il «ferma», contro la formula di §1 (risposta 107).
   
   **Rossi sul codice di prima**, ciascuno per la sua ragione: `m13.9d/rossi-prima-riassunto.txt`, e per gli ultimi tre,
   aggiunti dopo il ripasso dei mutanti, `rossi-prima-2.txt` e `rossi-prima-3.txt`. Nessuno scrive un

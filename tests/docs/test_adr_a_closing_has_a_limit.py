@@ -104,3 +104,25 @@ def test_its_constants_and_its_line_are_the_code_s() -> None:
     assert KILLED in text
     assert f"`{killed_at_a_closing(names)}`" in text
     assert f"{BROWSER_CLOSE_GRACE_SECONDS} s" in text
+
+
+def test_the_worst_case_after_the_stop_is_a_formula_of_the_constants_and_a_test_builds_it() -> None:
+    """Answer 107: the bound is written from the constants, never as a number, and the test that
+    builds it is there."""
+    text = ADR_PATH.read_text(encoding="utf-8")
+    first = text.split("### 1. ", 1)[1].split("\n### 2. ", 1)[0]
+    flat = " ".join(first.split())
+    tests = (
+        ROOT / "tests" / "infrastructure" / "machine" / "test_a_closing_has_a_limit.py"
+    ).read_text(encoding="utf-8")
+
+    formula = (
+        "il tempo del tool + `BROWSER_CLOSE_GRACE_SECONDS` + `GONE_SECONDS` + "
+        "`BROWSER_CLOSE_GRACE_SECONDS`"
+    )
+    assert formula in flat
+    assert "`test_the_worst_case_after_the_stop_ends_within_the_written_formula`" in flat
+    assert "async def test_the_worst_case_after_the_stop_ends_within_the_written_formula(" in tests
+    worst = first.split("caso peggiore", 1)[1].split("\n\n", 2)[1]
+    assert not re.search(r"\d", worst), f"the worst case is written as a number: {worst!r}"
+    assert browser.GONE_SECONDS and BROWSER_CLOSE_GRACE_SECONDS
