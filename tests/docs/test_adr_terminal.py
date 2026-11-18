@@ -117,11 +117,14 @@ def test_the_tool_row_is_the_running_tool() -> None:
 
     (row,) = rows
     assert "terminal.vault_program" not in row.group(5), "the row of then is as it was"
+    from tests.docs.test_adr_filesystem_up_to_the_home import added_codes
+
     _, class_name, name, idempotent, errors, numbers = rewritten_rows()["terminal.run"]
     assert class_name == TerminalRunTool.__name__
     assert name == "terminal-run"
     assert (idempotent == "sì") is TerminalRunTool.idempotent
-    assert codes(errors) == TerminalRunTool.error_codes
+    # The two codes ADR 0074 §12 adds (M13.17): the rows of ADR 0066 stay as they were.
+    assert codes(errors) | added_codes()["terminal.run"] == TerminalRunTool.error_codes
     assert codes(numbers) == TerminalRunTool.audit_numbers
 
 

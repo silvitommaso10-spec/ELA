@@ -190,7 +190,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **73** | `docs/adr/NNNN-*.md` |
+| ADR scritti | **74** | `docs/adr/NNNN-*.md` |
 | Milestone | **110, di cui 86 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **74** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **16** | `pyproject.toml` |
@@ -1407,6 +1407,11 @@ che ne discende non sta qui**: sta in [`ROADMAP.md`](ROADMAP.md), che da quel gi
   è **M13.17**, riservata. ***Annotato il 2026-11-18*** (decisione 130 dell'ultimo blocco di M13.15): è la prossima,
   e il suo documento è nato, [`milestones/M13.17.md`](milestones/M13.17.md). E il controllo del computer: mouse,
   tastiera e schermo, M13.5 e M14.4.
+  ***Annotato il 2026-11-19*** (M13.17, [ADR 0074](adr/0074-filesystem-up-to-the-home.md), Proposta fino alla prova
+  a mano della sezione 35 della guida): costruita sul branch `m13.17-i-file-di-tutto-il-computer` — la radice fino
+  alla home, lo scope un elenco di cartelle in JSON, i posti di ELA rifiutati a ogni uso come prima e unica linea, una
+  lettura con la sua dimensione nella domanda e un tetto di 8 MiB, un limite di 10 secondi a ogni attesa del disco. I
+  programmi che ELA lancia non entrano fra i posti: derivarli a mondo chiuso è **M13.20**, riservata.
 - **ELA si migliora da sola, e il sì e il merge restano di Tommaso** — la Fase 16, §35–§38. ELA ripara il proprio
   codice quando glielo si chiede, con il meccanismo di M14.7 puntato sul suo repository; si accorge dei propri errori
   e propone; prova una modifica su una copia, la confronta con la versione di prima, e torna indietro. **Il diff si

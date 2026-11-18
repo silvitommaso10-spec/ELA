@@ -307,6 +307,7 @@ può leggere. Nessuna capability sotto policy *lancia* un programma (§2); resta
 
 E il resto:
 
+  **Rivista da ADR 0074 (M13.17)** il 2026-11-19: §6, §7 e «Ciò che questo ADR dichiara e non risolve» — la spesa con il disco che non risponde; la lista dei posti va anche ai verifier e al terminale, e guadagna ciò che ELA usa; le tre strade, più larghe, e un'altra copia del repository o un altro `.env` sotto la radice (ADR 0074 §5, §7).
 - **Su quei siti il modello può fare qualunque gesto come l'utente**, anche uno che una pagina gli suggerisce; **una
   revoca non richiama ciò che è già partito**; il cancello limita i documenti del frame principale, non le richieste che
   il codice di una pagina fa da sé, salvo quando la pagina tiene un file: una pagina può chiamare l'indirizzo di ELA,
