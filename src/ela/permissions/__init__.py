@@ -131,6 +131,7 @@ from ela.permissions.policies import (
     shown_of,
     state_of,
     why_lines,
+    would_cover,
 )
 from ela.permissions.rows import LAUNCHES_A_PROGRAM, no_policy_for, row_of
 from ela.permissions.scope import scope_covers, targets_of, within_scope
@@ -260,6 +261,7 @@ __all__ = [
     "terminal_run",
     "validate_arguments",
     "why_lines",
+    "would_cover",
     "within_scope",
     "workspace_write_note",
 ]

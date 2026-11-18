@@ -20,7 +20,7 @@ from datetime import timedelta
 import pytest
 
 from ela.domain import Authorization, CapabilityId
-from ela.permissions import WHY_MAX, short_id, why_lines
+from ela.permissions import WHY_MAX, short_id, why_lines, would_cover
 from tests.domain.examples import NOW
 from tests.permissions.catalogue_calls import CALLS, CATALOGUE
 from tests.permissions.policy_support import policy_for, revoked
@@ -116,3 +116,67 @@ def test_a_live_policy_that_does_not_cover_says_its_gap_and_one_that_covers_says
         f"policy {short_id(covers.id)} covers this call: this step asks again for the yes it was "
         "given",
     )
+
+
+# ----------------------------------------------------------------------------------------
+# The line of when nothing is left to name, true to the letter (answer 43), and the policy
+# the sentence names first (answer 42)
+# ----------------------------------------------------------------------------------------
+
+
+def test_a_capability_that_never_had_a_policy_says_so() -> None:
+    assert lines() == ("no policy of yours for browser.download",)
+
+
+@pytest.mark.parametrize("age", [timedelta(hours=2), timedelta(days=60)], ids=["recent", "old"])
+def test_one_that_had_policies_none_of_which_matters_says_that_and_not_none(
+    age: timedelta,
+) -> None:
+    """A policy on another site, ended — recently or past the window —: «no policy of yours» would
+    be false, because there was one; the line says what is true of every policy it had."""
+    gone = revoked(
+        policy_for(
+            DOWNLOAD,
+            values=(OTHER,),
+            created_at=NOW - age,
+            expires_at=NOW + timedelta(days=5),
+            tail=930,
+        ),
+        NOW - age + timedelta(minutes=1),
+    )
+
+    found = lines((gone, 0))
+
+    assert found == (
+        "no live policy of yours for browser.download, and none that ended would have covered "
+        "this call",
+    )
+    assert not would_cover(gone, DOWNLOAD, CALL, now=NOW, on_the_core=True), "true to the letter"
+
+
+def test_the_policy_the_executor_hands_comes_first_whatever_its_age() -> None:
+    """Answer 42: the policy the sentence names is among the lines — first —, even ended past the
+    window, and the cut keeps the total at ``WHY_MAX``."""
+    old = revoked(
+        policy_for(
+            DOWNLOAD,
+            values=(THERE,),
+            created_at=NOW - timedelta(days=60),
+            expires_at=NOW + timedelta(days=5),
+            tail=931,
+        ),
+        NOW - timedelta(days=40),
+    )
+    newer = [live_on(HERE, hours=n, tail=932 + n) for n in (1, 2, 3)]
+
+    found = why_lines(
+        [(old, 0), *((one, 0) for one in newer)],
+        DOWNLOAD,
+        CALL,
+        now=NOW,
+        on_the_core=True,
+        handed=old.id,
+    )
+
+    assert len(found) == WHY_MAX
+    assert found[0].startswith(f"policy {short_id(old.id)} was revoked on")

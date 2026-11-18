@@ -77,6 +77,7 @@ __all__ = [
     "shown_of",
     "state_of",
     "why_lines",
+    "would_cover",
 ]
 
 MIN_DAYS: Final = 1
@@ -384,6 +385,25 @@ def _ended(policy: Authorization) -> datetime:
 # ----------------------------------------------------------------------------------------
 
 
+def would_cover(
+    policy: Authorization,
+    capability: CapabilitySpec,
+    arguments: Mapping[str, object],
+    *,
+    now: datetime,
+    on_the_core: bool | None,
+) -> bool:
+    """Whether ``policy``, alive, would cover this call (M13.17, ADR 0074; decision 17): the half of
+    :func:`shortfall` that says *covers* — the terms, the place, the sites, the values, the limits,
+    the arguments —, whatever its state. **One judgement, read by the executor** when it chooses
+    the policy it hands the Guardian, **and by** :func:`why_lines` when it chooses which ended
+    policy is a reason of the question."""
+    found = shortfall(
+        policy, capability, arguments, now=now, on_the_core=on_the_core, gaps=UNCOVERED
+    )
+    return found is None
+
+
 def why_lines(
     policies: Iterable[tuple[Authorization, int]],
     capability: CapabilitySpec,
@@ -391,31 +411,56 @@ def why_lines(
     *,
     now: datetime,
     on_the_core: bool | None,
+    handed: AuthorizationId | None = None,
 ) -> tuple[str, ...]:
     """Why a call of ``capability`` asks, policy by policy — the question's line, composed here
     and never elsewhere (decision 8).
 
-    The policies of the capability born before ``now`` that are live, or that ended less than
-    :data:`WHY_DAYS` before it; at most :data:`WHY_MAX`, the most recent first; for each, the first
-    reason of :func:`shortfall`. A policy the predicate finds covering is named as such: the step
-    asks again for the yes it was already given, because a step's own yes is its answer
-    (ADR 0015 §6) and a policy does not replace it.
+    **Which policies are a reason** (M13.17, ADR 0074; decision 17, answers 42 and 43): a live one,
+    covering or not — it says its gap, or that it covers —; one that ended — revoked, expired,
+    spent — **only if, alive, it would have covered the call** (:func:`would_cover`, the executor's
+    own judgement), and then it says how it ended. One that ended and would not have covered is not
+    a reason, and is not named. **The choice comes before the cut**: of the reasons born before
+    ``now``, those that ended less than :data:`WHY_DAYS` before it, at most :data:`WHY_MAX`, the
+    most recent first — and **the policy the executor hands the Guardian** (``handed``), the one the
+    sentence of the question names, comes first whatever its age, so the two surfaces say the same.
+
+    When nothing is left to name the line says so, true to the letter: «no policy of yours for …»
+    only when the capability never had a policy; otherwise that no live one covers and none that
+    ended would have.
 
     Each policy comes **with its uses**, read from the store by the caller, and the step with
     whether it is placed on the Core (M13.14, ADR 0068): the function stays pure.
     """
     window = now - timedelta(days=WHY_DAYS)
-    considered = sorted(
+    born = [
+        (one, uses) for one, uses in policies if one.approval_id is None and one.created_at <= now
+    ]
+    if not born:
+        return (f"no policy of yours for {capability.id}",)
+
+    def a_reason(one: Authorization, uses: int) -> bool:
+        ended = shortfall(one, capability, arguments, now=now, uses=uses, gaps=UNUSABLE)
+        if ended is None:
+            return True
+        return would_cover(one, capability, arguments, now=now, on_the_core=on_the_core)
+
+    first = [(one, uses) for one, uses in born if one.id == handed]
+    rest = sorted(
         (
             (one, uses)
-            for one, uses in policies
-            if one.approval_id is None and one.created_at <= now and _ended(one) > window
+            for one, uses in born
+            if one.id != handed and _ended(one) > window and a_reason(one, uses)
         ),
         key=lambda pair: pair[0].created_at,
         reverse=True,
-    )[:WHY_MAX]
+    )
+    considered = (first + rest)[:WHY_MAX]
     if not considered:
-        return (f"no policy of yours for {capability.id}",)
+        return (
+            f"no live policy of yours for {capability.id}, and none that ended would have covered "
+            "this call",
+        )
     lines = []
     for one, uses in considered:
         found = shortfall(one, capability, arguments, now=now, uses=uses, on_the_core=on_the_core)
