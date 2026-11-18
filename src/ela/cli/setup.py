@@ -27,6 +27,7 @@ from typing import Final
 import typer
 
 from ela.cli.errors import CONFIGURATION, fail, handled
+from ela.composition.settings import ROOT_EXAMPLE, SCOPE_EXAMPLE
 
 __all__ = [
     "ENV_FILE",
@@ -49,8 +50,8 @@ ASSIGNED = re.compile(r"^\s*(ELA_\w+)\s*=", re.MULTILINE)
 """A variable a file actually sets. A commented line sets nothing."""
 
 REQUIRED: tuple[tuple[str, str], ...] = (
-    ("ELA_FS_ROOT", "/Users/you/Documents"),
-    ("ELA_FS_SCOPE", "ELA"),
+    ("ELA_FS_ROOT", ROOT_EXAMPLE),
+    ("ELA_FS_SCOPE", SCOPE_EXAMPLE),
     ("ELA_TERMINAL_PROGRAMS", "[]"),
     ("ELA_BROWSER_SITES", "[]"),
 )
@@ -58,7 +59,9 @@ REQUIRED: tuple[tuple[str, str], ...] = (
 default: ELA has none for them, and it does not choose the user's folder (M13.1, ADR 0045) nor what
 may run on the user's machine (M13.2, ADR 0047), nor which sites its browser may open (M13.4,
 ADR 0052). The examples of ``ELA_TERMINAL_PROGRAMS`` and ``ELA_BROWSER_SITES`` are ``[]``, which is
-an admitted answer — «no program», «no site» — and not a program or a site ELA picked.
+an admitted answer — «no program», «no site» — and not a program or a site ELA picked. Since M13.17
+(ADR 0074) the pair of the files is the one the settings' own refusal shows: the home of
+``you``, and a list of JSON of folders inside it — ``[]`` is not an answer there.
 
 Until M13.1b they sat among the optional ones, and ``init`` said the token was «the only variable
 ELA requires» about an ``.env`` ELA would refuse. The list is not compared with another list:
@@ -211,7 +214,15 @@ def init() -> None:
 
 
 NOTES: Final = {
-    "ELA_FS_ROOT": "\nThe folder is yours: ELA does not create it and does not choose it.",
+    "ELA_FS_ROOT": (
+        "\nThe folder is yours: ELA does not create it and does not choose it. It may be your "
+        "home, and never a folder above it."
+    ),
+    "ELA_FS_SCOPE": (
+        "\nThe folders are one line of JSON, each relative to ELA_FS_ROOT, and each must be there "
+        "when ELA starts; a command of terminal.run starts from the first one. [] is not an "
+        "answer: the scope opens at least one folder."
+    ),
     "ELA_TERMINAL_PROGRAMS": (
         "\nThe programs are one line of JSON, each relative to / — usr/bin/git is /usr/bin/git —, "
         "and [] is an answer: no program at all."
