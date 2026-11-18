@@ -59,6 +59,7 @@ glielo si chiede; il diff si approva, e il merge non lo fa mai ELA.
 *A che cosa serve:* mouse, tastiera e schermo sotto il Guardian, il modello che li guida, il terminale su un
 nodo, il file che vive su una macchina, e il terminale sotto le policy.
 
+- `M13.20` — riservata — I programmi che ELA lancia, fra i suoi posti
 - `M13.18` — riservata — L'eseguibile firmato
 - `M13.5` — Proposta — Computer control: il muro dichiarato prima di cominciare
 - `M14.4` — Proposta — Il computer guidato dal modello: lo schermo, con il meccanismo di M14.3
@@ -70,6 +71,10 @@ nodo, il file che vive su una macchina, e il terminale sotto le policy.
 `M13.18` si apre in questa tappa **solo se il grant TCC di `M13.5` non tiene**: è la condizione d'ingresso di
 `M13.5`, e la regola della 5.11 di `STATO.md`, «Chi apre la milestone dell'eseguibile firmato». Se il grant
 tiene, il numero resta riservato, e la regola resta la stessa: la apre la prima milestone che ci sbatte contro.
+
+***Annotato il 2026-11-19*** (risposta 57 della review di M13.17): **`M13.20` è la prima voce della tappa**, riservata.
+La tappa 5 è quella in cui ELA comincia a lanciare e guidare i programmi del computer, e la dichiarazione a mondo chiuso
+di ciò che ELA lancia costa meno prima che i lanciatori aumentino.
 `M17.3`, nella tappa 8, la vuole prima di sé (il suo documento, «Ordine»).
 
 ### Tappa 6 — ELA con iniziativa
@@ -183,6 +188,7 @@ documento. Un numero non sta mai nei due posti.
 
 | Numero | Titolo | Che cosa porta | Spec |
 |---|---|---|---|
+| `M13.20` | I programmi che ELA lancia, fra i suoi posti | Ogni programma che ELA lancia — i browser, il trascrittore con il suo modello, e gli altri che il suo censimento trova — derivato a mondo chiuso da chi lo lancia, ed entrato fra i posti che nessuna lettura e nessuna scrittura raggiunge; ADR 0068 e ADR 0074 lo dichiarano e non lo risolvono. | §58, §65 |
 | `M13.18` | L'eseguibile firmato | Solo se il grant TCC di `M13.5` non tiene (la tappa 5). | §11, §20 |
 | `M13.19` | Mouse e tastiera sul PC | Le capacità di `M13.5` e di `M14.4` sul nodo Windows: chi usa ELA vuole le stesse capacità sul Mac e sul PC, come `M13.11` fa per il browser. | §17, §18, §20, §56 |
 | `M15.1` | La wake word | Il quarto stato del microfono, e la riga della 5.6 di `STATO.md` sulla voce: una voce riconosciuta non vale mai come un sì. | §9, §11, §34 |
