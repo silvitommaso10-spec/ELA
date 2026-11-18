@@ -23,6 +23,7 @@ from anthropic import AsyncAnthropic
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from ela.composition import SystemClock, UuidGenerator
+from ela.composition.root import BROWSER_CLOSE_GRACE_SECONDS as CLOSING
 from ela.devices import DeviceRegistry, LocalHeartbeat, period_of
 from ela.domain import Actor, ActorKind, CapabilityId, RiskLevel
 from ela.executive import StopOfTask
@@ -541,13 +542,16 @@ def _account_browser() -> AccountChrome:
         system=platform.system(),
         profile=None,
         shown=lambda: False,
+        closing=CLOSING,
     )
 
 
 def _browser() -> PlaywrightBrowser:
     """The browser of the Core, built as the composition builds it: nothing starts until a page
     is asked for (M13.4)."""
-    return PlaywrightBrowser(asyncio.Event(), environment={}, kept=_never, system=platform.system())
+    return PlaywrightBrowser(
+        asyncio.Event(), environment={}, kept=_never, system=platform.system(), closing=CLOSING
+    )
 
 
 async def _never() -> None:

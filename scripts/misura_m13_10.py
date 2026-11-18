@@ -519,6 +519,7 @@ async def measure(
 
 
 async def run(ask: Callable[[str], str] = input) -> int:
+    from ela.composition.root import BROWSER_CLOSE_GRACE_SECONDS
     from ela.composition.settings import AccountSettings
     from ela.infrastructure.machine.account import AccountChrome
     from ela.infrastructure.machine.browser import _Gate
@@ -552,6 +553,7 @@ async def run(ask: Callable[[str], str] = input) -> int:
         system="Darwin",
         profile=folder,
         shown=lambda: True,
+        closing=BROWSER_CLOSE_GRACE_SECONDS,
     )
     holder = await made.occupied()
     if holder is not None:

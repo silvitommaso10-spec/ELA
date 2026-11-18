@@ -157,6 +157,16 @@ file to an ``input`` of type ``text`` without a word (measured on 2026-11-10).""
 DOOR_ENDED: Final = "completed"
 """How a request the gate does not let go fails: as one somebody gave up — the page stays where
 it is, and shows no error of the browser's in its place (measured)."""
+GUARDED: Final = "__ela_guarded__"
+"""The mark the guard leaves on a member it holds (M13.9d, decision 93): what the rule of the
+architecture reads, member by member of the ports."""
+ENDED: Final = "the browser ended by itself"
+"""What a step says of a browser that ended while ELA was waiting for it (M13.9d, decision 81):
+its context closed, and nobody of ELA's had closed it."""
+LEFT: Final = "closing left unfinished"
+"""What the line of a kill names beside the processes, for a closing that had not ended even once
+what it waited for was killed: left to the loop, and nothing of ELA's close waits for it (M13.9d,
+decision 93)."""
 DRIVER: Final = "node"
 """What a driver is called when ELA says it killed one: the binary Playwright starts it with. Said
 by the adapter, which started it, and **not read from** ``ps``: a Linux kernel calls that process
@@ -202,6 +212,10 @@ def registry_folder(name: str, environment: Mapping[str, str], system: str) -> P
 
 _T = TypeVar("_T")
 _LOG = logging.getLogger(__name__)
+
+
+def _nobody_is_told_of_a_kill(names: tuple[str, ...]) -> None:
+    """Whoever builds this adapter without saying who is told that a closing passed its limit."""
 
 
 @dataclass
@@ -252,6 +266,11 @@ class PlaywrightBrowser:
     started or sent**, whenever it was raised (M13.4c). ``environment`` is what the browser
     receives, and nothing else (M6). ``kept`` is how long a page handed to the verifier may wait for
     its look — a function the composition gives, awaited once per page kept.
+
+    ``closing`` is **the limit of a closing**, in seconds (M13.9d, ADR 0072): the composition gives
+    ``BROWSER_CLOSE_GRACE_SECONDS``, and no number of its own lives here. ``killed`` is told the
+    names of what a closing that passed it killed — the composition says them where ELA's close
+    says its own.
     """
 
     def __init__(
@@ -261,11 +280,15 @@ class PlaywrightBrowser:
         environment: Mapping[str, str],
         kept: Callable[[], Awaitable[None]],
         system: str,
+        closing: float,
+        killed: Callable[[tuple[str, ...]], None] = _nobody_is_told_of_a_kill,
     ) -> None:
         self._stopping = stopping
         self._system = system
         self._environment: dict[str, str | float | bool] = dict(environment)
         self._kept = kept
+        self._limit = closing
+        self._told = killed
         self._pages: dict[str, _Open] = {}
         self._watching: asyncio.Task[None] | None = None
         self._closing: set[asyncio.Task[None]] = set()

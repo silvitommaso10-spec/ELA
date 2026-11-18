@@ -909,6 +909,7 @@ async def build(
                 environment=closed_environment,
                 kept=_lasting(BROWSER_TIMEOUT_SECONDS),
                 system=platform.system(),
+                closing=BROWSER_CLOSE_GRACE_SECONDS,
             )
         # The browser with the profile that lasts (M13.9, ADR 0063 §4): Chrome for Testing on the
         # folder of ``ELA_BROWSER_PROFILE_DIR`` — the one place that reads that line, and the one
@@ -925,6 +926,7 @@ async def build(
                 system=platform.system(),
                 profile=settings.accounts.browser_profile_dir,
                 shown=lambda: window.shown,
+                closing=BROWSER_CLOSE_GRACE_SECONDS,
                 ended=_window_trail(audit, clock, ids),
                 on_a_screen=a_session_of_the_screen(probe),
             )

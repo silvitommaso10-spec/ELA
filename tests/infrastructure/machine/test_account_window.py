@@ -30,6 +30,7 @@ from typing import Any
 
 import pytest
 
+from ela.composition.root import BROWSER_CLOSE_GRACE_SECONDS as CLOSING
 from ela.infrastructure.machine import account
 from ela.infrastructure.machine.account import (
     WINDOW_ARGUMENTS,
@@ -173,6 +174,7 @@ def chrome(profile: Path, told: Told | None = None) -> AccountChrome:
         profile=profile,
         shown=lambda: False,
         **({} if told is None else {"ended": told}),
+        closing=CLOSING,
     )
 
 

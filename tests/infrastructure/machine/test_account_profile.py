@@ -27,6 +27,7 @@ from typing import Any
 
 import pytest
 
+from ela.composition.root import BROWSER_CLOSE_GRACE_SECONDS as CLOSING
 from ela.infrastructure.machine import account
 from ela.infrastructure.machine.account import (
     ANOTHER_PROGRAM,
@@ -86,6 +87,7 @@ def chrome(profile: Path | None, *, system: str = "Darwin", shown: bool = False)
         system=system,
         profile=profile,
         shown=lambda: shown,
+        closing=CLOSING,
     )
 
 
@@ -1449,6 +1451,7 @@ def test_with_or_without_a_window_is_asked_at_every_launch(tmp_path: Path) -> No
         system="Darwin",
         profile=tmp_path,
         shown=lambda: shown[0],
+        closing=CLOSING,
     )
 
     assert made._launch()["headless"] is True
@@ -1557,6 +1560,7 @@ def with_a_screen(
         profile=profile,
         shown=lambda: shown,
         on_a_screen=screen,
+        closing=CLOSING,
     )
 
 

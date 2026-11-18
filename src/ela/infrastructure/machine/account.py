@@ -97,6 +97,7 @@ from playwright.async_api import Error as PlaywrightError
 from ela.infrastructure.machine.browser import (
     TEMPORARY_PROFILE,
     PlaywrightBrowser,
+    _nobody_is_told_of_a_kill,
     _Open,
     registry_folder,
 )
@@ -751,10 +752,19 @@ class AccountChrome(PlaywrightBrowser):
         system: str,
         profile: Path | None,
         shown: Callable[[], bool],
+        closing: float,
+        killed: Callable[[tuple[str, ...]], None] = _nobody_is_told_of_a_kill,
         ended: Callable[[str | None, float], Awaitable[None]] = _nobody_is_told,
         on_a_screen: Callable[[], Awaitable[bool]] = _no_screen_was_said,
     ) -> None:
-        super().__init__(stopping, environment=environment, kept=kept, system=system)
+        super().__init__(
+            stopping,
+            environment=environment,
+            kept=kept,
+            system=system,
+            closing=closing,
+            killed=killed,
+        )
         self._profile = profile
         self._shown = shown
         self._ended = ended

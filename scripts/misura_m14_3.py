@@ -74,6 +74,7 @@ import uvicorn
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from ela.composition.root import BROWSER_CLOSE_GRACE_SECONDS
 from ela.domain import ProviderRequest, ProviderRequestId
 from ela.executive.stops import StopOfTask
 from ela.infrastructure.machine.browser import PlaywrightBrowser
@@ -2022,6 +2023,7 @@ async def measure(out: Out, mode: str) -> int:
         },
         kept=lambda: asyncio.sleep(BROWSER_TIMEOUT_SECONDS),
         system=platform.system(),
+        closing=BROWSER_CLOSE_GRACE_SECONDS,
     )
     if not await browser.installed():
         out.say(
