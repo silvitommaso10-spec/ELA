@@ -30,6 +30,7 @@ from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from functools import cache
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Final
 
 import pytest
@@ -348,11 +349,16 @@ class World(WithABackground):
 class Arriving(FakeAccountBrowser):
     """The browser of the profile of these walks, whose download from ``/drip`` arrives and never
     ends: its file is in the folder, under a name of the browser's, until the task is stopped —
-    and then taken away, as the door does."""
+    and then taken away, as the door does. **It begins only when told** (:attr:`may_begin`): a real
+    browser takes its time to launch, and the stop of the script must wait for the file, not only
+    for the step to be RUNNING (mutant 20 of M13.9d)."""
+
+    may_begin: asyncio.Event
 
     async def downloaded_from(self, address: str, allowed: Any, stop: Any, into: str) -> Any:
         if "/drip" not in address:
             return await super().downloaded_from(address, allowed, stop, into)
+        await self.may_begin.wait()
         stop.listen(DOWNLOAD_GESTURE)
         arriving = Path(into) / "4f3a9c1e-0000-4000-8000-000000000014.crdownload"
         arriving.parent.mkdir(parents=True, exist_ok=True)
@@ -414,6 +420,7 @@ async def an_ela(
             texts=dict(shown),
         )
     )
+    yours.may_begin = asyncio.Event()
     vault = FakeVault(list(entries))
     ela = await build(settings, power=FakePower(), browser=empty, accounts=yours, vault=vault)
     assert await ela.vault.open(Secret(vault.key)) is None
@@ -443,7 +450,24 @@ async def walked(
     said = dict(answers or {})
     loop = asyncio.get_running_loop()
 
-    async with an_ela(monkeypatch, tmp_path, entries) as (ela, _, _):
+    async with an_ela(monkeypatch, tmp_path, entries) as (ela, _, yours):
+        # The download of step 14 begins once the script, having seen the step RUNNING, waits
+        # for its file — at its first look after that, and not before.
+        running: list[bool] = []
+        state_of = module.step_state
+
+        def seen(task: Any) -> str | None:
+            said_now = state_of(task)
+            running.append(said_now == "RUNNING")
+            return said_now
+
+        def look(seconds: float) -> None:
+            if any(running):
+                loop.call_soon_threadsafe(yours.may_begin.set)
+            time.sleep(seconds)
+
+        monkeypatch.setattr(module, "step_state", seen)
+        monkeypatch.setattr(module, "time", SimpleNamespace(sleep=look, monotonic=time.monotonic))
 
         def ask(question: str) -> str:
             if question.startswith("[12] Premi Invio"):
@@ -487,6 +511,7 @@ async def test_steps_2_to_15_walk_against_a_real_ela_and_pass(
     assert walk.report.ok, walk.written
     assert walk.report.skipped_steps == [], walk.written
     assert f"fermato mentre il file arrivava: {module.STOPPED}" in walk.written, walk.written
+    assert re.search(r"il file è nella cartella: \S", walk.written), walk.written
     states = sorted((one["capability"], one["state"], one["uses"]) for one in walk.policies)
     assert states == [
         ("browser.download", "REVOKED", 1),
