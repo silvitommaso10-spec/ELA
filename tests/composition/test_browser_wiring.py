@@ -168,3 +168,20 @@ async def test_with_nobody_to_say_it_to_a_kill_is_said_nowhere(
         ela.tools.get(BROWSER_ACT)._browser._told(("node",))  # type: ignore[attr-defined]  # noqa: SLF001
     finally:
         await ela.aclose()
+
+
+async def test_with_nobody_to_say_it_downloads_not_forgotten_are_said_nowhere(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """M13.13c: ``build`` with no ``said`` — every caller but ``ela serve`` —: the browser of the
+    profile is told why the downloads were not forgotten, and nothing is written, and nothing
+    raises."""
+    declare(monkeypatch, tmp_path)
+    await create_schema(database_url(tmp_path))
+    ela = await build(Settings.load())
+    try:
+        ela.accounts._unforgotten("OperationalError")  # type: ignore[attr-defined]  # noqa: SLF001
+    finally:
+        await ela.aclose()
+
+    assert "not forgotten" not in capsys.readouterr().err
