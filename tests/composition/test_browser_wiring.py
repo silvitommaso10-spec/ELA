@@ -132,6 +132,30 @@ async def test_a_closing_that_passed_its_limit_is_said_where_ela_s_close_says_it
     assert KILLED in server.killed(names)
 
 
+async def test_downloads_not_forgotten_are_said_where_a_kill_is_said(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """M13.13c, decision 112: before a launch of the browser of the profile, downloads that could
+    not be forgotten are said by ``said`` — the standard error of ``ela serve`` —, with the type of
+    what stopped it and never a path, and the launch goes on."""
+    from ela.composition.root import history_kept
+
+    declare(monkeypatch, tmp_path)
+    await create_schema(database_url(tmp_path))
+    lines: list[str] = []
+    ela = await build(Settings.load(), said=lines.append)
+    try:
+        ela.accounts._unforgotten("OperationalError")  # type: ignore[attr-defined]  # noqa: SLF001
+    finally:
+        await ela.aclose()
+
+    assert lines == [history_kept("OperationalError")]
+    assert lines[0] == (
+        "ela: the downloads the browser of the profile remembers were not forgotten before a "
+        "launch (OperationalError): the launch goes on"
+    )
+
+
 async def test_with_nobody_to_say_it_to_a_kill_is_said_nowhere(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

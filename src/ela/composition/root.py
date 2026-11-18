@@ -636,6 +636,17 @@ def killed_at_a_closing(names: Sequence[str]) -> str:
     )
 
 
+def history_kept(kind: str) -> str:
+    """What ELA says when, before a launch of the browser of the profile, the downloads of its
+    history could not be forgotten (M13.13c, ADR 0073): **where and in the form of the other lines
+    of the browser** — what, the type of what stopped it, and that the launch goes on. Never a path
+    or a name of a file (decision 116)."""
+    return (
+        "ela: the downloads the browser of the profile remembers were not forgotten before a "
+        f"launch ({kind}): the launch goes on"
+    )
+
+
 def _kills_said(said: Callable[[str], None] | None) -> Callable[[tuple[str, ...]], None]:
     """Who a browser tells the names of what a closing of its killed: the line of
     :func:`killed_at_a_closing`, written by ``said`` — and by nobody when nobody said where."""

@@ -246,6 +246,10 @@ Google's; the automatic filling and the remembered values of forms; the browser'
 Google account."""
 PREFERENCES_FILE: Final = (PROFILE, "Preferences")
 SERVICE_WORKERS: Final = (PROFILE, "Service Worker")
+HISTORY_FILE: Final = (PROFILE, "History")
+"""The database where the browser keeps its history, and in it the downloads it remembers."""
+DOWNLOAD_TABLES: Final = ("downloads", "downloads_url_chains", "downloads_slices")
+"""The three tables of the downloads in :data:`HISTORY_FILE` (M13.13c, ADR 0073)."""
 LOGINS: Final = (PROFILE, "Login Data")
 LOCK: Final = "SingletonLock"
 """The link the browser leaves in its folder while it runs: ``<host>-<pid>``."""
@@ -653,11 +657,13 @@ def _taken_away(place: Path) -> None:
         shutil.rmtree(place, ignore_errors=True)
 
 
-def _prepared(profile: Path, *, driven: bool) -> None:
+def _prepared(profile: Path, *, driven: bool) -> str | None:
     """What is done to the folder before a launch: the preferences, always; **what a crash left,
     always** (decision 90) — a report is memory of the process that held the sessions, it serves
     nobody, and it does not pass to the launch after: the browser makes the folder of its
-    collector again —; and before a launch Playwright drives, the service workers gone."""
+    collector again —; and before a launch Playwright drives, the service workers gone and **the
+    downloads the history remembers forgotten** (:func:`_downloads_forgotten`). What it returns is
+    why those were not forgotten — a type, never a path —, or ``None``."""
     default = profile / PREFERENCES_FILE[0]
     default.mkdir(mode=PROFILE_MODE, exist_ok=True)
     file = profile.joinpath(*PREFERENCES_FILE)
@@ -675,6 +681,7 @@ def _prepared(profile: Path, *, driven: bool) -> None:
     _taken_away(profile / REPORTS)
     if driven:
         _taken_away(profile.joinpath(*SERVICE_WORKERS))
+    return None
 
 
 WEB: Final = frozenset({"https", "http"})
@@ -707,6 +714,11 @@ def _seen(launching: asyncio.Future[None]) -> None:
 
 async def _nobody_is_told(address: str | None, seconds: float) -> None:
     """Whoever builds this adapter without saying who is told that a window ended."""
+
+
+def _nobody_is_told_of_the_history(kind: str) -> None:
+    """Whoever builds this adapter without saying who is told that the downloads of the history
+    were not forgotten before a launch."""
 
 
 def _held(written: str, value: Secret) -> str:
@@ -757,6 +769,7 @@ class AccountChrome(PlaywrightBrowser):
         killed: Callable[[tuple[str, ...]], None] = _nobody_is_told_of_a_kill,
         ended: Callable[[str | None, float], Awaitable[None]] = _nobody_is_told,
         on_a_screen: Callable[[], Awaitable[bool]] = _no_screen_was_said,
+        unforgotten: Callable[[str], None] = _nobody_is_told_of_the_history,
     ) -> None:
         super().__init__(
             stopping,
@@ -770,6 +783,7 @@ class AccountChrome(PlaywrightBrowser):
         self._shown = shown
         self._ended = ended
         self._on_a_screen = on_a_screen
+        self._unforgotten = unforgotten
         self._with_a_window = False
         self._said_of: Callable[[int], Awaitable[str | None]] = self._asked
         self._tabled: Callable[[], Awaitable[Mapping[int, tuple[int, str]] | None]] = self._table
