@@ -1,0 +1,30 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M13.17 (GETTING_STARTED, sezione 35, passo 9): una scrittura nella",
+    "cartella della policy di fs.write che hai creato, dentro la seconda voce dell'elenco. La policy",
+    "toglie la domanda, e lo step parte senza chiedere (ADR 0068).",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "scrivere il file della prova nella cartella della policy",
+  "steps": [
+    {
+      "id": "f17e5a17-0000-4b00-8a00-000000000005",
+      "goal": "scrivere il file della prova nella cartella della policy",
+      "required_capabilities": [
+        "fs.write"
+      ],
+      "arguments": {
+        "path": "Desktop/prova-m13.17/policy/tre.md",
+        "body": "ELA prova 35: sotto la policy\n",
+        "overwrite": false,
+        "purpose": "la prova a mano dei file di tutto il computer"
+      },
+      "risk": "HIGH",
+      "expected_result": "il file c'è, con il testo della prova",
+      "success_conditions": [
+        "fs.file_exists"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M13.17 (GETTING_STARTED, sezione 35, passo 7): una scrittura in",
+    "Library, che l'elenco della prova non apre. Il Guardian la nega con la regola SCOPE prima di ogni",
+    "sguardo del tool e prima di ogni domanda: nessuno guarda dentro Library, e il campanello tace.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "scrivere fuori dalle cartelle aperte",
+  "steps": [
+    {
+      "id": "f17e5a17-0000-4b00-8a00-000000000004",
+      "goal": "scrivere fuori dalle cartelle aperte",
+      "required_capabilities": [
+        "fs.write"
+      ],
+      "arguments": {
+        "path": "Library/prova-m13.17/fuori.md",
+        "body": "ELA prova 35: fuori dall'elenco\n",
+        "overwrite": false,
+        "purpose": "la prova a mano dei file di tutto il computer"
+      },
+      "risk": "HIGH",
+      "expected_result": "nessun file: la scrittura è negata prima della domanda",
+      "success_conditions": [
+        "fs.file_exists"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}

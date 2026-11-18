@@ -1,0 +1,30 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M13.17 (GETTING_STARTED, sezione 35, passo 4): una scrittura",
+    "nella seconda cartella dell'elenco, Desktop. Chiede come la prima: lo scope è un elenco, e ogni",
+    "cartella dell'elenco è un confine come la cartella sola di prima (ADR 0074).",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "scrivere il secondo file della prova sulla Scrivania",
+  "steps": [
+    {
+      "id": "f17e5a17-0000-4b00-8a00-000000000002",
+      "goal": "scrivere il secondo file della prova sulla Scrivania",
+      "required_capabilities": [
+        "fs.write"
+      ],
+      "arguments": {
+        "path": "Desktop/prova-m13.17/due.md",
+        "body": "ELA prova 35: il secondo file, per la lettura\n",
+        "overwrite": false,
+        "purpose": "la prova a mano dei file di tutto il computer"
+      },
+      "risk": "HIGH",
+      "expected_result": "il file c'è, con il testo della prova",
+      "success_conditions": [
+        "fs.file_exists"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}

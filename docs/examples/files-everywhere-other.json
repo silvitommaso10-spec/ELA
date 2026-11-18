@@ -1,0 +1,30 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M13.17 (GETTING_STARTED, sezione 35, passo 9): una scrittura nella",
+    "stessa voce dell'elenco, fuori dalla cartella della policy. Chiede: il confine di una policy è la",
+    "policy, non l'elenco. Rispondi no.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "scrivere accanto alla cartella della policy",
+  "steps": [
+    {
+      "id": "f17e5a17-0000-4b00-8a00-000000000006",
+      "goal": "scrivere accanto alla cartella della policy",
+      "required_capabilities": [
+        "fs.write"
+      ],
+      "arguments": {
+        "path": "Desktop/prova-m13.17/altra/quattro.md",
+        "body": "ELA prova 35: accanto alla policy\n",
+        "overwrite": false,
+        "purpose": "la prova a mano dei file di tutto il computer"
+      },
+      "risk": "HIGH",
+      "expected_result": "nessun file: rispondi no",
+      "success_conditions": [
+        "fs.file_exists"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}
