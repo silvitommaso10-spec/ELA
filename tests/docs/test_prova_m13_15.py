@@ -25,6 +25,7 @@ import json
 import re
 import stat
 import sys
+import time
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from functools import cache
@@ -260,10 +261,14 @@ def test_a_command_past_its_limit_is_closed_and_said() -> None:
     — its group, which is the command and what it started — and ``Overdue`` says it."""
     module = script()
     marker = "31.0817"
+    began = time.monotonic()
 
     with pytest.raises(module.base.Overdue) as late:
-        module.base.run(f"sleep {marker}", 0.5)
+        # Two commands, so that the shell stays the parent of what it started: closing the shell
+        # alone would leave the sleep, and its pipe, for half a minute.
+        module.base.run(f"sleep {marker}; true", 0.5)
 
+    assert time.monotonic() - began < 10, "the command was waited for past its limit"
     assert late.value.limit == 0.5 and "non è tornato in 0.5 s" in str(late.value)
     listed = module.base.processes()
     assert not any(f"sleep {marker}" in command for command in listed.values())
