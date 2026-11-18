@@ -40,13 +40,22 @@ def revised_by_their_state(mark: str, exclude: Path) -> set[str]:
     }
 
 
-def test_it_is_a_proposal_until_the_proof_by_hand_and_says_what_the_proof_is() -> None:
+def test_it_is_accepted_and_says_what_the_hand_saw_and_what_only_the_test_proves() -> None:
+    """Decision 127: step 14 by hand; the dying browser, the frozen driver, the kill at the limit
+    and the worst case by the tests, named; and where it began."""
     said = " ".join(status_of(ADR_PATH.read_text(encoding="utf-8")).split())
+    tests = (
+        ROOT / "tests" / "infrastructure" / "machine" / "test_a_closing_has_a_limit.py"
+    ).read_text(encoding="utf-8")
 
-    assert said.startswith("**Proposta** il **2026-11-18**")
-    assert "`tests/infrastructure/machine/test_a_closing_has_a_limit.py`" in said
+    assert said.startswith("**Accettata** il **2026-11-18**")
     assert "la sezione 34 di `docs/GETTING_STARTED.md`" in said
-    assert "**La riga dirà chi ha visto che cosa**" in said
+    assert "**Che cosa ha visto la mano: il passo 14.**" in said
+    assert "`browser.stopped` **1,0 s dopo il «ferma»**" in said
+    assert "`tests/infrastructure/machine/test_a_closing_has_a_limit.py`" in said
+    for name in re.findall(r"`(test_[a-z_]+)`", said):
+        assert f"async def {name}(" in tests, name
+    assert "**L'origine** è sull'ELA vera" in said
 
 
 def test_the_index_names_it_with_its_state() -> None:
@@ -54,7 +63,7 @@ def test_the_index_names_it_with_its_state() -> None:
 
     assert (
         "| [0072](0072-a-closing-has-a-limit.md) | Una chiusura del browser ha un limite | "
-        "Proposta |" in index
+        "Accettata |" in index
     )
 
 

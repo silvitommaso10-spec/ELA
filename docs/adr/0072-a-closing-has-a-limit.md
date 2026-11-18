@@ -1,14 +1,23 @@
 # 0072. Una chiusura del browser ha un limite
 
-- **Stato:** **Proposta** il **2026-11-18**, con l'implementazione di M13.9d (`docs/milestones/M13.9d.md`: la SPEC, la
-  review della SPEC — le risposte 80–90 e le decisioni 91–97 —). Diventa Accettata con un commit suo dopo la prova a
-  mano (decisioni 87 e 94), che ha due parti:
-  - il browser che cade lo prova il test e non la mano: `tests/infrastructure/machine/test_a_closing_has_a_limit.py`,
-    rosso sul codice di prima e verde dopo;
-  - la sezione 34 di `docs/GETTING_STARTED.md` si rifà dall'inizio sull'ultimo commit del branch, con
-    `scripts/prova_m13_15.py`, e il suo passo del «ferma» mostra sull'ELA vera uno step fermato mentre il file arriva.
+- **Stato:** **Accettata** il **2026-11-18**, con un commit suo (decisione 127 dell'ultimo blocco del branch
+  `m13.15-le-policy-al-login-e-ai-file`): la sezione 34 di `docs/GETTING_STARTED.md`, rifatta dall'inizio con
+  `scripts/prova_m13_15.py`, è passata a `fe776f4`, l'ultimo commit del branch su origin
+  (`~/Downloads/prova-m13.15-20261118-183240.txt`: 56 PASSATI al primo giro, 0 FALLITI).
   
-  **La riga dirà chi ha visto che cosa**, come quella di ADR 0070. Un ADR non basta se la prova a mano non è passata.
+  **Che cosa ha visto la mano: il passo 14.** Il «ferma» sull'ELA vera, con uno scaricamento come te in volo da
+  `httpbin.org`, mandato dallo script quando lo step era RUNNING e il file era nella cartella: `browser.stopped` **1,0 s
+  dopo il «ferma»**, e niente di quello scaricamento nella cartella.
+  
+  **Che cosa prova il test, e non la mano** (`tests/infrastructure/machine/test_a_closing_has_a_limit.py`):
+  - il browser che muore con il `deny` in volo, `test_a_browser_that_dies_with_the_deny_in_flight_is_said_at_once_and_its_file_goes`;
+  - il driver congelato e l'uccisione al limite, `test_a_driver_and_a_browser_that_answer_no_more_are_killed_at_the_limit`
+    e `test_a_driver_that_never_answers_the_launch_is_killed_at_the_limit`;
+  - il caso peggiore dopo il «ferma», `test_the_worst_case_after_the_stop_ends_within_the_written_formula`.
+  
+  **L'origine** è sull'ELA vera: il 2026-11-17, al passo 3 della prova di allora, uno step è rimasto RUNNING per mezz'ora,
+  e il «ferma» del task non l'ha liberato; lo ha liberato lo stop di ELA (M13.9d). **Le «Righe riviste» di questo ADR hanno
+  il loro marchio** sulle righe «Stato:» di ADR 0052, 0054, 0063, 0066 e 0070.
 - **Data:** 2026-11-18
 - **Riferimenti spec:** §19, §33, §65
 - **Milestone:** [M13.9d](../milestones/M13.9d.md)
