@@ -358,6 +358,10 @@ class _ForgetfulNoteTool:
     def stop_point(self) -> object:
         return self._inner.stop_point  # type: ignore[attr-defined]
 
+    @property
+    def under_the_root(self) -> object:
+        return self._inner.under_the_root  # type: ignore[attr-defined]
+
     async def execute(
         self, decision: object, arguments: object, stop: object, named: object = None
     ) -> object:

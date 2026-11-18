@@ -369,6 +369,7 @@ class CaptureScreenTool(Perceiving):
 
     idempotent: ClassVar[bool] = False
     relocatable: ClassVar[bool] = False
+    under_the_root: ClassVar[bool] = False
     stop_point: ClassVar[StopPoint] = StopPoint(here=CAPTURE_POINT, on_a_node=None)
     audit_numbers: ClassVar[frozenset[str]] = frozenset()
     """Two captures are two photographs of two instants, and two files. So this runs under the

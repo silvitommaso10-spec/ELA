@@ -185,6 +185,7 @@ class SlowEcho(Tool):
     relocatable: ClassVar[bool] = True
     audit_numbers: ClassVar[frozenset[str]] = frozenset()
     stop_point: ClassVar[StopPoint] = EchoTool.stop_point
+    under_the_root: ClassVar[bool] = False
 
     def __init__(self, clock: Any, ids: Any, delay: float) -> None:
         super().__init__(CORE_ECHO, clock, ids, name=ECHO_TOOL_NAME)
@@ -213,6 +214,7 @@ class CostlyEcho(Tool):
     relocatable: ClassVar[bool] = True
     audit_numbers: ClassVar[frozenset[str]] = frozenset()
     stop_point: ClassVar[StopPoint] = EchoTool.stop_point
+    under_the_root: ClassVar[bool] = False
 
     def __init__(self, clock: Any, ids: Any) -> None:
         super().__init__(CORE_ECHO, clock, ids, name=ECHO_TOOL_NAME)

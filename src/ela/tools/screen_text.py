@@ -128,6 +128,7 @@ class ReadScreenTextTool(Perceiving):
 
     idempotent: ClassVar[bool] = False
     relocatable: ClassVar[bool] = False
+    under_the_root: ClassVar[bool] = False
     stop_point: ClassVar[StopPoint] = StopPoint(here=TEXT_POINT, on_a_node=None)
     """The recognition reads a file of the store and changes nothing; the file of text beside it is
     the effect (M6.3c)."""

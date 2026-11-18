@@ -159,6 +159,11 @@ class Tool(ABC):
     default**, like :attr:`relocatable`: the registry refuses silence. ``here`` is the point the
     tool passes to :meth:`~ela.ports.TaskStop.listen` with no ``await`` between it and the effect,
     or ``None`` when the point is the call itself."""
+    under_the_root: ClassVar[bool]
+    """Whether the tool looks at, reads or writes a file under ``ELA_FS_ROOT`` (M13.17, ADR 0074)
+    — **no default**, like :attr:`stop_point`: the registry refuses silence. The tools that say
+    ``True`` are the ones the closed worlds of the guard of the disk and of ELA's own places are
+    derived from; one that said nothing could be one of them."""
 
     def __init__(
         self, capability_id: CapabilityId, clock: Clock, ids: IdGenerator, *, name: str

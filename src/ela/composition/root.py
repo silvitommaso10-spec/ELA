@@ -146,6 +146,7 @@ from ela.tools import (
     production_tools,
     production_verifiers,
 )
+from ela.tools.disk import Disk
 from ela.tools.settings import sessions_dir_beside, speech_dir_beside
 from ela.tools.terminal import CLOSED_PATH, LANGUAGE
 from ela.tools.vault import VAULT_TIMEOUT_SECONDS, VaultClosing, VaultDoor
@@ -422,6 +423,10 @@ class Ela:
     ``ela.api`` may not name an adapter (architecture rule 27) — so what the API reaches is this
     object and :meth:`sweep_speech`, not :mod:`ela.infrastructure.machine`.
     """
+    disk: Disk
+    """The guard every look, read and write under ``ELA_FS_ROOT`` passes (M13.17, ADR 0074): one
+    for the process, handed to every tool and verifier that looks there. On ``Ela`` so that
+    ``ela diagnostics`` says how many abandoned waits are standing."""
 
     def sweep_speech(self) -> int:
         """Delete what a crash between making the audio's file and unlinking it would leave.
@@ -1063,6 +1068,9 @@ async def build(
             stopping=stopping,
             clock=clock,
         )
+        # One guard of the disk for the process (M13.17, ADR 0074): the tools and the verifiers that
+        # look under the root share it, so the waits it abandons are counted together.
+        disk = Disk()
         tools = production_tools(
             root=root,
             clock=clock,
@@ -1097,6 +1105,7 @@ async def build(
             # What ELA uses to exist (M13.14, ADR 0068): the list the root was checked against at
             # the start-up, and no write of ELA's reaches it — under a yes or under a policy.
             protected=settings.ela_s_own(),
+            disk=disk,
         )
         verifiers = production_verifiers(
             root=root,
@@ -1110,6 +1119,7 @@ async def build(
             sessions=agents,
             audit=audit,
             accounts=accounts,
+            disk=disk,
         )
 
         # Which tools this machine has is not something the registry can know (ADR 0016 §4), and
@@ -1286,6 +1296,7 @@ async def build(
         window=window,
         vault=door,
         speech_dir=scratch,
+        disk=disk,
         speech_online=playing,
         listening=listening,
         removed_from_environment=removed,

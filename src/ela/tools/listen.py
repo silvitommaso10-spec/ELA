@@ -123,6 +123,7 @@ class ListenTool(Perceiving):
 
     idempotent: ClassVar[bool] = False
     relocatable: ClassVar[bool] = False
+    under_the_root: ClassVar[bool] = False
     stop_point: ClassVar[StopPoint] = StopPoint(here=MICROPHONE_POINT, on_a_node=None)
     audit_numbers: ClassVar[frozenset[str]] = frozenset()
     """Two recordings are two rooms at two instants. So this runs under the STARTED protocol, and

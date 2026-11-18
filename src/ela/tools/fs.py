@@ -46,6 +46,7 @@ from typing import ClassVar, Final
 from ela.domain import CapabilityId, ErrorMetadata, JsonMapping, TaskId
 from ela.ports import ENVELOPE, Clock, IdGenerator, Prospect, StopPoint, Target, TaskStop
 from ela.tools.base import ARGUMENTS_INVALID, FIRST_WRITE, Outcome, Tool
+from ela.tools.disk import MAKING_THE_FOLDER, NO_ANSWER, WRITING, Disk, DiskSilent, Gone
 from ela.tools.paths import (
     INVALID_SHAPE,
     PATH_INVALID,
@@ -231,6 +232,7 @@ class FsReadTool(Tool):
             IO_ERROR,
             ELA_S_OWN,
             HARD_LINK,
+            NO_ANSWER,
         }
     )
     output_keys: ClassVar[frozenset[str]] = frozenset({"path", "bytes", "content"})
@@ -241,6 +243,7 @@ class FsReadTool(Tool):
     """**Repeatable, and not relocatable** (M13.3, ADR 0048): the same path on another machine is
     another file, so a read that a silent node took is closed ``interrupted``, not done elsewhere.
     The tool that makes the declaration a declaration, and not another name for ``idempotent``."""
+    under_the_root: ClassVar[bool] = True
     stop_point: ClassVar[StopPoint] = StopPoint(here=None, on_a_node=ENVELOPE)
     """A read has no effect in the world and no wait before it: its point is the call (M6.3c)."""
 
@@ -251,11 +254,19 @@ class FsReadTool(Tool):
         ids: IdGenerator,
         *,
         protected: Mapping[str, Path],
+        disk: Disk | None = None,
         name: str = FS_READ_TOOL_NAME,
     ) -> None:
         super().__init__(FS_READ, clock, ids, name=name)
         self._root = resolve_workspace(root)
         self._protected: Mapping[str, Path] = MappingProxyType(dict(protected))
+        self._disk = Disk() if disk is None else disk
+
+    @property
+    def disk(self) -> Disk:
+        """The guard every look and read of this tool passes (M13.17, ADR 0074): the composition's,
+        shared by the process; a guard of its own when none is handed, as in a test."""
+        return self._disk
 
     @property
     def root(self) -> Path:
@@ -269,8 +280,13 @@ class FsReadTool(Tool):
         return self._protected
 
     async def prospect(self, arguments: JsonMapping, task: TaskId | None = None) -> Prospect:
-        """What a read of this path would meet now (dec. G, and the rule of ADR 0045 §6-bis)."""
-        return _prospect(self._look(arguments), self.name)
+        """What a read of this path would meet now (dec. G, and the rule of ADR 0045 §6-bis) — the
+        look in the guard of the disk (M13.17, ADR 0074)."""
+        try:
+            looked = await self._disk.run(lambda _: self._look(arguments), _what(LOOK, arguments))
+        except DiskSilent as silent:
+            return _refused(NO_ANSWER, str(silent), self.name)
+        return _prospect(looked, self.name)
 
     async def asserted(self, arguments: JsonMapping) -> Prospect:
         """What a read asserts, on a machine ELA has not looked at (M13.3): that the file the plan
@@ -292,6 +308,13 @@ class FsReadTool(Tool):
         return looked_for_a_read(self._root, path, protected=self._protected)
 
     async def _run(self, arguments: JsonMapping, stop: TaskStop) -> Outcome:
+        try:
+            return await self._disk.run(lambda _: self._read(arguments), _what(READ, arguments))
+        except DiskSilent as silent:
+            return Outcome({}, NO_ANSWER, str(silent))
+
+    def _read(self, arguments: JsonMapping) -> Outcome:
+        """The look and the read, in the guard's thread: one piece of work with no effect."""
         refused, _ = self._look(arguments)
         if refused is not None:
             return refused
@@ -329,6 +352,7 @@ class FsWriteTool(Tool):
             IO_ERROR,
             ELA_S_OWN,
             HARD_LINK,
+            NO_ANSWER,
         }
     )
     output_keys: ClassVar[frozenset[str]] = frozenset({"path", "bytes", "overwrote"})
@@ -343,6 +367,7 @@ class FsWriteTool(Tool):
     crash and call that refusal a failure of the step (ADR 0021 §1).
     """
     relocatable: ClassVar[bool] = False
+    under_the_root: ClassVar[bool] = True
     stop_point: ClassVar[StopPoint] = StopPoint(here=FIRST_WRITE, on_a_node=ENVELOPE)
 
     def __init__(
@@ -352,11 +377,18 @@ class FsWriteTool(Tool):
         ids: IdGenerator,
         *,
         protected: Mapping[str, Path],
+        disk: Disk | None = None,
         name: str = FS_WRITE_TOOL_NAME,
     ) -> None:
         super().__init__(FS_WRITE, clock, ids, name=name)
         self._root = resolve_workspace(root)
         self._protected: Mapping[str, Path] = MappingProxyType(dict(protected))
+        self._disk = Disk() if disk is None else disk
+
+    @property
+    def disk(self) -> Disk:
+        """The guard every look and write of this tool passes (M13.17, ADR 0074)."""
+        return self._disk
 
     @property
     def root(self) -> Path:
@@ -381,10 +413,16 @@ class FsWriteTool(Tool):
         if values:
             # ``fs.write`` names nothing by value (M13.15, ADR 0071): a value is refused.
             return _refused(ARGUMENTS_INVALID, "fs.write names nothing by value", self.name)
-        return _prospect(
-            looked_for_a_folder(self._root, place, protected=self._protected, does=WRITES_IN),
-            self.name,
-        )
+        try:
+            looked = await self._disk.run(
+                lambda _: looked_for_a_folder(
+                    self._root, place, protected=self._protected, does=WRITES_IN
+                ),
+                f"{LOOK} {place!r}",
+            )
+        except DiskSilent as silent:
+            return _refused(NO_ANSWER, str(silent), self.name)
+        return _prospect(looked, self.name)
 
     async def asserted(self, arguments: JsonMapping) -> Prospect:
         """What a write asserts, on a machine ELA has not looked at (M13.3): the ``overwrite`` of
@@ -405,9 +443,13 @@ class FsWriteTool(Tool):
         **This is where the contradiction is caught.** If the plan asserts «nothing is there» and
         something is, or the other way round, the call would be refused the instant it ran — so
         there is no question to ask, and asking it would be asking somebody to approve what ELA
-        already knows it will refuse (ADR 0011 §3).
+        already knows it will refuse (ADR 0011 §3). The look is in the guard of the disk (M13.17).
         """
-        return _prospect(self._look(arguments), self.name)
+        try:
+            looked = await self._disk.run(lambda _: self._look(arguments), _what(LOOK, arguments))
+        except DiskSilent as silent:
+            return _refused(NO_ANSWER, str(silent), self.name)
+        return _prospect(looked, self.name)
 
     def _look(self, arguments: JsonMapping) -> tuple[Outcome | None, Target | None]:
         """The one place a write decides: read by the question and by the run.
@@ -426,16 +468,30 @@ class FsWriteTool(Tool):
         return looked_for_a_write(self._root, path, overwrite, protected=self._protected)
 
     async def _run(self, arguments: JsonMapping, stop: TaskStop) -> Outcome:
+        try:
+            return await self._disk.run(
+                lambda gone: self._write(arguments, stop, gone), _what(WRITE, arguments)
+            )
+        except DiskSilent as silent:
+            return Outcome({}, NO_ANSWER, str(silent))
+
+    def _write(self, arguments: JsonMapping, stop: TaskStop, gone: Gone) -> Outcome:
+        """The look and the write, in the guard's thread (M13.17, ADR 0074; decision 52): **the
+        mark of an abandoned wait is read before every step with an effect** — the folder, then the
+        file —, so a write abandoned while it was looking never writes. The tool's point is
+        listened to right before the first effect, in the same thread, with nothing in between."""
         refused, _ = self._look(arguments)
         if refused is not None:
             return refused
         path, body = arguments["path"], arguments["body"]
         assert isinstance(path, str) and isinstance(body, str)
         target = self._root / path
+        gone.begin(MAKING_THE_FOLDER)
         stop.listen(FIRST_WRITE)
         try:
             target.parent.mkdir(mode=DIRECTORY_MODE, parents=True, exist_ok=True)
             data = body.encode("utf-8")
+            gone.begin(WRITING)
             descriptor = os.open(target, WRITE_FLAGS, FILE_MODE)
             with os.fdopen(descriptor, "wb") as handle:
                 handle.write(data)
@@ -444,6 +500,17 @@ class FsWriteTool(Tool):
         return Outcome(
             {"path": path, "bytes": len(data), "overwrote": bool(arguments["overwrite"])}
         )
+
+
+LOOK: Final = "a look at"
+READ: Final = "a read of"
+WRITE: Final = "a write of"
+
+
+def _what(verb: str, arguments: JsonMapping) -> str:
+    """What a wait on the disk is for, in its sentence: a verb and the path, never a content."""
+    path = arguments.get("path")
+    return f"{verb} {path!r}" if isinstance(path, str) else f"{verb} a path"
 
 
 def _prospect(looked: tuple[Outcome | None, Target | None], tool_name: str) -> Prospect:

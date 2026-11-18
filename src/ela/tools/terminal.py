@@ -61,6 +61,7 @@ from ela.ports import (
     TaskStop,
 )
 from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool
+from ela.tools.disk import NO_ANSWER, Disk, DiskSilent
 from ela.tools.fs import NO_ROOT
 from ela.tools.paths import (
     PATH_CODES,
@@ -219,6 +220,7 @@ class TerminalRunTool(Tool):
             NOT_STARTED,
             TIMEOUT,
             STOPPED,
+            NO_ANSWER,
             *PATH_CODES - {PATH_IS_DIRECTORY, PATH_NOT_REGULAR},
         }
     )
@@ -246,6 +248,7 @@ class TerminalRunTool(Tool):
     mid-command the command survives it (ADR 0036 §6), and nobody knows what it did.
     """
     relocatable: ClassVar[bool] = False
+    under_the_root: ClassVar[bool] = True
     stop_point: ClassVar[StopPoint] = StopPoint(here=EXEC_POINT, on_a_node=None)
     """Listened to right before the launcher, which does not yield the loop before the ``fork``;
     after the ``exec``, the stop of the task stops the group (M6.3c, decision 5)."""
@@ -257,12 +260,20 @@ class TerminalRunTool(Tool):
         clock: Clock,
         ids: IdGenerator,
         *,
+        disk: Disk | None = None,
         name: str = TERMINAL_TOOL_NAME,
     ) -> None:
         super().__init__(TERMINAL_RUN, clock, ids, name=name)
         self._terminal = terminal
         self._root = resolve_workspace(terminal.root)
         self._launcher = launcher
+        # The guard of the look at the folder a command starts from (M13.17, ADR 0074).
+        self._disk = Disk() if disk is None else disk
+
+    @property
+    def disk(self) -> Disk:
+        """The guard the look at the folder passes (M13.17, ADR 0074)."""
+        return self._disk
 
     async def prospect(self, arguments: JsonMapping, task: TaskId | None = None) -> Prospect:
         """What this command would meet now, and what the question names (dec. 5, 12)."""
@@ -314,7 +325,12 @@ class TerminalRunTool(Tool):
         unpassable = self._unpassable(argv, environment)
         if unpassable is not None:
             return Outcome({}, ARGUMENTS_UNPASSABLE, unpassable)
-        folder = self._folder(cwd)
+        try:
+            folder = await self._disk.run(
+                lambda _: self._folder(cwd), "a look at the folder the command starts from"
+            )
+        except DiskSilent as silent:
+            return Outcome({}, NO_ANSWER, str(silent))
         if isinstance(folder, Outcome):
             return folder
         limit = self._terminal.output_max_bytes

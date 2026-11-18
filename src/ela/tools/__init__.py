@@ -38,6 +38,7 @@ from ela.tools.echo import CORE_ECHO, ECHO_TOOL_NAME, EchoTool
 from ela.tools.errors import (
     NotIdempotentError,
     RelocationError,
+    SilentRootError,
     SilentStopPointError,
     SilentVerifierError,
     ToolNotFound,
@@ -348,6 +349,7 @@ __all__ = [
     "PathProblem",
     "Retained",
     "SilentStopPointError",
+    "SilentRootError",
     "SilentVerifierError",
     "Size",
     "Tool",

@@ -1874,6 +1874,8 @@ class FakeTool:
         self.stop_point = StopPoint(here=None, on_a_node=None) if stop_point is None else stop_point
         """Where it listens for the stop of its task (M6.3c): nowhere — its point is the call —,
         unless a test gives it a point, and then it listens there before it «acts»."""
+        self.under_the_root = False
+        """Declared like every tool's (M13.17, ADR 0074): a fake looks at no disk."""
         self.idempotent = idempotent
         """Whether twice is once (ADR 0015 §8, ADR 0021 §1): ``False`` is how a test builds a
         tool the executor must run under the STARTED protocol."""
@@ -2064,6 +2066,8 @@ class FakeVerifier:
         self._conditions = frozenset(conditions)
         self.reads_the_machine = reads_the_machine
         """Declared like every verifier's (ADR 0038 §14); a fake reads nothing, unless told."""
+        self.under_the_root = False
+        """Declared like every verifier's (M13.17, ADR 0074): a fake looks at no disk."""
         self._failures: Mapping[str, ErrorMetadata] = MappingProxyType(
             {} if failures is None else dict(failures)
         )
