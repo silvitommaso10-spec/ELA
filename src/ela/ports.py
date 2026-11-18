@@ -3157,7 +3157,11 @@ class Browser(Protocol):
       the implementation's own closes it** — not the verifier's look, not a deadline —: whoever
       holds it closes it (M13.10, ADR 0065 §3). Its browser, its cookies and whatever the page does
       by itself last until then;
-    * when :meth:`close` returns, the kernel knows no process of that page's browser any more.
+    * when :meth:`close` returns, the kernel knows no process of that page's browser any more;
+    * **a closing has a limit** (M13.9d, ADR 0072): after the tool's time, or the stop of its task,
+      a closing ends within a limit the implementation is given — past it the implementation kills
+      what that opening had started, never the folder of a profile —, and a browser that ended by
+      itself is said at once (``BrowserFailed``), not at the tool's time.
     """
 
     async def installed(self) -> bool:

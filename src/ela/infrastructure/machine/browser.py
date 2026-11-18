@@ -30,7 +30,10 @@ What every page gets, measured before it was decided (M13.4, «Le misure»):
   and the stop of a driver whose opening was cancelled while it started, run in tasks of the
   adapter's own, shielded and held until they end — a caller cancelled halfway gets its
   cancellation, and the processes still go. Measured: cancelled in the caller's task, a close left
-  five processes outside the table, where not even ELA's stop found them;
+  five processes outside the table, where not even ELA's stop found them. **And within a limit**
+  (M13.9d, ADR 0072): a closing that has not ended within the limit the composition gives kills
+  the driver of its opening with what it started — never the folder of a profile —, and so does a
+  member of the port whose caller was cancelled (:func:`_guarded`);
 * **ELA's stop, whenever it is raised** (M13.4c): from that moment no navigation and no gesture
   is handed to the driver, and the gate lets no request through — so what can still reach a site
   does not depend on how long the closing of the pages takes. An opening looks at the stop again
@@ -42,7 +45,10 @@ What every page gets, measured before it was decided (M13.4, «Le misure»):
   where Playwright keeps their process, and whatever they started. Measured: torn down with a call
   of Playwright's in flight, the loop never ends — the cancelled call waits for an answer the
   cancelled reader of the pipe does not deliver —, and ELA does not exit;
-* no downloads, no service workers, no timeout of Playwright's — the tool's deadline is the one.
+* no downloads, no service workers, no timeout of Playwright's — the tool's deadline is the one,
+  and after it the limit of a closing (ADR 0072);
+* **a browser that ended by itself is heard** (M13.9d): its context closes, the waits for its
+  events wake, and the step says it at once, not at the tool's time.
 
 **The gate looks at the browser's requests, and makes none** (M13.4f, ADR 0064; :class:`_Gate`).
 Until M13.4f it was a route of Playwright's that fetched the document of the main frame from the
@@ -1134,7 +1140,8 @@ class PlaywrightBrowser:
         Opened on ``into`` — the browser writes there under a name of its own —, then the stop is
         listened to and the gesture made, with no wait between the two; the door closes itself at
         the first word of progress of the first download the browser announces, and that download
-        is awaited to its end as an event. **No time of this adapter's**: the tool's is the one.
+        is awaited to its end as an event. **No time of this adapter's**: the tool's is the one —
+        and the closing of the door after it has the limit of a closing (M13.9d, ADR 0072).
 
         What the gesture led to is told by what the browser says next (measured on 2026-11-10): a
         download is announced after the gesture returns, and a navigation that becomes one never

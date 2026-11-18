@@ -23,6 +23,7 @@
   **Rivista da ADR 0068 (M13.14)** il 2026-11-12: §4 — le quattro capability dei file chiedono a ogni uso fino a M13.15, non più «fino a M13.14» (ADR 0068).
   **Rivista da ADR 0070 (M13.13b)** il 2026-11-17: §8, punto 5 — uno scaricamento interrotto è annullato e tolto per ciò che il browser ha annunciato prima di rispondere al `deny` della chiusura, che la porta sente in chiusura; il resto è dichiarato (ADR 0070 §1, §2, §4).
   **Rivista da ADR 0071 (M13.15)** il 2026-11-17: §4, §5, §6 — le quattro chiedono a ogni uso salvo una policy loro; sotto una policy un caricamento legge una volta, senza una domanda che fissi dimensione e sha256, e il risultato le dice; i posti protetti e i file con più nomi anche in lettura (ADR 0071 §4).
+  **Rivista da ADR 0072 (M13.9d)** il 2026-11-18: §8, punto 4 — la chiusura della porta, dopo il tempo del tool, ha il limite di una chiusura; il browser che finisce da sé sveglia l'attesa della fine (ADR 0072 §1, §3).
 - **Data:** 2026-11-03
 - **Riferimenti spec:** §19, §33, §57, §58, §65
 - **Milestone:** [M13.13](../milestones/M13.13.md), con [M13.9b](../milestones/M13.9b.md),

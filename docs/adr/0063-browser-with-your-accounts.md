@@ -35,6 +35,7 @@
   **Rivista da ADR 0068 (M13.14)** il 2026-11-12: §1, §6 — un `act` chiede, salvo una policy della capability del gesto (ADR 0068 §8).
   **Rivista da ADR 0069 (M9.5)** il 2026-11-17: §12, il debito non è più a carico di M9.5 — misurato con la regola di ADR 0069 §3 nei due giri del «dopo», la parte di M13.9 senza binario sta al 10,46 % e al 10,13 %, sopra il 10 % — e passa di mano, a carico di M9.8 (ADR 0069 §4).
   **Rivista da ADR 0071 (M13.15)** il 2026-11-17: §2, §5, §9 — sotto una policy il sì è la spesa: prima della spesa nessuna password lascia l'adapter, e dopo la voce si legge una volta sola; la ragione della finestra, «chi approva è presente», è falsa sotto una policy e si riscrive; la finestra la dice anche l'anteprima di una policy di login; l'id della voce lo riceve anche il campo di creazione di una policy, e nessuna superficie lo mostra (ADR 0071 §6, §9).
+  **Rivista da ADR 0072 (M13.9d)** il 2026-11-18: §4 — il browser del profilo è ucciso anche al limite di una chiusura, non solo alla grazia della chiusura di ELA, e la cartella resta (ADR 0072 §1, §9).
 - **Data:** 2026-10-11
 - **Riferimenti spec:** §19, §27, §29, §30, §32, §33, §39, §57, §59, §62, §63
 - **Milestone:** M13.9, con M13.4b, M13.4c e M13.4e sullo stesso branch

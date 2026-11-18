@@ -79,6 +79,7 @@ cambia, si scrive un nuovo ADR che sostituisce il precedente.
 | [0069](0069-suite-discipline.md) | La disciplina della suite: un posto solo per gli skip, i test che aspettano un evento, e il costo di un binario vero | Accettata |
 | [0070](0070-the-door-closes-at-the-answer.md) | La porta degli scaricamenti si dice chiusa alla risposta del browser | Accettata |
 | [0071](0071-policies-on-login-and-files.md) | Le policy di chi usa ELA arrivano al login e ai file dal browser | Proposta |
+| [0072](0072-a-closing-has-a-limit.md) | Una chiusura del browser ha un limite | Proposta |
 
 ## Template
 
