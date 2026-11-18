@@ -42,8 +42,8 @@ la disciplina della suite con i debiti che porta e la misura di dove va il suo t
 *A che cosa serve:* le policy arrivano al login e ai file dal browser, i file arrivano a tutto il computer, e il
 browser arriva sul PC.
 
-- `M13.15` — Proposta — Le policy di Tommaso arrivano al login e ai file dal browser
-- `M13.17` — riservata — I file di tutto il computer
+- `M13.15` — Implementata — Le policy di Tommaso arrivano al login e ai file dal browser
+- `M13.17` — Proposta — I file di tutto il computer
 - `M13.11` — Proposta — Il browser sul PC: le capacità di M13.9 e M13.10 sul nodo Windows, e il verdetto che torna in busta
 
 ### Tappa 4 — ELA lavora sul codice
@@ -155,6 +155,11 @@ profilo sullo stesso profilo, Chrome for Testing cade al gesto —, ed è regist
 scrive su quel branch dopo la misura che ne isola l'innesco (decisioni 104 e 105). M13.9d si chiude con ciò che ha
 fatto, e ADR 0071 e ADR 0072 restano Proposta fino alla prova.
 
+***Annotato il 2026-11-18*** (ultimo blocco di `m13.15-le-policy-al-login-e-ai-file`, decisioni 128 e 130): **M13.15,
+M13.9d e M13.13c sono fatte**, con la prova a mano della sezione 34 passata a `fe776f4`, e ADR 0071, 0072 e 0073
+Accettate. **`M13.9e` resta Proposta, fuori dalla fila.** **`M13.17` è la prossima**: il suo documento nasce ora, ed esce
+dalle riservate. **`M13.14b`** è una riparazione di M13.14 trovata dopo la prova, fuori dalla fila.
+
 - `M9.2` — Proposta — Le liste che restano scritte a mano
 - `M9.7` — Proposta — Ogni blocco della guida che mostra un'uscita della CLI è confrontato con la CLI
 - `M9.8` — Proposta — Le attese che nessun elenco conosceva
@@ -162,9 +167,10 @@ fatto, e ADR 0071 e ADR 0072 restano Proposta fino alla prova.
 - `M13.4d` — Proposta — Lo shell del browser vuoto gira senza il sandbox di Chromium
 - `M13.4g` — Proposta — Il click che apre un'altra pagina, con il browser del profilo: un'azione che a volte non dice la sua pagina
 - `M13.6` — Proposta — Spostare un lavoro già in corso: il ripiazzamento, quando due capability sanno dichiararsi ripetibili
-- `M13.9d` — Proposta — Un lancio del browser del profilo che a volte non arriva
+- `M13.9d` — Implementata — Un lancio del browser del profilo che a volte non arriva
 - `M13.9e` — Proposta — Un lancio del browser del profilo che in un test, una volta, non è arrivato
-- `M13.13c` — Proposta — Il browser del profilo che cade allo scaricamento, dal terzo sullo stesso profilo
+- `M13.13c` — Implementata — Il browser del profilo che cade allo scaricamento, dal terzo sullo stesso profilo
+- `M13.14b` — Proposta — Il modello sente dire che il gesto chiede sempre, e da M13.14 non è vero
 - `M14.1c` — Proposta — Il caso peggiore senza prezzo: un ramo e un rifiuto che nessun produttore raggiunge
 - **WhatsApp Web con il profilo di ELA**, senza un numero: nessuna milestone finché la causa della barra di
   caricamento ferma non è nota ([ADR 0065](adr/0065-browser-steps.md) §5, punto 9).
@@ -177,7 +183,6 @@ documento. Un numero non sta mai nei due posti.
 
 | Numero | Titolo | Che cosa porta | Spec |
 |---|---|---|---|
-| `M13.17` | I file di tutto il computer | Lo scope dei file diventa un elenco di cartelle scelto da chi usa ELA, fino alla sua home; i posti protetti si controllano a ogni uso, come da `M13.14`. | §18, §57, §59, §65 |
 | `M13.18` | L'eseguibile firmato | Solo se il grant TCC di `M13.5` non tiene (la tappa 5). | §11, §20 |
 | `M13.19` | Mouse e tastiera sul PC | Le capacità di `M13.5` e di `M14.4` sul nodo Windows: chi usa ELA vuole le stesse capacità sul Mac e sul PC, come `M13.11` fa per il browser. | §17, §18, §20, §56 |
 | `M15.1` | La wake word | Il quarto stato del microfono, e la riga della 5.6 di `STATO.md` sulla voce: una voce riconosciuta non vale mai come un sì. | §9, §11, §34 |
