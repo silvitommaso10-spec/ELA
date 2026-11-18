@@ -317,6 +317,9 @@ class BrowserDownloadTool(_BrowserTool):
                 NO_ROOT,
                 OVERWRITE_MISMATCH,
                 IO_ERROR,
+                # The disk that does not answer (M13.17, ADR 0074): every look under the root
+                # passes the guard, and an abandoned wait is this code.
+                NO_ANSWER,
             }
         )
         | BROWSER_CODES
@@ -765,6 +768,7 @@ class BrowserUploadTool(BrowserActTool):
         (BrowserActTool.error_codes - {NO_PAGE_TO_CONTINUE})
         | {SITE_NOT_DECLARED, NOT_A_FILE_FIELD, FILE_CHANGED, FILE_TOO_LARGE, NO_ROOT, IO_ERROR}
         | {ELA_S_OWN, HARD_LINK}
+        | {NO_ANSWER}  # M13.17, ADR 0074: the guard of the disk
         | READ_REFUSALS
     )
     output_keys: ClassVar[frozenset[str]] = (BrowserActTool.output_keys - {LEFT_WHILE_WAITING}) | {

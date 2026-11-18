@@ -71,7 +71,7 @@ from ela.tools import (
 )
 from ela.tools.base import PLACE_UNSEEN, Tool, any_moment
 from ela.tools.browser import Browsing
-from ela.tools.disk import Disk
+from ela.tools.disk import NO_ANSWER, Disk, DiskSilent
 from tests.permissions.catalogue_calls import CALLS
 from tests.tools.browsers import SECONDS, a_door
 from tests.tools.guided import GATEWAY, a_room, a_session
@@ -402,3 +402,65 @@ def test_a_class_that_does_not_say_is_refused_and_one_that_says_is_counted(flag:
     del tool.under_the_root
     with pytest.raises(SilentRootError):
         ToolRegistry((tool,))
+
+
+# ----------------------------------------------------------------------------------------
+# A silent disk is a code the tool declares (ADR 0013: ``error_codes`` say what it can produce)
+# ----------------------------------------------------------------------------------------
+
+
+class Silent(Disk):
+    """The guard of a disk that never answers: every wait is abandoned at once."""
+
+    def __init__(self) -> None:
+        super().__init__(limit=10.0)
+
+    async def run[T](self, work: Callable[[Any], T], what: str) -> T:
+        raise DiskSilent(f"{what}: the disk did not answer within 10 s, and ELA stopped waiting")
+
+
+def _code_of(answer: object) -> str | None:
+    refusal = getattr(answer, "refusal", None)
+    if refusal is not None:
+        return str(refusal.code)
+    error = getattr(answer, "error", None)
+    return None if error is None else str(error.code)
+
+
+async def test_every_member_under_the_root_answers_a_silent_disk_with_a_code_it_declares(
+    tmp_path: Path,
+) -> None:
+    """Derived like the rule above: every member of every tool under the root, and every verifier,
+    meets a disk that never answers — and answers ``fs.no_answer``, **among the codes it
+    declares**: a tool that returned a code it does not declare would be a tool whose ADR row,
+    and whose answer to a plan, do not know it."""
+    wrong: list[str] = []
+    found, _ = registries(tmp_path / "derived", Silent())
+    worlds = 0
+    for place, name in _where(found):
+        for member in [one for one in members(ToolPort) if one not in EXEMPT]:
+            worlds += 1
+            tools, _ = registries(tmp_path / str(worlds), Silent())
+            (tool,) = [one for one in tools[place : place + 1] if one.name == name]
+            if member == "prospect_place" and type(tool).prospect_place is Tool.prospect_place:
+                continue
+            arguments = dict(CALLS[str(tool.capability_id)])
+            if str(tool.capability_id) == "terminal.run":
+                arguments["program"] = PROGRAM
+            code = _code_of(await _called(tool, member, arguments))
+            if code != NO_ANSWER or NO_ANSWER not in tool.error_codes:
+                declared = NO_ANSWER in tool.error_codes
+                wrong.append(f"{tool.name}.{member}: {code}, declared {declared}")
+    _, verifiers = registries(tmp_path / "verifiers", Silent())
+    for verifier in under_the_root(verifiers):
+        capability = str(verifier.capability_id)
+        failures = await verifier.verify(
+            tuple(verifier.conditions),
+            CALLS[capability],
+            a_result(verifier.capability_id, OUTPUTS[capability]),
+        )
+        codes = {one.code for one in failures}
+        if codes != {NO_ANSWER} or NO_ANSWER not in verifier.failure_codes:
+            wrong.append(f"{verifier.name}: {sorted(codes)}")
+
+    assert wrong == []

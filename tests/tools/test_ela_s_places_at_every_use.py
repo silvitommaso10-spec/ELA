@@ -177,6 +177,8 @@ async def test_every_member_of_a_tool_under_the_root_refuses_ela_s_places(
             want = expected(tool, member, direction)
             if want is None and code == ELA_S_OWN or want is not None and code != want:
                 wrong.append(f"{tool.name}.{member} on {target}: {code}, not {want}")
+            if want is not None and want not in tool.error_codes:
+                wrong.append(f"{tool.name}: {want} is not among the codes it declares")
             if the_disk(root) != before:
                 wrong.append(f"{tool.name}.{member} on {target}: the disk changed")
 
@@ -205,7 +207,7 @@ async def test_every_verifier_under_the_root_refuses_ela_s_places(
             a_result(verifier.capability_id, OUTPUTS[capability]),
         )
         codes = {one.code for one in failures}
-        if codes != {ELA_S_OWN}:
+        if codes != {ELA_S_OWN} or ELA_S_OWN not in verifier.failure_codes:
             wrong.append(f"{verifier.name} on {target}: {sorted(codes)}")
         if the_disk(root) != before:
             wrong.append(f"{verifier.name}: the disk changed")
