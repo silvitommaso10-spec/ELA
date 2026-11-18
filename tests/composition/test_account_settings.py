@@ -28,6 +28,7 @@ from ela.composition.settings import AccountSettings
 from ela.testing.fakes import FakeClock
 from ela.tools.vault import UNDECLARED, VaultDoor, VaultProblem
 from tests import machines
+from tests.composition.places_at_every_use import every_use_refuses
 from tests.composition.support import CAPTURES, FS_ROOT, WORKSPACE, declare
 
 PROFILE = "ELA_BROWSER_PROFILE_DIR"
@@ -351,20 +352,36 @@ def test_a_folder_that_touches_the_workspace_or_the_captures_stops_the_start_up(
     assert {WORKSPACE: "the workspace", CAPTURES: "the capture store"}[which] in message
 
 
-@pytest.mark.parametrize("how", ["inside", "holds", "is"])
-def test_a_folder_that_touches_the_root_fs_read_may_read_stops_the_start_up(
+@pytest.mark.parametrize("how", ["holds", "is"])
+def test_a_root_that_is_or_lies_inside_the_profile_stops_the_start_up(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, how: str
 ) -> None:
     """``fs.read`` is ``MEDIUM`` over ``ELA_FS_ROOT``, and would read the cookies: the profile is
-    among what ELA uses to exist, so the root's own refusal names it."""
+    among what ELA uses to exist, so a root that is it or lies inside it is refused by its name."""
     root = tmp_path / "b" / "files"
     root.mkdir(parents=True)
-    profile = {"inside": root / "profile", "holds": root.parent, "is": root}[how]
+    profile = {"holds": root.parent, "is": root}[how]
 
     message = refused(monkeypatch, tmp_path, **{FS_ROOT: str(root), PROFILE: str(profile)})
 
     assert "ELA_FS_ROOT" in message and PROFILE in message
-    assert "contain one another" in message
+    assert "is, or lies inside" in message
+
+
+async def test_a_profile_inside_the_root_is_admitted_and_never_read(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Since M13.17 (ADR 0074; decision 8 (iv)) a root may hold the profile, as it may hold every
+    place of ELA's: admitted at the start-up, and every read and write of it is
+    ``path.ela_s_own``, with its name."""
+    root = tmp_path / "b" / "files"
+    (root / "ELA").mkdir(parents=True)
+    profile = root / "profile"
+    profile.mkdir(mode=0o700)
+
+    settings = loaded(monkeypatch, tmp_path, **{FS_ROOT: str(root), PROFILE: str(profile)})
+
+    await every_use_refuses(root, settings.ela_s_own(), profile, PROFILE)
 
 
 def test_the_profile_is_among_what_ela_uses_to_exist_only_when_it_is_declared(

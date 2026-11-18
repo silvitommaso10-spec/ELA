@@ -48,9 +48,8 @@ def settings(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Settings:
         ELA_TERMINAL_PROGRAMS=json.dumps(DECLARED),
         ELA_TERMINAL_TIMEOUT_SECONDS="3",
     )
-    loaded = Settings.load()
-    (loaded.filesystem.root / "ELA").mkdir()
-    return loaded
+    # The folder of the scope is there already: since M13.17 the start-up wants it (ADR 0074).
+    return Settings.load()
 
 
 def plan(name: str) -> dict[str, Any]:

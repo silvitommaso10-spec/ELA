@@ -18,7 +18,7 @@ FOLDER: Final = "ELA"
 PROGRAM: Final = "git"
 
 CATALOGUE: Final[CapabilityRegistry] = production_catalogue(
-    sites=(SITE,), fs_scope=FOLDER, programs=(PROGRAM,), guided_model=MODEL
+    sites=(SITE,), fs_scope=(FOLDER,), programs=(PROGRAM,), guided_model=MODEL
 )
 
 _READ: Final = {"site": SITE, "path": "/", "purpose": "la prova"}

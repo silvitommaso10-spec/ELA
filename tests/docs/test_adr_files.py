@@ -155,7 +155,7 @@ def test_the_capabilities_it_adds_are_the_last_four_all_high_and_none_travels() 
     from ela.domain import RiskLevel
     from ela.permissions import production_catalogue
 
-    specs = production_catalogue(fs_scope="ELA").specs()
+    specs = production_catalogue(fs_scope=("ELA",)).specs()
 
     assert {spec.id for spec in specs[-4:]} == FILE_CAPABILITIES
     for spec in specs[-4:]:

@@ -123,7 +123,7 @@ def test_a_capability_without_a_tool_or_a_verifier_is_not_offered() -> None:
 def test_the_declared_scopes_never_leave() -> None:
     """Sites, folders and programs are the user's (decision 11): not in the prompt."""
     sentinels = ("secret-site.example", "secret/folder", "bin/secret-program")
-    specs = (browser_read([sentinels[0]]), fs_read(sentinels[1]), terminal_run([sentinels[2]]))
+    specs = (browser_read([sentinels[0]]), fs_read((sentinels[1],)), terminal_run([sentinels[2]]))
     clock, ids = FakeClock(), FakeIdGenerator()
     entries = catalogue(
         capabilities=CapabilityRegistry(specs),

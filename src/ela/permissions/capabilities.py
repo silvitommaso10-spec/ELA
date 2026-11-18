@@ -54,6 +54,7 @@ from ela.permissions.rows import no_policy_for, no_session_covers, no_session_of
 from ela.ports import CONTINUES, AlreadyExistsError
 
 __all__ = [
+    "folders",
     "ACCOUNTS_INTRODUCED_AT",
     "BROWSER_ACT",
     "BROWSER_ACT_AS_YOU",
@@ -99,6 +100,7 @@ __all__ = [
     "SITE_PATTERN",
     "TERMINAL_RUN",
     "UNDECLARED_FS_SCOPE",
+    "UNDECLARED_FS_SCOPES",
     "UNDECLARED_MODEL",
     "UNDECLARED_PROGRAMS",
     "UNDECLARED_SITES",
@@ -529,6 +531,21 @@ without them ELA does not start. So this value can never be the boundary anybody
 a root and still not be able to write in it, for a value they never saw and a folder nobody
 created — and a silent narrowing is worse than a refusal at start-up, because a refusal is read.
 """
+UNDECLARED_FS_SCOPES: Final[tuple[str, ...]] = (UNDECLARED_FS_SCOPE,)
+"""The list of comfort of the six capabilities whose scope is ``ELA_FS_SCOPE`` (M13.17, ADR 0074):
+one entry, the placeholder — the form of :data:`UNDECLARED_PROGRAMS`."""
+
+
+def folders(fs_scope: Sequence[str]) -> tuple[str, ...]:
+    """The folders of ``ELA_FS_SCOPE`` as the scope of a capability (M13.17, ADR 0074): a list of
+    entries, and **never one string** — a string is a sequence of its characters, and ``"ELA"``
+    would become the scope ``('E', 'L', 'A')`` in silence. A :class:`TypeError` that says so."""
+    if isinstance(fs_scope, str):
+        raise TypeError(
+            f"the scope of the files is a list of folders, not one string: write ({fs_scope!r},)"
+        )
+    return tuple(fs_scope)
+
 
 UNDECLARED_PROGRAMS: Final[tuple[str, ...]] = (UNDECLARED_FS_SCOPE,)
 """The placeholder of ``terminal.run``'s factory, and **never a boundary** (M13.2 dec. 16).
@@ -1020,7 +1037,7 @@ def perception_listen() -> CapabilitySpec:
     )
 
 
-def fs_read(fs_scope: str = UNDECLARED_FS_SCOPE) -> CapabilitySpec:
+def fs_read(fs_scope: Sequence[str] = UNDECLARED_FS_SCOPES) -> CapabilitySpec:
     """``fs.read``, MEDIUM: reads one file under the declared root (§18, M13.1 dec. E).
 
     **MEDIUM and not HIGH**, and the difference is not a feeling. Today both rows ask at every use,
@@ -1054,7 +1071,7 @@ def fs_read(fs_scope: str = UNDECLARED_FS_SCOPE) -> CapabilitySpec:
             "required": ["path", "purpose"],
             "additionalProperties": False,
         },
-        scope=(fs_scope,),
+        scope=folders(fs_scope),
         scoped_arguments=("path",),
         prompt_arguments=("purpose",),
         requires_authorization=True,
@@ -1062,7 +1079,7 @@ def fs_read(fs_scope: str = UNDECLARED_FS_SCOPE) -> CapabilitySpec:
     )
 
 
-def fs_write(fs_scope: str = UNDECLARED_FS_SCOPE) -> CapabilitySpec:
+def fs_write(fs_scope: Sequence[str] = UNDECLARED_FS_SCOPES) -> CapabilitySpec:
     """``fs.write``, **HIGH**: writes one file under the declared root (§18, M13.1 dec. E).
 
     The first ``HIGH`` capability ELA has ever had, and it arrives in the same milestone that
@@ -1100,7 +1117,7 @@ def fs_write(fs_scope: str = UNDECLARED_FS_SCOPE) -> CapabilitySpec:
             "required": ["path", "body", "overwrite", "purpose"],
             "additionalProperties": False,
         },
-        scope=(fs_scope,),
+        scope=folders(fs_scope),
         scoped_arguments=("path",),
         prompt_arguments=("purpose",),
         policy_terms=PolicyTerms(
@@ -1636,7 +1653,7 @@ def _a_file_capability(
     capability: CapabilityId,
     description: str,
     schema: dict[str, Any],
-    fs_scope: str,
+    fs_scope: Sequence[str],
     free: tuple[str, ...],
     words: PolicyWords,
 ) -> CapabilitySpec:
@@ -1651,7 +1668,7 @@ def _a_file_capability(
         description=description,
         risk=RiskLevel.HIGH,
         input_schema=schema,
-        scope=(fs_scope,),
+        scope=folders(fs_scope),
         scoped_arguments=("file",),
         prompt_arguments=("purpose",),
         policy_terms=PolicyTerms(limits=(), free=free, on_the_core=True, by_value="site"),
@@ -1668,7 +1685,7 @@ _UPLOAD_FREE: Final = ("path", "file_field", "fill", "click", "expect_text", "pu
 """What a policy of an upload leaves free (M13.15, ADR 0071)."""
 
 
-def browser_download(fs_scope: str = UNDECLARED_FS_SCOPE) -> CapabilitySpec:
+def browser_download(fs_scope: Sequence[str] = UNDECLARED_FS_SCOPES) -> CapabilitySpec:
     """``browser.download``, **HIGH**: downloads one file of a declared site, in ELA's empty
     browser, into a file under the declared root (M13.13, ADR 0066).
 
@@ -1695,7 +1712,7 @@ def browser_download(fs_scope: str = UNDECLARED_FS_SCOPE) -> CapabilitySpec:
     )
 
 
-def browser_download_as_you(fs_scope: str = UNDECLARED_FS_SCOPE) -> CapabilitySpec:
+def browser_download_as_you(fs_scope: Sequence[str] = UNDECLARED_FS_SCOPES) -> CapabilitySpec:
     """``browser.download_as_you``, **HIGH**: ``browser.download``'s, with the browser of your
     accounts — a capability of its own, because a consent is not inherited (ADR 0034): where you
     are signed in, what arrives is content of yours (M13.13)."""
@@ -1718,7 +1735,7 @@ def browser_download_as_you(fs_scope: str = UNDECLARED_FS_SCOPE) -> CapabilitySp
     )
 
 
-def browser_upload(fs_scope: str = UNDECLARED_FS_SCOPE) -> CapabilitySpec:
+def browser_upload(fs_scope: Sequence[str] = UNDECLARED_FS_SCOPES) -> CapabilitySpec:
     """``browser.upload``, **HIGH**: gives one page of a declared site, in ELA's empty browser,
     one file read under the declared root, and sends it (M13.13, ADR 0066).
 
@@ -1750,7 +1767,7 @@ def browser_upload(fs_scope: str = UNDECLARED_FS_SCOPE) -> CapabilitySpec:
     )
 
 
-def browser_upload_as_you(fs_scope: str = UNDECLARED_FS_SCOPE) -> CapabilitySpec:
+def browser_upload_as_you(fs_scope: Sequence[str] = UNDECLARED_FS_SCOPES) -> CapabilitySpec:
     """``browser.upload_as_you``, **HIGH**: ``browser.upload``'s, with the browser of your
     accounts — its own capability, because a consent is not inherited (ADR 0034) (M13.13)."""
     return _a_file_capability(
@@ -1777,7 +1794,7 @@ def browser_upload_as_you(fs_scope: str = UNDECLARED_FS_SCOPE) -> CapabilitySpec
 def production_catalogue(
     *,
     notes_scope: str = DEFAULT_NOTES_SCOPE,
-    fs_scope: str = UNDECLARED_FS_SCOPE,
+    fs_scope: Sequence[str] = UNDECLARED_FS_SCOPES,
     programs: Sequence[str] = UNDECLARED_PROGRAMS,
     sites: Sequence[str] = UNDECLARED_SITES,
     guided_model: str = UNDECLARED_MODEL,

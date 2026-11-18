@@ -213,7 +213,7 @@ def digest(data: bytes) -> str:
     "capability", [BROWSER_DOWNLOAD, BROWSER_DOWNLOAD_AS_YOU, BROWSER_UPLOAD, BROWSER_UPLOAD_AS_YOU]
 )
 def test_the_four_are_high_their_scope_is_the_file_and_none_continues(capability: str) -> None:
-    spec = production_catalogue(fs_scope="ELA", sites=("httpbin.org",)).get(capability)  # type: ignore[arg-type]
+    spec = production_catalogue(fs_scope=("ELA",), sites=("httpbin.org",)).get(capability)
 
     assert spec.risk is RiskLevel.HIGH and spec.requires_authorization
     assert spec.scope == ("ELA",) and spec.scoped_arguments == ("file",)

@@ -62,14 +62,14 @@ def declare(folder: Path) -> None:
     for name in [name for name in os.environ if name.startswith("ELA_")]:
         del os.environ[name]
     os.chdir(folder)
-    (folder / "files").mkdir()
+    (folder / "files" / "ELA").mkdir(parents=True)
     os.environ.update(
         ELA_DB_URL=f"sqlite:///{(folder / 'ela.db').as_posix()}",
         ELA_WORKSPACE_DIR=str(folder / "workspace"),
         ELA_CAPTURE_DIR=str(folder / "captures"),
         ELA_API_TOKEN="x" * 40,
         ELA_FS_ROOT=str(folder / "files"),
-        ELA_FS_SCOPE="ELA",
+        ELA_FS_SCOPE='["ELA"]',
         ELA_TERMINAL_PROGRAMS="[]",
         ELA_BROWSER_SITES="[]",
         ELA_PERCEPTION_ENABLED="false",

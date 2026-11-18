@@ -41,9 +41,8 @@ LOOPBACK = "http://127.0.0.1"
 @pytest.fixture
 def settings(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Settings:
     declare(monkeypatch, tmp_path, ELA_TERMINAL_PROGRAMS=json.dumps([PRINTF]))
-    loaded = Settings.load()
-    (loaded.filesystem.root / "ELA").mkdir()
-    return loaded
+    # The folder of the scope is there already: since M13.17 the start-up wants it (ADR 0074).
+    return Settings.load()
 
 
 def printf_plan(*arguments: str) -> dict[str, Any]:

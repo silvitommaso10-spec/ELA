@@ -108,4 +108,4 @@ def test_a_root_that_is_a_junction_stops_the_node_like_a_symbolic_link(tmp_path:
     )
 
     with pytest.raises(ValueError, match="link"):
-        refuse_the_root(tmp_path / "alias", {})
+        refuse_the_root(tmp_path / "alias", {}, home=tmp_path)

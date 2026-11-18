@@ -59,7 +59,8 @@ async def test_the_tool_starts_commands_in_the_scope_of_m13_1_with_the_closed_en
     terminal = ela.tools.get(TERMINAL_RUN)._terminal  # type: ignore[attr-defined]  # noqa: SLF001
 
     assert terminal.root == ela.settings.filesystem.root
-    assert terminal.scope == ela.settings.filesystem.scope
+    # The first folder of the scope (M13.17, ADR 0074; answer 41): the order is the user's.
+    assert terminal.scope == ela.settings.filesystem.scope[0]
     assert terminal.home == str(Path.home())
     assert terminal.temporary == tempfile.gettempdir()
     assert terminal.timeout_seconds == ela.settings.terminal.timeout_seconds

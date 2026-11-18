@@ -45,6 +45,7 @@ import uvicorn
 
 from ela.api.app import create_app
 from ela.composition import ConfigurationError, Settings, build, port_holder
+from ela.composition.files import said_at_start
 from ela.composition.root import BROWSER_CLOSE_GRACE_SECONDS, KILLED, counted
 from ela.composition.settings import ApiSettings
 
@@ -312,6 +313,10 @@ def _say_killed(names: Sequence[str], hurried: bool) -> None:
 
 async def _serve(settings: Settings, received: list[int]) -> None:
     ela = await build(settings, said=_say)
+    # What the scope opens, said before ELA serves (M13.17, ADR 0074; decision 7): the root, every
+    # folder as the disk names it, the terminal's, and ELA's places under the root.
+    for line in said_at_start(ela.files):
+        _say(line)
     told = Signalled(asyncio.get_running_loop(), ela.stopping, received)
     # From here there is an ELA to close, and the stop signals are ELA's until it is closed.
     # Before, there is none: a Ctrl-C during the start cancels the start, as it always did.

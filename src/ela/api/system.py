@@ -22,8 +22,11 @@ from ela.api.schemas import (
     BellOut,
     CaptureStoreOut,
     DiagnosticsOut,
+    ElaSPlaceOut,
+    FilesOut,
     HealthOut,
     ListeningOut,
+    OpenFolderOut,
     PerceptionSummaryOut,
     VoiceOnlineOut,
     VoiceOut,
@@ -102,6 +105,10 @@ async def diagnostics(request: Request, ela: ElaDep) -> DiagnosticsOut:
             ready=ela.bell.ready,
             provider=ela.bell.name,
         ),
+        # What the scope opens, as the start-up resolved it (M13.17, ADR 0074): ELA's state, and
+        # the scope of every capability that declares one, derived from the catalogue.
+        files=files_of(ela),
+        scopes={str(spec.id): tuple(spec.scope) for spec in ela.capabilities.specs() if spec.scope},
         perception=PerceptionSummaryOut(
             enabled=ela.settings.perception.perception_enabled,
             watching=ela.settings.perception.loop_enabled,
@@ -151,4 +158,20 @@ async def voice_of(ela: Ela) -> VoiceOut:
             text_retained_by_provider=online.text_is_retained,
             timeout_seconds=online.elevenlabs_timeout_seconds,
         ),
+    )
+
+
+def files_of(ela: Ela) -> FilesOut:
+    """The block ``files`` of the diagnostics: :class:`~ela.composition.files.OpenFolders`, and the
+    standing waits of the guard of the disk."""
+    view = ela.files
+    return FilesOut(
+        root=str(view.root),
+        folders=tuple(
+            OpenFolderOut(entry=one.entry, folder=str(one.folder)) for one in view.folders
+        ),
+        commands_from=str(view.commands_from),
+        inside=tuple(ElaSPlaceOut(what=what, place=str(place)) for what, place in view.inside),
+        overlaps=view.overlaps,
+        waiting=ela.disk.waiting,
     )

@@ -172,7 +172,7 @@ def test_the_risk_of_a_step_is_the_catalogue_s_unless_the_plan_asks_for_more(
     for a HIGH capability is treated as HIGH, and one that declares CRITICAL for a SAFE
     capability stays CRITICAL.
     """
-    written = fs_write("declared/folder")
+    written = fs_write(("declared/folder",))
     tools = FakeToolRegistry([FakeTool(written.id, clock, FakeIdGenerator(), name="fs")])
     registry = DeviceRegistry(port, clock, audit, FakeIdGenerator(), heartbeat_ttl=TTL)
     orchestrator = DeviceOrchestrator(

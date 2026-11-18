@@ -45,7 +45,7 @@ from ela.tools.guided import EMPTY_SESSION, SESSION_AS_YOU
 from tests.api.support import AUTHORIZED, BASE
 from tests.api.test_login_surfaces import ENTRY, LOOPBACK, MASKED, NAMELESS
 from tests.cli.support import LoopTransport, plain
-from tests.composition.support import create_schema, database_url, declare
+from tests.composition.support import SCOPE, create_schema, database_url, declare
 from tests.permissions.catalogue_calls import CATALOGUE
 from tests.permissions.policy_support import policy_for
 
@@ -72,7 +72,7 @@ async def ela(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> AsyncIterator[
         ELA_BROWSER_SITES=json.dumps(SITES),
         ELA_VAULT_PROGRAM=str(program),
         ELA_FS_ROOT=str(root),
-        ELA_FS_SCOPE="ELA",
+        ELA_FS_SCOPE=SCOPE,
     )
     await create_schema(database_url(tmp_path))
     vault = FakeVault([ENTRY, NAMELESS])

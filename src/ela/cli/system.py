@@ -68,12 +68,36 @@ def _composition(payload: dict[str, Any]) -> list[tuple[str, Any]]:
         ("tasks", payload["tasks"]),
         ("approvals waiting", payload["pending_approvals"]),
         ("perception", _perception(payload["perception"])),
+        *_files(payload["files"]),
+        ("scopes", {name: ", ".join(scope) for name, scope in payload["scopes"].items()}),
         (
             "recovered at start-up",
             f"{recovered['failed']} failed, {recovered['skipped']} skipped, "
             f"{recovered['expired']} expired",
         ),
     ]
+
+
+def _files(files: dict[str, Any]) -> list[tuple[str, Any]]:
+    """What the scope of the files opens (M13.17, ADR 0074; decision 7): the root, each folder as
+    written and as the disk names it, the folder of the terminal, and ELA's places under the root
+    with the sentence that ``fs.*`` never reaches them."""
+    rows: list[tuple[str, Any]] = [
+        ("files root", files["root"]),
+        ("files open", {one["entry"]: one["folder"] for one in files["folders"]}),
+        ("commands start from", files["commands_from"]),
+    ]
+    if files["inside"]:
+        rows.append(
+            (
+                "never read or written by fs.*",
+                {one["what"]: one["place"] for one in files["inside"]},
+            )
+        )
+    if files["overlaps"]:
+        rows.append(("files overlapping", list(files["overlaps"])))
+    rows.append(("disk waits standing", files["waiting"]))
+    return rows
 
 
 def _perception(seen: dict[str, Any]) -> str:

@@ -1304,6 +1304,38 @@ class PreviewIn(BaseModel):
     voice_id: str = Field(min_length=1)
 
 
+class OpenFolderOut(BaseModel):
+    """One entry of ``ELA_FS_SCOPE`` as written, and the folder it is on this disk (M13.17)."""
+
+    entry: str
+    folder: str
+
+
+class ElaSPlaceOut(BaseModel):
+    """A place ELA uses to exist that lies under the root, with its name (M13.17, ADR 0074)."""
+
+    what: str
+    place: str
+
+
+class FilesOut(BaseModel):
+    """What ``fs.read`` and ``fs.write`` may touch, as the start-up resolved it (M13.17, ADR 0074;
+    decision 7): the state of ELA, never a new look at the disk. Behind the Core's token, as
+    ``GET /policies`` is."""
+
+    root: str
+    folders: tuple[OpenFolderOut, ...]
+    commands_from: str
+    """The first folder: where a command of the terminal starts (answer 41)."""
+    inside: tuple[ElaSPlaceOut, ...]
+    """ELA's places under the root: no read and no write of ``fs.*`` or of a file of the browser
+    reaches them — a program of the terminal does (ADR 0047 §6)."""
+    overlaps: tuple[str, ...]
+    waiting: int
+    """How many abandoned waits on the disk are standing now (answer 40): they end when the disk
+    answers, and past four nothing new is asked of it."""
+
+
 class BellOut(BaseModel):
     """Whether ELA can ring the user's phone, and through whom (M12.5 dec. E; ADR 0043 §8).
 
@@ -1453,6 +1485,11 @@ class DiagnosticsOut(BaseModel):
     """
     bell: BellOut
     """Whether ELA can reach the user on their phone, and through whom (M12.5 dec. E)."""
+    files: FilesOut
+    """What the scope of the files opens (M13.17, ADR 0074; decision 7)."""
+    scopes: dict[str, tuple[str, ...]]
+    """The scope every capability declares, derived from the catalogue (answer 37): the one place
+    where the scope a denial no longer prints is read."""
     perception: PerceptionSummaryOut
     voice: VoiceOut
     listening: ListeningOut
