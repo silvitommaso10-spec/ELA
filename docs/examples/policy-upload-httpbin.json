@@ -1,0 +1,31 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M13.15 (sezione 34, passo 7): un caricamento verso un sito che la policy",
+    "non nomina — chiede, e Tommaso dice no: niente esce.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "caricare il file della prova verso un altro sito",
+  "steps": [
+    {
+      "id": "c0de1a28-0000-4b00-8a00-000000001507",
+      "goal": "caricare il file della prova verso un altro sito",
+      "required_capabilities": [
+        "browser.upload"
+      ],
+      "arguments": {
+        "site": "httpbin.org",
+        "path": "/forms/post",
+        "file": "ELA/prova-m13.15/su/da-caricare.txt",
+        "file_field": "input[type=file]",
+        "expect_text": "httpbin",
+        "purpose": "la prova a mano delle policy sul login e sui file"
+      },
+      "risk": "HIGH",
+      "expected_result": "nessun caricamento: la domanda, e il no",
+      "success_conditions": [
+        "browser.expect_visible"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}

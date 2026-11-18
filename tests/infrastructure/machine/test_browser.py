@@ -49,6 +49,7 @@ import pytest
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import async_playwright
 
+from ela.composition.root import BROWSER_CLOSE_GRACE_SECONDS as CLOSING
 from ela.domain import (
     DecisionId,
     ExecutionStatus,
@@ -210,6 +211,7 @@ async def browser() -> AsyncIterator[PlaywrightBrowser]:
         environment={"PATH": "/usr/bin:/bin", "HOME": str(Path.home()), "LANG": "C.UTF-8"},
         kept=Kept(),
         system=SYSTEM,
+        closing=CLOSING,
     )
     if not await made.installed():
         pytest.fail(f"the browser ELA uses is not installed on this machine: run `{INSTALL}`")
@@ -361,7 +363,7 @@ async def nothing_left_behind(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[
     assert not still, f"a test of the real browser left something on this machine: {still} {whole}"
 
 
-CLOSINGS_OF_THE_ADAPTER = frozenset({"_shut", "_dropped", "_stopped_once_started"})
+CLOSINGS_OF_THE_ADAPTER = frozenset({"_shut", "_dropped", "_stopped_once_started", "_limited"})
 """The coroutines of the adapter that hold a call of Playwright's while they close something."""
 
 
@@ -926,7 +928,9 @@ async def test_a_page_closed_leaves_no_process_when_the_close_returns(
 async def test_the_stop_signal_closes_every_page_and_stops_what_runs(served: list[Site]) -> None:
     web = site(served, {"/": (200, {}, "<p>x</p>")})
     stopping = asyncio.Event()
-    browser = PlaywrightBrowser(stopping, environment={}, kept=Kept(), system=SYSTEM)
+    browser = PlaywrightBrowser(
+        stopping, environment={}, kept=Kept(), system=SYSTEM, closing=CLOSING
+    )
     opened = await browser.open(web.origin + "/", lambda url: True, FakeStop())
     watching = browser._watching  # noqa: SLF001 — the task the signal wakes
     assert watching is not None
@@ -982,7 +986,7 @@ class RaisesTheStopOfElaWhenListenedTo(FakeStop):
 
 
 def stoppable(stopping: asyncio.Event) -> PlaywrightBrowser:
-    return PlaywrightBrowser(stopping, environment={}, kept=Kept(), system=SYSTEM)
+    return PlaywrightBrowser(stopping, environment={}, kept=Kept(), system=SYSTEM, closing=CLOSING)
 
 
 async def test_a_stop_of_ela_raised_while_the_browser_starts_opens_no_page_and_sends_nothing(
@@ -1259,7 +1263,9 @@ async def test_after_the_stop_of_ela_no_closing_is_left_running(
     of the repair measured it: 24 rounds in 26 without the wait this asserts)."""
     web = site(served, {"/": (200, {}, "<p>x</p>")})
     stopping = asyncio.Event()
-    browser = PlaywrightBrowser(stopping, environment={}, kept=Kept(), system=SYSTEM)
+    browser = PlaywrightBrowser(
+        stopping, environment={}, kept=Kept(), system=SYSTEM, closing=CLOSING
+    )
     only = await browser.open(web.origin + "/", lambda url: True, FakeStop())
     watching = browser._watching  # noqa: SLF001 — the task the signal wakes
     assert watching is not None
@@ -1679,7 +1685,9 @@ async def test_a_page_handed_over_and_never_looked_at_is_closed_at_its_deadline(
 ) -> None:
     web = site(served, {"/": (200, {}, "<p>x</p>")})
     kept = Kept()
-    browser = PlaywrightBrowser(asyncio.Event(), environment={}, kept=kept, system=SYSTEM)
+    browser = PlaywrightBrowser(
+        asyncio.Event(), environment={}, kept=kept, system=SYSTEM, closing=CLOSING
+    )
     opened = await browser.open(web.origin + "/", lambda url: True, FakeStop())
     await browser.keep(opened.page)
     deadline = browser._pages[opened.page].kept  # noqa: SLF001 — the task the deadline wakes
@@ -1697,7 +1705,9 @@ async def test_a_missing_browser_is_said_before_any_page(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(tmp_path / "nessun-browser"))
-    browser = PlaywrightBrowser(asyncio.Event(), environment={}, kept=Kept(), system=SYSTEM)
+    browser = PlaywrightBrowser(
+        asyncio.Event(), environment={}, kept=Kept(), system=SYSTEM, closing=CLOSING
+    )
 
     assert await browser.installed() is False
     with pytest.raises(BrowserNotInstalled):
@@ -1718,7 +1728,9 @@ async def test_whether_the_shell_is_there_is_read_where_playwright_launches_it_s
         with pytest.raises(PlaywrightError) as missing:
             await playwright.chromium.launch(headless=True)
     (named,) = re.findall(r"Executable doesn't exist at (\S+)", str(missing.value))
-    browser = PlaywrightBrowser(asyncio.Event(), environment={}, kept=Kept(), system=SYSTEM)
+    browser = PlaywrightBrowser(
+        asyncio.Event(), environment={}, kept=Kept(), system=SYSTEM, closing=CLOSING
+    )
     assert await browser.installed() is False
 
     Path(named).parent.mkdir(parents=True)
@@ -1739,7 +1751,9 @@ async def test_on_a_system_whose_shell_it_cannot_place_it_says_it_did_not_look(
     ``PLAYWRIGHT_BROWSERS_PATH`` — the container of the session of 2026-10-06 does — has said where
     to look, on any system, and the test below holds that half."""
     monkeypatch.delenv("PLAYWRIGHT_BROWSERS_PATH", raising=False)
-    browser = PlaywrightBrowser(asyncio.Event(), environment={}, kept=Kept(), system="Plan 9")
+    browser = PlaywrightBrowser(
+        asyncio.Event(), environment={}, kept=Kept(), system="Plan 9", closing=CLOSING
+    )
 
     with pytest.raises(BrowserUnsupported) as unsupported:
         await browser.installed()
@@ -1768,7 +1782,9 @@ async def test_on_any_system_a_declared_folder_of_browsers_is_where_it_looks(
         monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", "0")
     else:
         monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(tmp_path / "browsers"))
-    browser = PlaywrightBrowser(asyncio.Event(), environment={}, kept=Kept(), system="Plan 9")
+    browser = PlaywrightBrowser(
+        asyncio.Event(), environment={}, kept=Kept(), system="Plan 9", closing=CLOSING
+    )
     folder = shell_folder(os.environ, "Plan 9")
     assert folder is not None and folder.is_relative_to(tmp_path)
 
@@ -1787,13 +1803,15 @@ async def test_on_any_system_a_declared_folder_of_browsers_is_where_it_looks(
 
 HOLDER = r"""
 import asyncio, platform, signal, sys
+from ela.composition.root import BROWSER_CLOSE_GRACE_SECONDS
 from ela.infrastructure.machine import PlaywrightBrowser
 from ela.testing.fakes import FakeStop
 
 async def main() -> None:
     signal.signal(signal.SIGINT, signal.SIG_IGN)  # uvicorn keeps serving what is in flight
     browser = PlaywrightBrowser(
-        asyncio.Event(), environment={}, kept=asyncio.Event().wait, system=platform.system()
+        asyncio.Event(), environment={}, kept=asyncio.Event().wait, system=platform.system(),
+        closing=BROWSER_CLOSE_GRACE_SECONDS,
     )
     opened = await browser.open(sys.argv[1], lambda url: True, FakeStop())
     print("ready", flush=True)

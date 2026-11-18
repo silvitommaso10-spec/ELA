@@ -86,6 +86,7 @@ from ela.domain import (
     TaskState,
     TaskStep,
     WorstCase,
+    amount,
 )
 
 __all__ = [
@@ -270,6 +271,7 @@ __all__ = [
     "SessionPlan",
     "SessionTally",
     "SessionTool",
+    "ShownEntry",
     "SiteUnreachable",
     "SpeechPort",
     "StopPoint",
@@ -542,7 +544,9 @@ class AuthorizationExhaustedError(AuthorizationNotUsableError):
     def __init__(self, authorization_id: AuthorizationId, uses: int, max_uses: int) -> None:
         self.uses = uses
         self.max_uses = max_uses
-        super().__init__(authorization_id, f"it was used {uses} of {max_uses} times")
+        super().__init__(
+            authorization_id, f"it was used {uses} of {amount(max_uses, 'use', 'uses')}"
+        )
 
 
 class ApprovalNotAnswerableError(PortError):
@@ -1544,6 +1548,15 @@ class Guided:
 
 
 @dataclass(frozen=True, slots=True)
+class ShownEntry:
+    """An entry of the vault as a surface may show it (M13.15, ADR 0071): its name, and its
+    username masked by the vault's adapter — ``None`` when the entry has none. Never the id."""
+
+    name: str
+    username: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class Prospect:
     """What a call would meet on the machine **now**, read without running anything.
 
@@ -1568,6 +1581,11 @@ class Prospect:
     guided: Guided | None = None
     """What a guided session of the browser would be, when the call is one (M14.3, ADR 0060);
     ``None`` otherwise."""
+    entries: tuple[ShownEntry, ...] = ()
+    """What each entry of the vault a policy of a login would name is (M13.15, ADR 0071; decision
+    10): by its name and its username masked, in the order of the values asked — the way the
+    question of a login shows one. **Never the id**, which is the plan's (ADR 0063 §9). Filled only
+    by the «partirebbe» of a login's birth."""
     named: JsonMapping | None = None
     """**What the tool found composing the question, and must use after the yes** (M13.10,
     ADR 0065): for a login, the id of the entry of the vault the question named. The executor
@@ -1747,17 +1765,35 @@ class ToolPort(Protocol):
         grammar of the path. A tool that works on no path answers an empty :class:`Prospect`.
         """
 
-    async def prospect_place(self, place: str) -> Prospect:
+    async def prospect_covered(
+        self, arguments: JsonMapping, task: TaskId | None = None
+    ) -> Prospect:
+        """What this call would meet now **when a policy covers it** — asked by the executor before
+        the use is spent (M13.15, ADR 0071; answer 39 of the review of its SPEC).
+
+        :meth:`prospect` with nothing that only a question needs: no question will be composed,
+        so a tool reads no more of the world than what could refuse the call. Every refusal it
+        gives is one :meth:`prospect` gives, from the same function — the same code for the same
+        refusal on the two roads. The default of :class:`~ela.tools.base.Tool` **is**
+        :meth:`prospect`; an upload, whose question reads and measures the file, says the same
+        refusals without reading a byte. Read-only, like :meth:`prospect`.
+        """
+
+    async def prospect_place(self, place: str, values: tuple[str, ...] = ()) -> Prospect:
         """Whether a call whose target lies in ``place`` could start **now** — one entry of the
-        scope of a policy, asked by the route of its birth (M13.14, ADR 0068; decision 9).
+        scope of a policy, asked by the route of its birth (M13.14, ADR 0068; decision 9) — with
+        each of ``values``, the values of the argument the policy names by value (M13.15, ADR 0071;
+        decision 6): the sites of a file from the browser, the entries of the vault of a login.
 
         The «partirebbe» of ADR 0062 §7 for a capability whose scoped argument is one value: there
         is no call to build, so the tool that holds the boundary answers for the place. ``refusal``
-        is the first reason the place could hold no call; ``target``, when the tool resolves the
-        place on its machine, is that place as the disk names it — what the preview shows beside
-        the entry as written (answer 20 of the review of the SPEC). Read-only, like
-        :meth:`prospect`. **A tool that cannot look at a place refuses**: a default that said
-        «it would start» would be a defence that only looks active.
+        is the first reason the place — or the place with one of the values — could hold no call;
+        ``target``, when the tool resolves the place on its machine, is that place as the disk
+        names it — what the preview shows beside the entry as written (answer 20 of the review of
+        the SPEC); ``entries``, for a login, what each value is, by name and masked username.
+        Read-only, like :meth:`prospect`. **A tool that cannot look at a place refuses**: a
+        default that said «it would start» would be a defence that only looks active; and a tool
+        that names nothing by value refuses a value.
         """
 
     @property
@@ -3121,7 +3157,11 @@ class Browser(Protocol):
       the implementation's own closes it** — not the verifier's look, not a deadline —: whoever
       holds it closes it (M13.10, ADR 0065 §3). Its browser, its cookies and whatever the page does
       by itself last until then;
-    * when :meth:`close` returns, the kernel knows no process of that page's browser any more.
+    * when :meth:`close` returns, the kernel knows no process of that page's browser any more;
+    * **a closing has a limit** (M13.9d, ADR 0072): after the tool's time, or the stop of its task,
+      a closing ends within a limit the implementation is given — past it the implementation kills
+      what that opening had started, never the folder of a profile —, and a browser that ended by
+      itself is said at once (``BrowserFailed``), not at the tool's time.
     """
 
     async def installed(self) -> bool:

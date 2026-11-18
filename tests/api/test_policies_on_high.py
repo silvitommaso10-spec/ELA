@@ -468,13 +468,13 @@ async def test_a_policy_whose_uses_are_spent_is_exhausted_and_its_revocation_is_
 
     assert first["outcome"] == "completed", first
     assert asked["outcome"] == "waiting_approval", asked
-    assert lines == [f"policy {policy['short']} was used 1 of its 1 times"]
+    assert lines == [f"policy {policy['short']} was used 1 of its 1 use"]
     assert live == []
     assert ended["state"] == "EXHAUSTED" and ended["remaining"] == 0 and ended["uses"] == 1
     assert revoked.status_code == 409, revoked.text
     assert revoked.json()["error"]["code"] == "policy.not_live"
     assert revoked.json()["error"]["message"] == (
-        f"policy {policy['short']} was used 1 of its 1 times: there is nothing to revoke"
+        f"policy {policy['short']} was used 1 of its 1 use: there is nothing to revoke"
     )
     assert len(after) == len(before) and stored.revoked_at is None
 

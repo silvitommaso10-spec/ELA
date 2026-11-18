@@ -82,6 +82,7 @@ from ela.ports import (
     ProfileUndeclared,
     ProfileUnsafe,
     Prospect,
+    ShownEntry,
     StopPoint,
     TaskPages,
     TaskStop,
@@ -780,6 +781,31 @@ class LoginTool(_OnTheProfile, _BrowserTool):
             # approval, shown by no surface, and in no event of the audit.
             named={NAMED_ENTRY: found.id},
         )
+
+    async def prospect_place(self, place: str, values: tuple[str, ...] = ()) -> Prospect:
+        """Whether a login could start now on the site ``place`` with each of ``values``, the
+        entries of the vault a policy names (M13.15, ADR 0071; decisions 6 and 10): the profile and
+        the window, as before every question of a login; then **for each entry**, ``find`` for the
+        address of the site — the closed list of the vault's commands does not change, and no
+        password leaves the adapter —: an id the vault does not hold **for that site** is
+        refused with the code of today, and a locked vault or a program that is missing refuse
+        with theirs. **The vault is opened by you**: no policy is born with it closed. The answer
+        says each entry **by its name and its username masked**, as the question does — never the
+        id, which the user wrote after reading it in the vault's own app."""
+        if not values:
+            return self._refused(
+                ARGUMENTS_INVALID, "a policy of browser.login names its entries of the vault", False
+            )
+        missing = await self._installed()
+        if missing is not None:
+            return self._refused(missing.code or ARGUMENTS_INVALID, missing.message, False)
+        shown: list[ShownEntry] = []
+        for entry in values:
+            found = await self._vault.find(place, entry)
+            if isinstance(found, VaultProblem):
+                return self._refused(found.code, found.message, found.code in {LOCKED, TIMEOUT})
+            shown.append(ShownEntry(found.name or UNNAMED, found.username))
+        return Prospect(entries=tuple(shown))
 
     def _refused(self, code: str, message: str, retryable: bool) -> Prospect:
         return Prospect(

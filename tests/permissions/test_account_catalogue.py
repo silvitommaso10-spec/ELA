@@ -3,10 +3,12 @@ Guardian (M13.9, ADR 0063; decisions 12 and 29).
 
 ``browser.read_as_you`` is **MEDIUM**: what it reads is the user's own content, and it leaves
 with their credentials — a question at every use, and no policy of §59 for a single read.
-``browser.act_as_you`` and ``browser.login`` are **HIGH**: a login asks at every use, which no
-standing grant reaches; since M13.14 an action as you asks **unless a policy of yours for
-``browser.act_as_you``** covers its site (ADR 0068). The arguments of the first two are the empty
-browser's, to the letter; a login's have **no argument that could carry a value**.
+``browser.act_as_you`` and ``browser.login`` are **HIGH**: since M13.14 an action as you asks
+**unless a policy of yours for ``browser.act_as_you``** covers its site (ADR 0068), and since M13.15
+a login asks unless a policy of yours for ``browser.login`` covers its site **and its entry**
+(ADR 0071) — the login of a guided session, which carries no entry, asks every time. The
+arguments of the first two are the empty browser's, to the letter; a login's have **no argument
+that could carry a value**.
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ import pytest
 from ela.domain import (
     Authorization,
     CapabilitySpec,
+    DeviceId,
     PermissionOutcome,
     PlanAuthor,
     PlanAuthorKind,
@@ -39,6 +42,7 @@ from ela.permissions import (
     ENTRY_MAX_LENGTH,
     UNDECLARED_SITES,
     PermissionGuardian,
+    PolicyCheck,
     PolicyRefusedError,
     PolicyRequest,
     Rule,
@@ -90,15 +94,20 @@ def catalogue(sites: tuple[str, ...] = SITES) -> Any:
     return production_catalogue(sites=sites, guided_model=MODEL)
 
 
+CORE = DeviceId(UUID("00000000-0000-4000-8000-0000000c0de0"))
+"""The Core's id, as the composition hands it to the Guardian (M13.14, ADR 0068 §4)."""
+
+
 def decide(
     capability: str,
     arguments: dict[str, Any],
     *,
     sites: tuple[str, ...] = SITES,
     authorization: Authorization | None = None,
+    on_the_core: bool = False,
 ) -> tuple[PermissionOutcome, str]:
     specs = catalogue(sites)
-    guardian = PermissionGuardian(specs, FakeClock(), FakeIdGenerator(), FakeAuditLog())
+    guardian = PermissionGuardian(specs, FakeClock(), FakeIdGenerator(), FakeAuditLog(), core=CORE)
     spec: CapabilitySpec = specs.get(capability)
     step = TaskStep(
         id=STEP_ID,
@@ -110,7 +119,14 @@ def decide(
         expected_result="la pagina",
         requires_authorization=True,
     )
-    decision = guardian.decide(spec, arguments, task=TASK, step=step, authorization=authorization)
+    decision = guardian.decide(
+        spec,
+        arguments,
+        task=TASK,
+        step=step,
+        authorization=authorization,
+        device_id=CORE if on_the_core else None,
+    )
     return decision.outcome, str(decision.metadata["rule"])
 
 
@@ -127,10 +143,12 @@ def test_the_three_capabilities_as_the_catalogue_holds_them() -> None:
         assert spec.covers is None
         check_capability(spec)
     # Since M13.14 (ADR 0068) the action as you declares the terms of a policy, and its words;
-    # the read and the login still declare none.
-    assert read.policy_terms is None and login.policy_terms is None
+    # since M13.15 (ADR 0071) the login too, with the entries named by value. The read declares
+    # none.
+    assert read.policy_terms is None and read.policy_words is None
     assert act.policy_terms is not None and act.policy_words is not None
-    assert read.policy_words is None and login.policy_words is None
+    assert login.policy_terms is not None and login.policy_words is not None
+    assert login.policy_terms.by_value == "entry" and login.policy_terms.on_the_core
     assert {BROWSER_READ_AS_YOU, BROWSER_ACT_AS_YOU, BROWSER_LOGIN} <= DECLARES_AN_EMPTY_SCOPE
     assert browser_read_as_you().scope == UNDECLARED_SITES
 
@@ -189,17 +207,47 @@ def test_a_read_with_the_profile_asks_where_the_empty_browser_s_does_not() -> No
     assert rule == Rule.APPROVAL_UNLESS_AUTHORIZED.value
 
 
-def test_a_login_asks_at_every_use_and_no_standing_grant_reaches_it() -> None:
-    """A login declares no terms (M13.15 opens it): its row asks at every use."""
-    spec = catalogue().get(BROWSER_LOGIN)
+ENTRY = "0f7c2e5a-1b2c-4d3e-8f90-a1b2c3d4e5f6"
+"""An id of an entry of a vault, as the plan names it: nothing of anybody's."""
 
-    assert decide(BROWSER_LOGIN, LOGIN) == (
+
+def test_a_login_asks_unless_a_policy_of_its_own_covers_it() -> None:
+    """M13.15, ADR 0071: the row of a ``HIGH`` that declares terms — the question without a
+    policy; the policy of ``browser.login`` that names the site and the entry, on the Core,
+    allows a call that names that entry."""
+    spec = catalogue().get(BROWSER_LOGIN)
+    named = {**LOGIN, "entry": ENTRY}
+    policy = grant(spec, values=(ENTRY,))
+
+    assert row_of(spec) is Rule.APPROVAL_UNLESS_POLICY
+    assert no_policy_for(spec) is None
+    assert decide(BROWSER_LOGIN, named) == (
         PermissionOutcome.REQUIRES_APPROVAL,
-        Rule.APPROVAL_EVERY_USE.value,
+        Rule.APPROVAL_UNLESS_POLICY.value,
     )
-    standing, _ = decide(BROWSER_LOGIN, LOGIN, authorization=grant(spec))
-    assert standing is not PermissionOutcome.ALLOWED
-    assert no_policy_for(spec) is not None
+    assert decide(BROWSER_LOGIN, named, authorization=policy, on_the_core=True) == (
+        PermissionOutcome.ALLOWED,
+        Rule.APPROVAL_UNLESS_POLICY.value,
+    )
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [LOGIN, {**LOGIN, "entry": "a-different-entry-of-the-vault"}],
+    ids=["without entry", "an entry the policy does not name"],
+)
+def test_a_login_without_entry_or_with_an_entry_the_policy_does_not_name_asks(
+    arguments: dict[str, Any],
+) -> None:
+    """Decision 4 (iii): the call carries ``entry``, always, under a policy — without it, or with
+    one the policy does not name, the step asks, with the road of today. The Guardian, handed the
+    policy for such a call, calls it the caller's incoherence: the executor never hands it over."""
+    spec = catalogue().get(BROWSER_LOGIN)
+    policy = grant(spec, values=(ENTRY,))
+
+    outcome, _ = decide(BROWSER_LOGIN, arguments, authorization=policy, on_the_core=True)
+
+    assert outcome is not PermissionOutcome.ALLOWED
 
 
 def test_an_action_as_you_asks_unless_a_policy_of_its_own_covers_it() -> None:
@@ -266,13 +314,15 @@ def test_a_site_outside_the_grammar_is_denied_before_the_scope_is_read(
     assert (outcome, rule) == (PermissionOutcome.DENIED, Rule.ARGUMENTS.value)
 
 
-@pytest.mark.parametrize("capability", [BROWSER_READ_AS_YOU, BROWSER_LOGIN])
-def test_no_policy_of_59_can_be_born_for_a_read_or_a_login(capability: str) -> None:
-    """ADR 0062 §1: a capability that declares no terms admits no policy — a single read with
-    the profile among them (decision 29, the road C), and the login until M13.15."""
-    request = PolicyRequest(capability_id=capability, scope=("posta.example",), limits={}, days=1)  # type: ignore[arg-type]
+def test_no_policy_of_59_can_be_born_for_a_read() -> None:
+    """ADR 0062 §1: a capability that declares no terms admits no policy — a single read with the
+    profile among them (decision 29, the road C) —, refused at ``ADMITS`` with its reason. The
+    login left this test with M13.15 (ADR 0071): its births are the tests of its own policy."""
+    request = PolicyRequest(
+        capability_id=BROWSER_READ_AS_YOU, scope=("posta.example",), limits={}, days=1
+    )
 
-    with pytest.raises(PolicyRefusedError):
+    with pytest.raises(PolicyRefusedError) as refused:
         authorization_from_policy(
             request,
             catalogue=catalogue(),
@@ -280,6 +330,11 @@ def test_no_policy_of_59_can_be_born_for_a_read_or_a_login(capability: str) -> N
             now=NOW,
             authorization_id=FakeIdGenerator().new_uuid(),  # type: ignore[arg-type]
         )
+
+    assert refused.value.check is PolicyCheck.ADMITS
+    assert refused.value.reason == (
+        "no milestone has said what a policy must bound for browser.read_as_you"
+    )
 
 
 def test_a_policy_of_59_is_born_for_an_action_as_you() -> None:

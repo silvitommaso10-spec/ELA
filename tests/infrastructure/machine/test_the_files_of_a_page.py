@@ -858,7 +858,13 @@ async def test_the_site_receives_the_bytes_ela_read_whatever_the_disk_holds_afte
     file = under / "ELA" / "da-caricare.txt"
     file.write_bytes(TEXT)
     tool = of(browser, BrowserUploadTool, AccountUploadTool)(
-        under, browsing(a.origin), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+        under,
+        browsing(a.origin),
+        browser,
+        CLOCK,
+        FakeIdGenerator(),
+        protected={},
+        pages=FakeTaskPages(),
     )
     capability = of(browser, BROWSER_UPLOAD, BROWSER_UPLOAD_AS_YOU)
     arguments = {
@@ -898,7 +904,13 @@ async def test_an_upload_gives_the_file_and_clicks_and_its_verifier_sees_the_pag
     under = root(tmp_path)
     (under / "ELA" / "da-caricare.txt").write_bytes(TEXT)
     tool = of(browser, BrowserUploadTool, AccountUploadTool)(
-        under, browsing(a.origin), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+        under,
+        browsing(a.origin),
+        browser,
+        CLOCK,
+        FakeIdGenerator(),
+        protected={},
+        pages=FakeTaskPages(),
     )
     capability = of(browser, BROWSER_UPLOAD, BROWSER_UPLOAD_AS_YOU)
     arguments = {
@@ -955,7 +967,13 @@ async def test_a_page_that_uploads_when_the_file_is_given_and_shows_its_text_for
     under = root(tmp_path)
     (under / "ELA" / "da-caricare.txt").write_bytes(TEXT)
     tool = of(browser, BrowserUploadTool, AccountUploadTool)(
-        under, browsing(a.origin), browser, CLOCK, FakeIdGenerator(), pages=FakeTaskPages()
+        under,
+        browsing(a.origin),
+        browser,
+        CLOCK,
+        FakeIdGenerator(),
+        protected={},
+        pages=FakeTaskPages(),
     )
     capability = of(browser, BROWSER_UPLOAD, BROWSER_UPLOAD_AS_YOU)
     arguments = {

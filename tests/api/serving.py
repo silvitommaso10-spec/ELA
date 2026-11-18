@@ -53,6 +53,7 @@ import sys
 import threading
 from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 STILL_HERE_SECONDS = 35
@@ -129,8 +130,8 @@ def main(mode: str, folder: Path, origin: str, port: str, grace: str | None = No
         browser.settle = settle
         print(json.dumps({"pid": os.getpid(), "started": everything}), flush=True)
 
-    async def built(settings: Settings) -> Ela:
-        made = await building(settings, power=FakePower())
+    async def built(settings: Settings, **wired: Any) -> Ela:
+        made = await building(settings, power=FakePower(), **wired)
         held.append(asyncio.get_running_loop().create_task(at_work(made)))
         return made
 

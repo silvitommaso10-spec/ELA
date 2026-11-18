@@ -33,6 +33,7 @@ from pathlib import Path
 import pytest
 from playwright.async_api import async_playwright
 
+from ela.composition.root import BROWSER_CLOSE_GRACE_SECONDS as CLOSING
 from ela.infrastructure.machine.account import (
     LAUNCH_ARGUMENTS,
     WINDOW_ARGUMENTS,
@@ -114,6 +115,7 @@ def chrome(
         system=SYSTEM,
         profile=profile,
         shown=options.pop("shown", lambda: False),  # type: ignore[arg-type]
+        closing=options.pop("closing", CLOSING),  # type: ignore[arg-type]
         **options,  # type: ignore[arg-type]
     )
 

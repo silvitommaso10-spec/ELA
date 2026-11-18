@@ -145,15 +145,20 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.9` | Implementata | Il browser con i tuoi account: un Chrome di ELA che dura, e le password che restano in Bitwarden |
 | 13 — Il permesso prima dell'azione | `M13.9b` | Implementata | La pagina d'errore del browser non è un altro sito |
 | 13 — Il permesso prima dell'azione | `M13.9c` | Implementata | Solo l'adapter del vault lancia il programma del vault |
+| 13 — Il permesso prima dell'azione | `M13.9d` | Implementata | Un lancio del browser del profilo che a volte non arriva |
+| 13 — Il permesso prima dell'azione | `M13.9e` | Proposta | Un lancio del browser del profilo che in un test, una volta, non è arrivato |
 | 13 — Il permesso prima dell'azione | `M13.10` | Implementata | Più passi e i file: una sessione del browser fra gli step, una sequenza di gesti, e i file che entrano ed escono |
 | 13 — Il permesso prima dell'azione | `M13.10b` | Implementata | La domanda a occhio del login, nella prova di M13.10, chiede ciò che non mostra |
 | 13 — Il permesso prima dell'azione | `M13.11` | Proposta | Il browser sul PC: le capacità di M13.9 e M13.10 sul nodo Windows, e il verdetto che torna in busta |
 | 13 — Il permesso prima dell'azione | `M13.12` | Implementata | Le policy di §59: una policy che Tommaso si crea rende autonoma un'azione `MEDIUM`, a partire da `browser.guided` |
 | 13 — Il permesso prima dell'azione | `M13.13` | Implementata | I file dal browser: uno scaricamento è un `fs.write`, un caricamento un `fs.read` |
 | 13 — Il permesso prima dell'azione | `M13.13b` | Implementata | Uno scaricamento interrotto che a volte lascia il suo file a metà |
+| 13 — Il permesso prima dell'azione | `M13.13c` | Implementata | Il browser del profilo che cade allo scaricamento, dal terzo sullo stesso profilo |
 | 13 — Il permesso prima dell'azione | `M13.14` | Implementata | Le policy di Tommaso arrivano alle azioni HIGH |
-| 13 — Il permesso prima dell'azione | `M13.15` | Proposta | Le policy di Tommaso arrivano al login e ai file dal browser |
+| 13 — Il permesso prima dell'azione | `M13.14b` | Proposta | Il modello sente dire che il gesto chiede sempre, e da M13.14 non è vero |
+| 13 — Il permesso prima dell'azione | `M13.15` | Implementata | Le policy di Tommaso arrivano al login e ai file dal browser |
 | 13 — Il permesso prima dell'azione | `M13.16` | Proposta | Il terminale sotto le policy di Tommaso, con un confine dimostrato |
+| 13 — Il permesso prima dell'azione | `M13.17` | Proposta | I file di tutto il computer |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.1` | Implementata | Il tetto di spesa: la chiave di ELA, e un limite che ELA fa rispettare |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.1b` | Implementata | La docstring del tetto dice il secondo tetto giusto: il limite dell'organizzazione |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.1c` | Proposta | Il caso peggiore senza prezzo: un ramo e un rifiuto che nessun produttore raggiunge |
@@ -185,8 +190,8 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **70** | `docs/adr/NNNN-*.md` |
-| Milestone | **105, di cui 83 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| ADR scritti | **73** | `docs/adr/NNNN-*.md` |
+| Milestone | **110, di cui 86 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **74** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **16** | `pyproject.toml` |
 | Port | **36** | i `Protocol` di `src/ela/ports.py` |
@@ -1344,7 +1349,15 @@ in quei due posti. La costruisce **M13.14** ([`milestones/M13.14.md`](milestones
 la dichiarazione alla costruzione del catalogo — «no policy reaches a HIGH (ADR 0045 §3)». **Fino a lei il codice è quello
 di oggi**, e nessuna policy raggiunge una `HIGH`. ***Annotato il 2026-11-13***: M13.14 è fatta, con la prova a mano
 passata, e [ADR 0068](adr/0068-policies-on-high.md) è Accettata: da lei una policy raggiunge `fs.write`, `browser.act` e
-`browser.act_as_you`.
+`browser.act_as_you`. ***Annotato il 2026-11-17***: M13.15 porta le policy al login e alle quattro capability dei file dal
+browser, con una seconda dimensione — i siti di un file, le voci del vault di un login — ([ADR
+0071](adr/0071-policies-on-login-and-files.md), Proposta fino alla prova a mano della sezione 34): dopo di lei l'unica
+`HIGH` che chiede a ogni uso è `terminal.run`, fino a [M13.16](milestones/M13.16.md). ***Annotato il 2026-11-18***
+(ultimo blocco di `m13.15-le-policy-al-login-e-ai-file`, decisione 128): M13.15 è fatta, con la prova a mano della
+sezione 34 passata a `fe776f4`, e ADR 0071 è Accettata: una policy raggiunge il login e le quattro capability dei file dal
+browser. Sullo stesso branch, nate dalla sua prova, M13.9d — una chiusura del browser ha un limite, [ADR
+0072](adr/0072-a-closing-has-a-limit.md) — e M13.13c — il browser del profilo dimentica i suoi scaricamenti, [ADR
+0073](adr/0073-the-profile-forgets-its-downloads.md) —, Accettate.
 
 *Perché:* Tommaso vuole decidere una volta, lui, che cosa ELA fa da sola, invece di rispondere ogni volta alla stessa
 domanda. §59 lo prevede — «Puoi modificare liberamente i file dentro questa cartella» è una policy su `fs.write`, che in
@@ -1391,7 +1404,9 @@ che ne discende non sta qui**: sta in [`ROADMAP.md`](ROADMAP.md), che da quel gi
 
 - **ELA deve poter lavorare su tutto il computer.** I file: lo scope di `fs.*` diventa un elenco di cartelle che
   sceglie chi usa ELA, fino alla sua home, e i posti protetti si controllano a ogni uso, come da M13.14 (ADR 0068) —
-  è **M13.17**, riservata. E il controllo del computer: mouse, tastiera e schermo, M13.5 e M14.4.
+  è **M13.17**, riservata. ***Annotato il 2026-11-18*** (decisione 130 dell'ultimo blocco di M13.15): è la prossima,
+  e il suo documento è nato, [`milestones/M13.17.md`](milestones/M13.17.md). E il controllo del computer: mouse,
+  tastiera e schermo, M13.5 e M14.4.
 - **ELA si migliora da sola, e il sì e il merge restano di Tommaso** — la Fase 16, §35–§38. ELA ripara il proprio
   codice quando glielo si chiede, con il meccanismo di M14.7 puntato sul suo repository; si accorge dei propri errori
   e propone; prova una modifica su una copia, la confronta con la versione di prima, e torna indietro. **Il diff si

@@ -343,8 +343,9 @@ def production_tools(
     whichever browser it is on.
 
     ``protected`` is what ELA uses to exist, named and resolved (M13.14, ADR 0068): the tools that
-    write under ``fs_root`` — ``fs.write`` and the two downloads — never reach it. Mandatory, like
-    ``pages``: a registry built without it would write anywhere under the root.
+    write under ``fs_root`` — ``fs.write`` and the two downloads — never reach it, and since M13.15
+    (ADR 0071) the ones that read there — ``fs.read`` and the two uploads — never read it.
+    Mandatory, like ``pages``: a registry built without it would write anywhere under the root.
     """
     return ToolRegistry(
         (
@@ -363,7 +364,7 @@ def production_tools(
             # The filesystem outside the workspace (M13.1). ``fs_root`` is not ``root``: the
             # workspace is ELA's own folder, this is the one the user declared with
             # ``ELA_FS_ROOT``, and neither tool ever creates it.
-            FsReadTool(fs_root, clock, ids),
+            FsReadTool(fs_root, clock, ids, protected=protected),
             FsWriteTool(fs_root, clock, ids, protected=protected),
             # The terminal (M13.2): the programs with the identity of the start-up, the scope of
             # M13.1 for the folder, and the launcher the composition built around the stop signal.
@@ -405,8 +406,12 @@ def production_tools(
             AccountDownloadTool(
                 fs_root, browsing, accounts, clock, ids, protected=protected, pages=pages
             ),
-            BrowserUploadTool(fs_root, browsing, browser, clock, ids, pages=pages),
-            AccountUploadTool(fs_root, browsing, accounts, clock, ids, pages=pages),
+            BrowserUploadTool(
+                fs_root, browsing, browser, clock, ids, protected=protected, pages=pages
+            ),
+            AccountUploadTool(
+                fs_root, browsing, accounts, clock, ids, protected=protected, pages=pages
+            ),
         )
     )
 
@@ -464,7 +469,7 @@ def node_tools(
     they read *this* machine, which on a node is the right one. ``None`` builds neither: without a
     root the tool has nothing to act on, and the node does not declare what it does not have.
     ``protected`` is what the node uses to exist (M13.14, ADR 0068): no write of ``fs.write``
-    reaches it.
+    reaches it, and since M13.15 (ADR 0071) no read of ``fs.read``.
     """
     tools: list[ToolPort] = [
         EchoTool(clock, ids),
@@ -476,7 +481,10 @@ def node_tools(
     ]
     if fs_root is not None:
         tools.extend(
-            (FsReadTool(fs_root, clock, ids), FsWriteTool(fs_root, clock, ids, protected=protected))
+            (
+                FsReadTool(fs_root, clock, ids, protected=protected),
+                FsWriteTool(fs_root, clock, ids, protected=protected),
+            )
         )
     return ToolRegistry(tools)
 

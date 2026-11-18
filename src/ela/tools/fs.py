@@ -75,6 +75,7 @@ __all__ = [
     "FOLDER",
     "HARD_LINK",
     "NOT_A_FOLDER",
+    "MoreThanOneName",
     "WRITES_IN",
     "OVERWRITES",
     "READS",
@@ -135,11 +136,15 @@ HARD_LINK: Final = "path.hard_link"
 """The target is a file with more than one name (M13.14, ADR 0068; answer 31 of the review of its
 SPEC): overwriting it changes the file under its other names too, and the places are compared as
 paths — a second name of a file of ELA's would step around the comparison. Refused at every
-write; a new file has one name."""
+write; a new file has one name. **And at every read since M13.15** (ADR 0071; decision 7, answer 36
+of the review of its SPEC): ``fs.read`` and an upload refuse it too, under a yes or under a policy
+— what would be read is a file other folders also name, and the question names one of them. On the
+descriptor that reads, with ``fstat``, not only on the path."""
 
 NOT_A_FOLDER: Final = "fs.not_a_folder"
 """A place a policy would name is a file (M13.14, ADR 0068; answer 25): a policy of ``fs.write``
-names folders, and only :meth:`FsWriteTool.prospect_place` answers with it."""
+names folders, and so does one of the four files from the browser (M13.15, ADR 0071) — the
+answer of :func:`looked_for_a_folder`, which the births of all of them call."""
 
 FOLDER: Final = "folder"
 """What a place of a policy is called: the tool's word, beside :data:`FILE`."""
@@ -157,7 +162,15 @@ rest is :data:`IO_ERROR`. The last two since M13.14: they are not :func:`classif
 READ_REFUSALS: Final[frozenset[str]] = frozenset(
     {PATH_INVALID, PATH_OUTSIDE_ROOT, PATH_SYMLINK, PATH_IS_DIRECTORY, PATH_MISSING}
 )
-"""And the ones ``fs.read`` names: a missing file is a refusal for a reader, not a target."""
+"""And the ones ``fs.read`` names: a missing file is a refusal for a reader, not a target. Since
+M13.15 a read also names :data:`ELA_S_OWN` and :data:`HARD_LINK`, which are
+:func:`looked_for_a_read`'s and not :func:`classify`'s."""
+
+
+class MoreThanOneName(OSError):
+    """The descriptor that reads is of a file with more than one name (M13.15, ADR 0071): what
+    :func:`read_bytes` raises, after ``fstat`` and before a byte is read."""
+
 
 DIRECTORY_MODE: Final = 0o700
 FILE_MODE: Final = 0o600
@@ -216,6 +229,8 @@ class FsReadTool(Tool):
             PATH_MISSING,
             NO_ROOT,
             IO_ERROR,
+            ELA_S_OWN,
+            HARD_LINK,
         }
     )
     output_keys: ClassVar[frozenset[str]] = frozenset({"path", "bytes", "content"})
@@ -230,15 +245,28 @@ class FsReadTool(Tool):
     """A read has no effect in the world and no wait before it: its point is the call (M6.3c)."""
 
     def __init__(
-        self, root: Path | str, clock: Clock, ids: IdGenerator, *, name: str = FS_READ_TOOL_NAME
+        self,
+        root: Path | str,
+        clock: Clock,
+        ids: IdGenerator,
+        *,
+        protected: Mapping[str, Path],
+        name: str = FS_READ_TOOL_NAME,
     ) -> None:
         super().__init__(FS_READ, clock, ids, name=name)
         self._root = resolve_workspace(root)
+        self._protected: Mapping[str, Path] = MappingProxyType(dict(protected))
 
     @property
     def root(self) -> Path:
         """The resolved root: ``ELA_FS_ROOT``, never created here."""
         return self._root
+
+    @property
+    def protected(self) -> Mapping[str, Path]:
+        """What ELA uses to exist, resolved and named (M13.15, ADR 0071; decision 36): no read
+        reaches it either. Required, without a default, as for a write."""
+        return self._protected
 
     async def prospect(self, arguments: JsonMapping, task: TaskId | None = None) -> Prospect:
         """What a read of this path would meet now (dec. G, and the rule of ADR 0045 §6-bis)."""
@@ -261,7 +289,7 @@ class FsReadTool(Tool):
         path = arguments.get("path")
         if not isinstance(path, str):
             return Outcome({}, ARGUMENTS_INVALID, "path must be a string"), None
-        return looked_for_a_read(self._root, path)
+        return looked_for_a_read(self._root, path, protected=self._protected)
 
     async def _run(self, arguments: JsonMapping, stop: TaskStop) -> Outcome:
         refused, _ = self._look(arguments)
@@ -270,7 +298,9 @@ class FsReadTool(Tool):
         path = arguments["path"]
         assert isinstance(path, str)
         try:
-            data = _read(self._root / path)
+            data = read_bytes(self._root / path)
+        except MoreThanOneName:
+            return Outcome({}, HARD_LINK, more_than_one_name_read(path))
         except OSError as error:
             return Outcome({}, IO_ERROR, f"{type(error).__name__}: {error.strerror or error}")
         try:
@@ -339,7 +369,7 @@ class FsWriteTool(Tool):
         Required, without a default — a tool built without the list would write anywhere."""
         return self._protected
 
-    async def prospect_place(self, place: str) -> Prospect:
+    async def prospect_place(self, place: str, values: tuple[str, ...] = ()) -> Prospect:
         """Whether a write could start in ``place`` now: one entry of the scope of a policy, at its
         birth (M13.14, ADR 0068; decision 9, answer 25 of the review of its SPEC).
 
@@ -348,23 +378,12 @@ class FsWriteTool(Tool):
         is :data:`NOT_A_FOLDER` —; and it is nothing of ELA's, :data:`ELA_S_OWN`. The answer's
         ``target`` is the folder on this disk, whole, beside the entry as written: what the
         preview of the policy shows (answer 20)."""
-        if not self._root.is_dir():
-            return _refused(NO_ROOT, _no_root(self._root), self.name)
-        problem = classify(self._root, place)
-        if problem is None:
-            return _refused(
-                NOT_A_FOLDER,
-                f"{place!r} is a file and not a folder: a policy of fs.write names folders",
-                self.name,
-            )
-        if problem.code != PATH_IS_DIRECTORY:
-            return _refused(problem.code, problem.message(place), self.name)
-        folder = self._root / place
-        what = _ela_s_own(folder, self._protected)
-        if what is not None:
-            return _refused(ELA_S_OWN, _reaches(place, what), self.name)
-        return Prospect(
-            target=Target(resolved=str(folder), exists=True, does=WRITES_IN, label=FOLDER)
+        if values:
+            # ``fs.write`` names nothing by value (M13.15, ADR 0071): a value is refused.
+            return _refused(ARGUMENTS_INVALID, "fs.write names nothing by value", self.name)
+        return _prospect(
+            looked_for_a_folder(self._root, place, protected=self._protected, does=WRITES_IN),
+            self.name,
         )
 
     async def asserted(self, arguments: JsonMapping) -> Prospect:
@@ -466,18 +485,62 @@ def _no_root(root: Path) -> str:
     return f"{root} is not there: ELA does not create the folder you declared in ELA_FS_ROOT"
 
 
-def looked_for_a_read(root: Path, path: str) -> tuple[Outcome | None, Target | None]:
+def looked_for_a_folder(
+    root: Path, place: str, *, protected: Mapping[str, Path], does: str
+) -> tuple[Outcome | None, Target | None]:
+    """**Whether a policy could name ``place``**, in one place (M13.14, ADR 0068; M13.15, ADR
+    0071): the root is there; ``place`` is **a folder that is there** — classified as a write is,
+    so a link, a path out of the root or a missing folder are refused with their code, and a file
+    is :data:`NOT_A_FOLDER` —; and it is nothing of ELA's, :data:`ELA_S_OWN`, in both directions.
+    ``fs.write``'s, and the four files' from the browser — which read or write there. The target is
+    the folder on this disk, whole, beside the entry as written: what the preview shows. ``does``
+    is the tool's word for what a policy lets it do there."""
+    if not root.is_dir():
+        return Outcome({}, NO_ROOT, _no_root(root)), None
+    problem = classify(root, place)
+    if problem is None:
+        return Outcome(
+            {}, NOT_A_FOLDER, f"{place!r} is a file and not a folder: a policy names folders"
+        ), None
+    if problem.code != PATH_IS_DIRECTORY:
+        return Outcome({}, problem.code, problem.message(place)), None
+    folder = root / place
+    what = _ela_s_own(folder, protected)
+    if what is not None:
+        return Outcome({}, ELA_S_OWN, _reaches(place, what)), None
+    return None, Target(resolved=str(folder), exists=True, does=does, label=FOLDER)
+
+
+def looked_for_a_read(
+    root: Path, path: str, *, protected: Mapping[str, Path]
+) -> tuple[Outcome | None, Target | None]:
     """**What a read refuses, in one place**: the root, and the classification ``fs`` shares with
     its verifiers — a file that is not there is a refusal, not a question. ``fs.read``'s, and an
     upload's from the browser (M13.13, ADR 0066; answer 19 of the review of its SPEC): the refusal
-    of a text that is not UTF-8 stays ``fs.read``'s own, because its text enters a result."""
+    of a text that is not UTF-8 stays ``fs.read``'s own, because its text enters a result.
+
+    **Since M13.15** (ADR 0071; decision 7, answer 36 of the review of its SPEC) also what ELA uses
+    to exist, :data:`ELA_S_OWN`, in both directions, and a file with more than one name,
+    :data:`HARD_LINK` — the same two answers a write gives, under a yes or under a policy: the
+    places are compared as paths, and a second name would step around the comparison. ``protected``
+    is keyword and without a default, so a caller cannot forget it."""
     if not root.is_dir():
         return Outcome({}, NO_ROOT, _no_root(root)), None
     problem = classify(root, path)
     if problem is not None:
         code = problem.code if problem.code in READ_REFUSALS else IO_ERROR
         return Outcome({}, code, problem.message(path)), None
-    return None, Target(resolved=str(root / path), exists=True, does=READS, label=FILE)
+    target = root / path
+    what = _ela_s_own(target, protected)
+    if what is not None:
+        return Outcome({}, ELA_S_OWN, _reaches_read(path, what)), None
+    try:
+        names = os.lstat(target).st_nlink
+    except OSError as error:
+        return Outcome({}, IO_ERROR, f"{type(error).__name__}: {error.strerror or error}"), None
+    if names > 1:
+        return Outcome({}, HARD_LINK, more_than_one_name_read(path)), None
+    return None, Target(resolved=str(target), exists=True, does=READS, label=FILE)
 
 
 def looked_for_a_write(
@@ -532,6 +595,23 @@ def _reaches(path: str, what: str) -> str:
     )
 
 
+def _reaches_read(path: str, what: str) -> str:
+    """The path and the name of the place, never a content (§57)."""
+    return (
+        f"{path!r} reaches {what}: a read of ELA never takes what ELA uses to exist, under a yes "
+        "or under a policy"
+    )
+
+
+def more_than_one_name_read(path: str) -> str:
+    """Why a file with more than one name is not read (M13.15, ADR 0071): the path, never a
+    content (§57)."""
+    return (
+        f"{path!r} is a file with more than one name: what would be read is a file other folders "
+        "also name"
+    )
+
+
 def _more_than_one_name(path: str) -> str:
     return (
         f"{path!r} is a file with more than one name: overwriting it would change it under its "
@@ -539,10 +619,17 @@ def _more_than_one_name(path: str) -> str:
     )
 
 
-def read_bytes(target: Path) -> bytes:
-    """The bytes of a regular file, opened read-only and **never through a link** — what ``fs.read``
-    reads, and what an upload gives a page (M13.13)."""
-    return _read(target)
+def read_bytes(target: Path, *, at_most: int | None = None) -> bytes:
+    """The bytes of a regular file **with one name**, opened read-only and **never through a link**
+    — what ``fs.read`` reads, and what an upload gives a page (M13.13; M13.15, ADR 0071).
+
+    Regular and with one name are asked of **the descriptor that reads**, with ``fstat``: between
+    the look at the path and the ``open`` the file can change, and what is read is what the
+    descriptor holds. A second name is :class:`MoreThanOneName`. ``at_most``, when given, stops the
+    reading one byte past it (decision 51 of the review of M13.15): a file that grew after it was
+    measured answers more than ``at_most`` bytes, and the caller refuses it without reading the
+    rest."""
+    return _read(target, at_most)
 
 
 def measured(target: Path) -> tuple[int, str]:
@@ -577,19 +664,30 @@ def _moved(path: str, *, declared: bool) -> str:
     return f"{path!r} was declared as a new file and something is there now"
 
 
-def _read(target: Path) -> bytes:
+def _read(target: Path, at_most: int | None = None) -> bytes:
     """The file's bytes, opened read-only and never through a link.
 
-    ``fstat`` on the open descriptor reconfirms the regular file the classification saw: between
-    the two something could have changed, and what is read is what the descriptor holds.
+    ``fstat`` on the open descriptor reconfirms the regular file the classification saw, **with one
+    name** (M13.15): between the two something could have changed, and what is read is what the
+    descriptor holds. With ``at_most``, at most that many bytes and one more — **to the byte**: no
+    read asks for more than what is left to the limit and one, whatever the size of a piece.
     """
     descriptor = os.open(target, READ_FLAGS)
     try:
-        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+        held = os.fstat(descriptor)
+        if not stat.S_ISREG(held.st_mode):
             raise OSError(PATH_NOT_REGULAR)
+        if held.st_nlink > 1:
+            raise MoreThanOneName(HARD_LINK)
         chunks: list[bytes] = []
-        while chunk := os.read(descriptor, CHUNK):
+        size = 0
+        limit = None if at_most is None else at_most + 1
+        while limit is None or size < limit:
+            chunk = os.read(descriptor, CHUNK if limit is None else min(CHUNK, limit - size))
+            if not chunk:
+                break
             chunks.append(chunk)
+            size += len(chunk)
     finally:
         os.close(descriptor)
     return b"".join(chunks)

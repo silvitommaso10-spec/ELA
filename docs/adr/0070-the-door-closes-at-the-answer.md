@@ -11,6 +11,7 @@
   `test_what_is_announced_while_the_door_closes_is_cancelled_and_taken_away`, sui due browser
   (`tests/infrastructure/machine/test_the_files_of_a_page.py`). **Le «Righe riviste» che questo ADR porta sono
   scritte**, con il marchio sulla riga «Stato:» dell'ADR che rivede — ADR 0066.
+  **Rivista da ADR 0072 (M13.9d)** il 2026-11-18: §1, §4 — la porta aspetta la risposta al suo `deny` al più il limite di una chiusura, e non aspetta un browser finito; la chiusura di 30,0 s con uno scaricamento in corso è tagliata al limite, e il file annunciato è tolto (ADR 0072 §1, §3, §4, §7).
 - **Data:** 2026-11-17
 - **Riferimenti spec:** §19, §33
 - **Milestone:** [M13.13b](../milestones/M13.13b.md)

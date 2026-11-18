@@ -100,3 +100,88 @@ async def test_the_same_browser_serves_the_tools_and_the_verifiers(
         await ela.aclose()
 
     assert tools == verifiers == {fake}
+
+
+async def test_a_closing_that_passed_its_limit_is_said_where_ela_s_close_says_its_kill(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """M13.9d, decision 80: the two browsers are given ELA's one limit, and what a closing of
+    theirs that passed it killed is written by ``said`` — the standard error of ``ela serve`` —,
+    in the form of the line of ELA's close and with its phrase, :data:`KILLED`."""
+    from ela.api import server
+    from ela.composition.root import BROWSER_CLOSE_GRACE_SECONDS, KILLED, killed_at_a_closing
+
+    declare(monkeypatch, tmp_path)
+    await create_schema(database_url(tmp_path))
+    lines: list[str] = []
+    names = ("node", "Google Chrome for Testing", "Google Chrome for Testing")
+    ela = await build(Settings.load(), said=lines.append)
+    try:
+        empty = ela.tools.get(BROWSER_ACT)._browser  # type: ignore[attr-defined]  # noqa: SLF001
+        for browser in (empty, ela.accounts):
+            assert browser._limit == BROWSER_CLOSE_GRACE_SECONDS  # type: ignore[attr-defined]  # noqa: SLF001
+            browser._told(names)  # type: ignore[attr-defined]  # noqa: SLF001
+    finally:
+        await ela.aclose()
+
+    assert lines == [killed_at_a_closing(names)] * 2
+    assert lines[0] == (
+        f"ela: a browser of a step did not close within {BROWSER_CLOSE_GRACE_SECONDS} s: "
+        "ELA killed what it had started — 2 Google Chrome for Testing, 1 node"
+    )
+    assert KILLED in server.killed(names)
+
+
+async def test_downloads_not_forgotten_are_said_where_a_kill_is_said(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """M13.13c, decision 112: before a launch of the browser of the profile, downloads that could
+    not be forgotten are said by ``said`` — the standard error of ``ela serve`` —, with the type of
+    what stopped it and never a path, and the launch goes on."""
+    from ela.composition.root import history_kept
+
+    declare(monkeypatch, tmp_path)
+    await create_schema(database_url(tmp_path))
+    lines: list[str] = []
+    ela = await build(Settings.load(), said=lines.append)
+    try:
+        ela.accounts._unforgotten("OperationalError")  # type: ignore[attr-defined]  # noqa: SLF001
+    finally:
+        await ela.aclose()
+
+    assert lines == [history_kept("OperationalError")]
+    assert lines[0] == (
+        "ela: the downloads the browser of the profile remembers were not forgotten before a "
+        "launch (OperationalError): the launch goes on"
+    )
+
+
+async def test_with_nobody_to_say_it_to_a_kill_is_said_nowhere(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``build`` with no ``said`` — every caller but ``ela serve`` —: the browsers are told, and
+    nothing is written, and nothing raises."""
+    declare(monkeypatch, tmp_path)
+    await create_schema(database_url(tmp_path))
+    ela = await build(Settings.load())
+    try:
+        ela.tools.get(BROWSER_ACT)._browser._told(("node",))  # type: ignore[attr-defined]  # noqa: SLF001
+    finally:
+        await ela.aclose()
+
+
+async def test_with_nobody_to_say_it_downloads_not_forgotten_are_said_nowhere(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """M13.13c: ``build`` with no ``said`` — every caller but ``ela serve`` —: the browser of the
+    profile is told why the downloads were not forgotten, and nothing is written, and nothing
+    raises."""
+    declare(monkeypatch, tmp_path)
+    await create_schema(database_url(tmp_path))
+    ela = await build(Settings.load())
+    try:
+        ela.accounts._unforgotten("OperationalError")  # type: ignore[attr-defined]  # noqa: SLF001
+    finally:
+        await ela.aclose()
+
+    assert "not forgotten" not in capsys.readouterr().err

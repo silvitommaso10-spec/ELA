@@ -398,8 +398,8 @@ def test_an_ipv6_loopback_is_written_as_a_url_writes_it() -> None:
 def with_a_browser(monkeypatch: pytest.MonkeyPatch, browser: FakeBrowser) -> None:
     """``_serve`` builds ELA itself: here with a browser the test holds."""
 
-    async def built(settings: Settings) -> Ela:
-        return await build(settings, power=FakePower(), browser=browser)
+    async def built(settings: Settings, **wired: Any) -> Ela:
+        return await build(settings, power=FakePower(), browser=browser, **wired)
 
     monkeypatch.setattr(server, "build", built)
 
@@ -444,6 +444,31 @@ def test_a_browser_that_closed_by_itself_is_not_mentioned_at_the_close(
 
     assert len(browser.settled) == 1, "the close did ask the browser to settle"
     assert "killed" not in capsys.readouterr().err
+
+
+def test_ela_serve_builds_ela_with_the_line_it_writes_on_stderr(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    asked: Asked,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """M13.9d, decision 80: a closing of a browser that passed its limit is said **where ELA's
+    close says its kill** — ``_serve`` hands ``build`` the writer of its own lines on stderr."""
+    asyncio.run(create_schema(settings.persistence.db_url))
+    fake_server(monkeypatch)
+    handed: list[dict[str, Any]] = []
+
+    async def built(settings: Settings, **wired: Any) -> Ela:
+        handed.append(wired)
+        return await build(settings, power=FakePower(), browser=FakeBrowser(), **wired)
+
+    monkeypatch.setattr(server, "build", built)
+
+    server.serve(settings)
+    (wired,) = handed
+    wired["said"]("ela: a line of this test")
+
+    assert "ela: a line of this test" in capsys.readouterr().err
 
 
 # ----------------------------------------------------------------------------------------
@@ -586,9 +611,9 @@ def test_while_ela_is_being_built_the_stop_signals_are_not_ela_s_yet(
     during: dict[int, Any] = {}
     building = server.build
 
-    async def built(settings: Settings) -> Ela:
+    async def built(settings: Settings, **wired: Any) -> Ela:
         during.update(dispositions())
-        return await building(settings, power=FakePower(), browser=FakeBrowser())
+        return await building(settings, power=FakePower(), browser=FakeBrowser(), **wired)
 
     monkeypatch.setattr(server, "build", built)
 
@@ -926,8 +951,8 @@ def test_a_start_whose_stderr_is_gone_still_closes_ela(
     browser = FakeBrowser()
     made: list[Ela] = []
 
-    async def built(settings: Settings) -> Ela:
-        made.append(await build(settings, power=FakePower(), browser=browser))
+    async def built(settings: Settings, **wired: Any) -> Ela:
+        made.append(await build(settings, power=FakePower(), browser=browser, **wired))
         return made[0]
 
     monkeypatch.setattr(server, "build", built)
@@ -1180,8 +1205,8 @@ def test_a_line_that_cannot_be_written_does_not_break_the_close(
     browser.killed = ("node",)
     made: list[Ela] = []
 
-    async def built(settings: Settings) -> Ela:
-        made.append(await build(settings, power=FakePower(), browser=browser))
+    async def built(settings: Settings, **wired: Any) -> Ela:
+        made.append(await build(settings, power=FakePower(), browser=browser, **wired))
         return made[0]
 
     monkeypatch.setattr(server, "build", built)

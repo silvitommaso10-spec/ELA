@@ -54,6 +54,7 @@ from typing import Any
 import pytest
 from playwright.async_api import async_playwright
 
+from ela.composition.root import BROWSER_CLOSE_GRACE_SECONDS as CLOSING
 from ela.domain import ExecutionResult, ExecutionStatus
 from ela.infrastructure.machine import browser as adapter
 from ela.infrastructure.machine.account import AccountChrome
@@ -108,12 +109,23 @@ waiting at**, instead of holding the suite. Never the measure of anything, and f
 a test takes."""
 
 
-def empty(stopping: asyncio.Event | None = None, **more: str) -> PlaywrightBrowser:
+def empty(
+    stopping: asyncio.Event | None = None,
+    *,
+    closing: float = CLOSING,
+    killed: Callable[[tuple[str, ...]], None] | None = None,
+    **more: str,
+) -> PlaywrightBrowser:
+    """The empty browser of these tests, with ``more`` in its environment. **The limit of a
+    closing is ELA's own** unless the test gives one (M13.9d): a test that is not about the limit
+    never meets it; ``killed`` is who is told what a closing that passed it killed."""
     return PlaywrightBrowser(
         asyncio.Event() if stopping is None else stopping,
         environment={**ENVIRONMENT, **more},
         kept=Kept(),
         system=shell.SYSTEM,
+        closing=closing,
+        **({} if killed is None else {"killed": killed}),
     )
 
 
@@ -1236,6 +1248,7 @@ async def test_from_ela_s_stop_on_not_even_the_hop_of_a_redirect_leaves(
 
 PAUSED = r"""
 import asyncio, platform, sys
+from ela.composition.root import BROWSER_CLOSE_GRACE_SECONDS
 from ela.infrastructure.machine import PlaywrightBrowser
 from ela.infrastructure.machine import browser as adapter
 from ela.testing.fakes import FakeStop
@@ -1252,7 +1265,8 @@ async def main() -> None:
 
     adapter._Gate._told = deaf
     browser = PlaywrightBrowser(
-        asyncio.Event(), environment={}, kept=asyncio.Event().wait, system=platform.system()
+        asyncio.Event(), environment={}, kept=asyncio.Event().wait, system=platform.system(),
+        closing=BROWSER_CLOSE_GRACE_SECONDS,
     )
     opened = await browser.open(inside + "/", lambda url: True, FakeStop())
     print(" ".join(str(pid) for pid in browser._driver_pids()), flush=True)

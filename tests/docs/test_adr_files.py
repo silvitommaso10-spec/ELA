@@ -161,7 +161,8 @@ def test_the_capabilities_it_adds_are_the_last_four_all_high_and_none_travels() 
     for spec in specs[-4:]:
         assert spec.risk is RiskLevel.HIGH and spec.requires_authorization
         assert spec.scope == ("ELA",) and spec.scoped_arguments == ("file",)
-        assert spec.policy_terms is None, "no policy covers a HIGH that asks at every use"
+        # §4 said «no policy covers them until M13.14», ADR 0068 «until M13.15»: since M13.15 they
+        # declare their terms, and ``test_adr_policies_on_login_and_files.py`` holds them.
         assert "click" not in spec.input_schema["required"]
 
 
@@ -179,8 +180,12 @@ def test_the_tool_rows_are_the_running_tools() -> None:
         BrowserUploadTool,
     )
     from tests.docs.test_adr_policies_on_high import added_codes
+    from tests.docs.test_adr_policies_on_login_and_files import added_codes as added_since
 
-    added = added_codes()
+    added = {
+        name: added_codes().get(name, frozenset()) | added_since().get(name, frozenset())
+        for name in FILE_CAPABILITIES
+    }
     rows = {
         match.group(1): match.groups()
         for line in adr_text().splitlines()
@@ -199,7 +204,8 @@ def test_the_tool_rows_are_the_running_tools() -> None:
         assert class_name == tool.__name__
         assert name == capability.replace(".", "-").replace("_", "-")
         assert (idempotent == "sì") is tool.idempotent
-        # The two codes of a write ADR 0068 §7 adds (M13.14): this ADR's rows stay as they were.
+        # The two codes of a write ADR 0068 §7 adds (M13.14), and of a read ADR 0071 §4 adds
+        # (M13.15): this ADR's rows stay as they were.
         assert codes(errors) | added.get(capability, frozenset()) == tool.error_codes, capability
         assert codes(numbers) == tool.audit_numbers, capability
         assert not tool.relocatable and not tool.continuing

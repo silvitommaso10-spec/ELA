@@ -36,7 +36,6 @@ import signal
 import socket
 import sys
 import threading
-from collections import Counter
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager, suppress
 from types import FrameType
@@ -46,7 +45,7 @@ import uvicorn
 
 from ela.api.app import create_app
 from ela.composition import ConfigurationError, Settings, build, port_holder
-from ela.composition.root import BROWSER_CLOSE_GRACE_SECONDS
+from ela.composition.root import BROWSER_CLOSE_GRACE_SECONDS, KILLED, counted
 from ela.composition.settings import ApiSettings
 
 __all__ = [
@@ -290,13 +289,12 @@ def killed(names: Sequence[str], hurried: bool = False) -> str:
     — its time ran out, or a second signal ended it — and **the names of the processes with how
     many of each**; never a command line, a path or an address. A name is enough to know what
     happened; a value may be somebody's."""
-    counted = ", ".join(f"{count} {name}" for name, count in sorted(Counter(names).items()))
     why = (
         "had not closed when a second signal arrived"
         if hurried
         else f"did not close within {BROWSER_CLOSE_GRACE_SECONDS} s of the stop"
     )
-    return f"ela: the browser {why}: ELA killed what it had started — {counted}"
+    return f"ela: the browser {why}: {KILLED} — {counted(names)}"
 
 
 def _say(line: str) -> None:
@@ -313,7 +311,7 @@ def _say_killed(names: Sequence[str], hurried: bool) -> None:
 
 
 async def _serve(settings: Settings, received: list[int]) -> None:
-    ela = await build(settings)
+    ela = await build(settings, said=_say)
     told = Signalled(asyncio.get_running_loop(), ela.stopping, received)
     # From here there is an ELA to close, and the stop signals are ELA's until it is closed.
     # Before, there is none: a Ctrl-C during the start cancels the start, as it always did.

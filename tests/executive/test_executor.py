@@ -695,7 +695,7 @@ async def test_an_exhausted_grant_found_in_the_store_asks_again_and_names_it(w: 
     assert execution.decision.outcome is PermissionOutcome.REQUIRES_APPROVAL
     assert execution.decision.authorization_id == minted.id
     assert execution.approval is not None
-    assert "used 1 of 1 times" in execution.approval.prompt
+    assert "used 1 of 1 use" in execution.approval.prompt
     assert execution.task.state is TaskState.WAITING_APPROVAL
     assert w.tool(NOTE.id).calls == ()
     first, second = await w.approvals.for_task(task.id)
@@ -773,7 +773,7 @@ async def test_a_grant_spent_by_someone_else_asks_again() -> None:
     assert execution.decision.outcome is PermissionOutcome.ALLOWED
     assert execution.approval is not None
     assert execution.approval.decision_id == execution.decision.id
-    assert "was used 1 of 1 times" in execution.approval.prompt
+    assert "was used 1 of 1 use" in execution.approval.prompt
     assert execution.task.state is TaskState.WAITING_APPROVAL
     assert execution.result is None
     assert w.tool(TERMED.id).calls == ()

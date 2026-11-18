@@ -97,6 +97,8 @@ from playwright.async_api import Error as PlaywrightError
 from ela.infrastructure.machine.browser import (
     TEMPORARY_PROFILE,
     PlaywrightBrowser,
+    _guarded,
+    _nobody_is_told_of_a_kill,
     _Open,
     registry_folder,
 )
@@ -244,6 +246,16 @@ Google's; the automatic filling and the remembered values of forms; the browser'
 Google account."""
 PREFERENCES_FILE: Final = (PROFILE, "Preferences")
 SERVICE_WORKERS: Final = (PROFILE, "Service Worker")
+HISTORY_FILE: Final = (PROFILE, "History")
+"""The database where the browser keeps its history, and in it the downloads it remembers."""
+DOWNLOAD_TABLES: Final = ("downloads", "downloads_url_chains", "downloads_slices")
+"""The three tables of the downloads in :data:`HISTORY_FILE` (M13.13c, ADR 0073)."""
+FORGET: Final = tuple(f"DELETE FROM {table}" for table in DOWNLOAD_TABLES)
+"""What ELA asks of :data:`HISTORY_FILE`, and nothing else: the rows of the three tables of the
+downloads, deleted **without one being read** — no ``WHERE``, no other table (decision 116)."""
+NOT_A_FILE: Final = "NotARegularFile"
+"""Why the downloads were not forgotten when :data:`HISTORY_FILE` is a link, a folder or anything
+but a file: it is not followed, and nothing in it is touched."""
 LOGINS: Final = (PROFILE, "Login Data")
 LOCK: Final = "SingletonLock"
 """The link the browser leaves in its folder while it runs: ``<host>-<pid>``."""
@@ -651,11 +663,13 @@ def _taken_away(place: Path) -> None:
         shutil.rmtree(place, ignore_errors=True)
 
 
-def _prepared(profile: Path, *, driven: bool) -> None:
+def _prepared(profile: Path, *, driven: bool) -> str | None:
     """What is done to the folder before a launch: the preferences, always; **what a crash left,
     always** (decision 90) — a report is memory of the process that held the sessions, it serves
     nobody, and it does not pass to the launch after: the browser makes the folder of its
-    collector again —; and before a launch Playwright drives, the service workers gone."""
+    collector again —; and before a launch Playwright drives, the service workers gone and **the
+    downloads the history remembers forgotten** (:func:`_downloads_forgotten`). What it returns is
+    why those were not forgotten — a type, never a path —, or ``None``."""
     default = profile / PREFERENCES_FILE[0]
     default.mkdir(mode=PROFILE_MODE, exist_ok=True)
     file = profile.joinpath(*PREFERENCES_FILE)
@@ -671,8 +685,56 @@ def _prepared(profile: Path, *, driven: bool) -> None:
         handle.write(written)
     fresh.replace(file)
     _taken_away(profile / REPORTS)
-    if driven:
-        _taken_away(profile.joinpath(*SERVICE_WORKERS))
+    if not driven:
+        return None
+    _taken_away(profile.joinpath(*SERVICE_WORKERS))
+    return _downloads_forgotten(profile)
+
+
+def _downloads_forgotten(profile: Path) -> str | None:
+    """**The rows of the downloads taken out of the history before a guided launch** (M13.13c, ADR
+    0073). Measured on the binary of the lock: when, at its launch, the history holds downloads that
+    completed, the browser falls at a new download — with or without the window, with or without
+    ELA's door —; with those rows taken away before each launch it does not, and a profile that had
+    fallen works again. The browser puts the rows back by itself at its launch — measured; from
+    where is read, not measured —: what it shows in its list does not change (measured).
+
+    Only what decision 116 lets: the folder is free — the opening looked at it, and this runs before
+    the launch —; the file is a file of its own, never followed through a link; the three statements
+    of :data:`FORGET` and nothing else, in one transaction, so that when the tables are not the ones
+    expected nothing is taken away at all. **No row is read.** A history that is not there yet — a
+    new profile — is nothing to forget. What it returns is why the rows were not forgotten — the
+    type of what stopped it —, or ``None``: the launch goes on either way (decision 112)."""
+    history = profile.joinpath(*HISTORY_FILE)
+    try:
+        mode = history.lstat().st_mode
+    except FileNotFoundError:
+        return None
+    except OSError as error:
+        return type(error).__name__
+    if not stat.S_ISREG(mode):
+        return NOT_A_FILE
+    try:
+        database = sqlite3.connect(
+            f"{history.as_uri()}?mode=rw", uri=True, timeout=0, isolation_level=None
+        )
+    except sqlite3.Error as error:
+        return type(error).__name__
+    try:
+        cursor = database.cursor()
+        cursor.execute("BEGIN IMMEDIATE")
+        try:
+            for statement in FORGET:
+                cursor.execute(statement)
+        except sqlite3.Error as error:
+            cursor.execute("ROLLBACK")
+            return type(error).__name__
+        cursor.execute("COMMIT")
+    except sqlite3.Error as error:
+        return type(error).__name__
+    finally:
+        database.close()
+    return None
 
 
 WEB: Final = frozenset({"https", "http"})
@@ -705,6 +767,11 @@ def _seen(launching: asyncio.Future[None]) -> None:
 
 async def _nobody_is_told(address: str | None, seconds: float) -> None:
     """Whoever builds this adapter without saying who is told that a window ended."""
+
+
+def _nobody_is_told_of_the_history(kind: str) -> None:
+    """Whoever builds this adapter without saying who is told that the downloads of the history
+    were not forgotten before a launch."""
 
 
 def _held(written: str, value: Secret) -> str:
@@ -751,14 +818,25 @@ class AccountChrome(PlaywrightBrowser):
         system: str,
         profile: Path | None,
         shown: Callable[[], bool],
+        closing: float,
+        killed: Callable[[tuple[str, ...]], None] = _nobody_is_told_of_a_kill,
         ended: Callable[[str | None, float], Awaitable[None]] = _nobody_is_told,
         on_a_screen: Callable[[], Awaitable[bool]] = _no_screen_was_said,
+        unforgotten: Callable[[str], None] = _nobody_is_told_of_the_history,
     ) -> None:
-        super().__init__(stopping, environment=environment, kept=kept, system=system)
+        super().__init__(
+            stopping,
+            environment=environment,
+            kept=kept,
+            system=system,
+            closing=closing,
+            killed=killed,
+        )
         self._profile = profile
         self._shown = shown
         self._ended = ended
         self._on_a_screen = on_a_screen
+        self._unforgotten = unforgotten
         self._with_a_window = False
         self._said_of: Callable[[int], Awaitable[str | None]] = self._asked
         self._tabled: Callable[[], Awaitable[Mapping[int, tuple[int, str]] | None]] = self._table
@@ -1009,14 +1087,17 @@ class AccountChrome(PlaywrightBrowser):
         """:func:`_prepared`, in a thread — and what the system says of a folder that cannot be
         written does not leave: its type, never its text, which names the path."""
         refused: str | None = None
+        kept: str | None = None
         try:
-            await asyncio.to_thread(_prepared, profile, driven=driven)
+            kept = await asyncio.to_thread(_prepared, profile, driven=driven)
         except OSError as error:
             refused = type(error).__name__
         if refused is not None:
             raise BrowserFailed(
                 f"the folder of {PROFILE_VARIABLE} could not be prepared for a launch ({refused})"
             )
+        if kept is not None:
+            self._unforgotten(kept)
 
     async def occupied(self) -> str | None:
         return await self._holder(await self._folder())
@@ -1033,6 +1114,7 @@ class AccountChrome(PlaywrightBrowser):
 
     # A page ---------------------------------------------------------------------------------
 
+    @_guarded
     async def open(self, address: str, allowed: Callable[[str], bool], stop: TaskStop) -> Opened:
         self._refuse_if_stopping()
         await self._free()
@@ -1040,6 +1122,7 @@ class AccountChrome(PlaywrightBrowser):
         # opening that looks now finds this one.
         return await super().open(address, allowed, stop)
 
+    @_guarded
     async def downloaded_from(
         self, address: str, allowed: Callable[[str], bool], stop: TaskStop, into: str
     ) -> Downloaded:
@@ -1056,6 +1139,7 @@ class AccountChrome(PlaywrightBrowser):
             raise BrowserUnsupported(self._system)
         return await self._on_a_screen()
 
+    @_guarded
     async def open_shown(
         self, address: str, allowed: Callable[[str], bool], stop: TaskStop
     ) -> Opened:
@@ -1097,6 +1181,7 @@ class AccountChrome(PlaywrightBrowser):
         asked = await opened.page.locator(ONE_TIME_CODE).count()
         return replace(glanced, second_factor=asked > 0)
 
+    @_guarded
     async def field(self, page: str, selector: str) -> Field:
         async def read(opened: _Open) -> Field:
             element = opened.page.locator(selector)
@@ -1109,6 +1194,7 @@ class AccountChrome(PlaywrightBrowser):
 
         return await self._on(page, read)
 
+    @_guarded
     async def landed(self, page: str) -> Landed:
         """Where the page is once **the navigation the last click started has ended**, committed
         or failed, and the status of the document it ended on (decision 106 of M13.9; M13.9b,
@@ -1134,6 +1220,7 @@ class AccountChrome(PlaywrightBrowser):
 
         return await self._on(page, read)
 
+    @_guarded
     async def forms(self, page: str) -> tuple[PageForm, ...]:
         async def read(opened: _Open) -> tuple[PageForm, ...]:
             found = await opened.page.evaluate(FORMS_OF)
@@ -1141,6 +1228,7 @@ class AccountChrome(PlaywrightBrowser):
 
         return await self._on(page, read)
 
+    @_guarded
     async def fill_secret(self, page: str, selector: str, value: Secret) -> None:
         """Type what ``value`` holds. **The engine's own exception does not leave**, not even as
         the context of the one that does: its message names the call with what was typed
@@ -1162,6 +1250,7 @@ class AccountChrome(PlaywrightBrowser):
             raise failed
         await self._within(opened, made=True)
 
+    @_guarded
     async def holds(self, page: str, selector: str, value: Secret) -> str:
         """What the field holds of what ``value`` holds: read from the page and compared here,
         where the secret is opened to be typed — the tool gets one of three answers, and never
@@ -1180,13 +1269,16 @@ class AccountChrome(PlaywrightBrowser):
 
         return await self._on(page, read)
 
+    @_guarded
     async def close(self, page: str) -> None:
         """Close the page — **and return only when no closing of this adapter is in flight**
         (criterion 28): on a profile, whoever asks while another is already closing the page
         would otherwise be told «closed» with the browser still on the folder."""
         await super().close(page)
+        # Read again after each end: a closing the limit has left is out of the set by then, and
+        # the wait that left it ends — so it is not waited for (M13.9d).
         while others := self._closing - {asyncio.current_task()}:
-            await asyncio.wait(others)
+            await asyncio.wait({*others, *self._limits}, return_when=asyncio.FIRST_COMPLETED)
 
     # The window -----------------------------------------------------------------------------
 

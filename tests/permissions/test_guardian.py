@@ -21,6 +21,7 @@ from ela.domain import (
     PermissionOutcome,
     RiskLevel,
     StepId,
+    amount,
 )
 from ela.permissions import (
     DEFAULT_DECISION_TTL,
@@ -417,7 +418,8 @@ def test_an_exhausted_authorization_requires_approval(
     )
     assert decision.outcome is outcome
     if outcome is REQUIRES_APPROVAL:
-        assert f"was used {uses} of its {max_uses} times" in decision.reason
+        # The denominator through the one decision of the singular (M13.15, ADR 0071; answer 42).
+        assert f"was used {uses} of its {amount(max_uses, 'use', 'uses')}" in decision.reason
 
 
 def test_a_spent_grant_born_from_a_yes_requires_approval_with_the_count(h: Harness) -> None:
@@ -428,7 +430,7 @@ def test_a_spent_grant_born_from_a_yes_requires_approval_with_the_count(h: Harne
         HIGH, ECHO_ARGS, task=TASK, step=step_for(HIGH.id), authorization=yes, authorization_uses=1
     )
     assert decision.outcome is REQUIRES_APPROVAL
-    assert f"authorization {yes.id} was used 1 of 1 times" in decision.reason
+    assert f"authorization {yes.id} was used 1 of 1 use" in decision.reason
 
 
 def test_without_a_use_limit_the_count_never_exhausts(h: Harness) -> None:

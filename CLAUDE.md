@@ -108,6 +108,11 @@ branch; un branch di sola registrazione comincia con `docs-` e non porta codice.
   ***Scritta il 2026-11-11*** (decisione 2 di M14.6b): era la decisione 26 di M13.13, per quel branch
   soltanto (`docs/milestones/M13.13.md`). Il 2026-11-03 un giro che sarebbe stato rosso, a `e072864`, è
   stato annullato dal push di `56c672c` dieci minuti dopo, e nessuno l'ha visto.
+  ***Precisata il 2026-11-18*** (decisione 129 dell'ultimo blocco di M13.15): **un job che ha eseguito anche un solo
+  passo ed è fallito è rosso, e non si rilancia mai.** **Un job mai partito** — nessun passo eseguito, il runner non
+  acquisito — non è né verde né rosso: si rifà partire una volta, solo lui, e si scrive; se non parte di nuovo ci si
+  ferma. Il fatto: nel giro `44325747456`, a `fe776f4`, il job macos non è partito né al primo tentativo né al secondo
+  («The job was not acquired by Runner of type hosted even after multiple attempts»), e non c'è stato un terzo.
 - **Un test afferma solo ciò di cui ha costruito le precondizioni.** Se gli serve una macchina
   vera, la dichiara con uno `skipif`, che compare nel riepilogo — un `if` dentro il test no
   (ADR 0031 §6). Una precondizione che non si può costruire dichiarando il sistema si costruisce

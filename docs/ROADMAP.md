@@ -42,8 +42,8 @@ la disciplina della suite con i debiti che porta e la misura di dove va il suo t
 *A che cosa serve:* le policy arrivano al login e ai file dal browser, i file arrivano a tutto il computer, e il
 browser arriva sul PC.
 
-- `M13.15` — Proposta — Le policy di Tommaso arrivano al login e ai file dal browser
-- `M13.17` — riservata — I file di tutto il computer
+- `M13.15` — Implementata — Le policy di Tommaso arrivano al login e ai file dal browser
+- `M13.17` — Proposta — I file di tutto il computer
 - `M13.11` — Proposta — Il browser sul PC: le capacità di M13.9 e M13.10 sul nodo Windows, e il verdetto che torna in busta
 
 ### Tappa 4 — ELA lavora sul codice
@@ -129,6 +129,37 @@ rosso in un giro**: quel giro, con il log della suite (`tests/suite_log.py`, il 
 misura. **`M9.8`**, nata dal taglio di M9.5, **passa davanti se uno dei suoi test torna rosso in un giro**, con la
 regola di `M13.13b`.
 
+***Annotato il 2026-11-17*** (decisione 69 della review di M13.15, una scelta d'ordine di Tommaso): uno dei test di
+`M9.8`, `test_a_page_that_is_still_arriving_is_waited_for_before_it_is_asked_about`, è stato rosso in un giro di `make
+check` a `4e4adc5`, alla riga 293 — il lancio del browser del profilo —, **prima** dell'attesa che M9.8 eredita (riga
+298). **M9.8 non passa davanti per questo rosso**, che è di **`M13.9d`**; passa davanti quando uno dei suoi test è rosso
+per l'attesa che eredita. **`M13.9d`** passa davanti al prossimo rosso di un test che lancia il browser del profilo per
+un lancio non arrivato: quel giro, con il log della suite, è la misura.
+
+***Annotato il 2026-11-18*** (decisione 75 della review di M13.15, una scelta d'ordine di Tommaso): **`M13.9d` passa
+davanti, su `m13.15-le-policy-al-login-e-ai-file`**, prima che la prova a mano di M13.15 si rifaccia. È venuto prima del
+rosso di un test un caso del prodotto, sull'ELA vera: la prova del 2026-11-17 a `3256e4b` si è appesa al passo 3. Il
+browser del profilo è caduto 1,28 s dopo il lancio, e lo step non è più finito. La SPEC è in
+[`M13.9d.md`](milestones/M13.9d.md).
+
+***Annotato il 2026-11-18*** (risposta 90 della review della SPEC di M13.9d): **M13.9d si chiude con la parte del
+prodotto**, una chiusura del browser ha un limite. **Il rosso di `make check` a `4e4adc5`** — un lancio del browser del
+profilo non arrivato in 180 s, in un test — **è ridichiarato in `M13.9e`**, Proposta, fuori dalla fila: si riapre al
+prossimo rosso di un test che lancia il browser del profilo per un lancio non arrivato, e quel giro, con il log della
+suite, è la misura.
+
+***Annotato il 2026-11-18*** (decisione 103 della review della fermata di M13.9d a `5082459`): **il crash della prova
+del 2026-11-17 è un difetto di `browser.download_as_you`**, che c'è da M13.13 — dal terzo scaricamento con il browser del
+profilo sullo stesso profilo, Chrome for Testing cade al gesto —, ed è registrato in **`M13.13c`**, su
+`m13.15-le-policy-al-login-e-ai-file`. **La prova a mano di M13.15 non può passare prima di M13.13c**; la sua SPEC si
+scrive su quel branch dopo la misura che ne isola l'innesco (decisioni 104 e 105). M13.9d si chiude con ciò che ha
+fatto, e ADR 0071 e ADR 0072 restano Proposta fino alla prova.
+
+***Annotato il 2026-11-18*** (ultimo blocco di `m13.15-le-policy-al-login-e-ai-file`, decisioni 128 e 130): **M13.15,
+M13.9d e M13.13c sono fatte**, con la prova a mano della sezione 34 passata a `fe776f4`, e ADR 0071, 0072 e 0073
+Accettate. **`M13.9e` resta Proposta, fuori dalla fila.** **`M13.17` è la prossima**: il suo documento nasce ora, ed esce
+dalle riservate. **`M13.14b`** è una riparazione di M13.14 trovata dopo la prova, fuori dalla fila.
+
 - `M9.2` — Proposta — Le liste che restano scritte a mano
 - `M9.7` — Proposta — Ogni blocco della guida che mostra un'uscita della CLI è confrontato con la CLI
 - `M9.8` — Proposta — Le attese che nessun elenco conosceva
@@ -136,6 +167,10 @@ regola di `M13.13b`.
 - `M13.4d` — Proposta — Lo shell del browser vuoto gira senza il sandbox di Chromium
 - `M13.4g` — Proposta — Il click che apre un'altra pagina, con il browser del profilo: un'azione che a volte non dice la sua pagina
 - `M13.6` — Proposta — Spostare un lavoro già in corso: il ripiazzamento, quando due capability sanno dichiararsi ripetibili
+- `M13.9d` — Implementata — Un lancio del browser del profilo che a volte non arriva
+- `M13.9e` — Proposta — Un lancio del browser del profilo che in un test, una volta, non è arrivato
+- `M13.13c` — Implementata — Il browser del profilo che cade allo scaricamento, dal terzo sullo stesso profilo
+- `M13.14b` — Proposta — Il modello sente dire che il gesto chiede sempre, e da M13.14 non è vero
 - `M14.1c` — Proposta — Il caso peggiore senza prezzo: un ramo e un rifiuto che nessun produttore raggiunge
 - **WhatsApp Web con il profilo di ELA**, senza un numero: nessuna milestone finché la causa della barra di
   caricamento ferma non è nota ([ADR 0065](adr/0065-browser-steps.md) §5, punto 9).
@@ -148,7 +183,6 @@ documento. Un numero non sta mai nei due posti.
 
 | Numero | Titolo | Che cosa porta | Spec |
 |---|---|---|---|
-| `M13.17` | I file di tutto il computer | Lo scope dei file diventa un elenco di cartelle scelto da chi usa ELA, fino alla sua home; i posti protetti si controllano a ogni uso, come da `M13.14`. | §18, §57, §59, §65 |
 | `M13.18` | L'eseguibile firmato | Solo se il grant TCC di `M13.5` non tiene (la tappa 5). | §11, §20 |
 | `M13.19` | Mouse e tastiera sul PC | Le capacità di `M13.5` e di `M14.4` sul nodo Windows: chi usa ELA vuole le stesse capacità sul Mac e sul PC, come `M13.11` fa per il browser. | §17, §18, §20, §56 |
 | `M15.1` | La wake word | Il quarto stato del microfono, e la riga della 5.6 di `STATO.md` sulla voce: una voce riconosciuta non vale mai come un sì. | §9, §11, §34 |

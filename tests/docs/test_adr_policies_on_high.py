@@ -77,10 +77,29 @@ def test_the_added_codes_are_the_tools_and_a_write_refuses_with_them() -> None:
         assert {ELA_S_OWN, HARD_LINK} <= tool.error_codes, tool.__name__
 
 
-def test_the_gaps_and_the_checks_are_the_code_s_in_their_order() -> None:
-    assert documented_gaps(adr_text()) == [gap.value for gap in GAPS]
-    assert documented_checks(adr_text()) == [check.value for check in POLICY_CHECKS]
-    assert set(documented_checks(adr_text())) == {check.value for check in PolicyCheck}
+GAPS_OF_0068 = [
+    "REVOKED",
+    "EXPIRED",
+    "EXHAUSTED",
+    "TERMS",
+    "ELSEWHERE",
+    "SITE",
+    "LIMIT",
+    "ARGUMENT",
+]
+CHECKS_OF_0068 = ["CATALOGUE", "ADMITS", "SCOPE", "LIMITS", "USES", "DAYS"]
+
+
+def test_the_gaps_and_the_checks_are_the_ones_of_that_day_in_the_code_s_order() -> None:
+    """The tables of their day (M13.14): since M13.15 ADR 0071 holds today's, with ``VALUE`` and
+    ``VALUES`` — and the order of that day is still the code's, around them."""
+    assert documented_gaps(adr_text()) == GAPS_OF_0068
+    assert documented_checks(adr_text()) == CHECKS_OF_0068
+    assert [gap.value for gap in GAPS if gap.value in GAPS_OF_0068] == GAPS_OF_0068
+    assert [check.value for check in POLICY_CHECKS if check.value in CHECKS_OF_0068] == (
+        CHECKS_OF_0068
+    )
+    assert set(CHECKS_OF_0068) <= {check.value for check in PolicyCheck}
 
 
 def test_the_three_declarations_are_the_catalogue_s() -> None:
@@ -113,14 +132,14 @@ def test_on_the_core_and_the_words_are_the_catalogue_s() -> None:
 
 
 def test_the_capabilities_that_declare_terms_are_these_and_no_other_high() -> None:
-    """Every ``HIGH`` of the catalogue that declares terms is one of the three, and the rest ask at
-    every use — the login and the four of the files until M13.15, the terminal until M13.16."""
+    """Of its day (M13.14): the three it opened declare terms. Since M13.15 the login and the four
+    of the files beside them, and the closed world is ADR 0071's test."""
     highs = {spec.id for spec in production_catalogue().specs() if spec.risk.value == "HIGH"}
     declaring = {
         spec.id for spec in production_catalogue().specs() if spec.policy_terms is not None
     }
 
-    assert highs & declaring == set(OPENED)
+    assert set(OPENED) <= highs & declaring
     assert highs - declaring >= LAUNCHES_A_PROGRAM
 
 
@@ -129,15 +148,21 @@ def test_the_reasons_the_adr_quotes_are_the_ones_no_policy_for_gives() -> None:
     quoted = set(REASON_ROW.findall(adr_text()))
 
     assert no_policy_for(catalogue.get("terminal.run")) in quoted  # type: ignore[arg-type]
-    assert no_policy_for(catalogue.get("browser.login")) in quoted  # type: ignore[arg-type]
+    # The login of that day, without its terms — an example of its day, revised by ADR 0071: since
+    # M13.15 the login declares them, and the reason is reached by a HIGH that declares none.
+    before = catalogue.get("browser.login").model_copy(  # type: ignore[arg-type]
+        update={"policy_terms": None, "policy_words": None}
+    )
+    assert no_policy_for(before) in quoted
     assert "and only you create one" in no_policy_for(catalogue.get("terminal.run"))  # type: ignore[arg-type,operator]
 
 
 def test_the_version_and_the_constants_are_the_code_s() -> None:
     text = adr_text()
 
-    assert POLICY_VERSION == "v0.4"
-    assert f"`POLICY_VERSION` passa da `v0.3` a `{POLICY_VERSION}`" in text
+    # The version of its day: since M13.15 ``v0.5``, held by ADR 0071's test.
+    assert "`POLICY_VERSION` passa da `v0.3` a `v0.4`" in text
+    assert POLICY_VERSION != "v0.3"
     assert f"RECENT_MAX = {RECENT_MAX}" in text
     assert f"«{ON_THE_CORE}»" in prose()
 

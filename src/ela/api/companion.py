@@ -55,6 +55,7 @@ from ela.domain import (
     PrivacyLevel,
     TaskState,
     listed,
+    noun,
     visible,
 )
 from ela.ports import (
@@ -253,10 +254,12 @@ def end_caption(end: EndOut | None, seen: bool) -> str:
 
 
 def counted(how_many: int, one: str, many: str) -> str:
-    """``how_many`` in words: nothing at all, the singular, or the number and the plural."""
+    """``how_many`` in words: nothing at all, the singular, or the number and the plural — the
+    singular decided by :func:`~ela.domain.noun`, the one place that decides it (M13.15)."""
     if how_many == 0:
         return ""
-    return one if how_many == 1 else f"{how_many} {many}"
+    said = noun(how_many, one, many)
+    return said if said == one else f"{how_many} {said}"
 
 
 def how_long(seconds: int) -> str:

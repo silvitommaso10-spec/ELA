@@ -82,6 +82,9 @@ CALLS: Final[dict[str, dict[str, Any]]] = {
         "password_field": "#word",
         "click": "#go",
         "purpose": "la prova",
+        # The entry the policies of the tests name (M13.15, ADR 0071): a covered login is a call
+        # that names its entry, and without one the property would never see it covered.
+        "entry": "0f7c2e5a-1b2c-4d3e-8f90-a1b2c3d4e5f6",
     },
     "browser.guided_as_you": _SESSION,
     "browser.download": _DOWNLOAD,

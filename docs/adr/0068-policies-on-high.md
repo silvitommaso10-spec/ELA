@@ -11,6 +11,7 @@
   sulla riga «Stato:» dell'ADR che rivede. Proposta il **2026-11-12**, con il codice di M13.14
   (`docs/milestones/M13.14.md`, la SPEC e la review della SPEC, risposte 18–36), per diventare Accettata con un commit
   suo dopo la prova a mano della sezione 32, con `scripts/prova_m13_14.py`.
+  **Rivista da ADR 0071 (M13.15)** il 2026-11-17: §2, §5, §6, §7, §9 e «Ciò che questo ADR dichiara e non risolve» — l'esempio del login senza termini; la frase di `EXHAUSTED` e del `409`, «… of its 5 uses», e il gap `VALUE`, che la tabella del suo giorno non ha; la firma di `prospect_place`, con i valori; la lista dei posti protetti va anche a chi legge; l'ordine dell'anteprima, con i valori e il prodotto; «il login e le quattro capability dei file chiedono a ogni uso fino a M13.15», che M13.15 compie (ADR 0071 §1, §2, §3, §4, §9, §10).
 
 ## Contesto
 

@@ -229,14 +229,22 @@ def test_every_plan_the_section_sends_is_an_example_that_writes_only_in_the_fold
 
 
 def test_the_three_capabilities_are_the_high_ones_that_declare_terms() -> None:
-    """From the catalogue, not from a list of this test: the ``HIGH`` M13.14 opens to policies."""
+    """From the catalogue, not from a list of this test: the ``HIGH`` M13.14 opens to policies —
+    and since M13.15 (ADR 0071) the login and the four files from the browser beside them."""
     opened = {
         spec.id
         for spec in production_catalogue().specs()
         if spec.risk.value == "HIGH" and spec.policy_terms is not None
     }
 
-    assert set(script().CAPABILITIES) == opened
+    assert set(script().CAPABILITIES) <= opened
+    assert opened - set(script().CAPABILITIES) == {
+        "browser.login",
+        "browser.download",
+        "browser.download_as_you",
+        "browser.upload",
+        "browser.upload_as_you",
+    }
 
 
 def test_the_refusal_step_6_expects_is_the_one_no_policy_for_gives() -> None:
@@ -346,11 +354,11 @@ def test_a_policy_that_is_not_as_the_line_wants_it_is_found(
 
 def test_the_why_that_says_the_block_passes_and_another_fails() -> None:
     module = script()
-    why = ["policy 3f2a1b2c was used 1 of its 1 times", "policy 9e8d7c6b was revoked on 2026-11-12"]
+    why = ["policy 3f2a1b2c was used 1 of its 1 use", "policy 9e8d7c6b was revoked on 2026-11-12"]
 
     assert module.why_failures("policy 9e8d7c6b was revoked on", why) == []
     assert module.why_failures("policy 3f2a1b2c was revoked on", why)
-    assert module.why_failures("was used 1 of its 1", ["policy a was used 1 of its 10 times"])
+    assert module.why_failures("was used 1 of its 1 use", ["policy a was used 1 of its 10 uses"])
     assert module.why_failures("anything", []) == ["la domanda non ha la riga why I ask"]
 
 

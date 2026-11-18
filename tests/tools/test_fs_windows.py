@@ -73,7 +73,7 @@ async def test_a_file_with_two_names_on_ntfs_is_not_overwritten(root: Path) -> N
 
 async def test_a_read_returns_exactly_the_bytes_on_the_disk(root: Path) -> None:
     (root / "ELA" / "b.md").write_bytes(b"a\r\nb\x1ac")
-    tool = FsReadTool(root, FakeClock(), FakeIdGenerator())
+    tool = FsReadTool(root, FakeClock(), FakeIdGenerator(), protected={})
 
     result = await tool.execute(allowed(tool.capability_id), {"path": "ELA/b.md"}, FakeStop())
 

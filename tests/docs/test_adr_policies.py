@@ -170,19 +170,23 @@ def test_the_checks_of_the_birth_are_the_ones_of_that_day_in_the_function_s_orde
 
 
 def test_the_declarations_are_the_catalogue_s() -> None:
-    """ADR 0062's table, the row ADR 0063 adds in the same form since M13.9, and the three rows of
-    ADR 0068 since M13.14: together they are every capability that declares terms."""
+    """ADR 0062's table, the row ADR 0063 adds in the same form since M13.9, the three rows of
+    ADR 0068 since M13.14, and the five of ADR 0071 since M13.15: together they are every
+    capability that declares terms."""
     accounts = ADR_PATH.with_name("0063-browser-with-your-accounts.md").read_text(encoding="utf-8")
     high = ADR_PATH.with_name("0068-policies-on-high.md").read_text(encoding="utf-8")
-    here, later, latest = (
+    login = ADR_PATH.with_name("0071-policies-on-login-and-files.md").read_text(encoding="utf-8")
+    here, later, latest, last = (
         documented_terms(adr_text()),
         documented_terms(accounts),
         documented_terms(high),
+        documented_terms(login),
     )
 
     assert set(here) == {BROWSER_GUIDED} and not set(here) & set(later)
     assert not (set(here) | set(later)) & set(latest)
-    assert here | later | latest == coded_terms()
+    assert not (set(here) | set(later) | set(latest)) & set(last)
+    assert here | later | latest | last == coded_terms()
 
 
 def test_the_signature_and_the_constants_are_the_code_s() -> None:

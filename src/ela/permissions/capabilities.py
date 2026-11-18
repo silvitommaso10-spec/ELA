@@ -298,7 +298,8 @@ def _check_policy_terms(
             spec.id,
             "the scoped arguments of a capability with policy terms are all lists or all one value",
         )
-    classes = (*terms.limits, *terms.uncovered, *terms.free, *spec.scoped_arguments)
+    by_value = () if terms.by_value is None else (terms.by_value,)
+    classes = (*terms.limits, *terms.uncovered, *terms.free, *spec.scoped_arguments, *by_value)
     unclassified = sorted(set(properties) - set(classes))
     twice = sorted({name for name in classes if classes.count(name) > 1})
     unknown = sorted(set(classes) - set(properties))
@@ -335,6 +336,24 @@ def _check_policy_terms(
         raise InvalidCapabilityError(
             spec.id,
             "a HIGH that declares policy terms says what it does and where it goes: policy_words",
+        )
+    if terms.by_value is not None:
+        if dict(properties[terms.by_value]).get("type") != "string":
+            raise InvalidCapabilityError(
+                spec.id, f"the argument named by value, {terms.by_value!r}, is not a string"
+            )
+        if lists == {True}:
+            raise InvalidCapabilityError(
+                spec.id,
+                "a capability whose scope is a list names nothing by value: its «partirebbe» is "
+                "one call",
+            )
+    together = None if spec.policy_words is None else spec.policy_words.together
+    if (terms.by_value is None) is not (together is None):
+        raise InvalidCapabilityError(
+            spec.id,
+            "a policy that names an argument by value says the product it covers, and only then: "
+            "policy_words.together",
         )
 
 
@@ -1345,7 +1364,9 @@ def browser_login(sites: Sequence[str] = UNDECLARED_SITES) -> CapabilitySpec:
     login form of one page of a declared site, and sends the form (§19, §57; M13.9, ADR 0063).
 
     **HIGH**: a yes covers **taking one password and filling one login, on one site** — a grant
-    born from the yes, used once, spent before the tool (ADR 0046). **The value never comes from
+    born from the yes, used once, spent before the tool (ADR 0046) —, and since M13.15 a policy of
+    yours covers a login on its sites **with its entries**, named by value (ADR 0071): a call
+    without ``entry``, or with another, asks. **The value never comes from
     the plan**: the schema has no argument for it. It comes from the vault at the moment of the
     gesture, inside a :class:`~ela.ports.Secret`. ``entry``, when it is there, is the id of the
     entry of the vault and disambiguates; without it the entry is the only one whose host is the
@@ -1398,6 +1419,24 @@ def browser_login(sites: Sequence[str] = UNDECLARED_SITES) -> CapabilitySpec:
         scope=tuple(sites),
         scoped_arguments=("site",),
         prompt_arguments=("purpose",),
+        policy_terms=PolicyTerms(
+            limits=(),
+            free=("path", "username_field", "password_field", "click", "expect_text", "purpose"),
+            on_the_core=True,
+            by_value="entry",
+        ),
+        policy_words=PolicyWords(
+            does=(
+                "signs in to these sites with these entries of your vault: a window of ELA's "
+                "browser comes up on the screen and takes the keyboard while it types, and you "
+                "may be elsewhere"
+            ),
+            goes=(
+                "the password goes from your vault to the site; only you open the vault, and with "
+                "it closed nothing is typed; a wrong password leaves the site a failed attempt"
+            ),
+            together="every one of these sites with every one of these entries",
+        ),
         requires_authorization=True,
         metadata={"introduced_in": "0.2"},
     )
@@ -1583,9 +1622,29 @@ def _upload_schema() -> dict[str, Any]:
     }
 
 
+_FOLDERS_WITH_SITES: Final = "every one of these folders with every one of these sites"
+"""The product a policy of a file from the browser covers (M13.15, ADR 0071; decision 6)."""
+
+_DOWNLOAD_GOES: Final = (
+    "what arrives is chosen by the site, not by the plan, and ELA has not looked at it: it goes "
+    "into these folders, and wherever your system copies them; a file written there may be one "
+    "your system runs"
+)
+
+
 def _a_file_capability(
-    capability: CapabilityId, description: str, schema: dict[str, Any], fs_scope: str
+    capability: CapabilityId,
+    description: str,
+    schema: dict[str, Any],
+    fs_scope: str,
+    free: tuple[str, ...],
+    words: PolicyWords,
 ) -> CapabilitySpec:
+    """One of the four files from the browser (M13.13), with the terms of a policy (M13.15, ADR
+    0071): the folder is the scope, the site is named by value, ``free`` is written out — **the
+    closed world**: an argument added tomorrow says where it stands, and the policies born before
+    stop covering by themselves —, and only a step on the Core is covered: the folder is the
+    Core's."""
     return CapabilitySpec(
         id=capability,
         created_at=FILES_INTRODUCED_AT,
@@ -1595,9 +1654,18 @@ def _a_file_capability(
         scope=(fs_scope,),
         scoped_arguments=("file",),
         prompt_arguments=("purpose",),
+        policy_terms=PolicyTerms(limits=(), free=free, on_the_core=True, by_value="site"),
+        policy_words=words,
         requires_authorization=True,
         metadata={"introduced_in": "0.2"},
     )
+
+
+_DOWNLOAD_FREE: Final = ("path", "overwrite", "click", "purpose")
+"""What a policy of a download leaves free (M13.15, ADR 0071): ``overwrite`` too — the policy covers
+a replacement, and ``overwrite`` stays an assertion on the world both ways."""
+_UPLOAD_FREE: Final = ("path", "file_field", "fill", "click", "expect_text", "purpose")
+"""What a policy of an upload leaves free (M13.15, ADR 0071)."""
 
 
 def browser_download(fs_scope: str = UNDECLARED_FS_SCOPE) -> CapabilitySpec:
@@ -1615,6 +1683,15 @@ def browser_download(fs_scope: str = UNDECLARED_FS_SCOPE) -> CapabilitySpec:
         "inside the authorised folder.",
         _download_schema(),
         fs_scope,
+        _DOWNLOAD_FREE,
+        PolicyWords(
+            does=(
+                "downloads whatever these sites send into these folders, on the Core, in ELA's own "
+                "empty browser, and replaces a file there when the plan says so"
+            ),
+            goes=_DOWNLOAD_GOES,
+            together=_FOLDERS_WITH_SITES,
+        ),
     )
 
 
@@ -1628,6 +1705,16 @@ def browser_download_as_you(fs_scope: str = UNDECLARED_FS_SCOPE) -> CapabilitySp
         "into a file inside the authorised folder.",
         _download_schema(),
         fs_scope,
+        _DOWNLOAD_FREE,
+        PolicyWords(
+            does=(
+                "downloads whatever these sites send into these folders, on the Core, as you, in "
+                "the browser that keeps your accounts, and replaces a file there when the plan "
+                "says so"
+            ),
+            goes=f"{_DOWNLOAD_GOES}; where you are signed in, what arrives is your own content",
+            together=_FOLDERS_WITH_SITES,
+        ),
     )
 
 
@@ -1637,9 +1724,10 @@ def browser_upload(fs_scope: str = UNDECLARED_FS_SCOPE) -> CapabilitySpec:
 
     **An upload is judged as an ``fs.read``**, and what leaves the Mac is the content: the question
     names the file's resolved path, its size and its sha256, and a file changed between the
-    question and the yes does not leave. ELA reads the bytes itself and gives the page the bytes and
-    the name, never the path; from then on the page holds a file, and no request of it reaches
-    another origin.
+    question and the yes does not leave — under a policy (M13.15, ADR 0071) nobody looks at the
+    file before it leaves, it is read once, and the result says what left. ELA reads the bytes
+    itself and gives the page the bytes and the name, never the path; from then on the page holds
+    a file, and no request of it reaches another origin.
     """
     return _a_file_capability(
         BROWSER_UPLOAD,
@@ -1647,6 +1735,18 @@ def browser_upload(fs_scope: str = UNDECLARED_FS_SCOPE) -> CapabilitySpec:
         "authorised folder, and sends it: what it sends cannot be taken back.",
         _upload_schema(),
         fs_scope,
+        _UPLOAD_FREE,
+        PolicyWords(
+            does=(
+                "gives these sites any file of these folders, in ELA's own empty browser: nobody "
+                "looks at the file before it leaves"
+            ),
+            goes=(
+                "the content of the file leaves this machine for these sites, and is not taken "
+                "back: a revocation stops only what comes after"
+            ),
+            together=_FOLDERS_WITH_SITES,
+        ),
     )
 
 
@@ -1659,6 +1759,18 @@ def browser_upload_as_you(fs_scope: str = UNDECLARED_FS_SCOPE) -> CapabilitySpec
         "file of the authorised folder, and sends it: what it sends cannot be taken back.",
         _upload_schema(),
         fs_scope,
+        _UPLOAD_FREE,
+        PolicyWords(
+            does=(
+                "gives these sites any file of these folders as you, in the browser that keeps "
+                "your accounts: nobody looks at the file before it leaves"
+            ),
+            goes=(
+                "the content of the file leaves this machine for these sites in your name, and is "
+                "not taken back: a revocation stops only what comes after"
+            ),
+            together=_FOLDERS_WITH_SITES,
+        ),
     )
 
 

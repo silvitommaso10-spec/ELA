@@ -631,7 +631,7 @@ async def test_window_7a_on_sqlite_the_note_is_written_and_the_spent_grant_asks_
     cp.crashes.disarm()
     execution = await cp.execute(task_id, step.id)
     assert execution.task.state is TaskState.WAITING_APPROVAL
-    assert execution.approval is not None and "used 1 of 1 times" in execution.approval.prompt
+    assert execution.approval is not None and "used 1 of 1 use" in execution.approval.prompt
     assert len(await cp.approvals.for_task(task_id)) == 2
     assert (await verify_chain(engine)).length == len(await cp.types(task_id))
 

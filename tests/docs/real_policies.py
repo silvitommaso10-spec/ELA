@@ -58,7 +58,18 @@ CREATE: Final = (
 """The command of step 4, without ``--confirm``: section 27 writes it on one line."""
 REFUSALS: Final = (
     ("policy", "create", "terminal.run", "--scope", "bin/echo", "--days", "1", "--confirm"),
-    ("policy", "create", "browser.login", "--scope", "example.com", "--days", "1", "--confirm"),
+    # Since M13.15 (ADR 0071) the login declares its terms: the second refusal is a MEDIUM that
+    # declares none.
+    (
+        "policy",
+        "create",
+        "browser.read_as_you",
+        "--scope",
+        "example.com",
+        "--days",
+        "1",
+        "--confirm",
+    ),
     (
         *CREATE[:5],
         "--limit",

@@ -1,0 +1,32 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M13.15 (sezione 34, passo 11): lo stesso login senza entry — chiede, e",
+    "Tommaso dice no.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "entrare in Hacker News senza nominare una voce",
+  "steps": [
+    {
+      "id": "c0de1a28-0000-4b00-8a00-000000001511",
+      "goal": "entrare in Hacker News senza nominare una voce",
+      "required_capabilities": [
+        "browser.login"
+      ],
+      "arguments": {
+        "site": "news.ycombinator.com",
+        "path": "/login",
+        "username_field": "form:not(:has(input[name=creating])) input[name=acct]",
+        "password_field": "form:not(:has(input[name=creating])) input[name=pw]",
+        "click": "input[type=submit][value=login]",
+        "expect_text": "logout",
+        "purpose": "la prova a mano delle policy sul login e sui file"
+      },
+      "risk": "HIGH",
+      "expected_result": "nessun login: la domanda, e il no",
+      "success_conditions": [
+        "browser.expect_visible"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}

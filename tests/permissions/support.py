@@ -179,11 +179,12 @@ Since M13.12 a grant without ``approval_id`` always expires — an invariant of 
 (decision 3d) —, so the grant that had «no expiry» has the farthest end a policy can have."""
 
 
-def grant(spec: CapabilitySpec, **changes: Any) -> Authorization:
+def grant(spec: CapabilitySpec, *, values: tuple[str, ...] = (), **changes: Any) -> Authorization:
     """A standing authorization for ``spec`` — no task, no step, no use limit, the longest life a
     policy may have — then ``changes`` applied. Its scope is the specification's scope unless
     overridden; for a capability that declares the terms of a policy (M13.12), its limits at their
-    widest, under the terms of today — a policy that covers every call of the schema."""
+    widest, under the terms of today — a policy that covers every call of the schema — and, for one
+    that names an argument by value (M13.15, ADR 0071), ``values``."""
     terms = spec.policy_terms
     base = Authorization(
         id=AuthorizationId(UUID("00000000-0000-4000-8000-000000000777")),
@@ -194,7 +195,11 @@ def grant(spec: CapabilitySpec, **changes: Any) -> Authorization:
         expires_at=NOW + STANDING_LIFE,
         bounds=None
         if terms is None
-        else PolicyBounds(terms=terms, limits={name: WIDEST[name] for name in terms.limits}),
+        else PolicyBounds(
+            terms=terms,
+            limits={name: WIDEST[name] for name in terms.limits},
+            values=values,
+        ),
     )
     return base.model_copy(update=changes)
 

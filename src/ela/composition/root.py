@@ -16,6 +16,7 @@ import asyncio
 import os
 import platform
 import tempfile
+from collections import Counter
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -152,6 +153,7 @@ from ela.tools.vault import VAULT_TIMEOUT_SECONDS, VaultClosing, VaultDoor
 __all__ = [
     "BROWSER_CLOSE_GRACE_SECONDS",
     "ELA_ACTOR",
+    "KILLED",
     "WORKSPACE_MODE",
     "Database",
     "Ela",
@@ -168,7 +170,16 @@ BROWSER_CLOSE_GRACE_SECONDS: Final = 5
 it had started (M13.4e). The form of ADR 0060 §7, and its five seconds: a declared grace, then
 ``SIGKILL`` — against 26 ms measured for closing a page. **Not the shutdown timeout ADR 0038 §11
 refused**: that one interrupts a handler that can be told; this closes a child that was told — the
-stop is the telling — and did not leave."""
+stop is the telling — and did not leave.
+
+***Since 2026-11-18*** (M13.9d, ADR 0072) **it is also the limit of a closing**: the composition
+gives it to the two browsers, and a closing of theirs that has not ended within it — after the
+tool's time, after the stop of a task, or by itself — kills what that opening had started. One
+number for the two, never a second one (decision 83)."""
+KILLED: Final = "ELA killed what it had started"
+"""The phrase of a kill of ELA's browser, **in one place** (M13.9d, decision 80): the line of ELA's
+close (``ela.api.server.killed``) and the line of a closing that passed its limit
+(:func:`killed_at_a_closing`) say it, and the tests compare it."""
 
 
 class Database(Protocol):
@@ -609,6 +620,55 @@ def _lasting(seconds: int) -> Callable[[], Awaitable[None]]:
     return waited
 
 
+def counted(names: Sequence[str]) -> str:
+    """The names of processes ELA killed, each once and with how many of each, in the order of the
+    names: never a command line, a path or an address (M13.4e). The form of every line of a kill."""
+    return ", ".join(f"{count} {name}" for name, count in sorted(Counter(names).items()))
+
+
+def killed_at_a_closing(names: Sequence[str]) -> str:
+    """What ELA says when a closing of its browser passed its limit and the adapter killed what
+    that opening had started (M13.9d, ADR 0072): **where ELA's close says its own kill, and in its
+    form** — why, with :data:`KILLED`, and the names counted (decision 80)."""
+    return (
+        f"ela: a browser of a step did not close within {BROWSER_CLOSE_GRACE_SECONDS} s: "
+        f"{KILLED} — {counted(names)}"
+    )
+
+
+def history_kept(kind: str) -> str:
+    """What ELA says when, before a launch of the browser of the profile, the downloads of its
+    history could not be forgotten (M13.13c, ADR 0073): **where and in the form of the other lines
+    of the browser** — what, the type of what stopped it, and that the launch goes on. Never a path
+    or a name of a file (decision 116)."""
+    return (
+        "ela: the downloads the browser of the profile remembers were not forgotten before a "
+        f"launch ({kind}): the launch goes on"
+    )
+
+
+def _history_said(said: Callable[[str], None] | None) -> Callable[[str], None]:
+    """Who the browser of the profile tells why the downloads of its history were not forgotten:
+    the line of :func:`history_kept`, written by ``said`` — and by nobody when nobody said where."""
+
+    def told(kind: str) -> None:
+        if said is not None:
+            said(history_kept(kind))
+
+    return told
+
+
+def _kills_said(said: Callable[[str], None] | None) -> Callable[[tuple[str, ...]], None]:
+    """Who a browser tells the names of what a closing of its killed: the line of
+    :func:`killed_at_a_closing`, written by ``said`` — and by nobody when nobody said where."""
+
+    def told(names: tuple[str, ...]) -> None:
+        if said is not None:
+            said(killed_at_a_closing(names))
+
+    return told
+
+
 def _vault_trail(
     audit: AuditLog, clock: Clock, ids: IdGenerator
 ) -> Callable[[VaultClosing], Awaitable[None]]:
@@ -676,6 +736,7 @@ async def build(
     browser: Resting | None = None,
     vault: Vault | None = None,
     accounts: RestingAccounts | None = None,
+    said: Callable[[str], None] | None = None,
 ) -> Ela:
     """Build ELA from ``settings``, in one function and in the order of ADR 0023 §5.
 
@@ -708,6 +769,11 @@ async def build(
     ``accounts`` is the sixth (M13.9): it defaults to :class:`AccountChrome` on the folder of
     ``ELA_BROWSER_PROFILE_DIR`` — on none at all when nobody declared one —, which starts nothing
     until a page or the window is asked for, and a test of the tools and the routes names a fake.
+
+    ``said`` is where ELA writes a line for whoever runs it — the standard error of ``ela serve``,
+    its ``_say``, where ELA's close says what it killed. **A closing of a browser that passed its
+    limit is said there**, in the form of that line (:func:`killed_at_a_closing`; M13.9d, decision
+    80); ``None`` says it nowhere.
 
     :raises ConfigurationError: for anything that makes this configuration unusable — a schema
         nobody migrated, a routing table naming a provider that is not registered, an empty one.
@@ -909,6 +975,8 @@ async def build(
                 environment=closed_environment,
                 kept=_lasting(BROWSER_TIMEOUT_SECONDS),
                 system=platform.system(),
+                closing=BROWSER_CLOSE_GRACE_SECONDS,
+                killed=_kills_said(said),
             )
         # The browser with the profile that lasts (M13.9, ADR 0063 §4): Chrome for Testing on the
         # folder of ``ELA_BROWSER_PROFILE_DIR`` — the one place that reads that line, and the one
@@ -925,7 +993,10 @@ async def build(
                 system=platform.system(),
                 profile=settings.accounts.browser_profile_dir,
                 shown=lambda: window.shown,
+                closing=BROWSER_CLOSE_GRACE_SECONDS,
+                killed=_kills_said(said),
                 ended=_window_trail(audit, clock, ids),
+                unforgotten=_history_said(said),
                 on_a_screen=a_session_of_the_screen(probe),
             )
         # The vault (M13.9, ADR 0063 §2): the program of ``ELA_VAULT_PROGRAM``, with the same four

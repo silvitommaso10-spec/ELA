@@ -965,12 +965,20 @@ class BrowserActTool(_BrowserTool):
     ``browser.stopped`` and the gestures counted — never the executor's «stopped before it
     acted», which would be false."""
 
-    async def prospect_place(self, place: str) -> Prospect:
+    async def prospect_place(self, place: str, values: tuple[str, ...] = ()) -> Prospect:
         """Whether a gesture on the site ``place`` could start now — asked by the birth of a policy,
         site by site (M13.14, ADR 0068): the browser is there, on a system it runs on, and for the
         browser with your accounts the folder is declared, safe and free. The site itself was
         judged by the birth against the declared ones, and ELA resolves no name: nothing to show
-        beside it."""
+        beside it. **A gesture names nothing by value** (M13.15, ADR 0071): a value is refused."""
+        if values:
+            return Prospect(
+                refusal=ErrorMetadata(
+                    code=ARGUMENTS_INVALID,
+                    message=f"{self.capability_id} names nothing by value",
+                    tool_name=self.name,
+                )
+            )
         missing = await self._installed()
         if missing is None:
             return Prospect()
