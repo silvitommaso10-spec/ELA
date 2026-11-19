@@ -89,7 +89,7 @@ async def test_a_file_over_the_ceiling_is_refused_before_the_question(root: Path
     assert seen.refusal is not None and seen.refusal.code == TOO_LARGE
     assert str(FS_READ_MAX_BYTES + 1) in seen.refusal.message
     assert str(FS_READ_MAX_BYTES) in seen.refusal.message
-    assert "no question is asked" in seen.refusal.message
+    assert "nothing is read" in seen.refusal.message
 
 
 async def test_a_file_at_the_ceiling_is_read(root: Path) -> None:

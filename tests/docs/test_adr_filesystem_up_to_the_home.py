@@ -43,7 +43,9 @@ def prose() -> str:
 
 
 def status_of(text: str) -> str:
-    return text.split("- **Stato:**", 1)[1].split("\n- **", 1)[0]
+    """The state line: up to the next head entry, **or to the first blank line** — an ADR without a
+    «Data:» entry would otherwise give its whole body (the consistency reading, R1)."""
+    return text.split("- **Stato:**", 1)[1].split("\n- **", 1)[0].split("\n\n", 1)[0]
 
 
 def _table(after: str) -> str:

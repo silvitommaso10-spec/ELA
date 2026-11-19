@@ -187,8 +187,11 @@ def test_the_file_is_in_downloads_with_the_name_of_the_milestone() -> None:
     assert out.name.startswith("prova-m13.17-") and out.suffix == ".txt"
 
 
-def test_the_script_never_reads_the_env_nor_looks_inside_library() -> None:
-    """Answer 45, and the rule of the section: the root and the list are read from ELA."""
+def test_the_script_reads_the_root_from_ela_and_never_joins_library_to_it() -> None:
+    """Answer 45, and the rule of the section: the root and the list are read from ELA, never from
+    the settings in the script's own process, and the folder in Library is only compared with the
+    list. What this source check cannot say: step 8 makes ``Settings.load()`` read the ``.env`` in a
+    child process, by design — the configuration refused with one variable changed (answer 44)."""
     source = SCRIPT.read_text(encoding="utf-8")
 
     assert "FilesystemSettings" not in source and "declared_root" not in source

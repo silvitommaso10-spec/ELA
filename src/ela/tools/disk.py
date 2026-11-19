@@ -27,8 +27,8 @@ of waits that are still standing — :attr:`Disk.waiting`, which ``ela diagnosti
 resource ceiling, not a measure.
 
 **A refusal is not retried** (decision 53): :data:`NO_ANSWER` is not ``retryable`` — a second try
-is another wait. A «stop» during a wait is heard by the tool at its own point, after the wait:
-in the worst case the stop waits the limit, never more.
+is another wait. A «stop» during a wait is heard by the tool at its own point — for a write, in
+the guard's thread right after the look —: in the worst case the stop waits the limit, never more.
 
 :func:`within_the_limit` is the same guard for a synchronous caller — the start-up, which looks at
 every folder the scope opens before ELA serves (decisions 6 and 51).

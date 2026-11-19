@@ -22,15 +22,16 @@ one direction is half a defence, and the missing case is the one a race loses.
 ``open`` is not seen by either — :mod:`ela.tools.notes` declares the same limit for the workspace,
 and here it is wider, because the root is the user's own house and not a folder ELA made.
 
-**Two more refusals at every write, and one look at a place** (M13.14, ADR 0068; decision 9,
-answers 25 and 31 of the review of its SPEC). A write never reaches **what ELA uses to exist** —
-the list the composition derives and hands over, the one the root is checked against at the
-start-up —, :data:`ELA_S_OWN`: the start-up already refused a root that touches one, and a place
-enters the root only if the world changes after. A write never overwrites **a file with more than
-one name**, :data:`HARD_LINK`: the places are compared as paths, and a second name of a file of
-ELA's would step around the comparison. Both under a yes and under a policy, before the question
-and before the write. And :meth:`FsWriteTool.prospect_place`: whether a call could start in a
-folder a policy would name — it must be a folder, there, and nothing of ELA's.
+**Two more refusals at every use, and one look at a place** (M13.14, ADR 0068; decision 9,
+answers 25 and 31 of the review of its SPEC; for reads too since M13.15, ADR 0071). A read or a
+write never reaches **what ELA uses to exist** — the list the composition derives and hands over
+—, :data:`ELA_S_OWN`. **Since M13.17 (ADR 0074) this is the first line and the only one**: the
+root may hold those places — the home holds ``~/.ela`` —, and the start-up refuses only a root
+that is one or lies inside one. A write never overwrites, and a read never reads, **a file with
+more than one name**, :data:`HARD_LINK`: the places are compared as paths, and a second name of a
+file of ELA's would step around the comparison. Both under a yes and under a policy, before the
+question and before the read or the write. And :meth:`FsWriteTool.prospect_place`: whether a call
+could start in a folder a policy would name — it must be a folder, there, and nothing of ELA's.
 """
 
 from __future__ import annotations
@@ -144,7 +145,8 @@ removed while ELA is running and ``mkdir(parents=True)`` would put it back witho
 ELA_S_OWN: Final = "path.ela_s_own"
 """The target is, holds or lies within a place ELA uses to exist (M13.14, ADR 0068; decision 9):
 the database, the ``.env``, the source tree, ELA's home, the Python it runs on… — the list the
-composition hands over. Refused at every write, under a yes or under a policy."""
+composition hands over. Refused at every read and every write (M13.15, M13.17), under a yes or
+under a policy — by the tools, by their verifiers, and for the folder a command starts from."""
 
 HARD_LINK: Final = "path.hard_link"
 """The target is a file with more than one name (M13.14, ADR 0068; answer 31 of the review of its
@@ -259,7 +261,8 @@ class FsReadTool(Tool):
     The tool that makes the declaration a declaration, and not another name for ``idempotent``."""
     under_the_root: ClassVar[bool] = True
     stop_point: ClassVar[StopPoint] = StopPoint(here=None, on_a_node=ENVELOPE)
-    """A read has no effect in the world and no wait before it: its point is the call (M6.3c)."""
+    """A read has no effect in the world: its point is the call (M6.3c). Since M13.17 the call
+    waits on the disk at most the guard's limit, and a stop is heard after it (ADR 0074 §7)."""
 
     def __init__(
         self,
@@ -697,9 +700,10 @@ def _too_large(path: str, size: int, *, grew: bool = False) -> str:
             f"{path!r} grew past {FS_READ_MAX_BYTES} bytes, the most fs.read reads, after it was "
             f"looked at ({size} read): nothing was returned"
         )
+    # True before the question and after a yes alike: the look runs at both (the consistency
+    # reading of M13.17, R9).
     return (
-        f"{path!r} is {size} bytes, and fs.read reads at most {FS_READ_MAX_BYTES}: no question "
-        "is asked"
+        f"{path!r} is {size} bytes, and fs.read reads at most {FS_READ_MAX_BYTES}: nothing is read"
     )
 
 

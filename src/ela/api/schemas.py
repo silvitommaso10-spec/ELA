@@ -601,8 +601,9 @@ class Asked(BaseModel):
     question is not about a file from the browser."""
     size: int | None = None
     """The size in bytes of a file that would leave, read when the question was composed
-    (M13.13): after the yes ELA reads the file again, and one of another size does not leave.
-    ``None`` when no file leaves."""
+    (M13.13): after the yes ELA reads the file again, and one of another size does not leave. Since
+    M13.17 (ADR 0074) also of a file ``fs.read`` would read, as the disk said it at the question.
+    ``None`` when the question is about no file of either kind."""
     digest: str = ""
     """The sha256 of that file, in hexadecimal, read with :attr:`size`: what the yes covers is
     this content. On the surfaces that answer and never in the audit. Empty when no file

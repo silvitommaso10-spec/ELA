@@ -1498,7 +1498,8 @@ class Target:
     size: int | None = None
     """The size in bytes of the file the call would give away, read when the question is composed —
     ``None`` for a call that gives none (M13.13, ADR 0066): what leaves the Mac is the content, and
-    the yes covers that."""
+    the yes covers that. Since M13.17 (ADR 0074) also of the file a read would read, as the disk
+    says it at the question, without a digest."""
     digest: str | None = None
     """The sha256 of that content, in hexadecimal, read with :attr:`size` (M13.13)."""
 

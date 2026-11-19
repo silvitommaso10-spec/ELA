@@ -1,12 +1,14 @@
-"""``fs.no_answer`` and the spend of a policy (M13.17, ADR 0074; decision 53 of the review of its
-SPEC): the rows the table of ADR 0068 §6 gains.
+"""``fs.no_answer`` and the spend of a policy (M13.17, ADR 0074 §7; decision 53 of the review of
+its SPEC): the rows the rule of ADR 0068 §6 gains, in the table of ADR 0071 §7 that carries it.
 
 - **A wait abandoned at the look before the spend spends nothing**: the covered prospect refuses
   with ``fs.no_answer``, the step fails with that code, no use is spent and no tool runs.
 - **A wait abandoned in the execution has spent its use**: the use goes before the tool, and the
   tool's failure — ``fs.no_answer`` — closes the step. The disk did not answer; the use was spent
   on a call that did start.
-- **It is not retried**: the failure is not ``retryable``, and the step is not tried again.
+- **It is not retried**: the tool is called once, and the step ends ``FAILED``. That the guard's
+  failure is not ``retryable`` is the tools' own, in
+  ``tests/tools/test_the_disk_that_does_not_answer.py``.
 """
 
 from __future__ import annotations
@@ -51,7 +53,6 @@ async def test_a_wait_abandoned_in_the_execution_has_spent_its_use_and_is_not_re
 
     assert execution.result is not None and execution.result.error is not None
     assert execution.result.error.code == NO_ANSWER
-    assert execution.result.error.retryable is False
     assert await w.store.uses(policy.id) == 1
     assert len(tool.calls) == 1
     assert await w.step_state(task.id, step.id) is StepState.FAILED

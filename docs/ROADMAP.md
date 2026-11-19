@@ -71,11 +71,11 @@ nodo, il file che vive su una macchina, e il terminale sotto le policy.
 `M13.18` si apre in questa tappa **solo se il grant TCC di `M13.5` non tiene**: è la condizione d'ingresso di
 `M13.5`, e la regola della 5.11 di `STATO.md`, «Chi apre la milestone dell'eseguibile firmato». Se il grant
 tiene, il numero resta riservato, e la regola resta la stessa: la apre la prima milestone che ci sbatte contro.
+`M17.3`, nella tappa 8, la vuole prima di sé (il suo documento, «Ordine»).
 
 ***Annotato il 2026-11-19*** (risposta 57 della review di M13.17): **`M13.20` è la prima voce della tappa**, riservata.
 La tappa 5 è quella in cui ELA comincia a lanciare e guidare i programmi del computer, e la dichiarazione a mondo chiuso
 di ciò che ELA lancia costa meno prima che i lanciatori aumentino.
-`M17.3`, nella tappa 8, la vuole prima di sé (il suo documento, «Ordine»).
 
 ### Tappa 6 — ELA con iniziativa
 

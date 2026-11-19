@@ -409,7 +409,8 @@ class TerminalRunTool(Tool):
         return None
 
     def _folder(self, cwd: str | None) -> Path | Outcome:
-        """The folder the command starts from: the scope of M13.1, or a folder inside it (dec. 6).
+        """The folder the command starts from: the first folder of the scope of M13.1, or a folder
+        inside it (dec. 6; M13.17, ADR 0074).
 
         The **same** classification as ``fs.*``, twice — the scope against the root, then ``cwd``
         against the scope — with the answer turned round: a folder is what is wanted, and a file is

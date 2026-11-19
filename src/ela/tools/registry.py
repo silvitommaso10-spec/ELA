@@ -358,7 +358,9 @@ def production_tools(
 
     ``protected`` is what ELA uses to exist, named and resolved (M13.14, ADR 0068): the tools that
     write under ``fs_root`` — ``fs.write`` and the two downloads — never reach it, and since M13.15
-    (ADR 0071) the ones that read there — ``fs.read`` and the two uploads — never read it.
+    (ADR 0071) the ones that read there — ``fs.read`` and the two uploads — never read it; since
+    M13.17 (ADR 0074) ``terminal.run`` never starts a command from a folder that is, or lies
+    inside, one of those places.
     Mandatory, like ``pages``: a registry built without it would write anywhere under the root.
 
     ``disk`` is the guard every look, read and write under ``fs_root`` passes (M13.17, ADR 0074):

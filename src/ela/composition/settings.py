@@ -555,7 +555,8 @@ class NodeFilesystemSettings(BaseSettings):
     relative path it approves on its own root. A node without a root builds neither tool and
     declares neither, and ``ela node run`` says so with one line — the tools have nothing to act on.
 
-    What the root may not touch is derived from what the **node** uses to exist, in
+    What the root may not be or lie inside — and, since M13.17 (ADR 0074), what no read and no write
+    of the node reaches when the root holds it — is derived from what the **node** uses to exist, in
     :meth:`NodeConfig._a_root_that_is_not_the_node_s_own`: a node has no database, no workspace and
     no captures, and it knows only its own settings.
     """
@@ -1435,7 +1436,8 @@ class NodeConfig(BaseModel):
     def _a_root_that_is_not_the_node_s_own(self) -> NodeConfig:
         """A declared root obeys the Core's rules, derived from what **the node** uses to exist.
 
-        The folder that holds the node's secret (ADR 0039 §6), the ``.env`` this process read, and
+        The folder that holds the node's secret (ADR 0039 §6), the ``.env`` of the folder this
+        process starts from — read now, or written for the next start (M13.17) —, and
         ELA's source tree when it is reachable: the Core's list less what a node does not have — a
         database, a workspace, the captures. Not a link, and never created by ELA.
 
@@ -1451,8 +1453,9 @@ class NodeConfig(BaseModel):
         return self
 
     def own(self) -> dict[str, Path]:
-        """What the node uses to exist, resolved: the places its root may not touch and no write
-        of the node reaches (M13.3; M13.14, ADR 0068)."""
+        """What the node uses to exist, resolved: the places its root may not be or lie inside,
+        and that no read and no write of the node reaches (M13.3; M13.14, ADR 0068; M13.17, ADR
+        0074)."""
         own = {
             "the folder a node keeps its secret in": self.node.node_state_dir,
             ELA_S_HOME: ela_home(),

@@ -7,6 +7,7 @@ from __future__ import annotations
 from httpx import AsyncClient
 
 from ela.composition import Ela
+from ela.permissions import TERMINAL_RUN
 
 
 async def test_the_diagnostics_show_the_files_the_scopes_and_the_waits(
@@ -22,6 +23,21 @@ async def test_the_diagnostics_show_the_files_the_scopes_and_the_waits(
     assert shown["files"]["commands_from"] == str(root / "ELA")
     assert shown["files"]["waiting"] == 0
     assert shown["scopes"]["fs.write"] == ["ELA"]
-    assert shown["scopes"] == {
-        str(spec.id): list(spec.scope) for spec in ela.capabilities.specs() if spec.scope
+    declaring = {
+        str(spec.id): list(spec.scope)
+        for spec in ela.capabilities.specs()
+        if spec.scoped_arguments or spec.scope
     }
+    assert shown["scopes"] == declaring
+
+
+async def test_an_empty_scope_is_shown_where_the_denial_says_it_is_read(
+    ela: Ela, client: AsyncClient
+) -> None:
+    """The consistency reading of M13.17, R5: with ``ELA_TERMINAL_PROGRAMS=[]`` — the example of
+    ``ela init`` — the Guardian denies every command and says the scope is read in ``ela
+    diagnostics``; the row must be there, empty, and not missing."""
+    shown = (await client.get("/diagnostics")).json()
+
+    assert ela.capabilities.get(TERMINAL_RUN).scope == ()
+    assert shown["scopes"]["terminal.run"] == []

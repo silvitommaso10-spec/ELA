@@ -12,6 +12,7 @@
   (`docs/milestones/M13.14.md`, la SPEC e la review della SPEC, risposte 18–36), per diventare Accettata con un commit
   suo dopo la prova a mano della sezione 32, con `scripts/prova_m13_14.py`.
   **Rivista da ADR 0071 (M13.15)** il 2026-11-17: §2, §5, §6, §7, §9 e «Ciò che questo ADR dichiara e non risolve» — l'esempio del login senza termini; la frase di `EXHAUSTED` e del `409`, «… of its 5 uses», e il gap `VALUE`, che la tabella del suo giorno non ha; la firma di `prospect_place`, con i valori; la lista dei posti protetti va anche a chi legge; l'ordine dell'anteprima, con i valori e il prodotto; «il login e le quattro capability dei file chiedono a ogni uso fino a M13.15», che M13.15 compie (ADR 0071 §1, §2, §3, §4, §9, §10).
+  **Rivista da ADR 0074 (M13.17)** il 2026-11-19: §6, §7 e «Ciò che questo ADR dichiara e non risolve» — la spesa con il disco che non risponde; la lista dei posti va anche ai verifier e al terminale, e guadagna ciò che ELA usa; le tre strade, più larghe, e un'altra copia del repository o un altro `.env` sotto la radice (ADR 0074 §5, §7).
 
 ## Contesto
 
@@ -307,7 +308,6 @@ può leggere. Nessuna capability sotto policy *lancia* un programma (§2); resta
 
 E il resto:
 
-  **Rivista da ADR 0074 (M13.17)** il 2026-11-19: §6, §7 e «Ciò che questo ADR dichiara e non risolve» — la spesa con il disco che non risponde; la lista dei posti va anche ai verifier e al terminale, e guadagna ciò che ELA usa; le tre strade, più larghe, e un'altra copia del repository o un altro `.env` sotto la radice (ADR 0074 §5, §7).
 - **Su quei siti il modello può fare qualunque gesto come l'utente**, anche uno che una pagina gli suggerisce; **una
   revoca non richiama ciò che è già partito**; il cancello limita i documenti del frame principale, non le richieste che
   il codice di una pagina fa da sé, salvo quando la pagina tiene un file: una pagina può chiamare l'indirizzo di ELA,

@@ -104,7 +104,8 @@ non cambia.
 **La domanda di `fs.read` nomina la dimensione del file** come la dice il disco quando la domanda si compone, e le tre
 superfici che rispondono la mostrano. **Un file sopra il tetto si rifiuta prima della domanda**, `fs.too_large`, con le
 due dimensioni e mai un hash; **alla lettura** si legge al più il tetto e un byte, e un file cresciuto dopo lo sguardo è lo
-stesso rifiuto. Il verifier di una lettura rilegge al più il tetto.
+stesso rifiuto. Il verifier di una lettura rilegge al più il tetto e un byte: un file più grande non può tenere ciò che il
+tool ha letto.
 
 **Il sì a una lettura approva il percorso; la dimensione nella domanda è quella che il disco diceva alla domanda, e il tetto
 chiude il caso peggiore. Un confronto della sola dimensione sarebbe mezza difesa con il nome di una intera — un file cambiato
@@ -129,7 +130,9 @@ non ha risposto e che cosa può ancora succedere:
   piano.
 
 **Al più quattro attese abbandonate alla volta**: oltre, ogni nuovo gesto sul disco è `fs.no_answer` subito, con la frase
-che dice quante attese sono ferme e che finiscono quando il disco risponde. **Un «ferma» durante un'attesa** aspetta al più
+che dice quante attese sono ferme e che finiscono quando il disco risponde. **Uno scaricamento il cui file arriva quando
+quattro attese sono già ferme** non viene posato, e il file che il browser ha scritto con un nome suo resta nella cartella:
+la guardia non apre un quinto filo per toglierlo. Si dichiara (sotto). **Un «ferma» durante un'attesa** aspetta al più
 il limite, mai di più. All'avvio, la variante sincrona della stessa guardia guarda le voci (§3).
 
 | Costante | Valore |
@@ -162,12 +165,16 @@ Le cartelle di una policy sono scritte relative alla radice: **cambiare la radic
 policy viva** di una delle sei che porta la cartella intera mostrata alla sua nascita, e la cui cartella con la radice di
 adesso si risolve altrove, **ferma l'avvio**, con la frase che nomina la policy, dove era, dove sarebbe e la strada:
 rimettere la radice, revocare la policy, cambiare di nuovo. Il confronto è quello di `within`; una policy finita non conta.
+**Una policy viva nata prima di M13.15**, che non porta la cartella intera mostrata alla sua nascita, non si può giudicare,
+e si dichiara: chi cambia la radice la revoca prima, come la sezione 35 della guida dice in testa.
 
 ### 10. La frase del diniego `SCOPE`
 
 Le frasi che stampavano uno scope — la regola 4-bis del Guardian, il 4-ter del passo di una sessione guidata, il sì che
 nomina bersagli fuori dallo scope — **nominano i bersagli e mai l'elenco**, e dicono dove lo scope si legge:
-«targets ['Library/x.md'] of fs.write are not within its scope (uv run ela diagnostics shows it)». Un elenco di cartelle,
+«targets ['Library/x.md'] of fs.write are not within its scope (uv run ela diagnostics shows it)». Lì, alla riga
+`scopes`, c'è lo scope di ogni capability che ne dichiara uno, **anche vuoto**: con `ELA_TERMINAL_PROGRAMS=[]` la riga di
+`terminal.run` dice che non ce n'è nessuno. Un elenco di cartelle,
 di siti o di programmi arrivava all'audit, alla console, al telefono e, per i siti, a un fornitore. **Gli eventi già
 nell'audit tengono la frase di prima**: l'audit non si riscrive. `POLICY_VERSION` non si muove: cambia una ragione, non una
 riga né un predicato.
@@ -237,6 +244,8 @@ In parole semplici:
   guardia, e niente di suo.
 - **Un'attesa abbandonata resta**: un filo fermo nella sua chiamata, che finisce quando il disco risponde e il cui esito
   nessuno ascolta più; al più quattro. Il tetto alle risorse di quei fili non è misurato.
+- **Con la guardia piena il file di uno scaricamento resta**: il browser l'ha scritto con un nome suo, e la posa, rifiutata
+  subito, non lo tocca.
 - **Il tetto è di una lettura**: un task con più letture le somma sulla rotta dei risultati.
 - **Su un nodo la domanda non dice la dimensione**: per uno step piazzato su un nodo la domanda nomina ciò che il piano
   afferma, e ELA non ha guardato quel disco (ADR 0048 §8); il tetto lo fa valere il tool del nodo, che è lo stesso codice.
@@ -280,7 +289,8 @@ con la sezione di questo ADR a cui guardare.
 Le altre conseguenze:
 
 - **Le parole del prodotto**: le descrizioni delle sei capability dei file, che arrivano al Planner, dicono «the authorised
-  folders», al plurale; quella di `terminal.run` dice che `cwd` è relativo alla prima cartella.
+  folders», al plurale. Il docstring della capability `terminal.run` dice che `cwd` è relativo alla prima cartella; la
+  descrizione che arriva al Planner non parla di `cwd`, e non cambia.
 - **`ela init`** e **`.env.example`** mostrano la forma nuova; `pydantic-settings` ha il pavimento alla versione del lock,
   `2.15.0`, per `NoDecode`.
 - **Nessuna migrazione**, nessun port nuovo, nessun membro nuovo di un port.

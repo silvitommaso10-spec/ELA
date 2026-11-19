@@ -69,7 +69,7 @@ def _composition(payload: dict[str, Any]) -> list[tuple[str, Any]]:
         ("approvals waiting", payload["pending_approvals"]),
         ("perception", _perception(payload["perception"])),
         *_files(payload["files"]),
-        ("scopes", {name: ", ".join(scope) for name, scope in payload["scopes"].items()}),
+        ("scopes", _scopes(payload["scopes"])),
         (
             "recovered at start-up",
             f"{recovered['failed']} failed, {recovered['skipped']} skipped, "
@@ -233,6 +233,17 @@ def approvals(
     emit(payload, as_json, _questions(payload))
 
 
+NO_SCOPE: Final = "none: every call is refused"
+"""What the row ``scopes`` says of a capability whose declared scope is empty (M13.17, ADR
+0074): ``ELA_TERMINAL_PROGRAMS=[]`` and ``ELA_BROWSER_SITES=[]`` are answers, and the denial of the
+rule ``SCOPE`` points here."""
+
+
+def _scopes(scopes: Mapping[str, Sequence[str]]) -> dict[str, str]:
+    """The declared scope of each capability, on one line — an empty one said, not left blank."""
+    return {name: ", ".join(scope) or NO_SCOPE for name, scope in scopes.items()}
+
+
 def _questions(payload: Sequence[Mapping[str, Any]]) -> str:
     """The waiting questions, one block each, or the sentence that says there are none."""
     if not payload:
@@ -341,10 +352,11 @@ covers, by its name, and its username masked — absent, not dashed, for every o
 second absent for an entry that has no username."""
 
 FILE_ROWS: Final[frozenset[str]] = frozenset({"site", "on the site", "size", "sha256"})
-"""The rows only a question about a file from the browser has (M13.13, ADR 0066): the site the
-file comes from or is given to, what the yes does there, and — of a file that leaves — its size and
-its sha256 as they were when the question was asked. Absent, not dashed, for every other; the last
-two absent for a download, which gives nothing away."""
+"""The rows of a question about a file (M13.13, ADR 0066): the site the file comes from or is
+given to, what the yes does there, and — of a file that leaves — its size and its sha256 as they
+were when the question was asked; since M13.17 (ADR 0074) **the size of a file ``fs.read`` would
+read** too, without a sha256. Absent, not dashed, for every other; the last two absent for a
+download, which gives nothing away."""
 
 SPENDING_ROWS: Final[frozenset[str]] = frozenset({"worst case", "left this month"})
 """The rows only a question about a call that spends has (M14.1, ADR 0057): its worst case and what

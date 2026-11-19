@@ -106,9 +106,14 @@ async def diagnostics(request: Request, ela: ElaDep) -> DiagnosticsOut:
             provider=ela.bell.name,
         ),
         # What the scope opens, as the start-up resolved it (M13.17, ADR 0074): ELA's state, and
-        # the scope of every capability that declares one, derived from the catalogue.
+        # the scope of every capability that declares one, derived from the catalogue — **an empty
+        # one too**: a denial of the rule SCOPE says its scope is read here (answer 37).
         files=files_of(ela),
-        scopes={str(spec.id): tuple(spec.scope) for spec in ela.capabilities.specs() if spec.scope},
+        scopes={
+            str(spec.id): tuple(spec.scope)
+            for spec in ela.capabilities.specs()
+            if spec.scoped_arguments or spec.scope
+        },
         perception=PerceptionSummaryOut(
             enabled=ela.settings.perception.perception_enabled,
             watching=ela.settings.perception.loop_enabled,

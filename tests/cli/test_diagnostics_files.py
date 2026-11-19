@@ -34,3 +34,14 @@ def test_the_block_prints_the_places_and_the_overlaps_only_when_there_are_some()
         ("files overlapping", ["'Documents/ELA' is inside 'Documents': it opens nothing more"]),
         ("disk waits standing", 2),
     ]
+
+
+def test_an_empty_scope_is_said_and_not_left_blank() -> None:
+    """The consistency reading of M13.17, R5: the denial of a program nobody declared points to
+    this row, and an empty scope says so."""
+    from ela.cli.system import NO_SCOPE, _scopes
+
+    assert _scopes({"fs.write": ["Documents", "Desktop"], "terminal.run": []}) == {
+        "fs.write": "Documents, Desktop",
+        "terminal.run": NO_SCOPE,
+    }

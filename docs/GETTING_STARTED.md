@@ -160,7 +160,9 @@ Che cosa ELA rifiuta all'avvio, e perché il messaggio te lo dice invece di lasc
 - una radice che **è, o sta dentro**, ciò che ELA usa per esistere — la workspace, il database, le
   catture, il segreto di un nodo, `~/.ela`, il suo stesso codice —, e una radice **sopra la tua
   home**, come `/Users`. Da M13.17 la radice **può contenere** i posti di ELA, e può essere la home:
-  nessuna lettura e nessuna scrittura di ELA li raggiunge, a ogni uso, con un sì o con una policy;
+  nessuna lettura e nessuna scrittura dei file di ELA — `fs.read`, `fs.write` e i file dal browser — li
+  raggiunge, a ogni uso, con un sì o con una policy; un programma che lanci con `terminal.run` sì, perché
+  la cartella di un comando non è un confine;
 - una cartella dell'elenco che non c'è, che è un file, un link, un posto di ELA, o che il sistema non
   lascia guardare;
 - una radice che è un **link simbolico**. Su macOS è la forma che `~/Documents` prende quando
@@ -822,7 +824,7 @@ Da sapere prima di andare avanti:
   all'avvio. La prova di M13.3 l'aggiunge al file in §17, passo 2.
   ***Annotato il 2026-11-19*** (M13.17, [ADR 0074](adr/0074-filesystem-up-to-the-home.md) §2): le regole della radice
   del Core sono cambiate, e quelle del nodo con loro. Da M13.17 la radice del nodo **può contenere** `$HOME\.ela`,
-  `$HOME\ELA` e gli altri posti del nodo — nessuna lettura e nessuna scrittura del nodo li raggiunge —, e può essere la
+  `$HOME\ELA` e gli altri posti del nodo — nessuna lettura e nessuna scrittura dei file del nodo li raggiunge —, e può essere la
   home del nodo; non può esserne uno né starci dentro, e non può stare sopra la home. Il giorno in cui il PC prende
   `main` con M13.17, una radice che oggi il nodo rifiuta perché contiene un suo posto sarà ammessa.
 
@@ -8976,7 +8978,8 @@ ma non te lo dice.
 punto. Una policy di scrittura, di scaricamento o di caricamento solo su una cartella fatta apposta: mai su una cartella
 intera dell'elenco, mai su una che tiene codice che lanci o che il sistema sincronizza. **I posti di ELA dentro la radice**
 — il suo albero, `~/.ela`, il `.env`, il Python con cui gira, il profilo del browser — **non li raggiunge nessuna lettura e
-nessuna scrittura**, con un sì o con una policy: `ela diagnostics` li elenca. Il permesso di macOS lo dai al Terminale, non
+nessuna scrittura dei file di ELA** — `fs.read`, `fs.write` e i file dal browser —, con un sì o con una policy:
+`ela diagnostics` li elenca. Un programma che lanci con `terminal.run` invece sì: la cartella di un comando non è un confine. Il permesso di macOS lo dai al Terminale, non
 a ELA: e vale per ogni programma che lanci da lì.
 
 **Che cosa serve**: ELA riavviata dal branch con le due righe nuove; `ELA_NTFY_TOPIC` nel `.env` e il campanello pronto,
