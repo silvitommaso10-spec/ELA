@@ -43,7 +43,7 @@ la disciplina della suite con i debiti che porta e la misura di dove va il suo t
 browser arriva sul PC.
 
 - `M13.15` — Implementata — Le policy di Tommaso arrivano al login e ai file dal browser
-- `M13.17` — Proposta — I file di tutto il computer
+- `M13.17` — Implementata — I file di tutto il computer
 - `M13.11` — Proposta — Il browser sul PC: le capacità di M13.9 e M13.10 sul nodo Windows, e il verdetto che torna in busta
 
 ### Tappa 4 — ELA lavora sul codice

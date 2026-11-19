@@ -158,7 +158,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.14b` | Proposta | Il modello sente dire che il gesto chiede sempre, e da M13.14 non è vero |
 | 13 — Il permesso prima dell'azione | `M13.15` | Implementata | Le policy di Tommaso arrivano al login e ai file dal browser |
 | 13 — Il permesso prima dell'azione | `M13.16` | Proposta | Il terminale sotto le policy di Tommaso, con un confine dimostrato |
-| 13 — Il permesso prima dell'azione | `M13.17` | Proposta | I file di tutto il computer |
+| 13 — Il permesso prima dell'azione | `M13.17` | Implementata | I file di tutto il computer |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.1` | Implementata | Il tetto di spesa: la chiave di ELA, e un limite che ELA fa rispettare |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.1b` | Implementata | La docstring del tetto dice il secondo tetto giusto: il limite dell'organizzazione |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.1c` | Proposta | Il caso peggiore senza prezzo: un ramo e un rifiuto che nessun produttore raggiunge |
@@ -191,7 +191,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **74** | `docs/adr/NNNN-*.md` |
-| Milestone | **110, di cui 86 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **110, di cui 87 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **74** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **16** | `pyproject.toml` |
 | Port | **36** | i `Protocol` di `src/ela/ports.py` |
@@ -1412,6 +1412,11 @@ che ne discende non sta qui**: sta in [`ROADMAP.md`](ROADMAP.md), che da quel gi
   alla home, lo scope un elenco di cartelle in JSON, i posti di ELA rifiutati a ogni uso come prima e unica linea, una
   lettura con la sua dimensione nella domanda e un tetto di 8 MiB, un limite di 10 secondi a ogni attesa del disco. I
   programmi che ELA lancia non entrano fra i posti: derivarli a mondo chiuso è **M13.20**, riservata.
+  ***Annotato il 2026-11-19, dopo la prova*** (ultimo blocco di M13.17, decisioni 64 e 69): **M13.17 è Implementata**, con
+  la prova a mano della sezione 35 passata a `a7ad7af` — le scritture e la lettura in Documents e in Desktop sotto la
+  radice alla home, Library negata senza domanda, i rifiuti dell'avvio, una policy su una cartella della seconda voce —;
+  il suo ADR è [0074](adr/0074-filesystem-up-to-the-home.md). M13.20 è riservata nella tappa 5, prima voce
+  ([`ROADMAP.md`](ROADMAP.md)).
 - **ELA si migliora da sola, e il sì e il merge restano di Tommaso** — la Fase 16, §35–§38. ELA ripara il proprio
   codice quando glielo si chiede, con il meccanismo di M14.7 puntato sul suo repository; si accorge dei propri errori
   e propone; prova una modifica su una copia, la confronta con la versione di prima, e torna indietro. **Il diff si
