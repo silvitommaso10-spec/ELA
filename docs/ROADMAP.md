@@ -44,6 +44,7 @@ browser arriva sul PC.
 
 - `M13.15` — Implementata — Le policy di Tommaso arrivano al login e ai file dal browser
 - `M13.17` — Implementata — I file di tutto il computer
+- `M13.17b` — Proposta — Un test di uno script non lancia un processo vero e non chiama un fornitore vero
 - `M13.11` — Proposta — Il browser sul PC: le capacità di M13.9 e M13.10 sul nodo Windows, e il verdetto che torna in busta
 
 ### Tappa 4 — ELA lavora sul codice

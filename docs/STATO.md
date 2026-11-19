@@ -159,6 +159,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.15` | Implementata | Le policy di Tommaso arrivano al login e ai file dal browser |
 | 13 — Il permesso prima dell'azione | `M13.16` | Proposta | Il terminale sotto le policy di Tommaso, con un confine dimostrato |
 | 13 — Il permesso prima dell'azione | `M13.17` | Implementata | I file di tutto il computer |
+| 13 — Il permesso prima dell'azione | `M13.17b` | Proposta | Un test di uno script non lancia un processo vero e non chiama un fornitore vero |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.1` | Implementata | Il tetto di spesa: la chiave di ELA, e un limite che ELA fa rispettare |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.1b` | Implementata | La docstring del tetto dice il secondo tetto giusto: il limite dell'organizzazione |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.1c` | Proposta | Il caso peggiore senza prezzo: un ramo e un rifiuto che nessun produttore raggiunge |
@@ -191,7 +192,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **74** | `docs/adr/NNNN-*.md` |
-| Milestone | **110, di cui 87 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **111, di cui 87 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **74** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **16** | `pyproject.toml` |
 | Port | **36** | i `Protocol` di `src/ela/ports.py` |

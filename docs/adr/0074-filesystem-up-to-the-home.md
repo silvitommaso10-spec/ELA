@@ -15,9 +15,13 @@
   un cambio di radice — alla prova non ce n'era nessuna —; la cartella del terminale oltre ciò che `ela diagnostics` ne
   dice; i verifier e lo scaricamento al momento di posare il file; il nodo.
   
-  **Che cosa resta NON MISURATO**: macOS non ha aperto una finestra né all'avvio né ai primi usi, con le parole di Tommaso,
-  e le scritture e la lettura su Documents e Desktop sono riuscite. Sul suo Mac, com'era il 2026-11-19, il terminale arriva
-  a quelle cartelle senza che macOS chieda. **Che cosa fa macOS quando chiede o nega** resta NON MISURATO, e quelle righe
+  **Che cosa resta NON MISURATO**: ai passi 4 e 5 le scritture e la lettura su Documents e Desktop sono riuscite, e ai
+  primi usi macOS non ha aperto una finestra — al passo 6, con le parole di Tommaso, «non mi ha chiesto nessun peermesso».
+  Dell'avvio Tommaso ha detto «non mi ha chiesto niente, o non me lo ricordo»: se macOS abbia chiesto lì non è stabilito.
+  **Ai primi usi il terminale è arrivato a quelle cartelle senza che macOS chiedesse; se un permesso sia stato dato
+  all'avvio di quel giorno o prima, la prova non lo dice.** ***Ristretta il 2026-11-19*** (risposta 72 della review di
+  M13.17): diceva che il terminale arriva a quelle cartelle senza che macOS chieda, più largo di ciò che la mano ha visto.
+  **Che cosa fa macOS quando chiede o nega** resta NON MISURATO, e quelle righe
   dell'avvio e della guardia le prova solo la suite, con il disco iniettato. **Un file che iCloud tiene altrove** resta
   NON MISURATO: la Scrivania non è un link, perché ELA è partita con Desktop nell'elenco, ma se «Scrivania e Documenti» di
   iCloud sia acceso Tommaso non l'ha detto.
