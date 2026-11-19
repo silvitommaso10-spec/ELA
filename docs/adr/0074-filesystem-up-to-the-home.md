@@ -1,9 +1,29 @@
 # 0074. Il filesystem fino alla home di chi usa ELA: un elenco di cartelle, i posti di ELA a ogni uso, e un limite a ogni attesa del disco
 
-- **Stato:** **Proposta** il **2026-11-19**, con il codice del branch `m13.17-i-file-di-tutto-il-computer`. Diventa
-  Accettata con un commit suo, dopo che la prova a mano della sezione 35 di `docs/GETTING_STARTED.md`, con
-  `scripts/prova_m13_17.py`, è passata sull'ultimo commit del branch. **Le «Righe riviste» di questo ADR hanno il loro
-  marchio** sulle righe «Stato:» di ADR 0014, 0045, 0047, 0048, 0066, 0068 e 0071.
+- **Stato:** **Accettata** il **2026-11-19**, con un commit suo (decisione 66 dell'ultimo blocco di M13.17): la prova a
+  mano della sezione 35 di `docs/GETTING_STARTED.md`, con `scripts/prova_m13_17.py`, è passata a `a7ad7af`, l'ultimo commit
+  del branch su origin, con l'albero pulito ed ELA riavviata dal branch con la radice alla home e l'elenco con Documents e
+  Desktop (`~/Downloads/prova-m13.17-20261119-133951.txt`: 45 PASSATI al primo giro, 0 FALLITI, 0 no, 0 SALTATI).
+  **Che cosa ha visto la mano**: ciò che è aperto in `ela diagnostics`; una scrittura in ciascuna delle due cartelle, con
+  il percorso intero nella domanda; una lettura con la dimensione nella domanda, il contenuto nel risultato e non
+  nell'audit; un diniego `SCOPE` che nomina il bersaglio e non l'elenco, senza domanda e senza campanello; i due rifiuti
+  dell'avvio; una policy su una cartella della seconda voce, con la cartella intera nell'anteprima, una scrittura senza
+  domanda e quella accanto che chiede; le righe «why I ask» nei due versi; la console.
+  
+  **Che cosa prova solo il test**: `path.ela_s_own` a ogni uso; `fs.no_answer`, la guardia e il tetto delle quattro attese;
+  `fs.too_large`; il rifiuto della riga senza parentesi e di `[]`; il rifiuto all'avvio per una policy viva dei file dopo
+  un cambio di radice — alla prova non ce n'era nessuna —; la cartella del terminale oltre ciò che `ela diagnostics` ne
+  dice; i verifier e lo scaricamento al momento di posare il file; il nodo.
+  
+  **Che cosa resta NON MISURATO**: macOS non ha aperto una finestra né all'avvio né ai primi usi, con le parole di Tommaso,
+  e le scritture e la lettura su Documents e Desktop sono riuscite. Sul suo Mac, com'era il 2026-11-19, il terminale arriva
+  a quelle cartelle senza che macOS chieda. **Che cosa fa macOS quando chiede o nega** resta NON MISURATO, e quelle righe
+  dell'avvio e della guardia le prova solo la suite, con il disco iniettato. **Un file che iCloud tiene altrove** resta
+  NON MISURATO: la Scrivania non è un link, perché ELA è partita con Desktop nell'elenco, ma se «Scrivania e Documenti» di
+  iCloud sia acceso Tommaso non l'ha detto.
+  
+  Proposta il **2026-11-19**, con il codice del branch `m13.17-i-file-di-tutto-il-computer`. **Le «Righe riviste» di questo
+  ADR hanno il loro marchio** sulle righe «Stato:» di ADR 0014, 0045, 0047, 0048, 0066, 0068 e 0071.
 - **Data:** 2026-11-18
 - **Riferimenti spec:** §29, §30, §32, §33, §57, §59, §65
 - **Milestone:** [M13.17](../milestones/M13.17.md)
@@ -239,9 +259,12 @@ In parole semplici:
   protetti» resta.
 - **Il permesso di macOS non è di ELA**: è del processo responsabile, il terminale, e ciò che macOS concede perché ELA legga
   una cartella lo concede a ogni programma lanciato da lì. ELA non chiede, non aggira e non registra un permesso. **Che cosa
-  macOS fa davvero** — se chiede, se ferma la chiamata, per quali chiamate —: NON MISURATO dalla suite; lo dice la prova.
+  macOS fa quando chiede o nega** — se ferma la chiamata, per quali chiamate —: NON MISURATO. Alla prova del 2026-11-19
+  macOS non ha chiesto niente, né all'avvio né ai primi usi, e il terminale è arrivato a Documents e a Desktop; le righe di
+  quel caso le prova solo la suite, con il disco iniettato.
 - **Un file che iCloud tiene altrove**: NON MISURATO. Leggerlo può far partire uno scaricamento; lo copre il limite della
-  guardia, e niente di suo.
+  guardia, e niente di suo. Alla prova la Scrivania non era un link; se «Scrivania e Documenti» di iCloud fosse acceso
+  non è detto.
 - **Un'attesa abbandonata resta**: un filo fermo nella sua chiamata, che finisce quando il disco risponde e il cui esito
   nessuno ascolta più; al più quattro. Il tetto alle risorse di quei fili non è misurato.
 - **Con la guardia piena il file di uno scaricamento resta**: il browser l'ha scritto con un nome suo, e la posa, rifiutata

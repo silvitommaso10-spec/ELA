@@ -178,7 +178,7 @@ def test_what_it_declares_is_said_in_plain_words() -> None:
         "**Una scrittura di ELA li raggiunge solo se chi usa ELA apre la cartella che li "
         "contiene.**",
         "[M13.20](../ROADMAP.md), riservata",
-        "NON MISURATO dalla suite",
+        "**Che cosa macOS fa quando chiede o nega**",
         "**Un file che iCloud tiene altrove**: NON MISURATO",
         "**Il tetto è di una lettura**",
         "**Su un nodo la domanda non dice la dimensione**",
@@ -225,12 +225,19 @@ def test_a_revised_adr_that_does_not_say_so_is_found() -> None:
     assert revised_by_their_state(texts) == listed - {silent}
 
 
-def test_it_is_proposed_until_the_proof_and_the_index_says_so() -> None:
+def test_it_is_accepted_after_the_proof_and_the_index_says_so() -> None:
+    """Decisions 64–66 of the last block of M13.17: accepted with a commit of its own once the proof
+    passed, and its state line says what the hand saw, what only the tests prove, and what is not
+    measured."""
     said = " ".join(status_of(adr_text()).split())
     found = INDEX_ROW.findall((ADR_DIR / "README.md").read_text(encoding="utf-8"))
 
-    assert said.startswith("**Proposta** il **2026-11-19**")
+    assert said.startswith("**Accettata** il **2026-11-19**")
     assert "la sezione 35 di `docs/GETTING_STARTED.md`" in said
     assert "`scripts/prova_m13_17.py`" in said
-    assert len(found) == 1 and found[0][1] == "Proposta"
+    assert "`~/Downloads/prova-m13.17-20261119-133951.txt`: 45 PASSATI al primo giro" in said
+    for part in ("**Che cosa ha visto la mano**", "**Che cosa prova solo il test**"):
+        assert part in said, part
+    assert "**Che cosa resta NON MISURATO**" in said
+    assert len(found) == 1 and found[0][1] == "Accettata"
     assert adr_text().startswith(f"# 0074. {found[0][0]}\n")
