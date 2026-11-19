@@ -12,7 +12,6 @@ speaks to the application in this process and opens no socket at all.
 
 from __future__ import annotations
 
-import subprocess
 from collections.abc import Generator, Iterator
 from typing import Any, NoReturn
 
@@ -34,26 +33,6 @@ def _no_network(monkeypatch: pytest.MonkeyPatch) -> None:
     for library in (httpx, httpx2):
         monkeypatch.setattr(library.AsyncHTTPTransport, "handle_async_request", refuse)
         monkeypatch.setattr(library.HTTPTransport, "handle_request", refuse)
-
-
-@pytest.fixture(autouse=True)
-def _no_launch_from_a_proof(
-    monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
-) -> None:
-    """**No proof script launches a real process in a test that did not replace the launch**
-    (M13.17, decisions 62 and 68): ``tests/proof_launches.py``. Like the network above, a
-    property of the suite rather than a habit of each test."""
-    if request.node.get_closest_marker(proof_launches.ALLOWED) is not None:
-        return
-    real = subprocess.Popen._execute_child  # type: ignore[attr-defined]
-
-    def guarded(self: subprocess.Popen[Any], args: Any, *rest: Any, **named: Any) -> Any:
-        script = proof_launches.from_a_proof(proof_launches.calling_frame())
-        if script is not None:
-            raise proof_launches.refused(script, args)
-        return real(self, args, *rest, **named)
-
-    monkeypatch.setattr(subprocess.Popen, "_execute_child", guarded)
 
 
 @pytest.fixture(name=profile_browser.TAKEN)
@@ -102,6 +81,9 @@ def pytest_configure(config: pytest.Config) -> None:
         f"{proof_launches.ALLOWED}(why): a test that launches a real process through a proof "
         "script on purpose — tests/proof_launches.py",
     )
+    # The guard of the launches of the proofs (M13.17, decisions 62 and 68): once per process,
+    # before any fixture of any scope is set up.
+    proof_launches.install()
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
@@ -114,6 +96,20 @@ def pytest_runtest_logreport(report: pytest.TestReport) -> None:
     """The log of the suite (``tests/suite_log.py``, M9.5): off unless ``SUITE_LOG`` is set — the
     two jobs of ``make check`` set it, a run on this Mac does not."""
     suite_log.reported(report)
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_protocol(
+    item: pytest.Item, nextitem: pytest.Item | None
+) -> Generator[Any, Any, Any]:
+    """**A test marked** ``launches_through_a_proof_script`` **may launch through a proof script,
+    for its own time** — setup, call and teardown, the fixtures of a wider scope it sets up
+    included (M13.17, decision 68; ``tests/proof_launches.py``)."""
+    proof_launches.STATE.let_through = item.get_closest_marker(proof_launches.ALLOWED) is not None
+    try:
+        return (yield)
+    finally:
+        proof_launches.STATE.let_through = False
 
 
 @pytest.hookimpl(wrapper=True)
