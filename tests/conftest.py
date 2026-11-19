@@ -12,6 +12,7 @@ speaks to the application in this process and opens no socket at all.
 
 from __future__ import annotations
 
+import subprocess
 from collections.abc import Generator, Iterator
 from typing import Any, NoReturn
 
@@ -19,7 +20,7 @@ import httpx
 import httpx2
 import pytest
 
-from tests import machines, profile_browser, suite_log
+from tests import machines, profile_browser, proof_launches, suite_log
 from tests.browser_leftovers import RAN_LAST
 
 NO_NETWORK = "a test tried to open a network connection"
@@ -33,6 +34,26 @@ def _no_network(monkeypatch: pytest.MonkeyPatch) -> None:
     for library in (httpx, httpx2):
         monkeypatch.setattr(library.AsyncHTTPTransport, "handle_async_request", refuse)
         monkeypatch.setattr(library.HTTPTransport, "handle_request", refuse)
+
+
+@pytest.fixture(autouse=True)
+def _no_launch_from_a_proof(
+    monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
+) -> None:
+    """**No proof script launches a real process in a test that did not replace the launch**
+    (M13.17, decisions 62 and 68): ``tests/proof_launches.py``. Like the network above, a
+    property of the suite rather than a habit of each test."""
+    if request.node.get_closest_marker(proof_launches.ALLOWED) is not None:
+        return
+    real = subprocess.Popen._execute_child  # type: ignore[attr-defined]
+
+    def guarded(self: subprocess.Popen[Any], args: Any, *rest: Any, **named: Any) -> Any:
+        script = proof_launches.from_a_proof(proof_launches.calling_frame())
+        if script is not None:
+            raise proof_launches.refused(script, args)
+        return real(self, args, *rest, **named)
+
+    monkeypatch.setattr(subprocess.Popen, "_execute_child", guarded)
 
 
 @pytest.fixture(name=profile_browser.TAKEN)
@@ -75,6 +96,11 @@ def pytest_configure(config: pytest.Config) -> None:
         "markers",
         f"{machines.MARK}(*conditions, why=''): what of the machine a test needs — "
         "tests/machines.py, and nowhere else",
+    )
+    config.addinivalue_line(
+        "markers",
+        f"{proof_launches.ALLOWED}(why): a test that launches a real process through a proof "
+        "script on purpose — tests/proof_launches.py",
     )
 
 
