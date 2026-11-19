@@ -258,6 +258,13 @@ def test_the_id_of_the_entry_never_enters_the_file_and_its_plan_is_taken_away(
     assert module.masked(f"--entry {ENTRY_ID}", proof) == f"--entry {module.ENTRY}"
 
 
+THE_RUNNER = pytest.mark.launches_through_a_proof_script(
+    "the runner of the proof itself — base.run with its limit, base.started with its group — "
+    "with a real sleep: what is tested is the launch (tests/proof_launches.py)"
+)
+
+
+@THE_RUNNER
 def test_a_command_past_its_limit_is_closed_and_said() -> None:
     """Decision 84, the negative case: a command that does not return within its limit is closed
     — its group, which is the command and what it started — and ``Overdue`` says it."""
@@ -276,6 +283,7 @@ def test_a_command_past_its_limit_is_closed_and_said() -> None:
     assert not any(f"sleep {marker}" in command for command in listed.values())
 
 
+@THE_RUNNER
 def test_a_command_without_a_limit_is_run_as_before() -> None:
     module = script()
 
@@ -314,6 +322,7 @@ def test_a_run_past_its_guard_fails_the_step_writes_the_task_and_stops(
     assert "state EXECUTING" in written and "non è tornato in 120 s" in str(stopped.value)
 
 
+@THE_RUNNER
 def test_the_run_of_the_stop_has_one_guard_from_its_launch_and_is_closed_with_its_group(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

@@ -132,8 +132,9 @@ def test_the_sites_are_the_ones_section_30_declared() -> None:
 def test_a_scope_that_does_not_admit_the_folder_stops_the_proof() -> None:
     module = script()
 
-    assert module.scope_admits("ELA") is None
-    assert module.scope_admits("Documenti") is not None
+    assert module.scope_admits(("ELA",)) is None
+    assert module.scope_admits(("Documenti", "ELA")) is None, "a list: one folder is enough"
+    assert module.scope_admits(("Documenti",)) is not None
 
 
 def test_a_crdownload_left_in_the_folder_stops_the_proof_and_nothing_is_touched(

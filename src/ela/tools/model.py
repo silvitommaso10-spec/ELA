@@ -198,6 +198,7 @@ class ModelCompleteTool(Tool):
     audit_numbers: ClassVar[frozenset[str]] = frozenset()
     """A second call is charged, sends the user's content out again (§57) and answers something
     else. The executor runs this tool under the STARTED protocol of ADR 0021 §1."""
+    under_the_root: ClassVar[bool] = False
     stop_point: ClassVar[StopPoint] = StopPoint(here=PROVIDER_REQUEST, on_a_node=ENVELOPE)
 
     def __init__(

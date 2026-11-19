@@ -81,6 +81,7 @@ cambia, si scrive un nuovo ADR che sostituisce il precedente.
 | [0071](0071-policies-on-login-and-files.md) | Le policy di chi usa ELA arrivano al login e ai file dal browser | Accettata |
 | [0072](0072-a-closing-has-a-limit.md) | Una chiusura del browser ha un limite | Accettata |
 | [0073](0073-the-profile-forgets-its-downloads.md) | Il browser del profilo dimentica i suoi scaricamenti prima di ogni lancio guidato | Accettata |
+| [0074](0074-filesystem-up-to-the-home.md) | Il filesystem fino alla home di chi usa ELA: un elenco di cartelle, i posti di ELA a ogni uso, e un limite a ogni attesa del disco | Accettata |
 
 ## Template
 

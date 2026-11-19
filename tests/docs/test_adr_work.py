@@ -140,6 +140,7 @@ def test_the_verifier_table_says_what_each_verifier_declared_when_it_was_written
         sessions=a_session(),
         audit=FakeAuditLog(),
         accounts=an_account_browser(),
+        protected={},
     )
     documented = {
         match.group(1): match.group(2) == "True"

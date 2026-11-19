@@ -25,6 +25,7 @@
   M13.13c), e quella del 2026-11-18 alle 18:23, ferma al passo 9 perché l'id incollato a mano non era quello della voce.
   ELA ha rifiutato la nascita con `vault.no_entry`, senza creare niente e senza mostrare l'id. **Le «Righe riviste» di
   questo ADR hanno il loro marchio** sulle righe «Stato:» di ADR 0062, 0063, 0066 e 0068.
+  **Rivista da ADR 0074 (M13.17)** il 2026-11-19: §4, §7 — i posti protetti anche ai verifier; la riga `fs.no_answer` della spesa (ADR 0074 §5, §7).
 - **Data:** 2026-11-17
 - **Riferimenti spec:** §19, §29, §30, §33, §57, §59, §65
 - **Milestone:** [M13.15](../milestones/M13.15.md)

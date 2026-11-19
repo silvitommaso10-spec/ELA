@@ -104,6 +104,7 @@ class SpeakOnlineTool(Tool):
 
     idempotent: ClassVar[bool] = False
     relocatable: ClassVar[bool] = False
+    under_the_root: ClassVar[bool] = False
     stop_point: ClassVar[StopPoint] = StopPoint(here=SYNTHESIS_POINT, on_a_node=ENVELOPE)
     """The first of its two effects (M6.3c): the text leaves and is paid for, and the sound comes
     after."""

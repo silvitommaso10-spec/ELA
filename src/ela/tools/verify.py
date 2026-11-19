@@ -66,6 +66,9 @@ class Verifier(ABC):
     conditions: ClassVar[frozenset[str]] = frozenset()
     failure_codes: ClassVar[frozenset[str]] = COMMON_FAILURE_CODES
     reads_the_machine: ClassVar[bool]
+    under_the_root: ClassVar[bool]
+    """Whether the verifier looks at or reads a file under ``ELA_FS_ROOT`` (M13.17, ADR 0074) —
+    **no default**: the registry refuses silence, as for :attr:`reads_the_machine`."""
 
     def __init__(self, capability_id: CapabilityId, *, name: str) -> None:
         self._capability_id = capability_id

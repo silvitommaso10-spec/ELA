@@ -276,3 +276,30 @@ async def test_an_env_without_the_programs_exits_2_names_them_and_says_none_is_a
     )
     assert "ELA_FS_ROOT" not in refused, "only what is missing is named"
     assert "folder of yours" not in refused, "a program is not a folder"
+
+
+def test_the_example_of_the_scope_is_a_list_of_json_with_a_folder() -> None:
+    """M13.17 (ADR 0074; answers 35 and 36): the example ``init`` shows is the form the settings
+    accept — a list of JSON, not the bare line of before, and not ``[]``, which is refused."""
+    import json
+
+    examples = dict(setup.REQUIRED)
+    folders = json.loads(examples["ELA_FS_SCOPE"])
+
+    assert isinstance(folders, list) and folders
+    assert all(isinstance(one, str) and not one.startswith("/") for one in folders)
+    assert examples["ELA_FS_ROOT"] == "/Users/you", "the placeholder of the home, never a real one"
+
+
+async def test_an_env_without_the_scope_says_it_is_a_list_and_that_none_is_not_an_answer(
+    cli: Cli, tmp_path: Path
+) -> None:
+    others = "".join(f"{name}=x\n" for name, _ in setup.REQUIRED if name != "ELA_FS_SCOPE")
+    env_file(tmp_path).write_text(f"{TOKEN_VARIABLE}=" + "k" * 40 + "\n" + others, encoding="utf-8")
+
+    result = await cli("init")
+
+    assert result.exit_code == CONFIGURATION
+    refused = plain(result.stderr)
+    assert 'ELA_FS_SCOPE=["Documents", "Desktop"]' in refused
+    assert "one line of JSON" in refused and "[] is not an answer" in refused

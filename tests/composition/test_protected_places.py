@@ -42,11 +42,14 @@ from ela.permissions import BROWSER_DOWNLOAD, BROWSER_DOWNLOAD_AS_YOU
 from ela.tools import FS_WRITE
 from ela.tools import paths as paths_module
 from ela.tools import settings as tools_settings
+from ela.tools.paths import within
 from tests import machines
+from tests.composition.places_at_every_use import every_use_refuses
 from tests.composition.support import database_url, declare
 
 SRC = Path(ela.__file__).resolve().parent
-TOUCH = "contain one another"
+TOUCH = "is, or lies inside"
+"""What the start-up says of a root that is a place of ELA's or lies inside one (M13.17)."""
 
 
 def refused(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **extra: str) -> str:
@@ -115,76 +118,115 @@ def test_each_of_them_takes_it_from_the_domain_and_nobody_writes_the_home_by_its
 
 
 # ----------------------------------------------------------------------------------------
-# A root that touches one of the places stops ELA, each with its name
+# A root that holds one of the places is admitted, and every use refuses the place by its name;
+# a root inside one stops ELA (M13.17, ADR 0074 — rewritten in both directions, decision 8 (iv))
 # ----------------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
+def a_root_holding(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, where: str
+) -> tuple[Path, Path, dict[str, str]]:
+    """The root ``chosen``, holding the place ``where`` names, and the lines that put it there."""
+    chosen = a_folder(tmp_path, "chosen")
+    a_folder(chosen, "ELA")
+    extra: dict[str, str] = {}
+    if where == "the database":
+        extra["ELA_DB_URL"] = database_url(chosen)
+        place = chosen / "ela.db"
+    elif where == "the .env":
+        (chosen / ".env").write_text("", encoding="utf-8")
+        monkeypatch.chdir(chosen)
+        place = chosen / ".env"
+    elif where == "the source tree":
+        installed = a_folder(chosen, "site-packages", "ela")
+        monkeypatch.setattr(ela, "__file__", str(installed / "__init__.py"))
+        place = chosen / "site-packages"
+    elif where == "the home":
+        extra["ELA_NODE_STATE_DIR"] = str(tmp_path / "state")
+        monkeypatch.setattr(composition_settings, "ela_home", lambda: chosen / ".ela")
+        place = chosen / ".ela"
+    elif where.startswith("sys."):
+        place = a_folder(chosen, "python")
+        monkeypatch.setattr(sys, where.removeprefix("sys."), str(place))
+    else:
+        place = a_folder(chosen, "bin") / "bw"
+        place.write_text("", encoding="utf-8")
+        extra["ELA_VAULT_PROGRAM"] = str(place)
+    return chosen, place, extra
+
+
+HELD = pytest.mark.parametrize(
     ("where", "what"),
     [
         ("the database", "the database"),
         ("the .env", "the .env ELA read"),
         ("the source tree", "ELA's own source tree"),
-        ("the home, held", ELA_S_HOME),
-        ("the home, around", ELA_S_HOME),
+        ("the home", ELA_S_HOME),
         ("sys.prefix", PYTHON_ENVIRONMENT),
         ("sys.base_prefix", PYTHON_INSTALLATION),
         ("the vault's program", VAULT_PROGRAM_PLACE),
     ],
 )
-def test_a_root_that_touches_what_ela_uses_to_exist_stops_ela_with_its_name(
+
+
+@HELD
+async def test_a_root_that_holds_what_ela_uses_to_exist_is_admitted_and_every_use_refuses_it(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, where: str, what: str
 ) -> None:
-    """The places of the Core that had no test (the database, the ``.env``, the source tree) and
-    the ones M13.14 adds: the root holds them, or — for the home — lies inside it."""
-    chosen = tmp_path / "chosen"
-    extra: dict[str, str] = {}
-    if where == "the database":
-        extra["ELA_DB_URL"] = database_url(a_folder(chosen))
-    elif where == "the .env":
-        a_folder(chosen)
-        (chosen / ".env").write_text("", encoding="utf-8")
-        monkeypatch.chdir(chosen)
-    elif where == "the source tree":
-        installed = a_folder(chosen, "site-packages", "ela")
-        monkeypatch.setattr(ela, "__file__", str(installed / "__init__.py"))
-    elif where.startswith("the home"):
-        # The node's secret elsewhere, as a .env may put it: the home is a place of its own.
-        extra["ELA_NODE_STATE_DIR"] = str(tmp_path / "state")
-        monkeypatch.setattr(composition_settings, "ela_home", lambda: chosen / ".ela")
-        if where.endswith("around"):
-            chosen = a_folder(chosen, ".ela", "files")
-    elif where.startswith("sys."):
-        monkeypatch.setattr(sys, where.removeprefix("sys."), str(a_folder(chosen, "python")))
-    else:
-        extra["ELA_VAULT_PROGRAM"] = str(chosen / "bin" / "bw")
-    a_folder(chosen)
+    """Until M13.17 these roots stopped ELA; since M13.17 the root may hold them — the home holds
+    ``~/.ela`` —, and the check at every use is the only line: a read and a write of the place
+    are ``path.ela_s_own``, with its name, before any question."""
+    chosen, place, extra = a_root_holding(monkeypatch, tmp_path, where)
 
-    message = refused(monkeypatch, tmp_path, ELA_FS_ROOT=str(chosen), **extra)
+    settings = loaded(monkeypatch, tmp_path, ELA_FS_ROOT=str(chosen), **extra)
 
-    assert "ELA_FS_ROOT" in message and TOUCH in message
-    assert what in message
+    assert settings.filesystem.root == chosen
+    assert within(place.resolve(), chosen.resolve()), "the precondition: the place is under it"
+    await every_use_refuses(chosen, settings.ela_s_own(), place, what)
 
 
-def test_the_program_of_the_vault_is_two_places_when_its_name_is_a_link(
+def test_a_root_inside_ela_s_home_stops_ela_with_its_name(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The name it is written with, and the file it leads to: a root that holds either one could
-    change what ELA hands the vault's key to."""
+    """The direction that stays: a root that lies inside a place would be ELA's own state."""
+    chosen = a_folder(tmp_path, "chosen", ".ela", "files")
+    monkeypatch.setattr(composition_settings, "ela_home", lambda: tmp_path / "chosen" / ".ela")
+
+    message = refused(
+        monkeypatch,
+        tmp_path,
+        ELA_FS_ROOT=str(chosen),
+        ELA_NODE_STATE_DIR=str(tmp_path / "state"),
+    )
+
+    assert "ELA_FS_ROOT" in message and TOUCH in message
+    assert ELA_S_HOME in message
+
+
+async def test_the_program_of_the_vault_is_two_places_when_its_name_is_a_link(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The name it is written with, and the file it leads to: a root that holds either one is
+    admitted since M13.17, and every use refuses each — it could change what ELA hands the vault's
+    key to."""
     cellar = a_folder(tmp_path, "cellar")
     (cellar / "bw").write_text("", encoding="utf-8")
     a_folder(tmp_path, "bin")
     (tmp_path / "bin" / "bw").symlink_to(cellar / "bw")
     program = {"ELA_VAULT_PROGRAM": str(tmp_path / "bin" / "bw")}
+    for root in (tmp_path / "bin", cellar):
+        a_folder(root, "ELA")
 
     own = loaded(monkeypatch, tmp_path, **program).ela_s_own()
-    around_the_name = refused(monkeypatch, tmp_path, ELA_FS_ROOT=str(tmp_path / "bin"), **program)
-    around_the_file = refused(monkeypatch, tmp_path, ELA_FS_ROOT=str(cellar), **program)
+    around_the_name = loaded(monkeypatch, tmp_path, ELA_FS_ROOT=str(tmp_path / "bin"), **program)
+    around_the_file = loaded(monkeypatch, tmp_path, ELA_FS_ROOT=str(cellar), **program)
 
     assert own[VAULT_PROGRAM_PLACE] == (tmp_path / "bin").resolve() / "bw"
     assert own[VAULT_PROGRAM_TARGET] == (cellar / "bw").resolve()
-    assert VAULT_PROGRAM_PLACE in around_the_name
-    assert VAULT_PROGRAM_TARGET in around_the_file
+    # The file is refused as the program of the vault — the volume says the name leads to it. The
+    # name itself, a link, is refused as a link before the places are asked (path.symlink).
+    await every_use_refuses(cellar, around_the_file.ela_s_own(), cellar / "bw", VAULT_PROGRAM_PLACE)
+    assert around_the_name.ela_s_own()[VAULT_PROGRAM_PLACE] == own[VAULT_PROGRAM_PLACE]
 
 
 def test_the_list_of_the_core_names_every_place_and_the_program_only_when_declared(
@@ -263,6 +305,7 @@ def test_a_root_beside_ela_s_home_is_accepted(
     """The positive case: a folder whose name only begins like the home is another place."""
     a_folder(tmp_path, "house", ".ela")
     beside = a_folder(tmp_path, "house", ".elas-files")
+    a_folder(beside, "ELA")
     monkeypatch.setattr(composition_settings, "ela_home", lambda: tmp_path / "house" / ".ela")
 
     assert loaded(monkeypatch, tmp_path, ELA_FS_ROOT=str(beside)).filesystem.root == beside
@@ -299,12 +342,18 @@ def test_a_site_whose_name_only_holds_localhost_is_a_site(
 # ----------------------------------------------------------------------------------------
 
 
-async def test_the_tools_that_write_under_the_root_are_handed_the_list_of_the_core(
+async def test_every_tool_and_verifier_under_the_root_is_handed_the_list_of_the_core(
     ela: Ela, settings: Settings
 ) -> None:
-    """``fs.write`` and the two downloads: the list the root was checked against at the start-up,
-    and no write of ELA's reaches it — under a yes or under a policy."""
+    """Derived, not listed (M13.17, ADR 0074; decision 8 (ii)): every tool and every verifier of
+    the composition that declares ``under_the_root`` is handed the list of the Core — the one the
+    start-up derived —, and the guard of the process."""
     own = settings.ela_s_own()
+    found = [*ela.tools.tools(), *ela.verifiers.verifiers()]
+    under = [one for one in found if one.under_the_root]
 
-    for capability in (FS_WRITE, BROWSER_DOWNLOAD, BROWSER_DOWNLOAD_AS_YOU):
-        assert dict(ela.tools.get(capability).protected) == own, capability  # type: ignore[attr-defined]
+    assert {str(one.capability_id) for one in under} >= {str(FS_WRITE), str(BROWSER_DOWNLOAD)}
+    for one in under:
+        assert dict(one._protected) == own, one.name  # type: ignore[attr-defined]  # noqa: SLF001
+        assert one.disk is ela.disk, one.name  # type: ignore[attr-defined]
+    assert BROWSER_DOWNLOAD_AS_YOU in {one.capability_id for one in under}

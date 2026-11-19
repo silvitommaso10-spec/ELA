@@ -92,7 +92,8 @@ async def test_a_site_nobody_declared_is_denied_before_a_browser_starts(
     _, ran = await run(client, "browser-read-outside.json")
 
     assert ran["outcome"] == "denied", ran
-    assert "example.org" in ran["reason"] and "not within scope" in ran["reason"]
+    assert "example.org" in ran["reason"] and "not within its scope" in ran["reason"]
+    assert "example.com" not in ran["reason"], "the target, never the declared sites (M13.17)"
     assert browser.opened == []
 
 

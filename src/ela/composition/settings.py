@@ -17,12 +17,13 @@ Both keep the ``ELA_`` prefix: one namespace, one ``.env``.
 from __future__ import annotations
 
 import ipaddress
+import json
 import os
 import platform
 import re
 import stat
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -37,7 +38,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from pydantic_settings.exceptions import SettingsError
 
 import ela
@@ -70,13 +71,21 @@ from ela.routing import RoutingSettings
 from ela.tombstones import (
     refuse_retired,
 )
-from ela.tools.paths import within
+from ela.tools.disk import DISK_LIMIT_SECONDS, DiskSilent, Gone, within_the_limit
+from ela.tools.paths import (
+    PATH_IS_DIRECTORY,
+    PATH_MISSING,
+    PATH_UNREACHABLE,
+    classify,
+    within,
+)
 from ela.tools.programs import same_program
 from ela.tools.settings import (
     CaptureSettings,
     ListenSettings,
     VoiceSettings,
     WorkspaceSettings,
+    sessions_dir_beside,
     speech_dir_beside,
 )
 
@@ -426,18 +435,23 @@ Core that is never coming back is a process nobody will notice is useless.
 
 
 class FilesystemSettings(BaseSettings):
-    """Where ``fs.read`` and ``fs.write`` may work: the pair, declared together (M13.1 dec. A).
+    """Where ``fs.read`` and ``fs.write`` may work: a root, and **the list of the folders under it**
+    that the user opens (M13.1 dec. A; M13.17, ADR 0074).
 
     **Neither has a default, and that is the decision.** The boundary is the *pair* — a relative
     scope alone names nothing on disk, a root alone is a house with no door — so ELA refuses to
     start until both are written, with one message naming both lines.
 
-    A default root would have been ELA's own folder or the user's home; a default scope would
-    have let somebody declare a root and still not be able to write in it, for a value they never
-    saw and a folder nobody created. **A silent narrowing is worse than a refusal at start-up,
-    because a refusal is read.**
+    **Since M13.17 the scope is a list**, one line of JSON as ``ELA_TERMINAL_PROGRAMS`` and
+    ``ELA_BROWSER_SITES`` are: ``["Documents", "Desktop"]``. Each entry has the grammar of every
+    scope (``is_valid_scope_entry``), and **no entry means «the whole root»** — who wants the home
+    whole names its folders. **The line of yesterday is refused** (answer 35 of the review of its
+    SPEC): ``ELA_FS_SCOPE=ELA`` and ``["ELA"]`` cannot be told apart without guessing — a folder
+    may be named ``["ELA"]`` —, so a line that is not a list of JSON stops the start-up with the
+    line to write instead, the user's own value inside it. **``[]`` is refused too** (answer 36):
+    the scope opens at least one folder, and «no folder» is a state nobody asked for.
 
-    The root is never created by ELA, and what it may not touch is in
+    The root is never created by ELA, and what it may and may not hold is in
     :meth:`Settings._a_root_that_is_not_ela_s_own`, derived rather than listed.
     """
 
@@ -446,8 +460,36 @@ class FilesystemSettings(BaseSettings):
     fs_root: Path | None = None
     """``ELA_FS_ROOT``: the directory ``fs.read`` and ``fs.write`` are relative to."""
 
-    fs_scope: str | None = None
-    """``ELA_FS_SCOPE``: the only folder under the root those two may touch, a scope entry."""
+    fs_scope: Annotated[list[str] | None, NoDecode] = None
+    """``ELA_FS_SCOPE``: the folders under the root those two may touch, one line of JSON. Read
+    as the raw text (``NoDecode``) and judged by :meth:`_a_list_of_json`: decoded the way the
+    programs and the sites are, ``null`` would read as a missing line, in silence."""
+
+    @field_validator("fs_scope", mode="before")
+    @classmethod
+    def _a_list_of_json(cls, value: object) -> object:
+        """The raw line, as one list of strings: what is not one is refused with the line to
+        write. A list handed by a constructor is taken as it is, and judged below."""
+        if not isinstance(value, str):
+            return value
+        text = value.strip()
+        if not text.startswith("["):
+            written = json.dumps([text], ensure_ascii=False)
+            raise ValueError(
+                "since M13.17 the scope is a list of folders, one line of JSON. Write\n"
+                f"    ELA_FS_SCOPE={written}\n"
+                "for the folder this line named until now (M13.17)."
+            )
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            parsed = None
+        if not isinstance(parsed, list) or not all(isinstance(one, str) for one in parsed):
+            raise ValueError(
+                f"{text!r} is not a list of folders in JSON. Write the folders under ELA_FS_ROOT "
+                f"ELA may touch as one line, for example\n    ELA_FS_SCOPE={SCOPE_EXAMPLE}"
+            )
+        return parsed
 
     @model_validator(mode="after")
     def _both_or_neither(self) -> FilesystemSettings:
@@ -458,21 +500,30 @@ class FilesystemSettings(BaseSettings):
         ]
         if missing:
             raise ValueError(
-                "ELA cannot start without the folder it may read and write outside its "
+                "ELA cannot start without the folders it may read and write outside its "
                 f"workspace: {' and '.join(missing)} "
                 f"{'is' if len(missing) == 1 else 'are'} missing. Write both lines in .env, "
                 "for example:\n"
-                "    ELA_FS_ROOT=/Users/you/Documents\n"
-                "    ELA_FS_SCOPE=ELA\n"
-                "They are one boundary and they are declared together: a scope without a root "
-                "names nothing on disk, and ELA does not choose the folder for you (M13.1)."
+                f"    ELA_FS_ROOT={ROOT_EXAMPLE}\n"
+                f"    ELA_FS_SCOPE={SCOPE_EXAMPLE}\n"
+                "The root is one folder, up to your home; the scope is the list of the folders "
+                "under it that ELA may touch, one line of JSON — the first is where a command of "
+                "the terminal starts. ELA does not choose them for you (M13.1, M13.17)."
             )
-        if not is_valid_scope_entry(self.fs_scope or ""):
+        assert self.fs_scope is not None  # noqa: S101 — said missing above
+        if not self.fs_scope:
             raise ValueError(
-                f"ELA_FS_SCOPE must be a relative path with no empty, '.' or '..' segment and no "
-                f"backslash, not {self.fs_scope!r}: it is the scope of fs.read and fs.write, and "
-                "a scope ELA cannot compare a path against protects nothing"
+                "ELA_FS_SCOPE is [], and the scope opens at least one folder: write the folders "
+                f"under ELA_FS_ROOT that ELA may touch, for example ELA_FS_SCOPE={SCOPE_EXAMPLE}"
             )
+        for entry in self.fs_scope:
+            if not is_valid_scope_entry(entry):
+                raise ValueError(
+                    f"ELA_FS_SCOPE: {entry!r} is not a folder under the root. Each entry is a "
+                    "relative path with no empty, '.' or '..' segment and no backslash: it is the "
+                    "scope of fs.read and fs.write, and a scope ELA cannot compare a path against "
+                    "protects nothing"
+                )
         return self
 
     @property
@@ -482,9 +533,16 @@ class FilesystemSettings(BaseSettings):
         return self.fs_root.expanduser().absolute()
 
     @property
-    def scope(self) -> str:
+    def scope(self) -> tuple[str, ...]:
+        """The folders under the root, in the order written: the first is the terminal's."""
         assert self.fs_scope is not None  # noqa: S101 — the validator refuses the start-up
-        return self.fs_scope
+        return tuple(self.fs_scope)
+
+
+ROOT_EXAMPLE: Final = "/Users/you"
+SCOPE_EXAMPLE: Final = '["Documents", "Desktop"]'
+"""What the messages and ``ela init`` teach (M13.17): the home as the root, and two folders of it.
+``you``, never a name (ADR 0056)."""
 
 
 class NodeFilesystemSettings(BaseSettings):
@@ -497,7 +555,8 @@ class NodeFilesystemSettings(BaseSettings):
     relative path it approves on its own root. A node without a root builds neither tool and
     declares neither, and ``ela node run`` says so with one line — the tools have nothing to act on.
 
-    What the root may not touch is derived from what the **node** uses to exist, in
+    What the root may not be or lie inside — and, since M13.17 (ADR 0074), what no read and no write
+    of the node reaches when the root holds it — is derived from what the **node** uses to exist, in
     :meth:`NodeConfig._a_root_that_is_not_the_node_s_own`: a node has no database, no workspace and
     no captures, and it knows only its own settings.
     """
@@ -853,18 +912,25 @@ class NodeSettings(BaseSettings):
     node_retry_ceiling: Annotated[int, Field(gt=0)] = DEFAULT_NODE_RETRY_CEILING
 
 
-def refuse_the_root(root: Path, own: Mapping[str, Path]) -> None:
-    """Refuse a root that is a link, that is not a directory, or that holds or sits inside one of
-    ``own`` — what the process uses to exist, resolved (M13.1 dec. F; M13.3 for a node).
+def refuse_the_root(root: Path, own: Mapping[str, Path], *, home: Path) -> None:
+    """Refuse a root that is a link, that is not a directory, that **is or lies inside** one of
+    ``own`` — what the process uses to exist, resolved —, or that **holds the home of who uses ELA
+    and is not it** (M13.1 dec. F; M13.3 for a node; M13.17, ADR 0074).
 
     One text for the Core and for a node, so the two cannot say the rule differently: the list of
-    what the root may not touch is each one's own, derived from its settings, and the sentences are
+    what the root may not be is each one's own, derived from its settings, and the sentences are
     these. A ``ValueError``, which the settings turn into the message that names the variable.
 
-    **Where a place is, is asked of the volume** (M13.14, ADR 0068; answer 27 of the review of its
-    SPEC): :func:`~ela.tools.paths.within`, in both directions — the root is, holds or lies inside
-    the place. Until M13.14 the comparison was of spellings, and a root written with other capitals
-    than ``~/.ela`` passed on the volume of a Mac, which ignores the case of a name.
+    **Since M13.17 a root may hold what ELA uses to exist** — the home holds ``~/.ela``, and the
+    root may be the home (STATO 5.15). The direction «holds» left this check: what keeps those
+    places out of every read and write is the check at every use, ``path.ela_s_own``, which became
+    the first line and the only one. What stays refused is a root that *is* or *lies inside* one of
+    them — the root ELA would read and write would be its own state —, and **a root above the
+    home**: the folders ELA may touch reach at most up to it. ``home`` is passed, never read here:
+    ``Path.home()`` of the caller, which a test injects.
+
+    **Where a place is, is asked of the volume** (M13.14, ADR 0068):
+    :func:`~ela.tools.paths.within`.
     """
     # A junction is a link (M13.3, ADR 0048 §4): ``is_symlink`` does not see one on Windows.
     if root.is_symlink() or root.is_junction():
@@ -883,13 +949,96 @@ def refuse_the_root(root: Path, own: Mapping[str, Path]) -> None:
         )
     resolved = root.resolve()
     for what, place in own.items():
-        if within(resolved, place) or within(place, resolved):
+        if within(resolved, place):
             raise ValueError(
-                f"ELA_FS_ROOT ({resolved}) and {what} ({place}) contain one another. The "
-                "folder ELA may read and write for you cannot be the one ELA uses to exist: "
-                "fs.write is HIGH, and HIGH is not a permission to edit ELA's own state "
-                "(M13.1). Choose a folder of your own, such as a subfolder of your documents."
+                f"ELA_FS_ROOT ({resolved}) is, or lies inside, {what} ({place}). The folder ELA "
+                "may read and write for you cannot be one ELA uses to exist: fs.write is HIGH, and "
+                "HIGH is not a permission to edit ELA's own state (M13.1). Choose a folder of your "
+                "own, up to your home."
             )
+    yours = home.expanduser().absolute().resolve()
+    if within(yours, resolved) and not within(resolved, yours):
+        raise ValueError(
+            f"ELA_FS_ROOT ({resolved}) holds your home ({yours}): the folders ELA may touch "
+            "reach at most up to your home (M13.17). Write your home, a folder inside it, or a "
+            "folder elsewhere that does not hold it."
+        )
+
+
+def refuse_the_folders(
+    root: Path, entries: Sequence[str], own: Mapping[str, Path], *, limit: float
+) -> None:
+    """Refuse an entry of the scope that does not open a folder of the user's (M13.17, ADR 0074;
+    decisions 6, 13 and 51 of its blocks): one that is not there, is a file, a link or goes
+    through one, that the system does not let ELA look at or does not answer for, or that **is or
+    lies inside** a place of ELA's — it would open nothing, every use there being
+    ``path.ela_s_own``. An entry may hold a place of ELA's: every use refuses it.
+
+    **The look is the one every use takes**, :func:`~ela.tools.paths.classify`, and the folder is
+    **opened as a folder and closed, without reading a name** (decision 51): so a permission the
+    system withholds is met here, with the person who started ELA in front of it, and not later
+    under a policy with nobody there. Each look has the guard's limit
+    (:func:`~ela.tools.disk.within_the_limit`). **A belief of the start-up**: every use looks again.
+    """
+    looked_root = root.resolve()
+    for entry in entries:
+        try:
+            refused = within_the_limit(
+                _the_look_at(looked_root, entry), f"ELA_FS_SCOPE: {entry!r}", limit=limit
+            )
+        except DiskSilent as silent:
+            raise ValueError(str(silent)) from None
+        if refused is not None:
+            raise ValueError(f"ELA_FS_SCOPE: {entry!r} {refused}")
+        folder = (looked_root / entry).resolve()
+        for what, place in own.items():
+            if within(folder, place):
+                raise ValueError(
+                    f"ELA_FS_SCOPE: {entry!r} is, or lies inside, {what} ({place}): it would open "
+                    "nothing — every read and write there is refused as ELA's own. Take it out of "
+                    "the list."
+                )
+
+
+PERMISSION_IS_THE_TERMINAL_S: Final = (
+    "The permission is the terminal's, not ELA's: on macOS give it to the program you started ELA "
+    "from, in System Settings › Privacy & Security › Files and Folders, and start ELA again."
+)
+"""What ELA says of a folder the system does not let it look at (M13.17; decision 13): what the
+system answered, and where the permission is given. ELA asks for none, goes around none and keeps
+none (ADR 0029 §16: the permission is the responsible process's)."""
+
+
+def _the_look_at(root: Path, entry: str) -> Callable[[Gone], str | None]:
+    """The work the guard runs for one entry: :func:`_a_folder_to_open`, bound to it."""
+    return lambda _: _a_folder_to_open(root, entry)
+
+
+def _a_folder_to_open(root: Path, entry: str) -> str | None:
+    """Why ``root / entry`` is no folder to open, or ``None``: in the guard's thread."""
+    problem = classify(root, entry)
+    if problem is None:
+        return "is a file, not a folder: the scope opens folders."
+    if problem.code == PATH_MISSING:
+        return (
+            f"is not under ELA_FS_ROOT ({root / entry} does not exist): ELA never creates a "
+            "folder you open. Make it, or take it out of the list."
+        )
+    if problem.code == PATH_UNREACHABLE:
+        return f"{problem.reason}: the system did not let ELA look. {PERMISSION_IS_THE_TERMINAL_S}"
+    if problem.code != PATH_IS_DIRECTORY:
+        return f"{problem.reason}: the scope opens folders under the root, never through a link."
+    try:
+        with os.scandir(root / entry):
+            pass
+    except PermissionError as error:
+        return (
+            f"cannot be opened ({type(error).__name__}): the system did not let ELA look. "
+            f"{PERMISSION_IS_THE_TERMINAL_S}"
+        )
+    except OSError as error:
+        return f"cannot be opened as a folder ({type(error).__name__})."
+    return None
 
 
 def refuse_the_vault_program(program: str, terminal: Sequence[str]) -> None:
@@ -967,8 +1116,24 @@ def _sqlite_file(db_url: str) -> Path | None:
 
 def env_file() -> Path | None:
     """The ``.env`` this process would read, when there is one: ``None`` when nobody wrote it."""
-    env = Path(".env").absolute()
+    env = env_path()
     return env if env.exists() else None
+
+
+def env_path() -> Path:
+    """The ``.env`` of the folder this process starts from, **whether or not it is there**
+    (M13.17, ADR 0074; answer 39): one written after the start-up is the one the next start reads,
+    and no read or write of ELA reaches it."""
+    return Path(".env").absolute()
+
+
+THE_ENV: Final = "the .env ELA read"
+"""The name of the ``.env`` among ELA's places: the one of the folder ELA starts from — read at
+this start, or at the next one."""
+
+DATABASE_JOURNAL: Final = ("-wal", "-shm", "-journal")
+"""What SQLite keeps beside the file of the database (``PRAGMA journal_mode=WAL``, ADR 0006 §12):
+its journal, which is the database as much as the file is (M13.17; answer 39)."""
 
 
 def _ela_source_tree() -> Path:
@@ -1060,21 +1225,28 @@ class Settings(BaseModel):
 
     @model_validator(mode="after")
     def _a_root_that_is_not_ela_s_own(self) -> Settings:
-        """The declared root must not hold, or sit inside, what ELA uses to exist (M13.1 dec. F).
+        """The declared root must not be, or sit inside, what ELA uses to exist, nor hold the
+        user's home (M13.1 dec. F; M13.17, ADR 0074) — and every folder the scope opens is looked
+        at, opened and closed, now (:func:`refuse_the_folders`).
 
         **The list is derived, not written**, so it cannot go stale the day a setting is added:
-        it is what the other sections already say — the workspace of §23, the database, the
-        captures and the audio beside them, the folder where a node keeps its secret
-        (ADR 0039 §6), the ``.env`` this process actually read, and ELA's own source tree when it
-        is reachable. ``~`` is refused because it *contains* ``~/.ela``, and not by a special case
-        for ``~``.
+        it is what the other sections already say — the workspace of §23, the database and its
+        journal, the captures and the audio and the sessions beside them, the folder where a node
+        keeps its secret (ADR 0039 §6), the ``.env`` of the folder ELA starts from, and ELA's own
+        source tree when it is reachable. **Since M13.17 the root may hold them** — the home holds
+        ``~/.ela`` —, and every read and write refuses them (``path.ela_s_own``); a root *above*
+        the home is refused, with a sentence of its own.
 
         The root is **resolved here and the answer is said out loud**: a root that does not exist,
         or that is a symbolic link — the shape ``~/Documents`` takes when iCloud's "Desktop &
         Documents" is on — stops the start-up with a sentence, instead of dying at every call with
         ``path.symlink`` and no explanation.
         """
-        refuse_the_root(self.filesystem.root, self.ela_s_own())
+        own = self.ela_s_own()
+        refuse_the_root(self.filesystem.root, own, home=Path.home())
+        refuse_the_folders(
+            self.filesystem.root, self.filesystem.scope, own, limit=DISK_LIMIT_SECONDS
+        )
         return self
 
     @model_validator(mode="after")
@@ -1084,10 +1256,11 @@ class Settings(BaseModel):
 
         **What it may not touch is read off the other sections**, as for the root: ELA's source
         tree, the two folders of the home that macOS copies elsewhere, the workspace of §23 and the
-        capture store. The root ``fs.read`` may read is not in this list because the profile is in
-        the root's — :meth:`ela_s_own` —: the validator above has already refused the two that
-        contain one another, and named both. **Beside the node's secret is allowed**: it is the
-        place the guide proposes.
+        capture store. **The root is not in this list** (M13.17, ADR 0074): the profile is among
+        what ELA uses to exist — :meth:`ela_s_own` —, so a root that is the profile or lies inside
+        it is refused above, and **a profile inside the root is admitted at start-up and refused at
+        every read and write**, ``path.ela_s_own``, like every place of ELA's under the root.
+        **Beside the node's secret is allowed**: it is the place the guide proposes.
         """
         profile = self.accounts.browser_profile_dir
         if profile is not None:
@@ -1111,9 +1284,15 @@ class Settings(BaseModel):
 
     def ela_s_own(self) -> dict[str, Path]:
         """What ELA uses to exist, read off the settings that already name it and off the process:
-        the places the root may not touch, and **the places no write of ELA reaches**, under a yes
-        or under a policy (M13.1 dec. F; M13.14, ADR 0068, decision 9). Public since M13.14: the
-        composition hands this list to the tools that write.
+        the places the root may not be or lie inside, and **the places no read and no write of ELA
+        reaches**, under a yes or under a policy (M13.1 dec. F; M13.14, ADR 0068, decision 9;
+        M13.17, ADR 0074). Public since M13.14: the composition hands this list to the tools.
+
+        **Since M13.17** (answer 39 of the review of its SPEC) also the journal of the database —
+        ``-wal``, ``-shm``, ``-journal`` beside its file —, the folders of the guided sessions,
+        and **the ``.env`` of the folder ELA starts from even when there is none**: the next start
+        reads the one written meanwhile. **Paths, not files that exist**: a place born after the
+        start-up at its path is compared at every use, by its spelling and by the volume.
 
         Since M13.14 it holds also **ELA's home** (:func:`~ela.domain.ela_home`), whatever the
         sections say — a database moved elsewhere leaves the home where it is —; **the Python ELA
@@ -1127,22 +1306,29 @@ class Settings(BaseModel):
             "the workspace": self.workspace.workspace_dir,
             "the capture store": self.captures.capture_dir,
             "the audio ELA sweeps at start-up": speech_dir_beside(self.captures.capture_dir),
+            "the folders of the guided sessions": sessions_dir_beside(self.captures.capture_dir),
             "the folder a node keeps its secret in": state,
             ELA_S_HOME: ela_home(),
+            THE_ENV: env_path(),
             **_the_python_ela_runs_on(),
         }
         # Those that may not be there: a database that is not a file, a ``.env`` nobody wrote, a
         # profile nobody declared. One loop rather than a condition each, so that "it is not
         # there" is one answer and not as many shapes of the same answer.
         profile = f"the profile of ELA's browser ({PROFILE_VARIABLE})"
+        database = _sqlite_file(self.persistence.db_url)
         for what, place in (
-            ("the database", _sqlite_file(self.persistence.db_url)),
-            ("the .env ELA read", env_file()),
+            ("the database", database),
             ("ELA's own source tree", _ela_source_tree()),
             (profile, self.accounts.browser_profile_dir),
         ):
             if place is not None:
                 places[what] = place
+        if database is not None:
+            for suffix in DATABASE_JOURNAL:
+                places[f"the journal of the database ({suffix})"] = database.with_name(
+                    database.name + suffix
+                )
         own = {what: place.expanduser().absolute().resolve() for what, place in places.items()}
         program = self.accounts.vault_program
         if program is not None:
@@ -1250,7 +1436,8 @@ class NodeConfig(BaseModel):
     def _a_root_that_is_not_the_node_s_own(self) -> NodeConfig:
         """A declared root obeys the Core's rules, derived from what **the node** uses to exist.
 
-        The folder that holds the node's secret (ADR 0039 §6), the ``.env`` this process read, and
+        The folder that holds the node's secret (ADR 0039 §6), the ``.env`` of the folder this
+        process starts from — read now, or written for the next start (M13.17) —, and
         ELA's source tree when it is reachable: the Core's list less what a node does not have — a
         database, a workspace, the captures. Not a link, and never created by ELA.
 
@@ -1262,21 +1449,20 @@ class NodeConfig(BaseModel):
         root = self.filesystem.root
         if root is None:
             return self
-        refuse_the_root(root, self.own())
+        refuse_the_root(root, self.own(), home=Path.home())
         return self
 
     def own(self) -> dict[str, Path]:
-        """What the node uses to exist, resolved: the places its root may not touch and no write
-        of the node reaches (M13.3; M13.14, ADR 0068)."""
+        """What the node uses to exist, resolved: the places its root may not be or lie inside,
+        and that no read and no write of the node reaches (M13.3; M13.14, ADR 0068; M13.17, ADR
+        0074)."""
         own = {
             "the folder a node keeps its secret in": self.node.node_state_dir,
             ELA_S_HOME: ela_home(),
             "ELA's own source tree": _ela_source_tree(),
+            THE_ENV: env_path(),
             **_the_python_ela_runs_on(),
         }
-        env = env_file()
-        if env is not None:
-            own["the .env ELA read"] = env
         return {what: place.expanduser().absolute().resolve() for what, place in own.items()}
 
     @classmethod

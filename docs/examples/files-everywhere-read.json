@@ -1,0 +1,30 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M13.17 (GETTING_STARTED, sezione 35, passo 5): la lettura del",
+    "file che il passo 4 ha scritto sulla Scrivania. La domanda dice la dimensione del file come il",
+    "disco la dice alla domanda; una lettura legge al più 8 MiB (ADR 0074). Il contenuto sta nel",
+    "risultato, e mai nell'audit.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "leggere il secondo file della prova dalla Scrivania",
+  "steps": [
+    {
+      "id": "f17e5a17-0000-4b00-8a00-000000000003",
+      "goal": "leggere il secondo file della prova dalla Scrivania",
+      "required_capabilities": [
+        "fs.read"
+      ],
+      "arguments": {
+        "path": "Desktop/prova-m13.17/due.md",
+        "purpose": "la prova a mano dei file di tutto il computer"
+      },
+      "risk": "MEDIUM",
+      "expected_result": "il contenuto del file è nel risultato dello step",
+      "success_conditions": [
+        "fs.file_exists",
+        "fs.content_matches"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}

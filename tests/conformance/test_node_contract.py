@@ -734,7 +734,6 @@ async def test_story_a_node_that_lies_is_not_saved_by_the_core_s_disk(
     refused it: for a step on a node the Core does not look at its own disk."""
     needs(kit, "what_is_verified_on_the_node_is_verified_there")
     core = world.ela.settings.filesystem.root / "ELA"
-    core.mkdir()
     (core / "prova.md").write_text(WRITTEN, encoding="utf-8")
     root = tmp_path / "node-files"
     root.mkdir()

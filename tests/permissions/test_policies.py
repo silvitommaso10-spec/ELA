@@ -461,7 +461,7 @@ def test_never_covered_names_the_rows_that_ask_at_every_use_and_the_terms() -> N
 
 
 def test_never_covered_says_a_node_asks_for_a_policy_of_the_core() -> None:
-    catalogue = production_catalogue(sites=SITES, fs_scope="ELA", guided_model=MODEL)
+    catalogue = production_catalogue(sites=SITES, fs_scope=("ELA",), guided_model=MODEL)
 
     said = never_covered(catalogue.get(CapabilityId("fs.write")), catalogue.specs())
 
@@ -563,7 +563,7 @@ def test_a_capability_outside_the_catalogue_is_refused() -> None:
             "token and create a policy, and only you create one",
         ),
         (ECHO, "core.echo does not ask: it needs no policy"),
-        (fs_read("ELA"), "no milestone has said what a policy must bound for fs.read"),
+        (fs_read(("ELA",)), "no milestone has said what a policy must bound for fs.read"),
     ],
     ids=["a-high-without-terms", "terminal.run", "core.echo", "fs.read"],
 )
@@ -605,7 +605,7 @@ def test_a_critical_capability_with_terms_is_refused_at_the_birth() -> None:
 # The policies of a HIGH (M13.14, ADR 0068): fs.write, browser.act, browser.act_as_you
 # ----------------------------------------------------------------------------------------
 
-HIGH_CATALOGUE = production_catalogue(sites=SITES, fs_scope="ELA", guided_model=MODEL)
+HIGH_CATALOGUE = production_catalogue(sites=SITES, fs_scope=("ELA",), guided_model=MODEL)
 WRITE = HIGH_CATALOGUE.get(CapabilityId("fs.write"))
 ACT = HIGH_CATALOGUE.get(CapabilityId("browser.act"))
 WRITE_ARGS: dict[str, Any] = {

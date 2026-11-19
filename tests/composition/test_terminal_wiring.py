@@ -59,7 +59,8 @@ async def test_the_tool_starts_commands_in_the_scope_of_m13_1_with_the_closed_en
     terminal = ela.tools.get(TERMINAL_RUN)._terminal  # type: ignore[attr-defined]  # noqa: SLF001
 
     assert terminal.root == ela.settings.filesystem.root
-    assert terminal.scope == ela.settings.filesystem.scope
+    # The first folder of the scope (M13.17, ADR 0074; answer 41): the order is the user's.
+    assert terminal.scope == ela.settings.filesystem.scope[0]
     assert terminal.home == str(Path.home())
     assert terminal.temporary == tempfile.gettempdir()
     assert terminal.timeout_seconds == ela.settings.terminal.timeout_seconds
@@ -160,3 +161,23 @@ async def test_the_terminal_is_told_the_vault_s_program_and_refuses_it_at_the_la
         await ela.aclose()
 
     assert prospect.refusal is not None and prospect.refusal.code == VAULT_PROGRAM
+
+
+async def test_a_command_starts_from_the_first_folder_of_the_list(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """M13.17 (ADR 0074; answer 41): with more than one folder open, the first one written is the
+    folder of the terminal — the order of ``ELA_FS_SCOPE`` is the user's."""
+    from ela.testing.fakes import FakePower
+
+    (tmp_path / "files" / "Altro").mkdir(parents=True)
+    declare(monkeypatch, tmp_path, ELA_FS_SCOPE='["Altro", "ELA"]')
+    settings = Settings.load()
+    await create_schema(settings.persistence.db_url)
+    built = await build(settings, power=FakePower())
+    try:
+        terminal = built.tools.get(TERMINAL_RUN)._terminal  # type: ignore[attr-defined]  # noqa: SLF001
+        assert terminal.scope == "Altro"
+        assert built.files.commands_from == (tmp_path / "files" / "Altro").resolve()
+    finally:
+        await built.aclose()

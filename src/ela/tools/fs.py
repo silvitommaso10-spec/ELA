@@ -22,15 +22,16 @@ one direction is half a defence, and the missing case is the one a race loses.
 ``open`` is not seen by either — :mod:`ela.tools.notes` declares the same limit for the workspace,
 and here it is wider, because the root is the user's own house and not a folder ELA made.
 
-**Two more refusals at every write, and one look at a place** (M13.14, ADR 0068; decision 9,
-answers 25 and 31 of the review of its SPEC). A write never reaches **what ELA uses to exist** —
-the list the composition derives and hands over, the one the root is checked against at the
-start-up —, :data:`ELA_S_OWN`: the start-up already refused a root that touches one, and a place
-enters the root only if the world changes after. A write never overwrites **a file with more than
-one name**, :data:`HARD_LINK`: the places are compared as paths, and a second name of a file of
-ELA's would step around the comparison. Both under a yes and under a policy, before the question
-and before the write. And :meth:`FsWriteTool.prospect_place`: whether a call could start in a
-folder a policy would name — it must be a folder, there, and nothing of ELA's.
+**Two more refusals at every use, and one look at a place** (M13.14, ADR 0068; decision 9,
+answers 25 and 31 of the review of its SPEC; for reads too since M13.15, ADR 0071). A read or a
+write never reaches **what ELA uses to exist** — the list the composition derives and hands over
+—, :data:`ELA_S_OWN`. **Since M13.17 (ADR 0074) this is the first line and the only one**: the
+root may hold those places — the home holds ``~/.ela`` —, and the start-up refuses only a root
+that is one or lies inside one. A write never overwrites, and a read never reads, **a file with
+more than one name**, :data:`HARD_LINK`: the places are compared as paths, and a second name of a
+file of ELA's would step around the comparison. Both under a yes and under a policy, before the
+question and before the read or the write. And :meth:`FsWriteTool.prospect_place`: whether a call
+could start in a folder a policy would name — it must be a folder, there, and nothing of ELA's.
 """
 
 from __future__ import annotations
@@ -39,6 +40,7 @@ import hashlib
 import os
 import stat
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import ClassVar, Final
@@ -46,6 +48,7 @@ from typing import ClassVar, Final
 from ela.domain import CapabilityId, ErrorMetadata, JsonMapping, TaskId
 from ela.ports import ENVELOPE, Clock, IdGenerator, Prospect, StopPoint, Target, TaskStop
 from ela.tools.base import ARGUMENTS_INVALID, FIRST_WRITE, Outcome, Tool
+from ela.tools.disk import MAKING_THE_FOLDER, NO_ANSWER, WRITING, Disk, DiskSilent, Gone
 from ela.tools.paths import (
     INVALID_SHAPE,
     PATH_INVALID,
@@ -66,6 +69,7 @@ __all__ = [
     "ASSERTED_OVERWRITES",
     "ASSERTED_READS",
     "FS_READ",
+    "FS_READ_MAX_BYTES",
     "FS_READ_TOOL_NAME",
     "FS_WRITE",
     "FS_WRITE_TOOL_NAME",
@@ -77,11 +81,13 @@ __all__ = [
     "NOT_A_FOLDER",
     "MoreThanOneName",
     "WRITES_IN",
+    "which_place",
     "OVERWRITES",
     "READS",
     "IO_ERROR",
     "NO_ROOT",
     "OVERWRITE_MISMATCH",
+    "TOO_LARGE",
     "FsReadTool",
     "FsWriteTool",
 ]
@@ -92,6 +98,15 @@ FS_READ_TOOL_NAME: Final = "fs-read"
 FS_WRITE_TOOL_NAME: Final = "fs-write"
 
 IO_ERROR: Final = "io.error"
+TOO_LARGE: Final = "fs.too_large"
+"""A read of a file larger than :data:`FS_READ_MAX_BYTES` (M13.17, ADR 0074; decision 11): refused
+before the question, and at the read when the file grew — with the two sizes, never a hash."""
+
+FS_READ_MAX_BYTES: Final = 8 * 1024 * 1024
+"""The most ``fs.read`` reads of one file (M13.17, ADR 0074): the largest size measured that the
+road of the result bears, in the time of the loop (E2: each piece under 250 ms, the longest under
+500) **and** in the memory of the Core (E4: a peak at most twice the rest) — 8 MiB. A read's own
+ceiling: a task with several reads sums them on the road of the results."""
 OVERWRITE_MISMATCH: Final = "fs.overwrite_mismatch"
 """What was approved is not what the disk says now, in either direction (M13.1 dec. Q)."""
 
@@ -130,7 +145,8 @@ removed while ELA is running and ``mkdir(parents=True)`` would put it back witho
 ELA_S_OWN: Final = "path.ela_s_own"
 """The target is, holds or lies within a place ELA uses to exist (M13.14, ADR 0068; decision 9):
 the database, the ``.env``, the source tree, ELA's home, the Python it runs on… — the list the
-composition hands over. Refused at every write, under a yes or under a policy."""
+composition hands over. Refused at every read and every write (M13.15, M13.17), under a yes or
+under a policy — by the tools, by their verifiers, and for the folder a command starts from."""
 
 HARD_LINK: Final = "path.hard_link"
 """The target is a file with more than one name (M13.14, ADR 0068; answer 31 of the review of its
@@ -231,6 +247,8 @@ class FsReadTool(Tool):
             IO_ERROR,
             ELA_S_OWN,
             HARD_LINK,
+            NO_ANSWER,
+            TOO_LARGE,
         }
     )
     output_keys: ClassVar[frozenset[str]] = frozenset({"path", "bytes", "content"})
@@ -241,8 +259,10 @@ class FsReadTool(Tool):
     """**Repeatable, and not relocatable** (M13.3, ADR 0048): the same path on another machine is
     another file, so a read that a silent node took is closed ``interrupted``, not done elsewhere.
     The tool that makes the declaration a declaration, and not another name for ``idempotent``."""
+    under_the_root: ClassVar[bool] = True
     stop_point: ClassVar[StopPoint] = StopPoint(here=None, on_a_node=ENVELOPE)
-    """A read has no effect in the world and no wait before it: its point is the call (M6.3c)."""
+    """A read has no effect in the world: its point is the call (M6.3c). Since M13.17 the call
+    waits on the disk at most the guard's limit, and a stop is heard after it (ADR 0074 §7)."""
 
     def __init__(
         self,
@@ -251,11 +271,19 @@ class FsReadTool(Tool):
         ids: IdGenerator,
         *,
         protected: Mapping[str, Path],
+        disk: Disk | None = None,
         name: str = FS_READ_TOOL_NAME,
     ) -> None:
         super().__init__(FS_READ, clock, ids, name=name)
         self._root = resolve_workspace(root)
         self._protected: Mapping[str, Path] = MappingProxyType(dict(protected))
+        self._disk = Disk() if disk is None else disk
+
+    @property
+    def disk(self) -> Disk:
+        """The guard every look and read of this tool passes (M13.17, ADR 0074): the composition's,
+        shared by the process; a guard of its own when none is handed, as in a test."""
+        return self._disk
 
     @property
     def root(self) -> Path:
@@ -269,8 +297,13 @@ class FsReadTool(Tool):
         return self._protected
 
     async def prospect(self, arguments: JsonMapping, task: TaskId | None = None) -> Prospect:
-        """What a read of this path would meet now (dec. G, and the rule of ADR 0045 §6-bis)."""
-        return _prospect(self._look(arguments), self.name)
+        """What a read of this path would meet now (dec. G, and the rule of ADR 0045 §6-bis) — the
+        look in the guard of the disk (M13.17, ADR 0074)."""
+        try:
+            looked = await self._disk.run(lambda _: self._look(arguments), _what(LOOK, arguments))
+        except DiskSilent as silent:
+            return _refused(NO_ANSWER, str(silent), self.name)
+        return _prospect(looked, self.name)
 
     async def asserted(self, arguments: JsonMapping) -> Prospect:
         """What a read asserts, on a machine ELA has not looked at (M13.3): that the file the plan
@@ -289,20 +322,41 @@ class FsReadTool(Tool):
         path = arguments.get("path")
         if not isinstance(path, str):
             return Outcome({}, ARGUMENTS_INVALID, "path must be a string"), None
-        return looked_for_a_read(self._root, path, protected=self._protected)
+        refused, target = looked_for_a_read(self._root, path, protected=self._protected)
+        if refused is not None or target is None:
+            return refused, target
+        # The size as the disk says it now (M13.17, ADR 0074; decision 11): the question names it,
+        # and a file over the ceiling is refused before the question.
+        try:
+            size = os.lstat(self._root / path).st_size
+        except OSError as error:
+            return Outcome({}, IO_ERROR, f"{type(error).__name__}: {error.strerror or error}"), None
+        if size > FS_READ_MAX_BYTES:
+            return Outcome({}, TOO_LARGE, _too_large(path, size)), None
+        return None, replace(target, size=size)
 
     async def _run(self, arguments: JsonMapping, stop: TaskStop) -> Outcome:
+        try:
+            return await self._disk.run(lambda _: self._read(arguments), _what(READ, arguments))
+        except DiskSilent as silent:
+            return Outcome({}, NO_ANSWER, str(silent))
+
+    def _read(self, arguments: JsonMapping) -> Outcome:
+        """The look and the read, in the guard's thread: one piece of work with no effect."""
         refused, _ = self._look(arguments)
         if refused is not None:
             return refused
         path = arguments["path"]
         assert isinstance(path, str)
         try:
-            data = read_bytes(self._root / path)
+            data = read_bytes(self._root / path, at_most=FS_READ_MAX_BYTES)
         except MoreThanOneName:
             return Outcome({}, HARD_LINK, more_than_one_name_read(path))
         except OSError as error:
             return Outcome({}, IO_ERROR, f"{type(error).__name__}: {error.strerror or error}")
+        if len(data) > FS_READ_MAX_BYTES:
+            # The file grew between the look and the read: the same refusal, with what was read.
+            return Outcome({}, TOO_LARGE, _too_large(path, len(data), grew=True))
         try:
             content = data.decode("utf-8")
         except UnicodeDecodeError:
@@ -329,6 +383,7 @@ class FsWriteTool(Tool):
             IO_ERROR,
             ELA_S_OWN,
             HARD_LINK,
+            NO_ANSWER,
         }
     )
     output_keys: ClassVar[frozenset[str]] = frozenset({"path", "bytes", "overwrote"})
@@ -343,6 +398,7 @@ class FsWriteTool(Tool):
     crash and call that refusal a failure of the step (ADR 0021 §1).
     """
     relocatable: ClassVar[bool] = False
+    under_the_root: ClassVar[bool] = True
     stop_point: ClassVar[StopPoint] = StopPoint(here=FIRST_WRITE, on_a_node=ENVELOPE)
 
     def __init__(
@@ -352,11 +408,18 @@ class FsWriteTool(Tool):
         ids: IdGenerator,
         *,
         protected: Mapping[str, Path],
+        disk: Disk | None = None,
         name: str = FS_WRITE_TOOL_NAME,
     ) -> None:
         super().__init__(FS_WRITE, clock, ids, name=name)
         self._root = resolve_workspace(root)
         self._protected: Mapping[str, Path] = MappingProxyType(dict(protected))
+        self._disk = Disk() if disk is None else disk
+
+    @property
+    def disk(self) -> Disk:
+        """The guard every look and write of this tool passes (M13.17, ADR 0074)."""
+        return self._disk
 
     @property
     def root(self) -> Path:
@@ -381,10 +444,16 @@ class FsWriteTool(Tool):
         if values:
             # ``fs.write`` names nothing by value (M13.15, ADR 0071): a value is refused.
             return _refused(ARGUMENTS_INVALID, "fs.write names nothing by value", self.name)
-        return _prospect(
-            looked_for_a_folder(self._root, place, protected=self._protected, does=WRITES_IN),
-            self.name,
-        )
+        try:
+            looked = await self._disk.run(
+                lambda _: looked_for_a_folder(
+                    self._root, place, protected=self._protected, does=WRITES_IN
+                ),
+                f"{LOOK} {place!r}",
+            )
+        except DiskSilent as silent:
+            return _refused(NO_ANSWER, str(silent), self.name)
+        return _prospect(looked, self.name)
 
     async def asserted(self, arguments: JsonMapping) -> Prospect:
         """What a write asserts, on a machine ELA has not looked at (M13.3): the ``overwrite`` of
@@ -405,9 +474,13 @@ class FsWriteTool(Tool):
         **This is where the contradiction is caught.** If the plan asserts «nothing is there» and
         something is, or the other way round, the call would be refused the instant it ran — so
         there is no question to ask, and asking it would be asking somebody to approve what ELA
-        already knows it will refuse (ADR 0011 §3).
+        already knows it will refuse (ADR 0011 §3). The look is in the guard of the disk (M13.17).
         """
-        return _prospect(self._look(arguments), self.name)
+        try:
+            looked = await self._disk.run(lambda _: self._look(arguments), _what(LOOK, arguments))
+        except DiskSilent as silent:
+            return _refused(NO_ANSWER, str(silent), self.name)
+        return _prospect(looked, self.name)
 
     def _look(self, arguments: JsonMapping) -> tuple[Outcome | None, Target | None]:
         """The one place a write decides: read by the question and by the run.
@@ -426,16 +499,30 @@ class FsWriteTool(Tool):
         return looked_for_a_write(self._root, path, overwrite, protected=self._protected)
 
     async def _run(self, arguments: JsonMapping, stop: TaskStop) -> Outcome:
+        try:
+            return await self._disk.run(
+                lambda gone: self._write(arguments, stop, gone), _what(WRITE, arguments)
+            )
+        except DiskSilent as silent:
+            return Outcome({}, NO_ANSWER, str(silent))
+
+    def _write(self, arguments: JsonMapping, stop: TaskStop, gone: Gone) -> Outcome:
+        """The look and the write, in the guard's thread (M13.17, ADR 0074; decision 52): **the
+        mark of an abandoned wait is read before every step with an effect** — the folder, then the
+        file —, so a write abandoned while it was looking never writes. The tool's point is
+        listened to right before the first effect, in the same thread, with nothing in between."""
         refused, _ = self._look(arguments)
         if refused is not None:
             return refused
         path, body = arguments["path"], arguments["body"]
         assert isinstance(path, str) and isinstance(body, str)
         target = self._root / path
+        gone.begin(MAKING_THE_FOLDER)
         stop.listen(FIRST_WRITE)
         try:
             target.parent.mkdir(mode=DIRECTORY_MODE, parents=True, exist_ok=True)
             data = body.encode("utf-8")
+            gone.begin(WRITING)
             descriptor = os.open(target, WRITE_FLAGS, FILE_MODE)
             with os.fdopen(descriptor, "wb") as handle:
                 handle.write(data)
@@ -444,6 +531,17 @@ class FsWriteTool(Tool):
         return Outcome(
             {"path": path, "bytes": len(data), "overwrote": bool(arguments["overwrite"])}
         )
+
+
+LOOK: Final = "a look at"
+READ: Final = "a read of"
+WRITE: Final = "a write of"
+
+
+def _what(verb: str, arguments: JsonMapping) -> str:
+    """What a wait on the disk is for, in its sentence: a verb and the path, never a content."""
+    path = arguments.get("path")
+    return f"{verb} {path!r}" if isinstance(path, str) else f"{verb} a path"
 
 
 def _prospect(looked: tuple[Outcome | None, Target | None], tool_name: str) -> Prospect:
@@ -578,6 +676,13 @@ def looked_for_a_write(
     return None, Target(resolved=str(target), exists=there, does=does, label=FILE)
 
 
+def which_place(target: Path, protected: Mapping[str, Path]) -> str | None:
+    """Which place of ``protected`` the target is, holds or lies within — by its spelling and by
+    what the volume says (:func:`~ela.tools.paths.within`) —, or ``None``. Public since M13.17
+    (ADR 0074): the verifiers and the placing of a download ask the same question."""
+    return _ela_s_own(target, protected)
+
+
 def _ela_s_own(target: Path, protected: Mapping[str, Path]) -> str | None:
     """Which place of ``protected`` the target is, holds or lies within — by its spelling and by
     what the volume says (:func:`~ela.tools.paths.within`) —, or ``None``."""
@@ -585,6 +690,21 @@ def _ela_s_own(target: Path, protected: Mapping[str, Path]) -> str | None:
         if within(target, place) or within(place, target):
             return what
     return None
+
+
+def _too_large(path: str, size: int, *, grew: bool = False) -> str:
+    """The two sizes, never a hash (ADR 0045 §8): the path and the numbers. A file that grew after
+    the look says so: the bytes read stop one past the ceiling."""
+    if grew:
+        return (
+            f"{path!r} grew past {FS_READ_MAX_BYTES} bytes, the most fs.read reads, after it was "
+            f"looked at ({size} read): nothing was returned"
+        )
+    # True before the question and after a yes alike: the look runs at both (the consistency
+    # reading of M13.17, R9).
+    return (
+        f"{path!r} is {size} bytes, and fs.read reads at most {FS_READ_MAX_BYTES}: nothing is read"
+    )
 
 
 def _reaches(path: str, what: str) -> str:

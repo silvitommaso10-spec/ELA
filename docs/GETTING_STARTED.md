@@ -39,7 +39,7 @@ parentesi **non si incollano**. `ela task run <id>` si scrive `ela task run 55ed
 | `<id della policy 6>` | l'id breve della policy che la prova della sezione 34 crea al passo 6 | lo scrive `scripts/prova_m13_15.py`, dalla policy che hai creato al passo 6 |
 | `<id della policy 7>` | l'id breve della policy che la prova della sezione 32 crea al passo 7 | lo scrive `scripts/prova_m13_14.py`, dalla policy che hai creato al passo 7 |
 | `<id della policy 8>` | l'id breve della policy che la prova della sezione 32 crea al passo 8 | lo scrive `scripts/prova_m13_14.py`, dalla policy che hai creato al passo 8 |
-| `<id della policy 9>` | l'id breve della policy che la prova della sezione 34 crea al passo 9 | lo scrive `scripts/prova_m13_15.py`, dalla policy che hai creato al passo 9 |
+| `<id della policy 9>` | l'id breve della policy che la prova della sezione 34, o quella della sezione 35, crea al passo 9 | lo scrive `scripts/prova_m13_15.py` nella sezione 34, `scripts/prova_m13_17.py` nella sezione 35, dalla policy che hai creato al passo 9 |
 | `<id della voce>` | l'id della voce del tuo vault per `news.ycombinator.com`, in una policy di login | lo leggi nell'app di Bitwarden; nella sezione 34 te lo chiede `scripts/prova_m13_15.py`, senza mostrarlo, e nel file della prova resta il segnaposto |
 | `<id del passo 2>` | l'id del task del passo 2 di §21, nel suo ultimo giro, o della sezione 25, o della sessione della sezione 26 | lo scrive `scripts/prova_m6_3c.py`, o `scripts/prova_m13_1e.py`, o `scripts/prova_m14_3.py`, al posto del segnaposto |
 | `<id del passo 3>` | l'id del task del passo 3 di §21, nel suo ultimo giro, o della sezione 25 | lo scrive `scripts/prova_m6_3c.py`, o `scripts/prova_m13_1e.py`, al posto del segnaposto |
@@ -108,17 +108,21 @@ default di ELA», e l'uscita è `exit 2` con:
 
 ```
 ela: .env does not set ELA_FS_ROOT, ELA_FS_SCOPE, ELA_TERMINAL_PROGRAMS and ELA_BROWSER_SITES, and ELA does not start without them: they have no default. Write them, for example:
-    ELA_FS_ROOT=/Users/you/Documents
-    ELA_FS_SCOPE=ELA
+    ELA_FS_ROOT=/Users/you
+    ELA_FS_SCOPE=["Documents", "Desktop"]
     ELA_TERMINAL_PROGRAMS=[]
     ELA_BROWSER_SITES=[]
-The folder is yours: ELA does not create it and does not choose it.
+The folder is yours: ELA does not create it and does not choose it. It may be your home, and never a folder above it.
+The folders are one line of JSON, each relative to ELA_FS_ROOT, and each must be there when ELA starts; a command of terminal.run starts from the first one. [] is not an answer: the scope opens at least one folder.
 The programs are one line of JSON, each relative to / — usr/bin/git is /usr/bin/git —, and [] is an answer: no program at all.
 The sites are one line of JSON, each a host name alone — example.com, without https:// —, and [] is an answer: no site at all.
 ```
 
 Fino a M13.1b `init` diceva che il token era «the only variable ELA requires» e, su questo stesso
 file, «nothing required is missing»: se lo leggi ancora, stai girando su codice precedente.
+
+***Riscritto il 2026-11-19*** (M13.17, [ADR 0074](adr/0074-filesystem-up-to-the-home.md)): fino a M13.17 gli esempi
+erano `ELA_FS_ROOT=/Users/you/Documents` ed `ELA_FS_SCOPE=ELA`, e la riga dei file non aveva una nota sua.
 
 **Nella verifica a mano di M13.1b, il 2026-09-22**: la seconda chiamata è uscita con `2` e ha
 nominato `ELA_FS_ROOT` ed `ELA_FS_SCOPE`, le obbligatorie di allora; `ELA_TERMINAL_PROGRAMS` è
@@ -127,32 +131,47 @@ entrata con M13.2, `ELA_BROWSER_SITES` con M13.4.
 Il database e il workspace stanno di default in `~/.ela/`. Per tenerli altrove, togli il commento
 a `ELA_DB_URL` e `ELA_WORKSPACE_DIR` nel `.env` appena scritto.
 
-### Due righe che **devono** essere scritte: la cartella dei tuoi file
+### Due righe che **devono** essere scritte: le cartelle dei tuoi file
 
 Da M13.1 ELA legge e scrive file **fuori dalla sua workspace**, e il confine glielo dichiari tu.
 Sono due righe, e **non hanno un default**: finché mancano, `ela serve` non parte e lo dice.
 
 ```
 ELA_FS_ROOT=/Users/tu/Documenti
-ELA_FS_SCOPE=ELA
+ELA_FS_SCOPE=["ELA"]
 ```
 
 `ELA_FS_ROOT` è una cartella **tua**, e ELA non la crea mai: se non c'è, ELA non parte e lo dice —
 e se sparisce dopo l'avvio, ogni chiamata rifiuta con `fs.no_root` —, invece di inventarsi un posto
-che non hai scelto. `ELA_FS_SCOPE` è la sola cartella dentro quella
-radice che `fs.read` e `fs.write` possono toccare — con l'esempio qui sopra,
-`/Users/tu/Documenti/ELA` — e **quella la crea la prima scrittura**, come la cartella delle note
-dentro la workspace: la radice è tua, ciò che sta dentro lo scope è lavoro di ELA.
+che non hai scelto. **Da M13.17 `ELA_FS_SCOPE` è un elenco**, una riga di JSON: le cartelle dentro la
+radice che le capability dei file possono toccare, ciascuna relativa alla radice — con l'esempio qui
+sopra una sola, `/Users/tu/Documenti/ELA`. **Ogni cartella dell'elenco la crei tu, prima di avviare
+ELA**: all'avvio ELA la guarda, la apre e la richiude senza leggerne i nomi, e se non c'è non parte.
+La riga di prima, `ELA_FS_SCOPE=ELA` senza le parentesi, è rifiutata con la sua riscrittura, e `[]` è
+rifiutato. **La prima cartella dell'elenco è quella da cui parte un comando del terminale.** I piani
+d'esempio di questa guida scrivono in `ELA/`, sotto questa radice.
+
+La radice può anche essere **la tua home**, con l'elenco delle cartelle che vuoi aprire — per esempio
+`ELA_FS_ROOT=/Users/tu` ed `ELA_FS_SCOPE=["Documents", "Desktop"]` —: è la sezione 35. Ciò che è aperto
+lo dicono `ela serve` all'avvio e `uv run ela diagnostics`, alla riga `files`.
 
 Che cosa ELA rifiuta all'avvio, e perché il messaggio te lo dice invece di lasciartelo scoprire:
 
-- una radice che **contiene o sta dentro** ciò che ELA usa per esistere — la workspace, il
-  database, le catture, il segreto di un nodo, il `.env`, il suo stesso codice. Per questo `~` non
-  va bene: contiene `~/.ela`;
+- una radice che **è, o sta dentro**, ciò che ELA usa per esistere — la workspace, il database, le
+  catture, il segreto di un nodo, `~/.ela`, il suo stesso codice —, e una radice **sopra la tua
+  home**, come `/Users`. Da M13.17 la radice **può contenere** i posti di ELA, e può essere la home:
+  nessuna lettura e nessuna scrittura dei file di ELA — `fs.read`, `fs.write` e i file dal browser — li
+  raggiunge, a ogni uso, con un sì o con una policy; un programma che lanci con `terminal.run` sì, perché
+  la cartella di un comando non è un confine;
+- una cartella dell'elenco che non c'è, che è un file, un link, un posto di ELA, o che il sistema non
+  lascia guardare;
 - una radice che è un **link simbolico**. Su macOS è la forma che `~/Documents` prende quando
   «Scrivania e Documenti» di iCloud Drive è attivo: punta la variabile alla cartella vera,
   altrimenti ogni chiamata fallirebbe una per una senza spiegare perché;
 - una radice che non esiste.
+
+***Riscritto il 2026-11-19*** (M13.17): fino a M13.17 qui c'era una cartella sola, `ELA_FS_SCOPE=ELA`, che «la crea la
+prima scrittura», e una radice che non poteva contenere i posti di ELA — «per questo `~` non va bene: contiene `~/.ela`».
 
 **Scrivere qui dentro è irreversibile**: `fs.write` è la prima capability `HIGH` di ELA, ti chiede
 il permesso **ogni volta**, e nessuna policy potrà mai coprirla in anticipo — il rollback (§37) non
@@ -803,6 +822,11 @@ Da sapere prima di andare avanti:
   uno, sul Core — e segue le regole della radice del Core: esiste, non è un link, non contiene e non
   sta dentro `$HOME\.ela` né `$HOME\ELA`. Senza la riga il nodo non dichiara i due tool, e lo dice
   all'avvio. La prova di M13.3 l'aggiunge al file in §17, passo 2.
+  ***Annotato il 2026-11-19*** (M13.17, [ADR 0074](adr/0074-filesystem-up-to-the-home.md) §2): le regole della radice
+  del Core sono cambiate, e quelle del nodo con loro. Da M13.17 la radice del nodo **può contenere** `$HOME\.ela`,
+  `$HOME\ELA` e gli altri posti del nodo — nessuna lettura e nessuna scrittura dei file del nodo li raggiunge —, e può essere la
+  home del nodo; non può esserne uno né starci dentro, e non può stare sopra la home. Il giorno in cui il PC prende
+  `main` con M13.17, una radice che oggi il nodo rifiuta perché contiene un suo posto sarà ammessa.
 
 ### 5. Il nodo: arruolato dal Mac, avviato sul PC
 
@@ -1246,6 +1270,15 @@ browser.
 
 ## 15. Il filesystem fuori dalla workspace: la prova a mano di M13.1
 
+***Annotato il 2026-11-19*** (M13.17, [ADR 0074](adr/0074-filesystem-up-to-the-home.md)): questa sezione è scritta con le due righe di prima — la radice
+sulla cartella Documenti, `ELA_FS_SCOPE=ELA` —, e con loro resta vera. Da M13.17 la seconda riga si scrive come un
+elenco, `ELA_FS_SCOPE=["ELA"]` — senza le parentesi ELA non parte —, e la cartella `ELA` deve esserci all'avvio. **Con
+la radice alla home la sezione non si fa**: lì `ELA` è l'albero di ELA, e una voce `ELA` ferma l'avvio. La prova dei file
+con la radice alla home è la sezione 35. **Due uscite di questa sezione sono cambiate**: il messaggio del passo 1 dice
+«ELA cannot start without the folders it may read and write», e la ragione del passo 5 nomina il bersaglio e dice
+dove lo scope si legge, «targets ['altrove/non-deve-esistere.md'] of fs.write are not within its scope (uv run ela
+diagnostics shows it)»: i blocchi qui sotto sono l'uscita del loro giorno.
+
 Da M13.1 ELA legge e scrive file **fuori dalla sua workspace**, e `fs.write` è la prima capability
 `HIGH` che abbia mai avuto: chiede il permesso **ogni volta**, e nessuna policy potrà coprirla in
 anticipo. Questa è la prova che quel confine tiene, e che la domanda dice la verità.
@@ -1531,6 +1564,13 @@ cui una domanda imparerà un fatto nuovo, ogni superficie o lo mostra o smette d
 > dalla macchina — la cartella, il timeout, gli id — è scritto come lo vedrai tu, e dove l'uscita è
 > lunga le righe tolte sono un `…`. Quelli del telefono e del Command Center li scrive la tua prova.
 > L'ADR è [0047](adr/0047-terminal.md).
+
+***Annotato il 2026-11-19*** (M13.17, [ADR 0074](adr/0074-filesystem-up-to-the-home.md)): da M13.17 un comando parte dalla **prima cartella** di
+`ELA_FS_SCOPE`, che è un elenco; con l'elenco di una voce, `["ELA"]`, è la cartella di prima. Il diniego `SCOPE` di un
+programma non dichiarato nomina il programma e non l'elenco dei programmi — «targets ['usr/bin/whoami'] of
+terminal.run are not within its scope (uv run ela diagnostics shows it)» —, e l'elenco si legge in `uv run ela
+diagnostics`, alla riga `scopes`. I blocchi qui sotto sono l'uscita del loro giorno; gli eventi già nell'audit tengono
+la frase di prima.
 
 Da M13.2 ELA esegue un programma su questo Mac e ne riporta l'uscita. `terminal.run` è `HIGH`, come
 `fs.write`: chiede **ogni volta**, e nessuna policy potrà coprirlo in anticipo.
@@ -2782,6 +2822,11 @@ Le uscite dei tre passi, integrali, in un file: `~/Downloads/m6.3b-prova.txt`. *
 > manda a ELA byte per byte (`tests/api/test_examples_browser.py`); le frasi dei messaggi sono quelle
 > che il codice scrive. L'ADR è [0052](adr/0052-browser.md), `Proposta` fino a questa prova.
 
+***Annotato il 2026-11-19*** (M13.17, [ADR 0074](adr/0074-filesystem-up-to-the-home.md)): da M13.17 il diniego `SCOPE` di un sito non dichiarato nomina il
+sito e non l'elenco dei siti — «targets ['example.org'] of browser.read are not within its scope (uv run ela
+diagnostics shows it)» —, e l'elenco si legge in `uv run ela diagnostics`, alla riga `scopes`. I blocchi qui sotto
+sono l'uscita del loro giorno; gli eventi già nell'audit tengono la frase di prima.
+
 Da M13.4 ELA apre pagine in un browser suo. `browser.read` è `LOW`: dentro i siti che dichiari **non
 chiede**, e fuori nega. `browser.act` — riempire dei campi e cliccare — è `HIGH`, come `fs.write` e
 `terminal.run`: chiede **ogni volta**, e nessuna policy potrà coprirlo in anticipo.
@@ -3733,7 +3778,7 @@ uv run ela task run <id>
 <!-- prova: 2.atteso -->
 ```
 outcome        denied
-reason         deny_by_decision: EXECUTING -> DENIED (targets ['example.org'] of browser.read are not within scope ['example.com', 'httpbin.org'])
+reason         deny_by_decision: EXECUTING -> DENIED (targets ['example.org'] of browser.read are not within its scope (uv run ela diagnostics shows it))
 state          DENIED
 steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000002
 stopped step   —
@@ -3749,7 +3794,7 @@ uv run ela task run <id>
 <!-- prova: 2.atteso -->
 ```
 outcome        denied
-reason         deny_by_decision: EXECUTING -> DENIED (targets ['example.org'] of browser.read are not within scope ['example.com', 'httpbin.org'])
+reason         deny_by_decision: EXECUTING -> DENIED (targets ['example.org'] of browser.read are not within its scope (uv run ela diagnostics shows it))
 state          DENIED
 steps handled  —
 stopped step   —
@@ -3757,6 +3802,11 @@ stopped step   —
 
 La seconda corsa trova il task chiuso e non tratta nessuno step; **la ragione è la stessa**. Prima di M13.1c la
 seconda diceva `reason —`.
+
+***Riscritto il 2026-11-18*** (M13.17, [ADR 0074](adr/0074-filesystem-up-to-the-home.md); risposta 37 della review della
+sua SPEC): fino a M13.17 la frase stampava l'elenco dei siti dichiarati, `are not within scope ['example.com',
+'httpbin.org']`. Da M13.17 un diniego della regola `SCOPE` nomina i bersagli e mai l'elenco, e dice dove lo scope si
+legge: `uv run ela diagnostics`, alla riga `scopes`. Gli eventi già nell'audit tengono la frase di prima.
 
 ### 3. Un fallimento, due volte
 
@@ -7040,6 +7090,12 @@ Dopo il passo 5 ELA è ferma, e la prova finisce lì: ELA si riavvia a mano, com
 > (`~/Downloads/prova-m13.13-20261111-124909.txt`); [ADR 0066](adr/0066-browser-files.md) è Accettata, e com'è andata è
 > in `milestones/M13.13.md`, «La prova a mano, il 2026-11-11 — passata».
 
+***Annotato il 2026-11-19*** (M13.17, [ADR 0074](adr/0074-filesystem-up-to-the-home.md)): questa sezione è scritta con le due righe di prima — la radice
+sulla cartella Documenti, `ELA_FS_SCOPE=ELA` —, e con loro resta vera. Da M13.17 la seconda riga si scrive come un
+elenco, `ELA_FS_SCOPE=["ELA"]` — senza le parentesi ELA non parte —, e la cartella `ELA` deve esserci all'avvio. **Con
+la radice alla home la sezione non si fa**: lì `ELA` è l'albero di ELA, e una voce `ELA` ferma l'avvio. La prova dei file
+con la radice alla home è la sezione 35.
+
 Da M13.13 ELA **scarica un file** da un sito dentro la cartella che le hai dichiarato, e **dà a un sito un file** di
 quella cartella. Quattro capability, tutte `HIGH` — chiedono **a ogni uso**, e nessuna policy le copre —:
 `browser.download` e `browser.upload` nel browser vuoto di ELA, `browser.download_as_you` e `browser.upload_as_you` nel
@@ -7606,6 +7662,12 @@ non c'è niente da rimettere com'era: il `.env` non è cambiato.
 > [ADR 0068](adr/0068-policies-on-high.md) è Accettata, e com'è andata è in `milestones/M13.14.md`, «La prova a mano, il
 > 2026-11-13 — passata».
 
+***Annotato il 2026-11-19*** (M13.17, [ADR 0074](adr/0074-filesystem-up-to-the-home.md)): questa sezione è scritta con le due righe di prima — la radice
+sulla cartella Documenti, `ELA_FS_SCOPE=ELA` —, e con loro resta vera. Da M13.17 la seconda riga si scrive come un
+elenco, `ELA_FS_SCOPE=["ELA"]` — senza le parentesi ELA non parte —, e la cartella `ELA` deve esserci all'avvio. **Con
+la radice alla home la sezione non si fa**: lì `ELA` è l'albero di ELA, e una voce `ELA` ferma l'avvio. La prova dei file
+con la radice alla home è la sezione 35.
+
 Da M13.14 **una policy che crei tu può coprire un'azione `HIGH`**: `fs.write` nelle cartelle che scegli, e un invio con
 `browser.act` o `browser.act_as_you` sui siti che scegli. Dentro i suoi confini ELA la fa **senza chiederti niente**; il
 livello non si abbassa, e ogni azione resta nell'audit, in `ela policy list` e nella console. `terminal.run`, il login e
@@ -8121,6 +8183,12 @@ i link li ha già tolti lo script.
 > `tests/` e `scripts/generate_stato.py`. **Nessun login, nessun vault e nessuna chiamata al modello**: i piani sono
 > scritti, e il sito non vuole un account.
 
+***Annotato il 2026-11-19*** (M13.17, [ADR 0074](adr/0074-filesystem-up-to-the-home.md)): questa sezione è scritta con le due righe di prima — la radice
+sulla cartella Documenti, `ELA_FS_SCOPE=ELA` —, e con loro resta vera. Da M13.17 la seconda riga si scrive come un
+elenco, `ELA_FS_SCOPE=["ELA"]` — senza le parentesi ELA non parte —, e la cartella `ELA` deve esserci all'avvio. **Con
+la radice alla home la sezione non si fa**: lì `ELA` è l'albero di ELA, e una voce `ELA` ferma l'avvio. La prova dei file
+con la radice alla home è la sezione 35.
+
 Il branch tocca **una cosa sola di ciò che ELA installa e serve**: la porta degli scaricamenti dei due browser
 ([ADR 0070](adr/0070-the-door-closes-at-the-answer.md)). La porta, aperta per un gesto, **si dice chiusa quando il
 browser ha risposto al suo `deny`, non quando lo manda**: ciò che il browser annuncia mentre la chiusura viaggia è
@@ -8319,6 +8387,12 @@ e non un file è `browser.download_not_started`. Nessun sito dichiarato tiene un
 > cammina i passi meccanici con lo script contro un'ELA vera di prova. La si fa **sul Mac, senza il PC**, sull'**ultimo
 > commit del branch** `m13.15-le-policy-al-login-e-ai-file`, con lo script `scripts/prova_m13_15.py`: dopo, sul branch
 > cambiano solo `docs/`, `tests/` e `scripts/generate_stato.py`.
+
+***Annotato il 2026-11-19*** (M13.17, [ADR 0074](adr/0074-filesystem-up-to-the-home.md)): questa sezione è scritta con le due righe di prima — la radice
+sulla cartella Documenti, `ELA_FS_SCOPE=ELA` —, e con loro resta vera. Da M13.17 la seconda riga si scrive come un
+elenco, `ELA_FS_SCOPE=["ELA"]` — senza le parentesi ELA non parte —, e la cartella `ELA` deve esserci all'avvio. **Con
+la radice alla home la sezione non si fa**: lì `ELA` è l'albero di ELA, e una voce `ELA` ferma l'avvio. La prova dei file
+con la radice alla home è la sezione 35.
 
 Da M13.15 **una policy che crei tu può coprire il login e i file dal browser** — `browser.download`,
 `browser.download_as_you`, `browser.upload`, `browser.upload_as_you`, `browser.login` —, con **una seconda dimensione**:
@@ -8855,6 +8929,517 @@ goes on until it ends
 <!-- prova: 15.nessuna -->
 ```
 nessuna policy viva
+```
+
+## 35. I file di tutto il computer: la prova a mano di M13.17
+
+> **Scritta con l'implementazione il 2026-11-18** (`milestones/M13.17.md`, la bozza della sezione 35 nella SPEC, le
+> risposte 34–49 e le decisioni 50–56 della sua review), e `tests/docs/test_prova_m13_17.py` tiene lo script allineato a
+> questa sezione, e ne cammina i passi meccanici con lo script contro un'ELA vera di prova. La si fa **sul Mac, senza il
+> PC**, sull'**ultimo commit del branch** `m13.17-i-file-di-tutto-il-computer`, con lo script `scripts/prova_m13_17.py`.
+
+**Prima di tutto, le due righe del `.env`.** Da M13.17 la radice può essere **la tua home**, e lo scope è **un elenco di
+cartelle** dentro di essa, una riga di JSON ([ADR 0074](adr/0074-filesystem-up-to-the-home.md)). **La riga di ieri non
+fa più partire ELA**: `ELA_FS_SCOPE=ELA`, senza le parentesi, è rifiutata all'avvio con la sua riscrittura,
+`ELA_FS_SCOPE=["ELA"]`, e `[]` è rifiutato. Questa prova vuole la radice alla tua home e un elenco con almeno Documents e
+Desktop. Le righe le cambi tu, **dopo la CI verde e prima di riavviare ELA dal branch**, in quest'ordine:
+
+1. **Nessuna policy viva dei file prima di cambiare la radice.** Le cartelle di una policy sono scritte relative alla
+   radice, e con un'altra radice nominano un altro posto. ELA lo controlla all'avvio — una policy viva di un file che con
+   la radice nuova coprirebbe un'altra cartella **ferma l'avvio**, e la frase dice come revocarla —, ma la strada è
+   revocarle prima: `uv run ela policy list` e `uv run ela policy revoke <id della policy>`.
+2. **Le due righe**, per esempio:
+
+   ```
+   ELA_FS_ROOT=/Users/tommasosilvi
+   ELA_FS_SCOPE=["Documents", "Desktop", "Downloads"]
+   ```
+
+   **L'ordine conta**: la prima cartella è quella da cui parte un comando di `terminal.run` — con questo elenco,
+   `~/Documents`, dove ieri era `~/Documents/ELA`. Niente Library, niente cartelle che cominciano con un punto.
+3. **Il riavvio dal branch, guardando lo schermo**: all'avvio ELA guarda ogni cartella dell'elenco, la apre e la richiude
+   senza leggerne i nomi. **Se macOS apre una finestra** che chiede un permesso per il Terminale, rispondi, e se ELA si è
+   fermata dicendo che il sistema non l'ha lasciata guardare, riavviala. Il passo 3 ti chiede che cosa è successo.
+
+**Il ritorno, e il suo rischio, a voce alta.** Per tornare a un commit di prima di M13.17 rimetti le due righe di prima, per
+esteso, **dopo aver revocato le tue policy dei file**:
+
+```
+ELA_FS_ROOT=/Users/tommasosilvi/Documents
+ELA_FS_SCOPE=ELA
+```
+
+Se lasci la radice alla home, il codice di prima **rifiuta di partire** — la home contiene `~/.ela` —, e lo dice. Se
+rimetti la radice e lasci l'elenco, il codice di prima legge `["Documents", "Desktop", "Downloads"]` **in silenzio come il
+nome di una cartella sola**: ogni lettura e scrittura è negata, e ogni comando del terminale fallisce. Non allarga niente,
+ma non te lo dice.
+
+**La regola pratica, per te**: apri le cartelle dove tieni i documenti, non la Libreria né le cartelle che cominciano con un
+punto. Una policy di scrittura, di scaricamento o di caricamento solo su una cartella fatta apposta: mai su una cartella
+intera dell'elenco, mai su una che tiene codice che lanci o che il sistema sincronizza. **I posti di ELA dentro la radice**
+— il suo albero, `~/.ela`, il `.env`, il Python con cui gira, il profilo del browser — **non li raggiunge nessuna lettura e
+nessuna scrittura dei file di ELA** — `fs.read`, `fs.write` e i file dal browser —, con un sì o con una policy:
+`ela diagnostics` li elenca. Un programma che lanci con `terminal.run` invece sì: la cartella di un comando non è un confine. Il permesso di macOS lo dai al Terminale, non
+a ELA: e vale per ogni programma che lanci da lì.
+
+**Che cosa serve**: ELA riavviata dal branch con le due righe nuove; `ELA_NTFY_TOPIC` nel `.env` e il campanello pronto,
+perché il passo 7 si prova da un campanello che non suona — lo script lo guarda nel campo `bell` di `GET /diagnostics`, e
+senza si ferma —; **nessuna policy viva** di `fs.write` e delle quattro dei file dal browser. **Nessuna chiamata al
+modello**: i piani sono scritti a mano, in `docs/examples/`. **Lo script non tocca il `.env`, il database né `ela
+serve`**: radice ed elenco li legge da ELA, nel blocco `files` di `GET /diagnostics`. **Scrive solo in
+`Documents/ELA/prova-m13.17/` e in `Desktop/prova-m13.17/`**, e alla fine toglie dalla Scrivania la sua cartella e solo i
+suoi file; se ci trova altro, si ferma. **Library è la cartella che non apri**: lo script controlla che l'elenco non la
+ammetta, e non ci guarda mai dentro. **Le policy le crei tu**, al «crei la policy?». **Ogni `ela task run` ha un limite di
+120 secondi**, come nella sezione 34.
+
+Lo script stampa **PASSATO**, **FALLITO**, **SALTATO** o **FERMATO** per ogni passo, e scrive tutto in
+`~/Downloads/prova-m13.17-<data>.txt`, **senza il percorso intero di un file**: la tua home diventa `<la radice>`, e il
+percorso intero sta sullo schermo. **Uno `schermo` il cui comando finisce in errore** — lo dice il codice d'uscita — fa il
+passo **FALLITO** con la riga di ELA che dice il codice, e la prova si ferma prima dell'`occhio`. Dei tipi della sezione 32
+usa `comando`, `atteso`, `occhio`, `schermo`, `crea`, `policy`, `perché`, `no`, `nessuna`, `console` e `file`, con le
+stesse parole; della sezione 34 `assente`; e i suoi:
+
+- **`sì`**: ti mostra la domanda del task, e con il tuo sì a dire sì la approva.
+- **`fatto`**: una domanda su ciò che è successo — che cosa ha chiesto macOS —; la tua risposta va nel file com'è, e il
+  passo non passa né fallisce per lei.
+- **`muto`**: la decisione dello step del task ha la regola del blocco, e per quel task l'audit non ha **nessuna domanda e
+  nessun campanello** — nessun `APPROVAL_REQUESTED`, nessun `BELL_RUNG` —: il rifiuto è venuto prima della domanda.
+- **`rifiuto`**: lo script lancia la riga, **vuole che finisca in errore** — il codice d'uscita, non una parola — e che
+  l'ultima riga dell'uscita abbia le parole del blocco; quella riga la mette sullo schermo, e dice che le righe di Python
+  sopra sono tolte. Nel file va solo il codice d'uscita. Una riga che riesce è **FALLITO**: avrebbe caricato una
+  configurazione che doveva essere rifiutata.
+- **`pulizia`**: lo script toglie dalla cartella del blocco i file dei piani della sezione e le sue cartelle, e poi la
+  cartella; se ci trova altro, non tocca niente e il passo è **FALLITO**.
+
+**Se la prova si ferma a metà**, lo script revoca le policy che ha creato e sono ancora vive, e lo dice.
+
+```
+uv run python scripts/prova_m13_17.py
+```
+
+### 1. Prima
+
+Lo script controlla, e stampa **PASSATO** per ciascuno: il Mac è sull'ultimo commit del branch su `origin`, con l'albero
+pulito; ELA risponde, e gira dal codice del branch — `GET /diagnostics` ha `files` —; la radice è la tua home; l'elenco
+ammette `Documents/ELA/prova-m13.17/` e `Desktop/prova-m13.17/`, e non Library; il campanello è pronto; nessuna policy viva
+delle cinque. Poi prepara le due cartelle della prova: toglie i file che una prova di prima ha lasciato, **solo quelli dei
+suoi piani**, e si ferma se ci trova altro; crea `Documents/ELA/prova-m13.17/`, e in `Desktop/prova-m13.17/` le cartelle
+`policy/` e `altra/`. **Se qualcosa manca, la prova si ferma lì** — **FERMATO** —, con ciò che manca.
+
+### 2. Ciò che è aperto
+
+<!-- prova: 2.schermo -->
+```
+uv run ela diagnostics
+```
+
+<!-- prova: 2.occhio -->
+```
+Qui sopra, sullo schermo, sotto files: files root è la tua home; files open sono le cartelle che hai scritto nel .env, intere e nell'ordine, e nient'altro; commands start from è la prima; never read or written by fs.* elenca i posti di ELA dentro la tua home — fra gli altri l'albero di ELA, ~/.ela, il .env e il Python —; disk waits standing è 0; e scopes dice lo scope dichiarato di ogni capability. È così?
+```
+
+### 3. macOS, all'avvio
+
+Lo sguardo dell'avvio guarda le cartelle, non dentro: il primo dialogo di macOS può arrivare dopo, ai passi 4 e 5, e il
+passo 6 lo chiede di nuovo.
+
+<!-- prova: 3.fatto -->
+```
+Al riavvio dal branch, macOS ha chiesto un permesso per il Terminale? Per quali cartelle? Che cosa hai risposto?
+```
+
+### 4. Una scrittura in ciascuna delle due cartelle
+
+Una scrittura in `Documents/ELA/prova-m13.17/` e una in `Desktop/prova-m13.17/`: **chiedono tutte e due**, e la domanda
+nomina il file per intero, sul tuo disco.
+
+<!-- prova: 4.comando -->
+```
+uv run ela task create "Scrivi il primo file della prova nei Documenti." --json
+uv run ela task plan <id> --file docs/examples/files-everywhere-documents.json
+uv run ela task run <id>
+```
+
+<!-- prova: 4.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 4.schermo -->
+```
+uv run ela approvals
+```
+
+<!-- prova: 4.occhio -->
+```
+Qui sopra, sullo schermo, la domanda di fs.write nomina il file per intero, nella tua home: ~/Documents/ELA/prova-m13.17/uno.md, con il tuo /Users/… al posto di ~. È il file che vuoi far scrivere?
+```
+
+<!-- prova: 4.sì -->
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+<!-- prova: 4.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 4.atteso -->
+```
+outcome completed
+```
+
+<!-- prova: 4.comando -->
+```
+uv run ela task create "Scrivi il secondo file della prova sulla Scrivania." --json
+uv run ela task plan <id> --file docs/examples/files-everywhere-desktop.json
+uv run ela task run <id>
+```
+
+<!-- prova: 4.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 4.schermo -->
+```
+uv run ela approvals
+```
+
+<!-- prova: 4.occhio -->
+```
+Qui sopra, sullo schermo, la domanda di fs.write nomina ~/Desktop/prova-m13.17/due.md, per intero. È il file che vuoi far scrivere?
+```
+
+<!-- prova: 4.sì -->
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+<!-- prova: 4.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 4.atteso -->
+```
+outcome completed
+```
+
+<!-- prova: 4.file -->
+```
+Documents/ELA/prova-m13.17/uno.md 43 600
+Desktop/prova-m13.17/due.md 46 600
+```
+
+### 5. Una lettura dalla seconda cartella
+
+`fs.read` del file della Scrivania: **la domanda dice la dimensione del file**, come il disco la dice alla domanda; il
+risultato ha il contenuto, e l'audit no. **La lettura sopra il tetto, 8 MiB, non ha un passo**: un file così grande, scritto
+in una cartella che iCloud può copiare, andrebbe a iCloud; la prova la suite — `fs.too_large` prima della domanda, con le
+due dimensioni —, in `tests/tools/test_fs_read_size.py`.
+
+<!-- prova: 5.comando -->
+```
+uv run ela task create "Leggi il secondo file della prova dalla Scrivania." --json
+uv run ela task plan <id> --file docs/examples/files-everywhere-read.json
+uv run ela task run <id>
+```
+
+<!-- prova: 5.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 5.comando -->
+```
+uv run ela approvals
+```
+
+<!-- prova: 5.atteso -->
+```
+capability fs.read
+size 46 bytes
+```
+
+<!-- prova: 5.schermo -->
+```
+uv run ela approvals
+```
+
+<!-- prova: 5.occhio -->
+```
+Qui sopra, sullo schermo, la domanda di fs.read nomina ~/Desktop/prova-m13.17/due.md, per intero, e dice size 46 bytes. È ciò che vuoi far leggere?
+```
+
+<!-- prova: 5.sì -->
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+<!-- prova: 5.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 5.atteso -->
+```
+outcome completed
+```
+
+<!-- prova: 5.comando -->
+```
+uv run ela task results <id>
+```
+
+<!-- prova: 5.atteso -->
+```
+il secondo file, per la lettura
+```
+
+<!-- prova: 5.comando -->
+```
+uv run ela audit tail -n 50
+```
+
+<!-- prova: 5.assente -->
+```
+il secondo file, per la lettura
+```
+
+### 6. macOS, ai primi usi
+
+<!-- prova: 6.fatto -->
+```
+Ai passi 4 e 5 macOS ha chiesto un permesso? Per quale cartella? Che cosa hai risposto?
+```
+
+### 7. Fuori dall'elenco
+
+Una scrittura in `Library/prova-m13.17/fuori.md`: **`DENIED`, la regola `SCOPE`, nessuna domanda e nessun campanello**. La
+decisione è del Guardian, prima di ogni sguardo del tool, e la ragione nomina il bersaglio e mai l'elenco. Lo script non
+guarda dentro Library.
+
+<!-- prova: 7.comando -->
+```
+uv run ela task create "Scrivi fuori dalle cartelle aperte." --json
+uv run ela task plan <id> --file docs/examples/files-everywhere-library.json
+uv run ela task run <id>
+```
+
+<!-- prova: 7.atteso -->
+```
+outcome denied
+of fs.write are not within its scope
+```
+
+<!-- prova: 7.muto -->
+```
+SCOPE
+```
+
+### 8. I posti di ELA, all'avvio
+
+Due rifiuti, letti da te, **con l'ambiente cambiato per quel comando solo, mai il `.env`**, e una riga che carica la
+configurazione senza accendere ELA. **La frase è in fondo all'uscita**, sotto le righe di Python che portano all'errore: è
+il prezzo di una riga che non è un comando di ELA, e lo script ti mostra solo la frase. Il primo: un elenco che nomina la
+casa di ELA, che non aprirebbe niente. Il secondo: una radice sopra la tua home. **Il rifiuto `path.ela_s_own` a un uso, con
+il tuo elenco, la mano non lo raggiunge**: nessuna cartella aperta contiene un posto di ELA. Lo prova la suite, in
+`tests/tools/test_ela_s_places_at_every_use.py`, e ADR 0074 lo scrive.
+
+<!-- prova: 8.rifiuto -->
+```
+ELA_FS_SCOPE='[".ela"]' uv run python -c "from ela.composition import Settings; Settings.load()"
+it would open nothing
+```
+
+<!-- prova: 8.rifiuto -->
+```
+ELA_FS_ROOT=/Users uv run python -c "from ela.composition import Settings; Settings.load()"
+holds your home
+```
+
+<!-- prova: 8.occhio -->
+```
+Qui sopra, sullo schermo, le due frasi di ELA: la prima dice che .ela «is, or lies inside» un posto di ELA e «would open nothing»; la seconda che la radice /Users «holds your home». Le leggi così?
+```
+
+### 9. Una policy di `fs.write` su una cartella della seconda voce
+
+Lo script ti mostra l'anteprima, sullo schermo, con la cartella intera. Poi una scrittura nella cartella della policy parte
+**senza domanda**, e una in `Desktop/prova-m13.17/altra/` — nella stessa voce dell'elenco, fuori dalla policy — **chiede**:
+il confine è la policy, non l'elenco. Rispondi no.
+
+<!-- prova: 9.schermo -->
+```
+uv run ela policy create fs.write --scope Desktop/prova-m13.17/policy --days 1 --uses 2
+```
+
+<!-- prova: 9.occhio -->
+```
+Qui sopra, sullo schermo, l'anteprima dice HIGH, che ELA «writes and overwrites any file in these folders, on the Core», e accanto alla cartella scritta la cartella intera sul tuo disco, ~/Desktop/prova-m13.17/policy; poi 2 usi e la scadenza di domani. La cartella intera è quella che vuoi approvare?
+```
+
+<!-- prova: 9.crea -->
+```
+uv run ela policy create fs.write --scope Desktop/prova-m13.17/policy --days 1 --uses 2
+```
+
+<!-- prova: 9.policy -->
+```
+<id della policy 9> LIVE usi 0 di 2 azioni 0
+```
+
+<!-- prova: 9.comando -->
+```
+uv run ela task create "Scrivi il file della prova nella cartella della policy." --json
+uv run ela task plan <id> --file docs/examples/files-everywhere-policy.json
+uv run ela task run <id>
+```
+
+<!-- prova: 9.atteso -->
+```
+outcome completed
+```
+
+<!-- prova: 9.comando -->
+```
+uv run ela task show <id>
+```
+
+<!-- prova: 9.atteso -->
+```
+policy <id della policy 9>
+```
+
+<!-- prova: 9.file -->
+```
+Desktop/prova-m13.17/policy/tre.md 30 600
+```
+
+<!-- prova: 9.comando -->
+```
+uv run ela task create "Scrivi accanto alla cartella della policy." --json
+uv run ela task plan <id> --file docs/examples/files-everywhere-other.json
+uv run ela task run <id>
+```
+
+<!-- prova: 9.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 9.perché -->
+```
+a value of path is not among those of policy <id della policy 9>
+```
+
+<!-- prova: 9.no -->
+```
+uv run ela task deny <id> --approval <approval-id>
+```
+
+<!-- prova: 9.policy -->
+```
+<id della policy 9> LIVE usi 1 di 2 azioni 1
+```
+
+### 10. Le righe «why I ask», nei due versi
+
+La revoca della policy del passo 9. Poi una scrittura in `Documents/ELA/prova-m13.17/` — dove la policy non avrebbe coperto —
+chiede **senza** nessuna riga «was revoked»: una policy finita è una ragione solo se, viva, avrebbe coperto. Una in
+`Desktop/prova-m13.17/policy/` — dove avrebbe coperto — chiede **con** «policy … was revoked on …». A tutte e due dici no.
+
+<!-- prova: 10.comando -->
+```
+uv run ela policy revoke <id della policy 9>
+```
+
+<!-- prova: 10.policy -->
+```
+<id della policy 9> REVOKED usi 1 di 2 azioni 1
+```
+
+<!-- prova: 10.comando -->
+```
+uv run ela task create "Scrivi dove la policy non avrebbe coperto." --json
+uv run ela task plan <id> --file docs/examples/files-everywhere-not-covered.json
+uv run ela task run <id>
+```
+
+<!-- prova: 10.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 10.comando -->
+```
+uv run ela approvals
+```
+
+<!-- prova: 10.atteso -->
+```
+why I ask
+```
+
+<!-- prova: 10.assente -->
+```
+was revoked
+```
+
+<!-- prova: 10.no -->
+```
+uv run ela task deny <id> --approval <approval-id>
+```
+
+<!-- prova: 10.comando -->
+```
+uv run ela task create "Scrivi dove la policy revocata avrebbe coperto." --json
+uv run ela task plan <id> --file docs/examples/files-everywhere-would-cover.json
+uv run ela task run <id>
+```
+
+<!-- prova: 10.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 10.perché -->
+```
+policy <id della policy 9> was revoked on
+```
+
+<!-- prova: 10.no -->
+```
+uv run ela task deny <id> --approval <approval-id>
+```
+
+### 11. La console
+
+<!-- prova: 11.console -->
+```
+/console/policies
+```
+
+<!-- prova: 11.occhio -->
+```
+Nella vista delle policy della console, la policy del passo 9 è fra le finite, revocata, con un uso e la sua azione. È così?
+```
+
+### 12. Dopo
+
+Nessuna policy viva; lo script toglie dalla Scrivania la sua cartella e solo i suoi file. `Documents/ELA/prova-m13.17/`
+resta, con il primo file: la prossima prova lo toglie al passo 1.
+
+<!-- prova: 12.nessuna -->
+```
+nessuna policy viva
+```
+
+<!-- prova: 12.pulizia -->
+```
+Desktop/prova-m13.17
 ```
 
 ## Dove guardare dopo

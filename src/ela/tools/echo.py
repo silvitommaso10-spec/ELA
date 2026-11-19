@@ -28,6 +28,7 @@ class EchoTool(Tool):
     """The echo is the same echo on any machine: the one tool whose claimed work moves."""
     audit_numbers: ClassVar[frozenset[str]] = frozenset()
     """Nothing is written and nothing leaves the process: a second run is the first one."""
+    under_the_root: ClassVar[bool] = False
     stop_point: ClassVar[StopPoint] = StopPoint(here=None, on_a_node=ENVELOPE)
     """No wait before its answer: its point is the call (M6.3c). It travels: on a node, the
     envelope."""

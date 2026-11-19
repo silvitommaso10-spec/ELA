@@ -49,6 +49,7 @@ from ela.permissions.capabilities import (
     SITE_PATTERN,
     TERMINAL_RUN,
     UNDECLARED_FS_SCOPE,
+    UNDECLARED_FS_SCOPES,
     UNDECLARED_MODEL,
     UNDECLARED_PROGRAMS,
     UNDECLARED_SITES,
@@ -130,6 +131,7 @@ from ela.permissions.policies import (
     shown_of,
     state_of,
     why_lines,
+    would_cover,
 )
 from ela.permissions.rows import LAUNCHES_A_PROGRAM, no_policy_for, row_of
 from ela.permissions.scope import scope_covers, targets_of, within_scope
@@ -209,6 +211,7 @@ __all__ = [
     "TERMINAL_RUN",
     "UNCOVERED",
     "UNDECLARED_FS_SCOPE",
+    "UNDECLARED_FS_SCOPES",
     "UNDECLARED_MODEL",
     "UNDECLARED_PROGRAMS",
     "UNDECLARED_SITES",
@@ -258,6 +261,7 @@ __all__ = [
     "terminal_run",
     "validate_arguments",
     "why_lines",
+    "would_cover",
     "within_scope",
     "workspace_write_note",
 ]

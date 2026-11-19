@@ -148,6 +148,7 @@ def production(tmp_path: Path, provider: FakeModelProvider) -> VerifierRegistry:
         sessions=a_session(),
         audit=FakeAuditLog(),
         accounts=an_account_browser(),
+        protected={},
     )
 
 
@@ -419,6 +420,7 @@ class _ReadsInSecret(Verifier):
     """A verifier that declares it reads nothing and reads the disk: the case the check is for."""
 
     reads_the_machine: ClassVar[bool] = False
+    under_the_root: ClassVar[bool] = False
     conditions: ClassVar[frozenset[str]] = frozenset({ECHO_MESSAGE_MATCHES})
     failure_codes: ClassVar[frozenset[str]] = COMMON_FAILURE_CODES
 

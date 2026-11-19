@@ -103,6 +103,15 @@ from ela.tools.browser import (
     boundary,
     origin_of,
 )
+from ela.tools.disk import (
+    MAKING_THE_FOLDER,
+    NO_ANSWER,
+    WRITING,
+    Abandoned,
+    Disk,
+    DiskSilent,
+    Gone,
+)
 from ela.tools.fs import (
     CREATES,
     DIRECTORY_MODE,
@@ -122,8 +131,9 @@ from ela.tools.fs import (
     measured,
     more_than_one_name_read,
     read_bytes,
+    which_place,
 )
-from ela.tools.paths import PATH_CODES, classify, resolve_workspace
+from ela.tools.paths import PATH_CODES, PathProblem, classify, resolve_workspace
 from ela.tools.verifiers import LOOK_GRACE_SECONDS, BrowserActVerifier, _PageVerifier
 from ela.tools.verify import COMMON_FAILURE_CODES, VERIFICATION_ARGUMENTS_INVALID, Verifier
 
@@ -280,7 +290,13 @@ async def _place(
     missing = await tool._installed()  # noqa: SLF001 — the look every call of the tool takes
     if missing is not None:
         return _refusal(missing, tool.name)
-    refused, target = looked_for_a_folder(tool.root, place, protected=tool.protected, does=does)
+    try:
+        refused, target = await tool.disk.run(
+            lambda _: looked_for_a_folder(tool.root, place, protected=tool.protected, does=does),
+            f"a look at {place!r}",
+        )
+    except DiskSilent as silent:
+        return _refusal(Outcome({}, NO_ANSWER, str(silent)), tool.name)
     if refused is not None or target is None:
         return _refusal(refused or Outcome({}, IO_ERROR, "the folder was not judged"), tool.name)
     return Prospect(target=target)
@@ -309,6 +325,9 @@ class BrowserDownloadTool(_BrowserTool):
                 NO_ROOT,
                 OVERWRITE_MISMATCH,
                 IO_ERROR,
+                # The disk that does not answer (M13.17, ADR 0074): every look under the root
+                # passes the guard, and an abandoned wait is this code.
+                NO_ANSWER,
             }
         )
         | BROWSER_CODES
@@ -334,6 +353,7 @@ class BrowserDownloadTool(_BrowserTool):
     may count it; and a file written is not written again on a replay."""
     does: ClassVar[str] = DOWNLOADS
     acts: ClassVar[bool] = True
+    under_the_root: ClassVar[bool] = True
     stop_point: ClassVar[StopPoint] = StopPoint(here=DOWNLOAD_GESTURE, on_a_node=None)
     """Right before the gesture that starts the download — the click, or the navigation to the
     address that is the file —, with the door open an instant before: one word for the two."""
@@ -347,6 +367,7 @@ class BrowserDownloadTool(_BrowserTool):
         ids: IdGenerator,
         *,
         protected: Mapping[str, Path],
+        disk: Disk | None = None,
         name: str = BROWSER_DOWNLOAD_TOOL_NAME,
         pages: TaskPages,
         capability_id: CapabilityId = BROWSER_DOWNLOAD,
@@ -355,6 +376,13 @@ class BrowserDownloadTool(_BrowserTool):
         self._root = resolve_workspace(root)
         # What ELA uses to exist (M13.14, ADR 0068): a download is a write, and no write reaches it.
         self._protected: Mapping[str, Path] = MappingProxyType(dict(protected))
+        # The guard of every look and write on the disk (M13.17, ADR 0074).
+        self._disk = Disk() if disk is None else disk
+
+    @property
+    def disk(self) -> Disk:
+        """The guard every look and write of this tool passes (M13.17, ADR 0074)."""
+        return self._disk
 
     @property
     def root(self) -> Path:
@@ -414,9 +442,16 @@ class BrowserDownloadTool(_BrowserTool):
             looked = await self._installed(task) or looked
         if isinstance(looked, Outcome):
             return _refusal(looked, self.name)
-        refused, target = looked_for_a_write(
-            self._root, looked.file, looked.overwrite, protected=self._protected
-        )
+        call = looked
+        try:
+            refused, target = await self._disk.run(
+                lambda _: looked_for_a_write(
+                    self._root, call.file, call.overwrite, protected=self._protected
+                ),
+                f"a look at {call.file!r}",
+            )
+        except DiskSilent as silent:
+            return _refusal(Outcome({}, NO_ANSWER, str(silent)), self.name)
         if refused is not None or target is None:
             return _refusal(refused or Outcome({}, IO_ERROR, "the file was not judged"), self.name)
         does = OVERWRITES_BY_DOWNLOAD if target.exists else CREATES_BY_DOWNLOAD
@@ -432,9 +467,16 @@ class BrowserDownloadTool(_BrowserTool):
         looked = self._looked(arguments)
         if isinstance(looked, Outcome):
             return looked
-        refused, _ = looked_for_a_write(
-            self._root, looked.file, looked.overwrite, protected=self._protected
-        )
+        call = looked
+        try:
+            refused, _ = await self._disk.run(
+                lambda _: looked_for_a_write(
+                    self._root, call.file, call.overwrite, protected=self._protected
+                ),
+                f"a look at {call.file!r}",
+            )
+        except DiskSilent as silent:
+            return Outcome({"gestures": 0}, NO_ANSWER, str(silent))
         if refused is not None:
             return refused
         return await self._ran(self._of(looked, decision), stop)
@@ -452,7 +494,7 @@ class BrowserDownloadTool(_BrowserTool):
                 if looked.task is not None:
                     # The same task opens another page: the one it keeps is closed first.
                     await self._pages.release(looked.task)
-                refused = self._folder(looked, stop)
+                refused = await self._folder(looked, stop)
                 if refused is not None:
                     return refused
                 done.made = 1  # see :meth:`_after`: from here the gesture counts as made
@@ -471,7 +513,7 @@ class BrowserDownloadTool(_BrowserTool):
             return self._fell(fell, site, done, None)
         if got is None:
             return self._stopped_while_arriving(site, done)
-        return self._kept(looked, got, None)
+        return await self._kept(looked, got, None)
 
     async def _work(self, call: _Call, opened: Opened, done: _Done, stop: TaskStop) -> Outcome:
         """The click that starts the download, on a page that answered: its element awaited with
@@ -492,7 +534,7 @@ class BrowserDownloadTool(_BrowserTool):
                 ELEMENT_AMBIGUOUS,
                 f"click names {found} elements on the page of {site}{self._after(done)}",
             )
-        refused = self._folder(call, stop)
+        refused = await self._folder(call, stop)
         if refused is not None:
             return refused
         done.made = 1  # see :meth:`_after`: from here the gesture counts as made
@@ -507,7 +549,7 @@ class BrowserDownloadTool(_BrowserTool):
             return self._not_started(site, done, none.left, opened.status)
         if got is None:
             return self._stopped_while_arriving(site, done, opened.status)
-        return self._kept(call, got, opened.status)
+        return await self._kept(call, got, opened.status)
 
     async def _unless_stopped(
         self, downloading: Coroutine[Any, Any, Downloaded], stop: TaskStop
@@ -554,15 +596,24 @@ class BrowserDownloadTool(_BrowserTool):
     def _target(self, call: _Download) -> Path:
         return self._root / call.file
 
-    def _folder(self, call: _Download, stop: TaskStop) -> Outcome | None:
+    async def _folder(self, call: _Download, stop: TaskStop) -> Outcome | None:
         """The folder of the target, made if it is not there — as ``fs.write`` makes it, never
         the root. **A task already stopped leaves here**, at the tool's point, with
         ``ToolStopped`` and no folder; one that is not is listened to by the browser, right
-        before its gesture — a stop that comes between the two finds the folder made, and empty."""
+        before its gesture — a stop that comes between the two finds the folder made, and empty.
+        In the guard of the disk (M13.17, ADR 0074): an abandoned wait makes no folder after."""
         if stop.is_set():
             stop.listen(DOWNLOAD_GESTURE)
+        folder = self._target(call).parent
+
+        def made(gone: Gone) -> None:
+            gone.begin(MAKING_THE_FOLDER)
+            folder.mkdir(mode=DIRECTORY_MODE, parents=True, exist_ok=True)
+
         try:
-            self._target(call).parent.mkdir(mode=DIRECTORY_MODE, parents=True, exist_ok=True)
+            await self._disk.run(made, f"a write of {call.file!r}")
+        except DiskSilent as silent:
+            return Outcome({"gestures": 0}, NO_ANSWER, str(silent))
         except OSError as error:
             return Outcome(
                 {"gestures": 0}, IO_ERROR, f"{type(error).__name__}: {error.strerror or error}"
@@ -585,7 +636,19 @@ class BrowserDownloadTool(_BrowserTool):
             f"the gesture was made and {site} started no download: nothing was written",
         )
 
-    def _kept(self, call: _Download, got: Downloaded, status: int | None) -> Outcome:
+    async def _kept(self, call: _Download, got: Downloaded, status: int | None) -> Outcome:
+        """:meth:`_placed`, in the guard of the disk (M13.17, ADR 0074)."""
+        made: dict[str, JsonValue] = {"gestures": 1}
+        if status is not None:
+            made["status"] = status
+        try:
+            return await self._disk.run(
+                lambda gone: self._placed(call, got, status, gone), f"a write of {call.file!r}"
+            )
+        except DiskSilent as silent:
+            return Outcome(made, NO_ANSWER, str(silent))
+
+    def _placed(self, call: _Download, got: Downloaded, status: int | None, gone: Gone) -> Outcome:
         """The file the browser left under a name of its own takes **the plan's name** — created
         without replacing, or replacing when ``overwrite`` says so — and the mode ``600``, also
         when it replaces one. What the result says of it is read from the file itself."""
@@ -596,9 +659,19 @@ class BrowserDownloadTool(_BrowserTool):
             made["status"] = status
         if Path(got.name).name != got.name or got.name in {"", ".", ".."}:
             return Outcome(made, FAILED, "the browser named what it wrote outside the folder")
+        # The target is looked at again with the function of ``fs.write`` before the file is placed
+        # (M13.17, ADR 0074; decision 8): the window of the download is the whole download, and
+        # what ELA uses to exist may have come under the folder meanwhile.
+        refused, _ = looked_for_a_write(
+            self._root, call.file, call.overwrite, protected=self._protected
+        )
+        if refused is not None:
+            _removed(left)
+            return replace(refused, output=made)
         try:
             if not stat.S_ISREG(os.lstat(left).st_mode):
                 return Outcome(made, FAILED, "what the browser left in the folder is not a file")
+            gone.begin(WRITING)
             os.chmod(left, FILE_MODE)
             if call.overwrite:
                 os.replace(left, target)
@@ -606,6 +679,12 @@ class BrowserDownloadTool(_BrowserTool):
                 os.link(left, target)
                 os.unlink(left)
             size, digest = measured(target)
+        except Abandoned:
+            # Given up before the file took the plan's name (M13.17, ADR 0074 §7): the step has
+            # failed with ``fs.no_answer``, and when the disk answers what the browser left is taken
+            # away, as for a download that fell — nothing of it stays (ADR 0070).
+            _removed(left)
+            raise
         except FileExistsError:
             _removed(left)
             return Outcome(
@@ -667,6 +746,7 @@ class AccountDownloadTool(_OnTheProfile, BrowserDownloadTool):
         ids: IdGenerator,
         *,
         protected: Mapping[str, Path],
+        disk: Disk | None = None,
         name: str = BROWSER_DOWNLOAD_AS_YOU_TOOL_NAME,
         pages: TaskPages,
     ) -> None:
@@ -678,6 +758,7 @@ class AccountDownloadTool(_OnTheProfile, BrowserDownloadTool):
             clock,
             ids,
             protected=protected,
+            disk=disk,
             name=name,
             pages=pages,
             capability_id=BROWSER_DOWNLOAD_AS_YOU,
@@ -701,6 +782,7 @@ class BrowserUploadTool(BrowserActTool):
         (BrowserActTool.error_codes - {NO_PAGE_TO_CONTINUE})
         | {SITE_NOT_DECLARED, NOT_A_FILE_FIELD, FILE_CHANGED, FILE_TOO_LARGE, NO_ROOT, IO_ERROR}
         | {ELA_S_OWN, HARD_LINK}
+        | {NO_ANSWER}  # M13.17, ADR 0074: the guard of the disk
         | READ_REFUSALS
     )
     output_keys: ClassVar[frozenset[str]] = (BrowserActTool.output_keys - {LEFT_WHILE_WAITING}) | {
@@ -708,6 +790,9 @@ class BrowserUploadTool(BrowserActTool):
         NAMED_DIGEST,
     }
     does: ClassVar[str] = UPLOADS
+    under_the_root: ClassVar[bool] = True
+    """Reads a file under ``ELA_FS_ROOT`` (M13.17, ADR 0074): declared here, against the gesture
+    it inherits its point from, which does not."""
     continuing: ClassVar[str] = ""
     """Never: an upload opens its own page, and the page that holds a file is nobody else's."""
 
@@ -720,6 +805,7 @@ class BrowserUploadTool(BrowserActTool):
         ids: IdGenerator,
         *,
         protected: Mapping[str, Path],
+        disk: Disk | None = None,
         name: str = BROWSER_UPLOAD_TOOL_NAME,
         pages: TaskPages,
         capability_id: CapabilityId = BROWSER_UPLOAD,
@@ -730,6 +816,13 @@ class BrowserUploadTool(BrowserActTool):
         self._root = resolve_workspace(root)
         # What ELA uses to exist (M13.15, ADR 0071; decision 7): no read of an upload reaches it.
         self._protected: Mapping[str, Path] = MappingProxyType(dict(protected))
+        # The guard of every look and read on the disk (M13.17, ADR 0074).
+        self._disk = Disk() if disk is None else disk
+
+    @property
+    def disk(self) -> Disk:
+        """The guard every look and read of this tool passes (M13.17, ADR 0074)."""
+        return self._disk
 
     @property
     def root(self) -> Path:
@@ -798,6 +891,20 @@ class BrowserUploadTool(BrowserActTool):
         return target
 
     async def _read(self, file: str) -> Outcome | tuple[Target, bytes]:
+        """:meth:`_read_now`, in the guard of the disk (M13.17, ADR 0074)."""
+        try:
+            return await self._disk.run(lambda _: self._read_now(file), f"a read of {file!r}")
+        except DiskSilent as silent:
+            return Outcome({}, NO_ANSWER, str(silent))
+
+    async def _judged_now(self, file: str) -> Outcome | Target:
+        """:meth:`_judged`, in the guard of the disk (M13.17, ADR 0074)."""
+        try:
+            return await self._disk.run(lambda _: self._judged(file), f"a look at {file!r}")
+        except DiskSilent as silent:
+            return Outcome({}, NO_ANSWER, str(silent))
+
+    def _read_now(self, file: str) -> Outcome | tuple[Target, bytes]:
         """The file as :meth:`_judged` judges it, then its bytes — **at most the limit and one
         byte more** (decision 51): a file that grew after it was measured is refused without the
         rest being read; regular and with one name, asked of the descriptor that reads."""
@@ -805,7 +912,7 @@ class BrowserUploadTool(BrowserActTool):
         if isinstance(judged, Outcome):
             return judged
         try:
-            data = await asyncio.to_thread(read_bytes, self._root / file, at_most=UPLOAD_MAX_BYTES)
+            data = read_bytes(self._root / file, at_most=UPLOAD_MAX_BYTES)
         except MoreThanOneName:
             return Outcome({}, HARD_LINK, more_than_one_name_read(file))
         except OSError as error:
@@ -857,7 +964,7 @@ class BrowserUploadTool(BrowserActTool):
         looked = await self._would_start(arguments, task)
         if isinstance(looked, Outcome):
             return _refusal(looked, self.name)
-        judged = self._judged(looked.file)
+        judged = await self._judged_now(looked.file)
         if isinstance(judged, Outcome):
             return _refusal(judged, self.name)
         return Prospect(target=replace(judged, does=LEAVES), visit=looked.visit)
@@ -972,6 +1079,7 @@ class AccountUploadTool(_OnTheProfile, BrowserUploadTool):
         ids: IdGenerator,
         *,
         protected: Mapping[str, Path],
+        disk: Disk | None = None,
         name: str = BROWSER_UPLOAD_AS_YOU_TOOL_NAME,
         pages: TaskPages,
     ) -> None:
@@ -983,6 +1091,7 @@ class AccountUploadTool(_OnTheProfile, BrowserUploadTool):
             clock,
             ids,
             protected=protected,
+            disk=disk,
             name=name,
             pages=pages,
             capability_id=BROWSER_UPLOAD_AS_YOU,
@@ -1001,22 +1110,34 @@ class FileDownloadedVerifier(Verifier):
     nobody knows those before the download.
     """
 
+    under_the_root: ClassVar[bool] = True
     reads_the_machine: ClassVar[bool] = True
     """The disk of this machine: neither capability travels."""
     conditions: ClassVar[frozenset[str]] = frozenset({FILE_DOWNLOADED})
     failure_codes: ClassVar[frozenset[str]] = (
-        COMMON_FAILURE_CODES | PATH_CODES | {FILE_MISMATCH, FILE_UNREADABLE}
+        COMMON_FAILURE_CODES | PATH_CODES | {FILE_MISMATCH, FILE_UNREADABLE, NO_ANSWER, ELA_S_OWN}
     )
 
     def __init__(
         self,
         root: Path | str,
         *,
+        protected: Mapping[str, Path],
+        disk: Disk | None = None,
         name: str = BROWSER_DOWNLOAD_VERIFIER_NAME,
         capability_id: CapabilityId = BROWSER_DOWNLOAD,
     ) -> None:
         super().__init__(capability_id, name=name)
         self._root = resolve_workspace(root)
+        # What ELA uses to exist (M13.17, ADR 0074; decision 8): no verifier reads it either.
+        self._protected: Mapping[str, Path] = MappingProxyType(dict(protected))
+        # The guard of the look and the read (M13.17, ADR 0074).
+        self._disk = Disk() if disk is None else disk
+
+    @property
+    def disk(self) -> Disk:
+        """The guard the look and the read of this verifier pass (M13.17, ADR 0074)."""
+        return self._disk
 
     async def _check(
         self, condition: str, arguments: JsonMapping, result: ExecutionResult
@@ -1036,11 +1157,10 @@ class FileDownloadedVerifier(Verifier):
                 "arrived",
                 retryable=False,
             )
-        problem = classify(self._root, file)
-        if problem is not None:
-            return self._failure(condition, problem.code, problem.message(file), retryable=False)
         try:
-            there, holds = await asyncio.to_thread(measured, self._root / file)
+            looked = await self._disk.run(lambda _: self._measured(file), f"a read of {file!r}")
+        except DiskSilent as silent:
+            return self._failure(condition, NO_ANSWER, str(silent), retryable=False)
         except OSError as error:
             return self._failure(
                 condition,
@@ -1048,6 +1168,9 @@ class FileDownloadedVerifier(Verifier):
                 f"{file!r} could not be read: {type(error).__name__}: {error.strerror or error}",
                 retryable=True,
             )
+        if isinstance(looked, PathProblem):
+            return self._failure(condition, looked.code, looked.message(file), retryable=False)
+        there, holds = looked
         if (there, holds) == (size, digest):
             return None
         return self._failure(
@@ -1059,14 +1182,35 @@ class FileDownloadedVerifier(Verifier):
             details={"expected_bytes": size, "actual_bytes": there},
         )
 
+    def _measured(self, file: str) -> PathProblem | tuple[int, str]:
+        """The classification, then the size and the sha256 of the file: in the guard's thread."""
+        problem = classify(self._root, file)
+        if problem is not None:
+            return problem
+        what = which_place(self._root / file, self._protected)
+        if what is not None:
+            return PathProblem(ELA_S_OWN, f"reaches {what}: a verifier of ELA never reads it")
+        return measured(self._root / file)
+
 
 class AccountFileDownloadedVerifier(FileDownloadedVerifier):
     """``browser.download_as_you``: the same question, of the same disk."""
 
     def __init__(
-        self, root: Path | str, *, name: str = BROWSER_DOWNLOAD_AS_YOU_VERIFIER_NAME
+        self,
+        root: Path | str,
+        *,
+        protected: Mapping[str, Path],
+        disk: Disk | None = None,
+        name: str = BROWSER_DOWNLOAD_AS_YOU_VERIFIER_NAME,
     ) -> None:
-        super().__init__(root, name=name, capability_id=BROWSER_DOWNLOAD_AS_YOU)
+        super().__init__(
+            root,
+            protected=protected,
+            disk=disk,
+            name=name,
+            capability_id=BROWSER_DOWNLOAD_AS_YOU,
+        )
 
 
 class UploadVerifier(BrowserActVerifier):

@@ -73,7 +73,7 @@ def terminal(root: Path, *programs: Path, vault: Path | None) -> Terminal:
 
 
 def tool(settings: Terminal, launcher: FakeLauncher) -> TerminalRunTool:
-    return TerminalRunTool(settings, launcher, FakeClock(NOW), FakeIdGenerator())
+    return TerminalRunTool(settings, launcher, FakeClock(NOW), FakeIdGenerator(), protected={})
 
 
 # ----------------------------------------------------------------------------------------

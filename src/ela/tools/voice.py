@@ -141,6 +141,7 @@ class SpeakTool(Tool):
 
     idempotent: ClassVar[bool] = False
     relocatable: ClassVar[bool] = False
+    under_the_root: ClassVar[bool] = False
     stop_point: ClassVar[StopPoint] = StopPoint(here=SOUND_POINT, on_a_node=ENVELOPE)
     audit_numbers: ClassVar[frozenset[str]] = frozenset()
     """Saying a thing twice is saying it twice. There is no artefact whose second write would be

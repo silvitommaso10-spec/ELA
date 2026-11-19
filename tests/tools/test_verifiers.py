@@ -1004,7 +1004,7 @@ def _fs_result(capability: CapabilityId, output: JsonMapping) -> ExecutionResult
 
 async def test_the_write_verifier_reads_the_disk_and_not_the_tools_word(declared: Path) -> None:
     (declared / "note.md").write_text("vero", encoding="utf-8")
-    verifier = FsWriteVerifier(declared)
+    verifier = FsWriteVerifier(declared, protected={})
     arguments = {"path": "note.md", "body": "vero", "overwrite": True}
 
     written = _fs_result(FS_WRITE, {"path": "note.md", "bytes": 4, "overwrote": True})
@@ -1016,7 +1016,7 @@ async def test_the_write_verifier_reads_the_disk_and_not_the_tools_word(declared
 
 async def test_the_write_verifier_fails_when_the_file_holds_something_else(declared: Path) -> None:
     (declared / "note.md").write_text("altro", encoding="utf-8")
-    verifier = FsWriteVerifier(declared)
+    verifier = FsWriteVerifier(declared, protected={})
     arguments = {"path": "note.md", "body": "vero", "overwrite": True}
 
     (failure,) = await verifier.verify(
@@ -1034,7 +1034,7 @@ async def test_the_read_verifier_catches_a_reader_that_invented_the_content(
 ) -> None:
     """The one way a reader can lie: returning something the file does not hold."""
     (declared / "note.md").write_text("quello che c'è", encoding="utf-8")
-    verifier = FsReadVerifier(declared)
+    verifier = FsReadVerifier(declared, protected={})
     invented = _fs_result(FS_READ, {"path": "note.md", "bytes": 9, "content": "inventato"})
 
     (failure,) = await verifier.verify((FS_CONTENT_MATCHES,), {"path": "note.md"}, invented)
@@ -1044,7 +1044,7 @@ async def test_the_read_verifier_catches_a_reader_that_invented_the_content(
 
 async def test_the_read_verifier_passes_what_the_file_really_holds(declared: Path) -> None:
     (declared / "note.md").write_text("quello che c'è", encoding="utf-8")
-    verifier = FsReadVerifier(declared)
+    verifier = FsReadVerifier(declared, protected={})
     honest = _fs_result(FS_READ, {"path": "note.md", "bytes": 15, "content": "quello che c'è"})
 
     both = (FS_FILE_EXISTS, FS_CONTENT_MATCHES)
@@ -1057,7 +1057,7 @@ async def test_the_read_verifier_passes_what_the_file_really_holds(declared: Pat
 async def test_a_missing_file_fails_with_the_code_the_tool_would_have_given(
     declared: Path,
 ) -> None:
-    (failure,) = await FsWriteVerifier(declared).verify(
+    (failure,) = await FsWriteVerifier(declared, protected={}).verify(
         (FS_FILE_EXISTS,),
         {"path": "assente.md", "body": "x", "overwrite": False},
         _fs_result(FS_WRITE, {"path": "assente.md"}),
@@ -1071,7 +1071,7 @@ async def test_a_call_that_says_nothing_about_the_content_cannot_be_verified(
 ) -> None:
     (declared / "note.md").write_text("x", encoding="utf-8")
 
-    (failure,) = await FsReadVerifier(declared).verify(
+    (failure,) = await FsReadVerifier(declared, protected={}).verify(
         (FS_CONTENT_MATCHES,), {"path": "note.md"}, _fs_result(FS_READ, {"path": "note.md"})
     )
 
@@ -1079,7 +1079,7 @@ async def test_a_call_that_says_nothing_about_the_content_cannot_be_verified(
 
 
 async def test_a_path_that_is_not_a_string_is_refused_by_the_verifier(declared: Path) -> None:
-    (failure,) = await FsWriteVerifier(declared).verify(
+    (failure,) = await FsWriteVerifier(declared, protected={}).verify(
         (FS_FILE_EXISTS,), {"path": 7}, _fs_result(FS_WRITE, {})
     )
 
@@ -1092,7 +1092,7 @@ async def test_a_file_that_cannot_be_read_is_named_as_unreadable(declared: Path)
     target.write_text("x", encoding="utf-8")
     target.chmod(0o000)
     try:
-        (failure,) = await FsReadVerifier(declared).verify(
+        (failure,) = await FsReadVerifier(declared, protected={}).verify(
             (FS_CONTENT_MATCHES,),
             {"path": "note.md"},
             _fs_result(FS_READ, {"path": "note.md", "content": "x"}),

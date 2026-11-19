@@ -623,6 +623,7 @@ class LoginTool(_OnTheProfile, _BrowserTool):
     twice. A retry that finds a started record without an outcome never types again."""
     does: ClassVar[str] = LOGS_IN
     acts: ClassVar[bool] = True
+    under_the_root: ClassVar[bool] = False
     stop_point: ClassVar[StopPoint] = StopPoint(here=FIRST_GESTURE, on_a_node=None)
     """Before the first gesture — and **before the vault is asked for the password**: a stopped
     task takes none."""

@@ -155,7 +155,7 @@ def test_the_capabilities_it_adds_are_the_last_four_all_high_and_none_travels() 
     from ela.domain import RiskLevel
     from ela.permissions import production_catalogue
 
-    specs = production_catalogue(fs_scope="ELA").specs()
+    specs = production_catalogue(fs_scope=("ELA",)).specs()
 
     assert {spec.id for spec in specs[-4:]} == FILE_CAPABILITIES
     for spec in specs[-4:]:
@@ -179,11 +179,14 @@ def test_the_tool_rows_are_the_running_tools() -> None:
         BrowserDownloadTool,
         BrowserUploadTool,
     )
+    from tests.docs.test_adr_filesystem_up_to_the_home import added_codes as added_by_0074
     from tests.docs.test_adr_policies_on_high import added_codes
     from tests.docs.test_adr_policies_on_login_and_files import added_codes as added_since
 
     added = {
-        name: added_codes().get(name, frozenset()) | added_since().get(name, frozenset())
+        name: added_codes().get(name, frozenset())
+        | added_since().get(name, frozenset())
+        | added_by_0074().get(name, frozenset())
         for name in FILE_CAPABILITIES
     }
     rows = {
@@ -218,6 +221,7 @@ def test_the_verifier_rows_are_the_running_verifiers(tmp_path: Path) -> None:
         FileDownloadedVerifier,
         UploadVerifier,
     )
+    from tests.docs.test_adr_filesystem_up_to_the_home import added_failure_codes
 
     rows = {
         match.group(1): match.groups()
@@ -226,8 +230,8 @@ def test_the_verifier_rows_are_the_running_verifiers(tmp_path: Path) -> None:
     }
     rows = {capability: row for capability, row in rows.items() if capability in FILE_CAPABILITIES}
     running = (
-        FileDownloadedVerifier(tmp_path),
-        AccountFileDownloadedVerifier(tmp_path),
+        FileDownloadedVerifier(tmp_path, protected={}),
+        AccountFileDownloadedVerifier(tmp_path, protected={}),
         UploadVerifier(FakeBrowser(), 30.0),
         AccountUploadVerifier(FakeAccountBrowser(), 30.0),
     )
@@ -238,7 +242,9 @@ def test_the_verifier_rows_are_the_running_verifiers(tmp_path: Path) -> None:
         assert class_name == type(verifier).__name__
         assert name == verifier.name
         assert codes(conditions) == verifier.conditions
-        assert codes(failures) == {
+        # The two failure codes ADR 0074 §12 adds (M13.17): this ADR's rows stay as they were.
+        later = added_failure_codes().get(str(verifier.capability_id), frozenset())
+        assert codes(failures) | later == {
             code for code in verifier.failure_codes if not code.startswith("verification.")
         }
         assert verifier.reads_the_machine, "none of the four travels"

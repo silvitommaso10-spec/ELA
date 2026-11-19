@@ -353,7 +353,7 @@ def _terminal(tmp_path: Path) -> Subject:
     program = executable(place / "bin" / "eco")
     settings = terminal(root, program)
     launcher = FakeLauncher()
-    tool = TerminalRunTool(settings, launcher, FakeClock(NOW), FakeIdGenerator())
+    tool = TerminalRunTool(settings, launcher, FakeClock(NOW), FakeIdGenerator(), protected={})
     subject = Subject(
         tool,
         terminal_decision(),
@@ -364,7 +364,11 @@ def _terminal(tmp_path: Path) -> Subject:
     def hold() -> Held:
         held = _HeldPrograms((entry(program),))
         subject.tool = TerminalRunTool(
-            replace(settings, programs=held), launcher, FakeClock(NOW), FakeIdGenerator()
+            replace(settings, programs=held),
+            launcher,
+            FakeClock(NOW),
+            FakeIdGenerator(),
+            protected={},
         )
         return Held(lambda: asyncio.to_thread(held.reached.wait), held.released.set)
 

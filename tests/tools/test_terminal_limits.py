@@ -60,7 +60,7 @@ def a_tool(root: Path, limits: ArgumentLimits, launcher: FakeLauncher) -> Termin
         temporary="/tmp/tu",
         argument_limits=limits,
     )
-    return TerminalRunTool(terminal, launcher, FakeClock(NOW), FakeIdGenerator())
+    return TerminalRunTool(terminal, launcher, FakeClock(NOW), FakeIdGenerator(), protected={})
 
 
 def call(argument: str) -> dict[str, object]:

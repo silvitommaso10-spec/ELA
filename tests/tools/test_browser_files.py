@@ -213,7 +213,7 @@ def digest(data: bytes) -> str:
     "capability", [BROWSER_DOWNLOAD, BROWSER_DOWNLOAD_AS_YOU, BROWSER_UPLOAD, BROWSER_UPLOAD_AS_YOU]
 )
 def test_the_four_are_high_their_scope_is_the_file_and_none_continues(capability: str) -> None:
-    spec = production_catalogue(fs_scope="ELA", sites=("httpbin.org",)).get(capability)  # type: ignore[arg-type]
+    spec = production_catalogue(fs_scope=("ELA",), sites=("httpbin.org",)).get(capability)
 
     assert spec.risk is RiskLevel.HIGH and spec.requires_authorization
     assert spec.scope == ("ELA",) and spec.scoped_arguments == ("file",)
@@ -609,7 +609,7 @@ async def test_the_verifier_finds_the_file_the_result_says(tmp_path: Path) -> No
     target.write_bytes(BYTES)
     said = {"file": "ELA/prova/scaricato.bin", "size": len(BYTES), "digest": digest(BYTES)}
 
-    failures = await FileDownloadedVerifier(folder).verify(
+    failures = await FileDownloadedVerifier(folder, protected={}).verify(
         [FILE_DOWNLOADED], DOWNLOAD, succeeded(BROWSER_DOWNLOAD, output=said)
     )
 
@@ -621,7 +621,7 @@ async def test_the_verifier_fails_in_sizes_on_another_file(tmp_path: Path) -> No
     (folder / "ELA" / "prova" / "scaricato.bin").write_bytes(b"un altro")
     said = {"file": "ELA/prova/scaricato.bin", "size": len(BYTES), "digest": digest(BYTES)}
 
-    (failure,) = await FileDownloadedVerifier(folder).verify(
+    (failure,) = await FileDownloadedVerifier(folder, protected={}).verify(
         [FILE_DOWNLOADED], DOWNLOAD, succeeded(BROWSER_DOWNLOAD, output=said)
     )
 
@@ -633,7 +633,7 @@ async def test_the_verifier_fails_on_a_file_that_is_not_there(tmp_path: Path) ->
     folder = root(tmp_path)
     said = {"file": "ELA/prova/scaricato.bin", "size": len(BYTES), "digest": digest(BYTES)}
 
-    (failure,) = await FileDownloadedVerifier(folder).verify(
+    (failure,) = await FileDownloadedVerifier(folder, protected={}).verify(
         [FILE_DOWNLOADED], DOWNLOAD, succeeded(BROWSER_DOWNLOAD, output=said)
     )
 
@@ -1183,7 +1183,7 @@ async def test_the_verifier_asks_the_result_for_a_size_and_a_fingerprint(
     folder = root(tmp_path)
     (folder / "ELA" / "prova" / "scaricato.bin").write_bytes(BYTES)
 
-    (failure,) = await FileDownloadedVerifier(folder).verify(
+    (failure,) = await FileDownloadedVerifier(folder, protected={}).verify(
         [FILE_DOWNLOADED], DOWNLOAD, succeeded(BROWSER_DOWNLOAD, output=said)
     )
 
@@ -1201,7 +1201,7 @@ async def test_the_verifier_says_a_file_it_cannot_read(
         raise PermissionError(13, "Permission denied")
 
     monkeypatch.setattr(browser_files, "measured", refuses)
-    (failure,) = await FileDownloadedVerifier(folder).verify(
+    (failure,) = await FileDownloadedVerifier(folder, protected={}).verify(
         [FILE_DOWNLOADED], DOWNLOAD, succeeded(BROWSER_DOWNLOAD, output=said)
     )
 
@@ -1215,7 +1215,7 @@ async def test_the_verifier_says_a_file_of_the_same_size_and_another_content(
     (folder / "ELA" / "prova" / "scaricato.bin").write_bytes(BYTES[::-1])
     said = {"size": len(BYTES), "digest": digest(BYTES)}
 
-    (failure,) = await FileDownloadedVerifier(folder).verify(
+    (failure,) = await FileDownloadedVerifier(folder, protected={}).verify(
         [FILE_DOWNLOADED], DOWNLOAD, succeeded(BROWSER_DOWNLOAD, output=said)
     )
 
@@ -1231,7 +1231,9 @@ async def test_the_verifier_says_a_file_of_the_same_size_and_another_content(
 def test_the_two_with_the_profile_are_capabilities_of_their_own(tmp_path: Path) -> None:
     folder = root(tmp_path)
 
-    assert AccountFileDownloadedVerifier(folder).capability_id == BROWSER_DOWNLOAD_AS_YOU
+    assert (
+        AccountFileDownloadedVerifier(folder, protected={}).capability_id == BROWSER_DOWNLOAD_AS_YOU
+    )
     assert AccountUploadVerifier(FakeAccountBrowser(), 30.0).capability_id == BROWSER_UPLOAD_AS_YOU
     assert UploadVerifier(FakeBrowser(), 30.0).capability_id == BROWSER_UPLOAD
     assert download(FakeAccountBrowser(), folder, profile=True).profile
@@ -1268,3 +1270,65 @@ def test_what_is_measured_is_a_regular_file_and_its_own_bytes(tmp_path: Path) ->
         measured(tmp_path)
     with pytest.raises(OSError):
         measured(tmp_path / "link.bin")
+
+
+async def test_the_target_is_looked_at_again_before_the_downloaded_file_is_placed(
+    tmp_path: Path,
+) -> None:
+    """M13.17 (ADR 0074; decision 8): the window of a download is the whole download. A folder
+    swapped for a link while the file arrives is refused when the file is to be placed — with the
+    function of ``fs.write`` —, and what the browser left is removed: nothing reaches the folder
+    the link leads to."""
+    folder = root(tmp_path)
+    elsewhere = tmp_path / "altrove"
+    elsewhere.mkdir()
+
+    class Swapping(FakeBrowser):
+        def _downloaded(self, into: str) -> Any:
+            got = super()._downloaded(into)
+            real = folder / "ELA" / "prova-vera"
+            (folder / "ELA" / "prova").rename(real)
+            (folder / "ELA" / "prova").symlink_to(elsewhere)
+            for one in real.iterdir():
+                one.rename(elsewhere / one.name)
+            return got
+
+    browser = Swapping(FakePage(download=BYTES))
+    tool = download(browser, folder)
+
+    result = await tool.execute(decision(BROWSER_DOWNLOAD), DOWNLOAD, FakeStop())
+
+    # The link leads outside the root: the classification of ``fs.write`` says so first.
+    assert result.error is not None and result.error.code == PATH_OUTSIDE_ROOT
+    assert list(elsewhere.iterdir()) == [], "what was downloaded was not removed"
+
+
+async def test_a_file_that_appears_after_the_last_look_is_not_replaced_and_the_download_goes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Since M13.17 (ADR 0074 §5) the target is looked at again right before the file is placed,
+    and a file that appeared during the download is refused there. **The window that is left** is
+    the one between that look and the link: a file that appears there — injected right after the
+    look — is not replaced, and what was downloaded is removed (``fs.overwrite_mismatch``)."""
+    folder = root(tmp_path)
+    browser = FakeBrowser(FakePage(download=BYTES))
+    target = folder / "ELA" / "prova" / "scaricato.bin"
+    real = browser_files.looked_for_a_write
+    looks: list[int] = []
+
+    def then_it_appears(*args: Any, **kwargs: Any) -> Any:
+        found = real(*args, **kwargs)
+        looks.append(1)
+        if len(looks) == 2:  # the look before the file is placed
+            target.write_bytes(b"arrivato dopo lo sguardo")
+        return found
+
+    monkeypatch.setattr(browser_files, "looked_for_a_write", then_it_appears)
+    result = await download(browser, folder).execute(
+        decision(BROWSER_DOWNLOAD), DOWNLOAD, FakeStop()
+    )
+
+    assert result.error is not None and result.error.code == OVERWRITE_MISMATCH
+    assert "what was downloaded was removed" in result.error.message
+    assert target.read_bytes() == b"arrivato dopo lo sguardo"
+    assert sorted(one.name for one in target.parent.iterdir()) == ["scaricato.bin"]

@@ -25,6 +25,8 @@ class SilentWrite(Tool):
     relocatable: ClassVar[bool] = False
     audit_numbers: ClassVar[frozenset[str]] = frozenset()
     stop_point: ClassVar[StopPoint] = StopPoint(here=None, on_a_node=ENVELOPE)
+    under_the_root: ClassVar[bool] = False
+    """It says ``fs.write`` and touches no disk: nothing under any root."""
 
     def __init__(self, clock: Clock, ids: IdGenerator) -> None:
         super().__init__(FS_WRITE, clock, ids, name=FS_WRITE_TOOL_NAME)

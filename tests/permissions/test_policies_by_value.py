@@ -77,15 +77,15 @@ def _with(spec: Any, **terms: Any) -> Any:
     [
         (
             _with(
-                browser_download("ELA"),
+                browser_download(("ELA",)),
                 by_value="overwrite",
                 free=("path", "site", "click", "purpose"),
             ),
             "is not a string",
         ),
-        (_with(browser_download("ELA"), by_value=None), "in one class"),
+        (_with(browser_download(("ELA",)), by_value=None), "in one class"),
         (
-            browser_download("ELA").model_copy(
+            browser_download(("ELA",)).model_copy(
                 update={"policy_words": PolicyWords(does="d", goes="g")}
             ),
             "policy_words.together",

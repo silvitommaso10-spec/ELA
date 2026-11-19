@@ -466,7 +466,8 @@ def test_the_declared_scope_reaches_the_catalogue_and_the_placeholder_never_does
     became the real boundary without anybody writing it is exactly what dec. A refuses.** This is
     the test that says the two never meet.
     """
-    declare(monkeypatch, tmp_path, ELA_FS_SCOPE="documenti/ela")
+    (tmp_path / "files" / "documenti" / "ela").mkdir(parents=True)
+    declare(monkeypatch, tmp_path, ELA_FS_SCOPE='["documenti/ela"]')
     settings = Settings.load()
 
     catalogue = production_catalogue(

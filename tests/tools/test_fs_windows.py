@@ -83,7 +83,7 @@ async def test_a_read_returns_exactly_the_bytes_on_the_disk(root: Path) -> None:
 async def test_the_verifier_sees_a_carriage_return_the_body_does_not_have(root: Path) -> None:
     (root / "ELA" / "c.md").write_bytes(b"a\r\nb\r\n")
 
-    failures = await FsWriteVerifier(root).verify(
+    failures = await FsWriteVerifier(root, protected={}).verify(
         (FS_CONTENT_MATCHES,),
         {"path": "ELA/c.md", "body": "a\nb\n", "overwrite": True},
         EXECUTION_RESULT.model_copy(
@@ -108,4 +108,4 @@ def test_a_root_that_is_a_junction_stops_the_node_like_a_symbolic_link(tmp_path:
     )
 
     with pytest.raises(ValueError, match="link"):
-        refuse_the_root(tmp_path / "alias", {})
+        refuse_the_root(tmp_path / "alias", {}, home=tmp_path)

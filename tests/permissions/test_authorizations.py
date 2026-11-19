@@ -33,6 +33,7 @@ from ela.permissions import (
     Rule,
     authorization_from_approval,
 )
+from ela.permissions.scope import SCOPE_IS_SHOWN
 from tests.domain.examples import (
     APPROVAL,
     LATER,
@@ -233,6 +234,16 @@ def test_an_out_of_context_yes_produces_no_grant(
     assert error.approval_id == APPROVAL.id
     assert str(APPROVAL.id) in str(error)
     assert isinstance(error, PermissionsError)
+
+
+def test_targets_outside_the_scope_are_named_and_the_scope_is_not() -> None:
+    """M13.17 (ADR 0074; answer 37): the sentence names the approval's targets and where the scope
+    is read — never the list."""
+    error = mismatch(APPROVAL.model_copy(update={"targets": ("elsewhere/notes/a.md",)}))
+
+    assert "['elsewhere/notes/a.md']" in error.reason
+    assert SCOPE_IS_SHOWN in error.reason
+    assert repr(list(NOTE.scope)) not in error.reason
 
 
 def test_an_approval_that_cites_the_wrong_task_generates_nothing_even_if_everything_else_fits() -> (

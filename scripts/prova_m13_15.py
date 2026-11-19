@@ -328,6 +328,7 @@ def a_command(line: str, turn: guided.Turn, proof: Proof) -> None:
         overdue(late, turn, proof)
     printed = done.stdout + done.stderr
     turn.last += printed
+    turn.code = done.returncode or turn.code
     for one in printed.rstrip("\n").splitlines():
         report.say(f"    | {masked(one, proof)}")
     if guided.CREATE in f" {line} ":
@@ -337,7 +338,7 @@ def a_command(line: str, turn: guided.Turn, proof: Proof) -> None:
 
 
 def commands(lines: Sequence[str], turn: guided.Turn, proof: Proof) -> None:
-    turn.last = ""
+    turn.last, turn.code = "", 0
     for line in lines:
         a_command(m14.filled(line, turn, proof), turn, proof)  # type: ignore[arg-type]
 
@@ -377,12 +378,12 @@ def live_of_the_five(policies: Sequence[Mapping[str, Any]]) -> str | None:
     return f"e c'è una policy viva ({named}): revocala con uv run ela policy revoke"
 
 
-def scope_admits(scope: str) -> str | None:
+def scope_admits(scope: Sequence[str]) -> str | None:
     from ela.permissions.scope import within_scope
 
-    if within_scope([scope], f"{FOLDER}/su/da-caricare.txt"):
+    if within_scope(list(scope), f"{FOLDER}/su/da-caricare.txt"):
         return None
-    return f"e lo scope dichiarato, {scope!r}, non ammette {FOLDER}/"
+    return f"e nessuna cartella dello scope dichiarato, {list(scope)!r}, ammette {FOLDER}/"
 
 
 # ----------------------------------------------------------------------------------------
@@ -701,6 +702,7 @@ def on_the_screen(number: int, block: base.Block, turn: guided.Turn, proof: Proo
         proof.report.say(
             f"    $ {masked(asked, proof)} — l'uscita è sullo schermo, non in questo file"
         )
+        m14.screen_failed(number, done, turn, proof, lambda text: masked(text, proof))  # type: ignore[arg-type]
 
 
 def a_creation(number: int, block: base.Block, turn: guided.Turn, proof: Proof) -> None:
@@ -710,8 +712,9 @@ def a_creation(number: int, block: base.Block, turn: guided.Turn, proof: Proof) 
     before = {str(one["id"]) for one in m14.live(m14.policies_of(proof.api))}
     commands([line], turn, proof)
     after = {str(one["id"]) for one in m14.live(m14.policies_of(proof.api))}
-    if m14.NOT_CREATED not in turn.last or after != before:
-        proof.report.failure(number, "l'anteprima ha creato una policy", masked(turn.last, proof))
+    failed = m14.a_creation_failure(turn.code, turn.last, after != before)
+    if failed is not None:
+        proof.report.failure(number, masked(failed, proof), masked(turn.last, proof))
         raise base.Stop(m14.NO_POLICY)
     if not base.yes_or_no(proof.ask, f"[{number}] Crei la policy? (s/n) "):
         raise base.Stop(m14.SAID_NO)

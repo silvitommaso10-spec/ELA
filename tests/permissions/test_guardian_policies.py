@@ -270,7 +270,7 @@ def test_without_a_policy_a_session_asks(h: Harness) -> None:
 
 CORE = DeviceId(UUID("00000000-0000-4000-8000-00000000c0e0"))
 NODE = DeviceId(UUID("00000000-0000-4000-8000-00000000d0e0"))
-WRITE = fs_write("ELA")
+WRITE = fs_write(("ELA",))
 WRITE_ARGS: dict[str, Any] = {
     "path": "ELA/prova/uno/nota.md",
     "body": "una riga",

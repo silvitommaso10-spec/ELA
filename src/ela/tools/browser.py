@@ -864,6 +864,7 @@ class BrowserReadTool(_BrowserTool):
     does: ClassVar[str] = OPENS
     continuing: ClassVar[str] = READS_ON
     acts: ClassVar[bool] = False
+    under_the_root: ClassVar[bool] = False
     stop_point: ClassVar[StopPoint] = StopPoint(here=NAVIGATION, on_a_node=None)
     """The visit is the effect: the adapter listens right before the navigation (M6.3c)."""
 
@@ -957,6 +958,7 @@ class BrowserActTool(_BrowserTool):
     does: ClassVar[str] = ACTS
     continuing: ClassVar[str] = ACTS_ON
     acts: ClassVar[bool] = True
+    under_the_root: ClassVar[bool] = False
     stop_point: ClassVar[StopPoint] = StopPoint(here=FIRST_GESTURE, on_a_node=None)
     """Before the first gesture (decision 2 of M6.3c); the navigation before it is listened to
     without being this tool's point, and after it no gesture follows a stop (decision 5). **One

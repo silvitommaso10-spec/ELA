@@ -1,0 +1,31 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M13.17 (GETTING_STARTED, sezione 35, passo 10): dopo la revoca, una",
+    "scrittura dove la policy revocata non avrebbe coperto. Chiede, e le righe «why I ask» non nominano",
+    "la policy revocata: una policy finita è una ragione solo se, viva, avrebbe coperto (ADR 0074).",
+    "Rispondi no.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "scrivere dove la policy non avrebbe coperto",
+  "steps": [
+    {
+      "id": "f17e5a17-0000-4b00-8a00-000000000007",
+      "goal": "scrivere dove la policy non avrebbe coperto",
+      "required_capabilities": [
+        "fs.write"
+      ],
+      "arguments": {
+        "path": "Documents/ELA/prova-m13.17/cinque.md",
+        "body": "ELA prova 35: dove la policy non arriva\n",
+        "overwrite": false,
+        "purpose": "la prova a mano dei file di tutto il computer"
+      },
+      "risk": "HIGH",
+      "expected_result": "nessun file: rispondi no",
+      "success_conditions": [
+        "fs.file_exists"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}

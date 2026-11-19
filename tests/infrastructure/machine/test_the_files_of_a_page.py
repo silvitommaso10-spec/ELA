@@ -707,7 +707,10 @@ async def test_a_download_ends_in_the_file_the_plan_named_with_600_and_its_verif
     }
 
     result = await run(tool, capability, arguments)
-    verifier = of(browser, FileDownloadedVerifier, AccountFileDownloadedVerifier)(under)
+    # Since M13.17 a verifier of the files receives ELA's places (ADR 0074 §5): none here.
+    verifier = of(browser, FileDownloadedVerifier, AccountFileDownloadedVerifier)(
+        under, protected={}
+    )
     failures = await verifier.verify([FILE_DOWNLOADED], arguments, result)
 
     target = under / "ELA" / "prova" / "scaricato.bin"

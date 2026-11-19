@@ -220,7 +220,7 @@ async def denied_by_the_guardian(cli: Cli, ela: Ela, tmp_path: Path) -> Printed:
         RunOutcome.DENIED,
         "DENIED",
         (plan["steps"][0]["id"],),
-        reason="not within scope",
+        reason="not within its scope",
     )
 
 

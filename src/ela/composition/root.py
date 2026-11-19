@@ -25,6 +25,7 @@ from urllib.parse import urlsplit
 
 from ela.audit.verifier import AuditVerifier
 from ela.composition.errors import ConfigurationError
+from ela.composition.files import OpenFolders, open_folders, refuse_the_moved_policies
 from ela.composition.routes import default_route_model, every_route_names_a_model
 from ela.composition.settings import Settings, env_file
 from ela.composition.system import (
@@ -146,6 +147,7 @@ from ela.tools import (
     production_tools,
     production_verifiers,
 )
+from ela.tools.disk import Disk
 from ela.tools.settings import sessions_dir_beside, speech_dir_beside
 from ela.tools.terminal import CLOSED_PATH, LANGUAGE
 from ela.tools.vault import VAULT_TIMEOUT_SECONDS, VaultClosing, VaultDoor
@@ -422,6 +424,14 @@ class Ela:
     ``ela.api`` may not name an adapter (architecture rule 27) — so what the API reaches is this
     object and :meth:`sweep_speech`, not :mod:`ela.infrastructure.machine`.
     """
+    disk: Disk
+    """The guard every look, read and write under ``ELA_FS_ROOT`` passes (M13.17, ADR 0074): one
+    for the process, handed to every tool and verifier that looks there. On ``Ela`` so that
+    ``ela diagnostics`` says how many abandoned waits are standing."""
+    files: OpenFolders
+    """What the scope opens, resolved at the start-up (M13.17, ADR 0074; decision 7): what
+    ``ela serve`` says before it serves and ``ela diagnostics`` shows — the state of ELA, not the
+    world."""
 
     def sweep_speech(self) -> int:
         """Delete what a crash between making the audio's file and unlinking it would leave.
@@ -855,6 +865,20 @@ async def build(
             sites=settings.browser.sites,
             guided_model=default_route_model(policy, GUIDED_ROUTE),
         )
+        # What the scope opens, resolved once, and said and shown from here (M13.17, ADR 0074):
+        # ``ela diagnostics`` reads this state, never the disk again. And no live policy of a file
+        # covers a folder other than the one its preview showed (answer 48): the root is read only
+        # here, so the check is exact.
+        files = open_folders(
+            settings.filesystem.root, settings.filesystem.scope, settings.ela_s_own()
+        )
+        await refuse_the_moved_policies(
+            authorizations,
+            capabilities,
+            settings.filesystem.root,
+            settings.filesystem.scope,
+            clock.now(),
+        )
         # Which device is the Core (M13.14, ADR 0068): a policy of ``fs.write`` covers only a step
         # placed here, and ``ela.permissions`` cannot import ``ela.devices`` to know it.
         guardian = PermissionGuardian(
@@ -951,7 +975,9 @@ async def build(
         terminal = Terminal(
             programs=programs,
             root=settings.filesystem.root,
-            scope=settings.filesystem.scope,
+            # The first folder the scope opens (M13.17, ADR 0074; answer 41): a command starts
+            # from it, or a folder under it — the order of ELA_FS_SCOPE says which.
+            scope=settings.filesystem.scope[0],
             timeout_seconds=settings.terminal.timeout_seconds,
             output_max_bytes=settings.terminal.output_max_bytes,
             home=str(Path.home()),
@@ -1063,6 +1089,9 @@ async def build(
             stopping=stopping,
             clock=clock,
         )
+        # One guard of the disk for the process (M13.17, ADR 0074): the tools and the verifiers that
+        # look under the root share it, so the waits it abandons are counted together.
+        disk = Disk()
         tools = production_tools(
             root=root,
             clock=clock,
@@ -1097,6 +1126,7 @@ async def build(
             # What ELA uses to exist (M13.14, ADR 0068): the list the root was checked against at
             # the start-up, and no write of ELA's reaches it — under a yes or under a policy.
             protected=settings.ela_s_own(),
+            disk=disk,
         )
         verifiers = production_verifiers(
             root=root,
@@ -1110,6 +1140,9 @@ async def build(
             sessions=agents,
             audit=audit,
             accounts=accounts,
+            # What ELA uses to exist (M13.17, ADR 0074): no verifier reads it either.
+            protected=settings.ela_s_own(),
+            disk=disk,
         )
 
         # Which tools this machine has is not something the registry can know (ADR 0016 §4), and
@@ -1286,6 +1319,8 @@ async def build(
         window=window,
         vault=door,
         speech_dir=scratch,
+        disk=disk,
+        files=files,
         speech_online=playing,
         listening=listening,
         removed_from_environment=removed,

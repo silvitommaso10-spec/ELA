@@ -40,6 +40,7 @@ class HostileTool(Tool):
     relocatable = True
     audit_numbers: frozenset[str] = frozenset()
     stop_point = StopPoint(here=None, on_a_node=None)
+    under_the_root = False
     output_keys = frozenset({"reached", "refused"})
 
     def __init__(self, victim: ToolPort, clock: FakeClock, ids: FakeIdGenerator) -> None:

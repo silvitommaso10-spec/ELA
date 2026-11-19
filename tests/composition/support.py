@@ -30,6 +30,8 @@ CAPTURES = "ELA_CAPTURE_DIR"
 POLL = "ELA_NODE_POLL_SECONDS"
 FS_ROOT = "ELA_FS_ROOT"
 FS_SCOPE = "ELA_FS_SCOPE"
+SCOPE = '["ELA"]'
+"""The scope of every test that builds an ELA: one folder, ``ELA``, in the form of M13.17."""
 TERMINAL_PROGRAMS = "ELA_TERMINAL_PROGRAMS"
 BROWSER_SITES = "ELA_BROWSER_SITES"
 
@@ -51,10 +53,11 @@ def declare(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **extra: str) -> No
     # The folder ``fs.read`` and ``fs.write`` may touch (M13.1 dec. A): both lines or no start-up,
     # and under ``tmp_path`` for the reason the captures are — a test that left them out would be
     # a test that cannot start, and one that named a real folder would write in somebody's home.
-    # The scope is ``ELA`` and not ``ela``: it is the value ``GETTING_STARTED.md`` tells somebody
-    # to write and the one the example plans use, so the suite walks the paths of the guide.
+    # The scope is ``["ELA"]`` and not ``["ela"]``: it is the folder ``GETTING_STARTED.md`` names
+    # and the one the example plans use, so the suite walks the paths of the guide — in the form
+    # M13.17 teaches, a list of JSON (the line of yesterday is refused, answer 35 of its review).
     monkeypatch.setenv(FS_ROOT, str(_declared_root(tmp_path)))
-    monkeypatch.setenv(FS_SCOPE, "ELA")
+    monkeypatch.setenv(FS_SCOPE, SCOPE)
     # The programs ``terminal.run`` may launch (M13.2 dec. 16): required, and ``[]`` is an answer.
     # No program unless a test declares one — a suite that launched programs by default would be
     # reading the machine it runs on.
@@ -75,14 +78,15 @@ def declare(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **extra: str) -> No
 
 
 def _declared_root(tmp_path: Path) -> Path:
-    """A root that exists and is nothing of ELA's own: created here, because ELA never creates it.
+    """A root that exists, and the folder its scope opens: created here, because ELA never creates
+    either — and since M13.17 every folder of the scope must be there at the start-up.
 
-    It sits beside the workspace and the captures rather than inside them, which is what the
-    start-up check requires: the folder ELA may touch for the user cannot contain, or be
-    contained by, the folder ELA uses to exist (M13.1 dec. F).
+    It sits beside the workspace and the captures rather than holding them: since M13.17 a root
+    may hold what ELA uses to exist (ADR 0074), and the tests that build one say so; this one is
+    the plain case, a folder of the user's that is nothing of ELA's.
     """
     root = tmp_path / "files"
-    root.mkdir(exist_ok=True)
+    (root / "ELA").mkdir(parents=True, exist_ok=True)
     return root
 
 

@@ -31,8 +31,10 @@ import hashlib
 import os
 import stat
 from abc import abstractmethod
+from collections.abc import Mapping
 from datetime import timedelta
 from pathlib import Path
+from types import MappingProxyType
 from typing import ClassVar, Final
 
 from ela.domain import (
@@ -64,12 +66,20 @@ from ela.tools.captures import (
     inspect_text,
     inspect_transcript,
 )
+from ela.tools.disk import NO_ANSWER, Disk, DiskSilent
 from ela.tools.echo import CORE_ECHO
-from ela.tools.fs import FS_READ, FS_WRITE
+from ela.tools.fs import (
+    ELA_S_OWN,
+    FS_READ,
+    FS_READ_MAX_BYTES,
+    FS_WRITE,
+    read_bytes,
+    which_place,
+)
 from ela.tools.listen import PERCEPTION_LISTEN
 from ela.tools.model import MODEL_COMPLETE, routing_arguments
 from ela.tools.notes import WORKSPACE_WRITE_NOTE
-from ela.tools.paths import PATH_CODES, classify, resolve_workspace
+from ela.tools.paths import PATH_CODES, PathProblem, classify, resolve_workspace
 from ela.tools.programs import (
     PROGRAM_CHANGED,
     PROGRAM_CODES,
@@ -228,6 +238,7 @@ the disk's (ADR 0048 §4)."""
 class EchoVerifier(Verifier):
     """``core.echo`` echoed: the output carries the very message that was asked (§29)."""
 
+    under_the_root: ClassVar[bool] = False
     reads_the_machine: ClassVar[bool] = False
     """The output against the arguments: nothing of any disk. From a node it proves what it proved
     here, and the limit is the node's word (ADR 0038 §14)."""
@@ -283,6 +294,7 @@ class WriteNoteVerifier(Verifier):
     holds no note.
     """
 
+    under_the_root: ClassVar[bool] = False
     reads_the_machine: ClassVar[bool] = True
     """The workspace of this machine: from a node it would read the Core's workspace, where a note
     with the same path may exist — a false positive (ADR 0038 §14). It does not travel."""
@@ -365,6 +377,7 @@ class _FsVerifier(Verifier):
     tool's report would verify nothing.
     """
 
+    under_the_root: ClassVar[bool] = True
     reads_the_machine: ClassVar[bool] = True
     """The disk of this machine: from a node it would read the Core's disk, where a file with the
     same path may exist — the false positive of ADR 0038 §14. Since ADR 0048 §7 ``fs.write`` travels
@@ -372,12 +385,52 @@ class _FsVerifier(Verifier):
     own copy of this verifier — never by the Core's (corrected with M13.14)."""
     conditions: ClassVar[frozenset[str]] = frozenset({FS_FILE_EXISTS, FS_CONTENT_MATCHES})
     failure_codes: ClassVar[frozenset[str]] = (
-        COMMON_FAILURE_CODES | PATH_CODES | {FS_CONTENT_MISMATCH, FS_UNREADABLE}
+        COMMON_FAILURE_CODES
+        | PATH_CODES
+        | {FS_CONTENT_MISMATCH, FS_UNREADABLE, NO_ANSWER, ELA_S_OWN}
     )
 
-    def __init__(self, capability_id: CapabilityId, root: Path | str, *, name: str) -> None:
+    reads_at_most: ClassVar[int | None] = None
+    """How much of the file the verifier rereads: all of it, unless the capability has a ceiling."""
+
+    def __init__(
+        self,
+        capability_id: CapabilityId,
+        root: Path | str,
+        *,
+        name: str,
+        protected: Mapping[str, Path],
+        disk: Disk | None = None,
+    ) -> None:
         super().__init__(capability_id, name=name)
         self._root = resolve_workspace(root)
+        # What ELA uses to exist (M13.17, ADR 0074; decision 8): no verifier reads it either.
+        self._protected: Mapping[str, Path] = MappingProxyType(dict(protected))
+        # The guard of the look and the read (M13.17, ADR 0074).
+        self._disk = Disk() if disk is None else disk
+
+    @property
+    def disk(self) -> Disk:
+        """The guard the look and the read of this verifier pass (M13.17, ADR 0074)."""
+        return self._disk
+
+    def _looked(self, path: str, *, reading: bool) -> PathProblem | bytes:
+        """The classification, then — when there is something to compare — the bytes: in the
+        guard's thread (M13.17, ADR 0074). Nothing is read for a file that only has to be there,
+        or for a call that cannot say what it should hold."""
+        problem = classify(self._root, path)
+        if problem is not None:
+            return problem
+        what = which_place(self._root / path, self._protected)
+        if what is not None:
+            return PathProblem(ELA_S_OWN, f"reaches {what}: a verifier of ELA never reads it")
+        if not reading:
+            return b""
+        if self.reads_at_most is not None:
+            # A read is reread at most its ceiling and one byte (M13.17, ADR 0074): a file larger
+            # than what the tool may have read cannot hold what it returned.
+            return read_bytes(self._root / path, at_most=self.reads_at_most)
+        return WriteNoteVerifier._read(self._root / path)  # noqa: SLF001
 
     @abstractmethod
     def _expected(self, arguments: JsonMapping, result: ExecutionResult) -> str | None:
@@ -395,21 +448,14 @@ class _FsVerifier(Verifier):
             return self._failure(
                 condition, VERIFICATION_ARGUMENTS_INVALID, "path must be a string", retryable=False
             )
-        problem = classify(self._root, path)
-        if problem is not None:
-            return self._failure(condition, problem.code, problem.message(path), retryable=True)
-        if condition == FS_FILE_EXISTS:
-            return None
-        expected = self._expected(arguments, result)
-        if expected is None:
-            return self._failure(
-                condition,
-                VERIFICATION_ARGUMENTS_INVALID,
-                "the call says nothing about what the file should hold",
-                retryable=False,
-            )
+        expected = None if condition == FS_FILE_EXISTS else self._expected(arguments, result)
+        reading = expected is not None
         try:
-            data = WriteNoteVerifier._read(self._root / path)  # noqa: SLF001
+            looked = await self._disk.run(
+                lambda _: self._looked(path, reading=reading), f"a read of {path!r}"
+            )
+        except DiskSilent as silent:
+            return self._failure(condition, NO_ANSWER, str(silent), retryable=False)
         except OSError as error:
             return self._failure(
                 condition,
@@ -417,6 +463,19 @@ class _FsVerifier(Verifier):
                 f"{path!r} could not be read: {type(error).__name__}: {error.strerror or error}",
                 retryable=True,
             )
+        if isinstance(looked, PathProblem):
+            return self._failure(condition, looked.code, looked.message(path), retryable=True)
+        if condition == FS_FILE_EXISTS:
+            return None
+        if expected is None:
+            return self._failure(
+                condition,
+                VERIFICATION_ARGUMENTS_INVALID,
+                "the call says nothing about what the file should hold",
+                retryable=False,
+            )
+        data = looked
+        assert isinstance(data, bytes)  # noqa: S101 — a problem returned above
         if hashlib.sha256(data).digest() == hashlib.sha256(expected.encode("utf-8")).digest():
             return None
         return self._failure(
@@ -431,8 +490,15 @@ class _FsVerifier(Verifier):
 class FsWriteVerifier(_FsVerifier):
     """``fs.write``: the file holds the ``body`` that was approved."""
 
-    def __init__(self, root: Path | str, *, name: str = FS_WRITE_VERIFIER_NAME) -> None:
-        super().__init__(FS_WRITE, root, name=name)
+    def __init__(
+        self,
+        root: Path | str,
+        *,
+        protected: Mapping[str, Path],
+        name: str = FS_WRITE_VERIFIER_NAME,
+        disk: Disk | None = None,
+    ) -> None:
+        super().__init__(FS_WRITE, root, name=name, protected=protected, disk=disk)
 
     def _expected(self, arguments: JsonMapping, result: ExecutionResult) -> str | None:
         body = arguments.get("body")
@@ -449,8 +515,17 @@ class FsReadVerifier(_FsVerifier):
     form ``WriteNoteVerifier`` already uses because a short file's hash inverts by dictionary.
     """
 
-    def __init__(self, root: Path | str, *, name: str = FS_READ_VERIFIER_NAME) -> None:
-        super().__init__(FS_READ, root, name=name)
+    def __init__(
+        self,
+        root: Path | str,
+        *,
+        protected: Mapping[str, Path],
+        name: str = FS_READ_VERIFIER_NAME,
+        disk: Disk | None = None,
+    ) -> None:
+        super().__init__(FS_READ, root, name=name, protected=protected, disk=disk)
+
+    reads_at_most: ClassVar[int | None] = FS_READ_MAX_BYTES
 
     def _expected(self, arguments: JsonMapping, result: ExecutionResult) -> str | None:
         content = result.output.get("content")
@@ -475,6 +550,7 @@ class ModelCompleteVerifier(Verifier):
     is a dependency, written down here and in ADR 0022, that a mutable status would break.
     """
 
+    under_the_root: ClassVar[bool] = False
     reads_the_machine: ClassVar[bool] = False
     """The output and the route recomputed by the Core's router: nothing of any disk. From a node,
     that the call really went to that provider is the node's word (ADR 0038 §14)."""
@@ -592,6 +668,7 @@ class CaptureScreenVerifier(Verifier):
     is written down for whoever one day verifies in arrears.
     """
 
+    under_the_root: ClassVar[bool] = False
     reads_the_machine: ClassVar[bool] = True
     """The capture store of this machine: it does not travel (ADR 0038 §14)."""
     conditions: ClassVar[frozenset[str]] = frozenset({CAPTURE_EXISTS, CAPTURE_MATCHES})
@@ -665,6 +742,7 @@ class ReadScreenTextVerifier(Verifier):
     only that it is what the tool said it wrote.
     """
 
+    under_the_root: ClassVar[bool] = False
     reads_the_machine: ClassVar[bool] = True
     """The capture store of this machine: it does not travel (ADR 0038 §14)."""
     conditions: ClassVar[frozenset[str]] = frozenset({TEXT_EXISTS, TEXT_MATCHES})
@@ -749,6 +827,7 @@ class ListenVerifier(Verifier):
     disk as described, not that the room said it.*
     """
 
+    under_the_root: ClassVar[bool] = False
     reads_the_machine: ClassVar[bool] = True
     """The capture store of this machine: it does not travel (ADR 0038 §14)."""
     conditions: ClassVar[frozenset[str]] = frozenset({TRANSCRIPT_EXISTS, TRANSCRIPT_MATCHES})
@@ -855,6 +934,7 @@ class SpeakVerifier(Verifier):
     Recorded so that whoever wants the device itself knows it was considered and why it is absent.
     """
 
+    under_the_root: ClassVar[bool] = False
     reads_the_machine: ClassVar[bool] = False
     """The text described and ``spoken_seconds``: nothing of any disk. From a node, that the time
     is true is the node's word — its clock measured it (ADR 0038 §14)."""
@@ -964,6 +1044,7 @@ class TerminalRunVerifier(Verifier):
     never with the arguments or the output, which a failure carries into the audit (§57).
     """
 
+    under_the_root: ClassVar[bool] = False
     reads_the_machine: ClassVar[bool] = True
     """``terminal.program_unchanged`` reads the Core's disk: on a node it would compare the Core's
     ``/usr/bin/git`` with a run that happened elsewhere — the false positive of ADR 0038 §14. So
@@ -1129,6 +1210,7 @@ class _PageVerifier(Verifier):
     kept page when the look starts, and no call of Playwright's has one (ADR 0052 §9).
     """
 
+    under_the_root: ClassVar[bool] = False
     reads_the_machine: ClassVar[bool] = True
 
     def __init__(

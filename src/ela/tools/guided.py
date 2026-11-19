@@ -397,6 +397,7 @@ class BrowserGuidedTool(Tool):
     idempotent: ClassVar[bool] = False
     relocatable: ClassVar[bool] = False
     """It spends (rule 60): a session launched twice is paid twice, and it runs on the Core only."""
+    under_the_root: ClassVar[bool] = False
     stop_point: ClassVar[StopPoint] = StopPoint(here=LAUNCH, on_a_node=None)
 
     def __init__(
@@ -749,6 +750,7 @@ class BrowserGuidedVerifier(Verifier):
     the session finished its turn, and what it answered is the model's word, in the result.
     """
 
+    under_the_root: ClassVar[bool] = False
     reads_the_machine: ClassVar[bool] = True
     """The kernel's list of processes: the session runs on the Core, and its capability does not
     travel."""

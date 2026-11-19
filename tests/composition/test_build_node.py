@@ -71,6 +71,7 @@ from ela.tools import (
 )
 from ela.tools.settings import VoiceSettings
 from tests import machines
+from tests.composition.places_at_every_use import every_use_refuses
 from tests.domain.examples import HAIKU_4_5_ID
 
 
@@ -564,24 +565,23 @@ def test_a_tool_that_must_be_verified_on_the_node_without_its_verifier_is_refuse
 
     with pytest.raises(ConfigurationError, match="fs.read"):
         carried(tools, VerifierRegistry(()))
-    carried(tools, VerifierRegistry((FsReadVerifier(tmp_path),)))
+    carried(tools, VerifierRegistry((FsReadVerifier(tmp_path, protected={}),)))
 
 
 @pytest.mark.parametrize(
     ("where", "what"),
     [
-        ("the state inside the root", "the folder a node keeps its secret in"),
         ("the root inside the state", "the folder a node keeps its secret in"),
         ("the source tree", "ELA's own source tree"),
     ],
 )
-def test_a_root_that_holds_what_the_node_uses_to_exist_stops_it(
+def test_a_root_that_is_or_lies_inside_what_the_node_uses_to_exist_stops_it(
     tmp_path: Path, where: str, what: str
 ) -> None:
-    """The Core's rule, with the node's own list (form F): its secret's folder, its ``.env``, the
-    source tree — never the Core's database, workspace or captures, which a node does not have."""
+    """The Core's rule, with the node's own list (form F): a root that is, or lies inside, its
+    secret's folder or the source tree — never the Core's database, workspace or captures, which a
+    node does not have. Since M13.17 (ADR 0074) the direction «holds» is admitted: below."""
     root = {
-        "the state inside the root": tmp_path,
         "the root inside the state": tmp_path / "state" / "files",
         "the source tree": _ela_source_tree(),
     }[where]
@@ -591,15 +591,33 @@ def test_a_root_that_holds_what_the_node_uses_to_exist_stops_it(
         rooted(tmp_path / "state", root)
 
 
-def test_a_root_that_holds_the_env_the_node_read_stops_it(
+async def test_a_root_that_holds_the_node_s_secret_is_admitted_and_every_use_refuses_it(
+    tmp_path: Path,
+) -> None:
+    """M13.17 (ADR 0074; decisions 8 (iv) and 16): the node's root may hold what the node uses to
+    exist, and the tools the node builds refuse it at every use — on Windows too, where this file
+    runs in the node's job."""
+    (tmp_path / "state").mkdir()
+
+    built = rooted(tmp_path / "state", tmp_path)
+
+    await every_use_refuses(
+        tmp_path, built.own(), tmp_path / "state", "the folder a node keeps its secret in"
+    )
+
+
+async def test_a_root_that_holds_the_env_the_node_read_is_admitted_and_every_use_refuses_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     (tmp_path / "home").mkdir()
     (tmp_path / "home" / ".env").write_text("", encoding="utf-8")
     monkeypatch.chdir(tmp_path / "home")
 
-    with pytest.raises(ValidationError, match=re.escape("the .env ELA read")):
-        rooted(tmp_path / "state", tmp_path / "home")
+    built = rooted(tmp_path / "state", tmp_path / "home")
+
+    await every_use_refuses(
+        tmp_path / "home", built.own(), tmp_path / "home" / ".env", "the .env ELA read"
+    )
 
 
 @pytest.mark.parametrize(
@@ -610,20 +628,39 @@ def test_a_root_that_holds_the_env_the_node_read_stops_it(
         ("base_prefix", PYTHON_INSTALLATION),
     ],
 )
-def test_a_root_that_holds_the_home_or_the_python_of_the_node_stops_it(
+async def test_a_root_that_holds_the_home_or_the_python_of_the_node_is_admitted_and_refused_at_use(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, where: str, what: str
 ) -> None:
-    """M13.14 (ADR 0068; answers 27 and 32 of the review of its SPEC): ELA's home and the Python
-    the node runs on are the node's own too — injected, so no place of this machine is named."""
+    """M13.14 (ADR 0068): ELA's home and the Python the node runs on are the node's own too —
+    injected, so no place of this machine is named. Since M13.17 a root holding them is admitted,
+    and every use of the node's tools refuses them."""
     chosen = tmp_path / "chosen"
     (chosen / "python").mkdir(parents=True)
     if where == "the home":
         monkeypatch.setattr(composition_settings, "ela_home", lambda: chosen / ".ela")
+        place = chosen / ".ela"
     else:
         monkeypatch.setattr(sys, where, str(chosen / "python"))
+        place = chosen / "python"
 
-    with pytest.raises(ValidationError, match=re.escape(what)):
-        rooted(tmp_path / "state", chosen)
+    built = rooted(tmp_path / "state", chosen)
+
+    await every_use_refuses(chosen, built.own(), place, what)
+
+
+def test_a_root_above_the_node_s_home_stops_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Decision 16: one rule for the Core and for a node — the root reaches at most the home of
+    the node's machine, read there (``USERPROFILE`` on Windows), injected here."""
+    home = tmp_path / "users" / "you"
+    home.mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+
+    with pytest.raises(ValidationError, match="holds your home"):
+        rooted(tmp_path / "state", tmp_path / "users")
+    assert rooted(tmp_path / "state", home).filesystem.root == home
 
 
 def test_the_node_s_list_has_no_vault_and_is_the_one_its_tool_that_writes_is_handed(

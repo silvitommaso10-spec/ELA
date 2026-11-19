@@ -143,7 +143,7 @@ def test_a_policy_for_a_high_that_declares_terms_is_handed_over() -> None:
     assert found == (policy, 0)
 
 
-WRITE = fs_write("ELA")
+WRITE = fs_write(("ELA",))
 WRITE_ARGS: dict[str, Any] = {
     "path": "ELA/prova/uno/nota.md",
     "body": "una riga",

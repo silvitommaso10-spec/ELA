@@ -506,15 +506,16 @@ def test_without_the_pair_ela_does_not_start_and_one_message_names_both_lines(
 
     message = str(raised.value)
     assert "ELA_FS_ROOT=" in message and "ELA_FS_SCOPE=" in message
-    assert "does not choose the folder for you" in message
+    assert "does not choose them for you" in message
+    assert 'ELA_FS_SCOPE=["Documents", "Desktop"]' in message, "the form of M13.17 is taught"
 
 
 def test_a_scope_that_is_not_a_scope_entry_stops_ela(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    message = refused(monkeypatch, tmp_path, ELA_FS_SCOPE="../fuori")
+    message = refused(monkeypatch, tmp_path, ELA_FS_SCOPE='["../fuori"]')
 
-    assert "ELA_FS_SCOPE" in message
+    assert "ELA_FS_SCOPE" in message and "'../fuori'" in message
     assert "relative path" in message
 
 
@@ -549,23 +550,19 @@ def test_a_root_that_is_a_link_stops_ela_and_says_which_link(
     assert "iCloud" in message
 
 
-@pytest.mark.parametrize(
-    "where",
-    ["workspace", "captures", "state", "home-of-them-all"],
-)
-def test_a_root_that_touches_what_ela_uses_to_exist_stops_ela(
+@pytest.mark.parametrize("where", ["workspace", "captures", "state"])
+def test_a_root_that_is_what_ela_uses_to_exist_stops_ela(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, where: str
 ) -> None:
-    """dec. F, and the list is derived: ``~`` is refused because it **contains** ``~/.ela``.
-
-    Not by a special case for ``~`` — by the same comparison that refuses the workspace, the
-    capture store and the folder a node keeps its secret in.
+    """dec. F, and the list is derived: a root that *is* the workspace, the capture store or the
+    folder a node keeps its secret in stops ELA. The case of the root that **holds** them all —
+    ``~`` until M13.17 — is admitted since M13.17 and refused at every use:
+    ``tests/composition/test_the_root_up_to_the_home.py``.
     """
     chosen = {
         "workspace": tmp_path / "workspace",
         "captures": tmp_path / "captures",
         "state": tmp_path / "state",
-        "home-of-them-all": tmp_path,
     }[where]
     chosen.mkdir(parents=True, exist_ok=True)
 
@@ -576,7 +573,7 @@ def test_a_root_that_touches_what_ela_uses_to_exist_stops_ela(
         ELA_NODE_STATE_DIR=str(tmp_path / "state"),
     )
 
-    assert "contain one another" in message
+    assert "is, or lies inside" in message
     assert "HIGH is not a permission to edit ELA's own state" in message
 
 
@@ -585,12 +582,12 @@ def test_a_root_beside_what_ela_uses_to_exist_is_accepted(
 ) -> None:
     """The positive case, so the check above is not refusing everything."""
     beside = tmp_path / "files"
-    beside.mkdir(exist_ok=True)
+    (beside / "ela").mkdir(parents=True, exist_ok=True)
 
-    settings = loaded(monkeypatch, tmp_path, ELA_FS_ROOT=str(beside), ELA_FS_SCOPE="ela")
+    settings = loaded(monkeypatch, tmp_path, ELA_FS_ROOT=str(beside), ELA_FS_SCOPE='["ela"]')
 
     assert settings.filesystem.root == beside
-    assert settings.filesystem.scope == "ela"
+    assert settings.filesystem.scope == ("ela",)
 
 
 @pytest.mark.parametrize(

@@ -316,4 +316,4 @@ def test_a_target_outside_the_scope_is_denied_on_every_row_of_the_table(level: R
         assert decision.metadata["rule"] == Rule.DENY.value
         return
     assert decision.metadata["rule"] == Rule.SCOPE.value
-    assert "not within scope" in decision.reason
+    assert "not within its scope" in decision.reason

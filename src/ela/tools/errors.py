@@ -15,6 +15,7 @@ from ela.ports import NotFoundError
 __all__ = [
     "NotIdempotentError",
     "RelocationError",
+    "SilentRootError",
     "SilentStopPointError",
     "SilentVerifierError",
     "ToolNotFound",
@@ -142,3 +143,19 @@ class SilentStopPointError(ToolsError):
         self.capability_id = capability_id
         self.name = name
         super().__init__(f"tool {name} of {capability_id} {reason}")
+
+
+class SilentRootError(ToolsError):
+    """A tool or a verifier that does not *say* whether it looks under ``ELA_FS_ROOT`` (M13.17, ADR
+    0074): raised by the registries at construction, like :class:`SilentVerifierError`. Both answers
+    are legal; silence is refused, because the closed worlds of the guard of the disk and of ELA's
+    own places are derived from the ones that say ``True``."""
+
+    def __init__(self, capability_id: CapabilityId, name: str, declared: object) -> None:
+        self.capability_id = capability_id
+        self.name = name
+        self.declared = declared
+        super().__init__(
+            f"{name} ({capability_id}) does not declare under_the_root as a boolean (it says "
+            f"{declared!r}): whether it looks at a file under ELA_FS_ROOT is unknown"
+        )

@@ -19,7 +19,7 @@ import httpx
 import httpx2
 import pytest
 
-from tests import machines, profile_browser, suite_log
+from tests import machines, profile_browser, proof_launches, suite_log
 from tests.browser_leftovers import RAN_LAST
 
 NO_NETWORK = "a test tried to open a network connection"
@@ -76,6 +76,14 @@ def pytest_configure(config: pytest.Config) -> None:
         f"{machines.MARK}(*conditions, why=''): what of the machine a test needs — "
         "tests/machines.py, and nowhere else",
     )
+    config.addinivalue_line(
+        "markers",
+        f"{proof_launches.ALLOWED}(why): a test that launches a real process through a proof "
+        "script on purpose — tests/proof_launches.py",
+    )
+    # The guard of the launches of the proofs (M13.17, decisions 62 and 68): once per process,
+    # before any fixture of any scope is set up.
+    proof_launches.install()
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
@@ -88,6 +96,20 @@ def pytest_runtest_logreport(report: pytest.TestReport) -> None:
     """The log of the suite (``tests/suite_log.py``, M9.5): off unless ``SUITE_LOG`` is set — the
     two jobs of ``make check`` set it, a run on this Mac does not."""
     suite_log.reported(report)
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_protocol(
+    item: pytest.Item, nextitem: pytest.Item | None
+) -> Generator[Any, Any, Any]:
+    """**A test marked** ``launches_through_a_proof_script`` **may launch through a proof script,
+    for its own time** — setup, call and teardown, the fixtures of a wider scope it sets up
+    included (M13.17, decision 68; ``tests/proof_launches.py``)."""
+    proof_launches.STATE.let_through = item.get_closest_marker(proof_launches.ALLOWED) is not None
+    try:
+        return (yield)
+    finally:
+        proof_launches.STATE.let_through = False
 
 
 @pytest.hookimpl(wrapper=True)

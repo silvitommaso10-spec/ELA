@@ -1,0 +1,30 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M13.17 (GETTING_STARTED, sezione 35, passo 4): una scrittura",
+    "nella prima cartella dell'elenco, Documents, sotto la radice che è la tua home. `fs.write` è HIGH",
+    "e chiede: la domanda nomina il file per intero, e il sì approva quel percorso (ADR 0074).",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "scrivere il primo file della prova nei Documenti",
+  "steps": [
+    {
+      "id": "f17e5a17-0000-4b00-8a00-000000000001",
+      "goal": "scrivere il primo file della prova nei Documenti",
+      "required_capabilities": [
+        "fs.write"
+      ],
+      "arguments": {
+        "path": "Documents/ELA/prova-m13.17/uno.md",
+        "body": "ELA prova 35: il primo file, nei Documenti\n",
+        "overwrite": false,
+        "purpose": "la prova a mano dei file di tutto il computer"
+      },
+      "risk": "HIGH",
+      "expected_result": "il file c'è, con il testo della prova",
+      "success_conditions": [
+        "fs.file_exists"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}

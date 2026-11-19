@@ -23,8 +23,9 @@ run share is a coroutine, and the hash runs in ``asyncio.to_thread``.
 
 **What a program receives is decided here and executed to the letter by the launcher** (dec. 15):
 four environment variables and nothing else — the ``PATH`` below, ``HOME`` and ``TMPDIR`` computed
-by the composition once, ``LANG`` —, the end of a file on stdin, a folder inside the scope of M13.1
-and never ELA's own, a timeout, a breath between ``SIGTERM`` and ``SIGKILL``, and half of the
+by the composition once, ``LANG`` —, the end of a file on stdin, the first folder of the scope of
+M13.1 or one under it — and never one that is, or lies inside, a place of ELA's (M13.17, ADR 0074)
+—, a timeout, a breath between ``SIGTERM`` and ``SIGKILL``, and half of the
 ceiling for the head and half for the tail of each stream.
 
 **The folder is not a boundary, and the question says so** (dec. 6): the boundary of M13.1 holds for
@@ -35,8 +36,10 @@ from __future__ import annotations
 
 import asyncio
 import codecs
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 from typing import ClassVar, Final
 
 from ela.domain import (
@@ -61,13 +64,15 @@ from ela.ports import (
     TaskStop,
 )
 from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool
-from ela.tools.fs import NO_ROOT
+from ela.tools.disk import NO_ANSWER, Disk, DiskSilent
+from ela.tools.fs import ELA_S_OWN, NO_ROOT
 from ela.tools.paths import (
     PATH_CODES,
     PATH_IS_DIRECTORY,
     PATH_NOT_REGULAR,
     classify,
     resolve_workspace,
+    within,
 )
 from ela.tools.programs import (
     NO_PROGRAM,
@@ -173,10 +178,12 @@ class ArgumentLimits:
 class Terminal:
     """What the composition hands the tool, once, at start-up.
 
-    ``programs`` with the identities fixed there; ``root`` and ``scope`` are the pair of M13.1, and
-    a command starts in ``root/scope`` or below it; ``home`` and ``temporary`` are computed by the
-    composition with ``Path.home()`` and ``tempfile.gettempdir()`` — never read from ``os.environ``
-    here (ADR 0001) —; ``argument_limits`` is what the system passes to ``execve``.
+    ``programs`` with the identities fixed there; ``root`` is ``ELA_FS_ROOT`` and ``scope`` **the
+    first folder of** ``ELA_FS_SCOPE`` (M13.17, ADR 0074; answer 41 of the review of its SPEC — the
+    order of the list is the user's), and a command starts in ``root/scope`` or below it; ``home``
+    and ``temporary`` are computed by the composition with ``Path.home()`` and
+    ``tempfile.gettempdir()`` — never read from ``os.environ`` here (ADR 0001) —;
+    ``argument_limits`` is what the system passes to ``execve``.
     """
 
     programs: Programs
@@ -219,6 +226,8 @@ class TerminalRunTool(Tool):
             NOT_STARTED,
             TIMEOUT,
             STOPPED,
+            NO_ANSWER,
+            ELA_S_OWN,
             *PATH_CODES - {PATH_IS_DIRECTORY, PATH_NOT_REGULAR},
         }
     )
@@ -246,6 +255,7 @@ class TerminalRunTool(Tool):
     mid-command the command survives it (ADR 0036 §6), and nobody knows what it did.
     """
     relocatable: ClassVar[bool] = False
+    under_the_root: ClassVar[bool] = True
     stop_point: ClassVar[StopPoint] = StopPoint(here=EXEC_POINT, on_a_node=None)
     """Listened to right before the launcher, which does not yield the loop before the ``fork``;
     after the ``exec``, the stop of the task stops the group (M6.3c, decision 5)."""
@@ -257,12 +267,23 @@ class TerminalRunTool(Tool):
         clock: Clock,
         ids: IdGenerator,
         *,
+        protected: Mapping[str, Path],
+        disk: Disk | None = None,
         name: str = TERMINAL_TOOL_NAME,
     ) -> None:
         super().__init__(TERMINAL_RUN, clock, ids, name=name)
         self._terminal = terminal
         self._root = resolve_workspace(terminal.root)
         self._launcher = launcher
+        # What ELA uses to exist (M13.17, ADR 0074; answer 38): a command never starts from it.
+        self._protected: Mapping[str, Path] = MappingProxyType(dict(protected))
+        # The guard of the look at the folder a command starts from (M13.17, ADR 0074).
+        self._disk = Disk() if disk is None else disk
+
+    @property
+    def disk(self) -> Disk:
+        """The guard the look at the folder passes (M13.17, ADR 0074)."""
+        return self._disk
 
     async def prospect(self, arguments: JsonMapping, task: TaskId | None = None) -> Prospect:
         """What this command would meet now, and what the question names (dec. 5, 12)."""
@@ -314,7 +335,12 @@ class TerminalRunTool(Tool):
         unpassable = self._unpassable(argv, environment)
         if unpassable is not None:
             return Outcome({}, ARGUMENTS_UNPASSABLE, unpassable)
-        folder = self._folder(cwd)
+        try:
+            folder = await self._disk.run(
+                lambda _: self._folder(cwd), "a look at the folder the command starts from"
+            )
+        except DiskSilent as silent:
+            return Outcome({}, NO_ANSWER, str(silent))
         if isinstance(folder, Outcome):
             return folder
         limit = self._terminal.output_max_bytes
@@ -383,7 +409,8 @@ class TerminalRunTool(Tool):
         return None
 
     def _folder(self, cwd: str | None) -> Path | Outcome:
-        """The folder the command starts from: the scope of M13.1, or a folder inside it (dec. 6).
+        """The folder the command starts from: the first folder of the scope of M13.1, or a folder
+        inside it (dec. 6; M13.17, ADR 0074).
 
         The **same** classification as ``fs.*``, twice — the scope against the root, then ``cwd``
         against the scope — with the answer turned round: a folder is what is wanted, and a file is
@@ -401,12 +428,30 @@ class TerminalRunTool(Tool):
         refused = _a_folder(self._root, self._terminal.scope)
         if refused is not None:
             return refused
-        if cwd is None:
-            return scope
-        refused = _a_folder(scope, cwd)
-        if refused is not None:
-            return refused
-        return scope / cwd
+        folder = scope if cwd is None else scope / cwd
+        if cwd is not None:
+            refused = _a_folder(scope, cwd)
+            if refused is not None:
+                return refused
+        return self._never_ela_s(folder, "" if cwd is None else cwd)
+
+    def _never_ela_s(self, folder: Path, cwd: str) -> Path | Outcome:
+        """**A command never starts from a folder of ELA's** (ADR 0047 §6, «mai la cartella di
+        ELA»; M13.17, ADR 0074, answer 38): a folder that *is* a place of ELA's, or *lies inside*
+        one, is ``path.ela_s_own``. Not one that holds a place: the folder is not a boundary — a
+        program admitted reaches ELA's places from anywhere —, and a refusal there would look like
+        a defence and protect nothing."""
+        resolved = folder.resolve()
+        for what, place in self._protected.items():
+            if within(resolved, place):
+                written = cwd or self._terminal.scope
+                return Outcome(
+                    {},
+                    ELA_S_OWN,
+                    f"{written!r} is, or lies inside, {what}: a command never starts from a "
+                    "folder of ELA's",
+                )
+        return folder
 
     async def _run(self, arguments: JsonMapping, stop: TaskStop) -> Outcome:
         looked = await self._look(arguments)

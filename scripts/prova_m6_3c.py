@@ -435,6 +435,33 @@ class Stop(Exception):
     """
 
 
+def the_error(code: int, printed: str) -> str | None:
+    """The reason of a command that ended in an error, read from its output, or ``None`` when it
+    did not — **the exit decides**, never a word (M13.17, decision 18 (a)): the line of ELA's
+    that names the code, or the code alone."""
+    if code == 0:
+        return None
+    said = [one.strip() for one in printed.splitlines() if one.strip().startswith("ela:")]
+    return said[0] if said else f"il comando è uscito con {code}"
+
+
+def screen_failed(
+    number: int,
+    done: subprocess.CompletedProcess[str],
+    report: Report,
+    masked: Callable[[str], str],
+) -> str | None:
+    """FALLITO, and the end of the proof, for a ``schermo`` whose command ended in an error (M13.17,
+    decision 18 (a)): the file gets the reason only — the line of ELA's that says the code —,
+    masked, and the eye that follows is not asked. ``None`` when the command did not fail."""
+    reason = the_error(done.returncode, done.stdout + done.stderr)
+    if reason is None:
+        return None
+    shown = masked(reason)
+    report.failure(number, "lo schermo è finito in errore", shown)
+    raise Stop(f"il comando dello schermo è finito in errore: {shown}")
+
+
 def heard(line: str, done: subprocess.CompletedProcess[str]) -> subprocess.CompletedProcess[str]:
     """``done`` as it is, unless it is a command of ELA's whose exit says nothing answered.
 

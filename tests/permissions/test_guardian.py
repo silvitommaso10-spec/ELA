@@ -32,6 +32,7 @@ from ela.permissions import (
     Rule,
 )
 from ela.permissions import rows as rows_module
+from ela.permissions.scope import SCOPE_IS_SHOWN
 from ela.testing.fakes import FakeAuditLog, FakeCapabilityRegistry, FakeClock, FakeIdGenerator
 from tests.domain.examples import TASK
 from tests.permissions.support import (
@@ -210,11 +211,17 @@ def test_low_within_scope_is_allowed(h: Harness) -> None:
         "other/x.md",
     ],
 )
-def test_low_outside_scope_is_denied_naming_the_scope(h: Harness, path: str) -> None:
+def test_low_outside_scope_is_denied_naming_the_targets_and_where_the_scope_is_read(
+    h: Harness, path: str
+) -> None:
+    """Since M13.17 (ADR 0074; answer 37) the sentence names the targets and never the list: the
+    scope is read in one place, and the sentence says which."""
     decision = h.guardian.decide(NOTE, {**NOTE_ARGS, "path": path})
     assert decision.outcome is DENIED
     assert rule_of(decision) is Rule.SCOPE
-    assert "workspace/notes" in decision.reason and "not within scope" in decision.reason
+    assert repr(path) in decision.reason and "not within its scope" in decision.reason
+    assert SCOPE_IS_SHOWN in decision.reason
+    assert repr(list(NOTE.scope)) not in decision.reason
     assert decision.metadata["targets"] == (path,)
 
 
@@ -236,7 +243,8 @@ def test_a_scope_that_constrains_no_argument_is_denied(h: Harness) -> None:
     decision = h.guardian.decide(UNCONSTRAINED_SCOPE, ECHO_ARGS)
     assert decision.outcome is DENIED
     assert rule_of(decision) is Rule.SCOPE
-    assert "workspace" in decision.reason
+    assert SCOPE_IS_SHOWN in decision.reason
+    assert "workspace" not in decision.reason, "the scope is read in one place (M13.17)"
 
 
 def test_medium_without_authorization_requires_approval(h: Harness) -> None:

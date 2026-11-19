@@ -88,6 +88,7 @@ class WriteNoteTool(Tool):
     audit_numbers: ClassVar[frozenset[str]] = frozenset()
     """The note is overwritten with the same body: writing it twice leaves the same file, which
     is what makes the retry of crash window 7a harmless (ADR 0015 §8)."""
+    under_the_root: ClassVar[bool] = False
     stop_point: ClassVar[StopPoint] = StopPoint(here=FIRST_WRITE, on_a_node=None)
 
     def __init__(

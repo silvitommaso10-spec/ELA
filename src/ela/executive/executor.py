@@ -135,7 +135,6 @@ from ela.permissions import (
     ASKING_RULES,
     DEFAULT_AUTHORIZATION_TTL,
     SINGLE_USE,
-    UNCOVERED,
     UNUSABLE,
     Rule,
     asks_at_every_use,
@@ -144,6 +143,7 @@ from ela.permissions import (
     shortfall,
     targets_of,
     why_lines,
+    would_cover,
 )
 from ela.ports import (
     STARTED_ID,
@@ -779,11 +779,9 @@ def _covers(
         # Read here too, from the same predicate, so that the executor never hands the Guardian a
         # grant it is about to call an incoherence: that would deny the step instead of asking.
         return False
-    # The half of the one predicate that says *covers* (M13.12, decision 4): the Guardian's own.
-    found = shortfall(
-        grant, capability, arguments, now=now, on_the_core=on_the_core, gaps=UNCOVERED
-    )
-    return found is None
+    # The half of the one predicate that says *covers* (M13.12, decision 4): the Guardian's own,
+    # and — since M13.17 (decision 17) — the one judgement the lines «why I ask» read too.
+    return would_cover(grant, capability, arguments, now=now, on_the_core=on_the_core)
 
 
 def _usable(
@@ -2175,6 +2173,11 @@ class Executor:
                 arguments,
                 now=decision.created_at,
                 on_the_core=on_the_core,
+                # The policy the sentence of the question names, first among the lines (M13.17,
+                # ADR 0074; answer 42): the two surfaces say the same.
+                handed=None
+                if authorization is None or authorization.approval_id is not None
+                else authorization.id,
             )
         targets = approved_targets(decision)
         where = f" on {', '.join(targets)}" if targets else ""
@@ -2317,6 +2320,10 @@ class Executor:
             asked["target"] = target.resolved
             asked["does"] = target.does
             asked["label"] = target.label
+            if visit is None and target.size is not None:
+                # A read (M13.17, ADR 0074; decision 11): the size of the file as the disk said it
+                # when the question was composed — what is approved names what counts.
+                asked["size"] = target.size
         if invocation is not None:
             asked["runs"] = invocation.runs
             asked["arguments"] = list(invocation.arguments)

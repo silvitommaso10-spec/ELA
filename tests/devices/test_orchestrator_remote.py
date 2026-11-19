@@ -207,7 +207,7 @@ async def test_a_capability_a_node_verifies_on_its_own_machine_travels_to_it(
         audit,
         FakeIdGenerator(),
         clock,
-        verifiers=FakeVerifierRegistry([FsReadVerifier(tmp_path)]),
+        verifiers=FakeVerifierRegistry([FsReadVerifier(tmp_path, protected={})]),
         capabilities=FakeCapabilityRegistry(),
         carried=VERIFIED_ON_THE_NODE,
     )

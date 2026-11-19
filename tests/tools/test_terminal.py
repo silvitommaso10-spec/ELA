@@ -141,6 +141,7 @@ def tool(settings: Terminal, launcher: FakeLauncher | None = None) -> TerminalRu
         FakeLauncher() if launcher is None else launcher,
         FakeClock(NOW),
         FakeIdGenerator(),
+        protected={},
     )
 
 

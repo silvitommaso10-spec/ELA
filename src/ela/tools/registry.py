@@ -62,10 +62,12 @@ from ela.tools.browser_files import (
     FileDownloadedVerifier,
     UploadVerifier,
 )
+from ela.tools.disk import Disk
 from ela.tools.echo import EchoTool
 from ela.tools.errors import (
     NotIdempotentError,
     RelocationError,
+    SilentRootError,
     SilentStopPointError,
     SilentVerifierError,
     ToolNotFound,
@@ -150,6 +152,7 @@ class ToolRegistry:
             _relocation_of(tool, idempotent=declared)
             _numbers_of(tool)
             _stop_point_of(tool)
+            _root_of(tool)
             if tool.capability_id in table:
                 raise AlreadyExistsError("tool", tool.capability_id)
             table[tool.capability_id] = tool
@@ -185,6 +188,15 @@ def _relocation_of(tool: ToolPort, *, idempotent: bool) -> None:
             "declares relocatable True and idempotent False: what cannot be done again here is "
             "not done again elsewhere",
         )
+
+
+def _root_of(one: ToolPort | VerifierPort) -> None:
+    """Refuse a tool or a verifier that does not say whether it looks under ``ELA_FS_ROOT``
+    (M13.17, ADR 0074): silence would read as «it does not», and the closed worlds of the guard of
+    the disk and of ELA's own places are derived from the ones that say it does."""
+    declared = getattr(one, "under_the_root", None)
+    if not isinstance(declared, bool):
+        raise SilentRootError(one.capability_id, one.name, declared)
 
 
 def _stop_point_of(tool: ToolPort) -> None:
@@ -250,6 +262,7 @@ class VerifierRegistry:
             declared = getattr(verifier, "reads_the_machine", None)
             if not isinstance(declared, bool):
                 raise SilentVerifierError(verifier.capability_id, verifier.name, declared)
+            _root_of(verifier)
             if verifier.capability_id in table:
                 raise AlreadyExistsError("verifier", verifier.capability_id)
             table[verifier.capability_id] = verifier
@@ -326,6 +339,7 @@ def production_tools(
     not_now: NotNow,
     pages: TaskPages,
     protected: Mapping[str, Path],
+    disk: Disk | None = None,
 ) -> ToolRegistry:
     """What the composition root builds: v0.1's three, plus what the phases after it added.
 
@@ -344,9 +358,16 @@ def production_tools(
 
     ``protected`` is what ELA uses to exist, named and resolved (M13.14, ADR 0068): the tools that
     write under ``fs_root`` — ``fs.write`` and the two downloads — never reach it, and since M13.15
-    (ADR 0071) the ones that read there — ``fs.read`` and the two uploads — never read it.
+    (ADR 0071) the ones that read there — ``fs.read`` and the two uploads — never read it; since
+    M13.17 (ADR 0074) ``terminal.run`` never starts a command from a folder that is, or lies
+    inside, one of those places.
     Mandatory, like ``pages``: a registry built without it would write anywhere under the root.
+
+    ``disk`` is the guard every look, read and write under ``fs_root`` passes (M13.17, ADR 0074):
+    **one per process**, the composition's, so that the waits it abandons are counted together; a
+    registry built without it makes one of its own, shared by its tools.
     """
+    disk = Disk() if disk is None else disk
     return ToolRegistry(
         (
             *tools_v01(root=root, clock=clock, ids=ids, router=router, providers=providers).tools(),
@@ -364,11 +385,11 @@ def production_tools(
             # The filesystem outside the workspace (M13.1). ``fs_root`` is not ``root``: the
             # workspace is ELA's own folder, this is the one the user declared with
             # ``ELA_FS_ROOT``, and neither tool ever creates it.
-            FsReadTool(fs_root, clock, ids, protected=protected),
-            FsWriteTool(fs_root, clock, ids, protected=protected),
+            FsReadTool(fs_root, clock, ids, protected=protected, disk=disk),
+            FsWriteTool(fs_root, clock, ids, protected=protected, disk=disk),
             # The terminal (M13.2): the programs with the identity of the start-up, the scope of
             # M13.1 for the folder, and the launcher the composition built around the stop signal.
-            TerminalRunTool(terminal, launcher, clock, ids),
+            TerminalRunTool(terminal, launcher, clock, ids, protected=protected, disk=disk),
             # The browser (M13.4): the declared sites and their origins, and one browser of ELA's
             # own, empty for every page. Not in :func:`node_tools`: it does not travel (form A).
             BrowserReadTool(browsing, browser, clock, ids, pages=pages),
@@ -401,16 +422,16 @@ def production_tools(
             # download is judged as a write under it, an upload as a read —, the declared sites,
             # and each browser for its own two. None of the four is a gesture of a guided session.
             BrowserDownloadTool(
-                fs_root, browsing, browser, clock, ids, protected=protected, pages=pages
+                fs_root, browsing, browser, clock, ids, protected=protected, pages=pages, disk=disk
             ),
             AccountDownloadTool(
-                fs_root, browsing, accounts, clock, ids, protected=protected, pages=pages
+                fs_root, browsing, accounts, clock, ids, protected=protected, pages=pages, disk=disk
             ),
             BrowserUploadTool(
-                fs_root, browsing, browser, clock, ids, protected=protected, pages=pages
+                fs_root, browsing, browser, clock, ids, protected=protected, pages=pages, disk=disk
             ),
             AccountUploadTool(
-                fs_root, browsing, accounts, clock, ids, protected=protected, pages=pages
+                fs_root, browsing, accounts, clock, ids, protected=protected, pages=pages, disk=disk
             ),
         )
     )
@@ -444,6 +465,7 @@ def node_tools(
     model: str,
     fs_root: Path | None,
     protected: Mapping[str, Path],
+    disk: Disk | None = None,
 ) -> ToolRegistry:
     """What a node runs: the four capabilities that travel (M12.1 D15, M12.2 dec. L, M12.3 dec. F),
     and ``fs.read`` and ``fs.write`` on a node that has a root (M13.3, ADR 0048).
@@ -480,16 +502,19 @@ def node_tools(
         ),
     ]
     if fs_root is not None:
+        disk = Disk() if disk is None else disk
         tools.extend(
             (
-                FsReadTool(fs_root, clock, ids, protected=protected),
-                FsWriteTool(fs_root, clock, ids, protected=protected),
+                FsReadTool(fs_root, clock, ids, protected=protected, disk=disk),
+                FsWriteTool(fs_root, clock, ids, protected=protected, disk=disk),
             )
         )
     return ToolRegistry(tools)
 
 
-def node_verifiers(fs_root: Path | None) -> VerifierRegistry:
+def node_verifiers(
+    fs_root: Path | None, protected: Mapping[str, Path], disk: Disk | None = None
+) -> VerifierRegistry:
     """What a node verifies on its own machine: :data:`VERIFIED_ON_THE_NODE`, on its root (M13.3).
 
     Beside :func:`node_tools` and for its reason — a list that is read and pinned, not a subset
@@ -499,7 +524,13 @@ def node_verifiers(fs_root: Path | None) -> VerifierRegistry:
     """
     if fs_root is None:
         return VerifierRegistry(())
-    return VerifierRegistry((FsReadVerifier(fs_root), FsWriteVerifier(fs_root)))
+    disk = Disk() if disk is None else disk
+    return VerifierRegistry(
+        (
+            FsReadVerifier(fs_root, protected=protected, disk=disk),
+            FsWriteVerifier(fs_root, protected=protected, disk=disk),
+        )
+    )
 
 
 def production_verifiers(
@@ -515,14 +546,17 @@ def production_verifiers(
     sessions: AgentSession,
     audit: AuditLog,
     accounts: AccountBrowser,
+    protected: Mapping[str, Path],
+    disk: Disk | None = None,
 ) -> VerifierRegistry:
     """The verifiers of :func:`production_tools`, one per capability.
 
     ``captures`` is the same store the tool writes into, and only its *directory* and its TTL are
     taken: the verifier reaches the read-only classification of :mod:`ela.tools.captures` and
     never the store's writing side (architecture rule 18). See :func:`production_tools` for why
-    this and :func:`verifiers_v01` both exist.
+    this and :func:`verifiers_v01` both exist. ``disk`` is :func:`production_tools`'s guard.
     """
+    disk = Disk() if disk is None else disk
     return VerifierRegistry(
         (
             *verifiers_v01(root=root, router=router).verifiers(),
@@ -533,8 +567,8 @@ def production_verifiers(
             # The same class, a second capability: two permissions over one act, verified by the
             # same two conditions (ADR 0034 §6). What differs is which grant was spent.
             SpeakVerifier(VOICE_SPEAK_ONLINE, name=ONLINE_SPEECH_VERIFIER_NAME),
-            FsReadVerifier(fs_root),
-            FsWriteVerifier(fs_root),
+            FsReadVerifier(fs_root, protected=protected, disk=disk),
+            FsWriteVerifier(fs_root, protected=protected, disk=disk),
             # The same identities the tool compares with: one table, fixed once (M13.2 dec. 4).
             TerminalRunVerifier(programs),
             # The same browser the tools opened the page in: the verifier looks at that page, and
@@ -550,8 +584,8 @@ def production_verifiers(
             BrowserGuidedVerifier(gestures, sessions, audit, kind=SESSION_AS_YOU),
             # A download is verified on the disk it was written to; an upload on the page that
             # received the file, in the browser that opened it.
-            FileDownloadedVerifier(fs_root),
-            AccountFileDownloadedVerifier(fs_root),
+            FileDownloadedVerifier(fs_root, protected=protected, disk=disk),
+            AccountFileDownloadedVerifier(fs_root, protected=protected, disk=disk),
             UploadVerifier(browser, browser_seconds),
             AccountUploadVerifier(accounts, browser_seconds),
         )

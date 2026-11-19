@@ -54,6 +54,7 @@ from ela.tools import (
     node_tools,
     node_verifiers,
 )
+from ela.tools.disk import Disk
 
 __all__ = [
     "ACL_SINCE",
@@ -352,9 +353,12 @@ def build_node(
     else:
         local = UnsupportedSpeech()
 
-    # The root is the node's own, optional, and already refused by the settings if it is a link or
-    # holds what the node uses to exist (M13.3). The tools of the filesystem and their verifiers are
+    # The root is the node's own, optional, and already refused by the settings if it is a link,
+    # is or lies inside what the node uses to exist, or holds the node's home (M13.3; M13.17, ADR
+    # 0074): since M13.17 it may hold the node's places, and the tools and verifiers refuse them at
+    # every use. The tools of the filesystem and their verifiers are
     # built on it together, and ``carried`` checks that they were.
+    disk = Disk()
     tools = node_tools(
         clock=the_clock,
         ids=ids,
@@ -370,8 +374,10 @@ def build_node(
         # What the node uses to exist (M13.14, ADR 0068): its root was checked against it, and no
         # write of the node reaches it.
         protected=config.own(),
+        # One guard of the disk for the node (M13.17, ADR 0074), shared by its tools and verifiers.
+        disk=disk,
     )
-    verifiers = node_verifiers(config.filesystem.root)
+    verifiers = node_verifiers(config.filesystem.root, config.own(), disk)
     carried(tools, verifiers)
 
     return NodeWorld(

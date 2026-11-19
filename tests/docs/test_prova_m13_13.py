@@ -727,16 +727,24 @@ def test_a_folder_of_the_proof_that_is_a_link_stops_it(tmp_path: Path) -> None:
     assert (tmp_path / "altrove" / "da-una-frase.bin").exists()
 
 
-@pytest.mark.parametrize("scope", ["ELA", "ELA/prova-m13.13"])
-def test_a_scope_that_admits_the_folder_of_the_proof_passes(scope: str) -> None:
+@pytest.mark.parametrize("scope", [("ELA",), ("ELA/prova-m13.13",), ("Documents", "ELA")], ids=str)
+def test_a_scope_that_admits_the_folder_of_the_proof_passes(scope: tuple[str, ...]) -> None:
+    """Since M13.17 the scope is a list (ADR 0074): one of its folders admitting is enough."""
     assert script().scope_admits(scope) is None
 
 
-@pytest.mark.parametrize("scope", ["ELA/altro", "altrove", "fuori-dallo-scope"])
-def test_a_scope_that_does_not_admit_the_folder_of_the_proof_stops_it(scope: str) -> None:
+@pytest.mark.parametrize(
+    "scope",
+    [("ELA/altro",), ("altrove",), ("fuori-dallo-scope",), ("ELA", "fuori-dallo-scope")],
+    ids=str,
+)
+def test_a_scope_that_does_not_admit_the_folder_of_the_proof_stops_it(
+    scope: tuple[str, ...],
+) -> None:
+    """None of the folders admits the proof's, or one admits the file step 4 wants outside."""
     why = script().scope_admits(scope)
 
-    assert why is not None and scope in why
+    assert why is not None and repr(list(scope)) in why
 
 
 def test_main_stops_at_step_1_when_the_world_lacks_something(
@@ -1007,7 +1015,7 @@ async def test_a_core_whose_question_lacks_the_field_is_not_the_branch_s_and_sto
     ("declared_", "missing"),
     [
         ({"ELA_BROWSER_SITES": '["httpbin.org"]'}, "sono fra i siti dichiarati"),
-        ({"ELA_FS_SCOPE": "altrove"}, "non ammette"),
+        ({"ELA_FS_SCOPE": '["altrove"]'}, "ammette ELA/prova-m13.13/"),
         ({"ELA_SPENDING_CAP_USD": "1"}, "una pianificazione al caso peggiore"),
     ],
 )
@@ -1016,6 +1024,9 @@ async def test_step_1_stops_on_a_world_that_is_not_the_one_the_proof_wants(
 ) -> None:
     module = script()
     monkeypatch.setattr(module.planning, "on_origin", lambda: None)
+    # Since M13.17 every folder of the scope is there at the start-up (ADR 0074): the one the
+    # world declares is made, so what stops the proof is the scope and not the start-up.
+    (tmp_path / "files" / "altrove").mkdir(parents=True)
     async with an_ela(monkeypatch, tmp_path, **declared_):
         report = module.Report(io.StringIO())
 

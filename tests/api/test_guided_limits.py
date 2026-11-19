@@ -33,6 +33,7 @@ from ela.ports import (
 from ela.testing.fakes import FakeAgentSession, FakePage
 from tests.api.guided import (
     LOOPBACK,
+    SITES,
     Guided,
     Script,
     approve,
@@ -112,11 +113,19 @@ async def test_a_page_that_writes_to_the_model_gets_no_gesture_the_policy_would_
     assert len(denied_reasons) == 2
     assert all(
         ending is not None
-        and "not within the step's scope" in ending.reason
+        and "not within the sites of the step's session" in ending.reason
         or ending is not None
-        and "not within scope" in ending.reason
+        and "not within its scope" in ending.reason
         for ending in denied_reasons
     )
+    # M13.17 (ADR 0074; answer 37): the reason of a denied gesture that reaches a guided session
+    # carries no site beyond its target — not the session's, not the declared ones.
+    named = [
+        {site for site in (*SITES, "evil.example.com") if f"'{site}'" in ending.reason}
+        for ending in denied_reasons
+        if ending is not None
+    ]
+    assert sorted(map(sorted, named)) == [["evil.example.com"], ["httpbin.org"]]
     assert g.browser.opened == ["https://www.youtube.com/"], "no page outside the session opened"
     (_, plan) = g.sessions.launched[0]
     assert "the key" not in plan.instructions

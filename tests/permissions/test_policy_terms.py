@@ -145,7 +145,7 @@ def test_the_capabilities_that_declare_terms_are_these_and_no_other() -> None:
     and the words of proposal 3. **Since M13.15** (ADR 0071) the login and the four files from the
     browser, with the second dimension named by value and the words of proposal 13 of its SPEC. No
     single read and no terminal declares any."""
-    catalogue = production_catalogue(sites=SITES, guided_model=MODEL, fs_scope="ELA")
+    catalogue = production_catalogue(sites=SITES, guided_model=MODEL, fs_scope=("ELA",))
     declared = {spec.id: spec.policy_terms for spec in catalogue.specs() if spec.policy_terms}
     words = {spec.id: spec.policy_words for spec in catalogue.specs() if spec.policy_words}
 

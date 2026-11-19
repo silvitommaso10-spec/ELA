@@ -30,7 +30,7 @@ from ela.domain import (
     TaskStep,
 )
 from ela.permissions.errors import ApprovalMismatchError
-from ela.permissions.scope import scope_covers
+from ela.permissions.scope import SCOPE_IS_SHOWN, scope_covers
 
 __all__ = [
     "CHECKS",
@@ -137,9 +137,10 @@ def _targets(approval: Approval, task: Task, step: TaskStep, spec: CapabilitySpe
     if not spec.scoped_arguments:
         return f"the approval names targets but {spec.id} has no scoped arguments"
     if not scope_covers(spec.scope, approval.targets):
+        # The targets, never the list (M13.17, ADR 0074; answer 37).
         return (
-            f"targets {list(approval.targets)} of the approval are not within the scope "
-            f"{list(spec.scope)} of {spec.id}"
+            f"targets {list(approval.targets)} of the approval are not within the scope of "
+            f"{spec.id} ({SCOPE_IS_SHOWN})"
         )
     return None
 
