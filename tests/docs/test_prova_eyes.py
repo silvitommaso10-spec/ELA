@@ -40,8 +40,13 @@ def proofs() -> list[Path]:
 @contextmanager
 def _siblings() -> Iterator[None]:
     """The scripts import their siblings by name: the folder on the path while one is loaded, and
-    ``sys.modules`` as it was afterwards."""
+    ``sys.modules`` as it was afterwards. **The siblings another test left in ``sys.modules`` are
+    hidden during the load** (the make check of M13.17 at ``0612dba``): a script that found an old
+    ``prova_m13_15`` would share it, with another ``prova_m6_3c`` than its own, and a patch of its
+    ``base`` would not reach the screen of the old one."""
     before = dict(sys.modules)
+    for name in [one for one in before if one.startswith("prova_")]:
+        del sys.modules[name]
     sys.path.insert(0, str(SCRIPTS))
     try:
         yield
@@ -49,6 +54,7 @@ def _siblings() -> Iterator[None]:
         sys.path.remove(str(SCRIPTS))
         for name in set(sys.modules) - set(before):
             del sys.modules[name]
+        sys.modules.update({name: one for name, one in before.items() if name.startswith("prova_")})
 
 
 def loaded(path: Path) -> ModuleType:
