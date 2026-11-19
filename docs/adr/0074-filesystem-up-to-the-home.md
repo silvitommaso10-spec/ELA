@@ -259,9 +259,10 @@ In parole semplici:
   protetti» resta.
 - **Il permesso di macOS non è di ELA**: è del processo responsabile, il terminale, e ciò che macOS concede perché ELA legga
   una cartella lo concede a ogni programma lanciato da lì. ELA non chiede, non aggira e non registra un permesso. **Che cosa
-  macOS fa quando chiede o nega** — se ferma la chiamata, per quali chiamate —: NON MISURATO. Alla prova del 2026-11-19
-  macOS non ha chiesto niente, né all'avvio né ai primi usi, e il terminale è arrivato a Documents e a Desktop; le righe di
-  quel caso le prova solo la suite, con il disco iniettato.
+  macOS fa quando chiede o nega** — se ferma la chiamata, per quali chiamate —: NON MISURATO. Alla prova del 2026-11-19,
+  con le parole di Tommaso, all'avvio macOS «non mi ha chiesto niente, o non me lo ricordo», e ai primi usi «non mi ha
+  chiesto nessun peermesso»; il terminale è arrivato a Documents e a Desktop. Le righe del caso in cui macOS chiede o nega
+  le prova solo la suite, con il disco iniettato.
 - **Un file che iCloud tiene altrove**: NON MISURATO. Leggerlo può far partire uno scaricamento; lo copre il limite della
   guardia, e niente di suo. Alla prova la Scrivania non era un link; se «Scrivania e Documenti» di iCloud fosse acceso
   non è detto.

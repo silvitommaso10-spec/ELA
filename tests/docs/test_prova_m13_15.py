@@ -259,8 +259,8 @@ def test_the_id_of_the_entry_never_enters_the_file_and_its_plan_is_taken_away(
 
 
 THE_RUNNER = pytest.mark.launches_through_a_proof_script(
-    "the runner of the proof itself — base.run, its limit and its group — with a real sleep: what "
-    "is tested is the launch (tests/proof_launches.py)"
+    "the runner of the proof itself — base.run with its limit, base.started with its group — "
+    "with a real sleep: what is tested is the launch (tests/proof_launches.py)"
 )
 
 
