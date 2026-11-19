@@ -1301,3 +1301,34 @@ async def test_the_target_is_looked_at_again_before_the_downloaded_file_is_place
     # The link leads outside the root: the classification of ``fs.write`` says so first.
     assert result.error is not None and result.error.code == PATH_OUTSIDE_ROOT
     assert list(elsewhere.iterdir()) == [], "what was downloaded was not removed"
+
+
+async def test_a_file_that_appears_after_the_last_look_is_not_replaced_and_the_download_goes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Since M13.17 (ADR 0074 §5) the target is looked at again right before the file is placed,
+    and a file that appeared during the download is refused there. **The window that is left** is
+    the one between that look and the link: a file that appears there — injected right after the
+    look — is not replaced, and what was downloaded is removed (``fs.overwrite_mismatch``)."""
+    folder = root(tmp_path)
+    browser = FakeBrowser(FakePage(download=BYTES))
+    target = folder / "ELA" / "prova" / "scaricato.bin"
+    real = browser_files.looked_for_a_write
+    looks: list[int] = []
+
+    def then_it_appears(*args: Any, **kwargs: Any) -> Any:
+        found = real(*args, **kwargs)
+        looks.append(1)
+        if len(looks) == 2:  # the look before the file is placed
+            target.write_bytes(b"arrivato dopo lo sguardo")
+        return found
+
+    monkeypatch.setattr(browser_files, "looked_for_a_write", then_it_appears)
+    result = await download(browser, folder).execute(
+        decision(BROWSER_DOWNLOAD), DOWNLOAD, FakeStop()
+    )
+
+    assert result.error is not None and result.error.code == OVERWRITE_MISMATCH
+    assert "what was downloaded was removed" in result.error.message
+    assert target.read_bytes() == b"arrivato dopo lo sguardo"
+    assert sorted(one.name for one in target.parent.iterdir()) == ["scaricato.bin"]
