@@ -30,6 +30,7 @@ from ela.api import companion, console
 from ela.testing.fakes import FakePage
 from tests.api.ends import Surfaces, opened_surfaces, the_console_says_no, the_phone_says_no
 from tests.cli.test_section_22_on_the_cli import in_this_process
+from tests.composition import support
 
 MISSING = FakePage(counts={"#non-esiste": 0})
 """What example.com does for the plan of step 5: the page has no ``#non-esiste``."""
@@ -145,7 +146,10 @@ async def recorded(module: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path
 def record(module: ModuleType, tmp_path_factory: pytest.TempPathFactory) -> Real:
     """The answers, from a world that lives only while they are asked."""
     with pytest.MonkeyPatch.context() as monkeypatch:
-        return asyncio.run(recorded(module, monkeypatch, tmp_path_factory.mktemp("real")))
+        folder = tmp_path_factory.mktemp("real")
+        # The declared environment, as a fixture of a function has it (M13.17b, answer 39 (c)).
+        support.enter_the_declared_environment(monkeypatch, folder)
+        return asyncio.run(recorded(module, monkeypatch, folder))
 
 
 class Recorded:

@@ -15,6 +15,7 @@ import ast
 import importlib
 import os
 import shutil
+import sys
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
@@ -51,15 +52,14 @@ def settings_loaded_beside_a_dotenv_outside(
     before = Path.cwd()
     os.chdir(folder)
     try:
-        try:
-            found: Any = PersistenceSettings().db_url
-            refusal: Any = None
-        except BaseException as raised:  # noqa: BLE001 — the refusal is one on purpose
-            found, refusal = None, raised
-        yield found, refusal
+        found: Any = PersistenceSettings().db_url
+        refusal: Any = None
+    except BaseException as raised:  # noqa: BLE001 — the refusal is one on purpose
+        found, refusal = None, raised
     finally:
         os.chdir(before)
         shutil.rmtree(folder, ignore_errors=True)
+    yield found, refusal
 
 
 def test_a_dotenv_outside_the_test_s_folders_is_never_read_in_a_module_fixture(
@@ -139,3 +139,70 @@ def test_every_default_under_the_home_is_moved_by_the_declared_environment(
     assert PersistenceSettings in classes and under, "the classes found, and a default under home"
     left = {where: variable for where, variable in under.items() if variable not in declared.names}
     assert left == {}, "a default under the home that the declared environment does not move"
+
+
+# ----------------------------------------------------------------------------------------
+# Answers 39 (a) and 56: the variables, the home, the folder of work
+# ----------------------------------------------------------------------------------------
+
+
+def test_the_ela_variables_of_the_process_are_taken_away() -> None:
+    from tests import script_fences
+
+    environment = {"ELA_DB_URL": "sqlite:////vera.db", "ELA_X": "1", "HOME": "/h", "PATH": "/p"}
+
+    assert script_fences.cleared(environment) == ["ELA_DB_URL", "ELA_X"]
+    assert environment == {"HOME": "/h", "PATH": "/p"}
+    assert not [name for name in os.environ if name.startswith("ELA_")], "and none is here"
+
+
+def test_the_home_and_the_folder_of_work_of_a_test_are_the_test_s(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """Answer 56 (b) and (c): a test that declares nothing works in a folder of pytest's and has a
+    home of pytest's — so ELA's home, and every default under it, is not the real one."""
+    from ela.domain import ela_home
+
+    base = tmp_path_factory.getbasetemp().resolve()
+
+    assert Path.cwd().resolve().is_relative_to(base)
+    assert Path.home().resolve().is_relative_to(base)
+    assert ela_home().resolve().is_relative_to(base)
+
+
+def test_the_browsers_of_playwright_are_looked_for_where_they_are() -> None:
+    """Answer 54 (c): the registry, pinned before the home moved, as Playwright's driver computes
+    it — under the home on a Mac and on Linux, under ``LOCALAPPDATA`` on Windows, not moved."""
+    from tests import script_fences
+
+    home = Path("/la/casa")
+
+    assert script_fences.playwright_registry({}, home, "darwin") == (
+        home / "Library" / "Caches" / "ms-playwright"
+    )
+    assert script_fences.playwright_registry({}, home, "linux") == home / ".cache" / "ms-playwright"
+    assert script_fences.playwright_registry({"XDG_CACHE_HOME": "/c"}, home, "linux") == Path(
+        "/c/ms-playwright"
+    )
+    assert script_fences.playwright_registry({}, home, "win32") is None
+    pinned: dict[str, str] = {}
+    script_fences.pin_the_browsers(pinned, home, "darwin")
+    assert pinned == {"PLAYWRIGHT_BROWSERS_PATH": str(home / "Library/Caches/ms-playwright")}
+    declared = {"PLAYWRIGHT_BROWSERS_PATH": "/dove/l-ha-scritto/qualcuno"}
+    script_fences.pin_the_browsers(declared, home, "darwin")
+    assert declared == {"PLAYWRIGHT_BROWSERS_PATH": "/dove/l-ha-scritto/qualcuno"}
+    if sys.platform != "win32":
+        registry = Path(os.environ[script_fences.PLAYWRIGHT_BROWSERS])
+        assert not registry.is_relative_to(Path.home()), "pinned before the home moved"
+
+
+def test_a_dotenv_inside_the_test_s_folder_is_read_and_none_is_not_judged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ela.infrastructure.persistence.settings import PersistenceSettings
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text(LINE + "\n", encoding="utf-8")
+
+    assert PersistenceSettings().db_url == LINE.partition("=")[2]
+    assert PersistenceSettings(_env_file=None).db_url != LINE.partition("=")[2]  # type: ignore[call-arg]

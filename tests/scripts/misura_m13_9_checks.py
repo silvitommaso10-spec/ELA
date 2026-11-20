@@ -34,6 +34,8 @@ from typing import Any
 
 import pytest
 
+from tests import script_fences
+
 HERE = Path(__file__).resolve().parent
 SCRIPT = HERE.parents[1] / "scripts" / "misura_m13_9.py"
 RECORDED = HERE / "data" / "bw-2026.9.1"
@@ -212,6 +214,29 @@ def vouched(path: Path) -> str | None:
     return None
 
 
+THE_HEAD = ("git", "-C", str(HERE.parents[1]), "rev-parse", "--short", "HEAD")
+"""What the measure launches first, to write the commit it ran at (``misura_m13_9.py:1751``)."""
+WHY_THE_HEAD = (
+    "the measure writes the commit it ran at: git of this machine, on this repository, reading "
+    "only (M13.17b, decision 10)"
+)
+WHY_THE_SIGNATURE = (
+    "who signed a bw, as codesign of this Mac reads it: the bw is a file the test made or the one "
+    "of the workshop, an argument and never launched (M13.17b, decision 10)"
+)
+
+
+def signed_by(bw: str | Path) -> tuple[str, ...]:
+    """What the measure launches to write who signed ``bw`` (``misura_m13_9.py:536``)."""
+    return (str(CODESIGN), "-dv", "--verbose=2", str(bw))
+
+
+def verified(path: str | Path, *requirement: str) -> tuple[str, ...]:
+    """What ``not_of_bitwarden`` launches to verify the signature of ``path``
+    (``misura_m13_9.py:521-524``)."""
+    return (str(CODESIGN), "--verify", "--strict", *requirement, str(path))
+
+
 def run(
     tmp_path: Path,
     *arguments: str,
@@ -221,6 +246,13 @@ def run(
 ) -> tuple[int, str, list[NoBrowser]]:
     out = tmp_path / "misura.txt"
     made: list[NoBrowser] = []
+    named = script_fences.STATE.named
+    assert named is not None, "a test of the whole measure asks for script_may (M13.17b)"
+    named.launch(*THE_HEAD, why=WHY_THE_HEAD)
+    if "--a-secco" not in arguments and "--bw" in arguments and signature in (None, vouched):
+        # the default vouches for the bw named: the measure writes who signed it
+        found = arguments[arguments.index("--bw") + 1]
+        named.launch(*signed_by(found), why=WHY_THE_SIGNATURE)
 
     def browsers(work: Path, reached: Callable[[], bool]) -> NoBrowser:
         made.append(NoBrowser(work, **browser))
@@ -564,7 +596,7 @@ def test_a_bw_that_is_named_is_that_one_or_none_and_a_dry_run_never_looks_for_on
 
 
 def test_a_bw_nobody_vouches_for_is_never_launched_and_the_file_says_where_and_why(
-    bw: Path, tmp_path: Path
+    bw: Path, tmp_path: Path, script_may: Any
 ) -> None:
     """The master password goes to whatever is launched as ``bw login``. So a binary Bitwarden did
     not sign is not launched at all — not even for its version —, the steps of Bitwarden are
@@ -587,11 +619,12 @@ def test_a_bw_nobody_vouches_for_is_never_launched_and_the_file_says_where_and_w
 
 
 def test_among_the_places_the_first_bw_that_passes_is_the_one_and_the_others_are_said(
-    bw: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    bw: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, script_may: Any
 ) -> None:
     earlier = tmp_path / "un-posto-prima"
     shutil.copytree(bw.parent, earlier)
     monkeypatch.setattr(script(), "places_of_bw", lambda named, *, search: [earlier / "bw", bw])
+    script_may.launch(*signed_by(bw), why=WHY_THE_SIGNATURE)
     code, text, _ = run(
         tmp_path,
         ask=Tommaso("n", "s"),
@@ -606,7 +639,7 @@ def test_among_the_places_the_first_bw_that_passes_is_the_one_and_the_others_are
     assert "firma: verificata prima di lanciarlo" in text
 
 
-def test_a_dry_run_verifies_no_signature(bw: Path, tmp_path: Path) -> None:
+def test_a_dry_run_verifies_no_signature(bw: Path, tmp_path: Path, script_may: Any) -> None:
     asked: list[Path] = []
 
     def signature(path: Path) -> str | None:
@@ -623,11 +656,19 @@ def test_a_dry_run_verifies_no_signature(bw: Path, tmp_path: Path) -> None:
 
 @pytest.mark.skipif(not CODESIGN.is_file(), reason=NO_CODESIGN)
 def test_a_script_nobody_signed_and_a_binary_somebody_else_signed_are_not_bitwarden_s(
-    bw: Path,
+    bw: Path, script_may: Any
 ) -> None:
     """The negative of the real check, on the two ways of failing it: a file with no signature, and
     one whose signature is good and is not Bitwarden's — the ``ls`` Apple signs."""
     refuses = script().not_of_bitwarden
+    ls = Path("/bin/ls")
+    for launch in (
+        verified(bw),
+        verified(ls),
+        verified(ls, f"-R={script().BITWARDEN_S}"),
+        signed_by(ls),
+    ):
+        script_may.launch(*launch, why=WHY_THE_SIGNATURE)
 
     assert "codesign --verify --strict non passa" in refuses(bw)
     assert "non è firmato da Bitwarden" in refuses(Path("/bin/ls"))
@@ -643,7 +684,10 @@ def test_where_no_signature_can_be_read_no_bw_is_bitwarden_s(
 
 
 @pytest.mark.skipif(not (CODESIGN.is_file() and REAL_BW.is_file()), reason=NO_REAL_BW)
-def test_the_cli_bitwarden_signed_passes() -> None:
+def test_the_cli_bitwarden_signed_passes(script_may: Any) -> None:
+    script_may.launch(*verified(REAL_BW), why=WHY_THE_SIGNATURE)
+    script_may.launch(*verified(REAL_BW, f"-R={script().BITWARDEN_S}"), why=WHY_THE_SIGNATURE)
+
     assert script().not_of_bitwarden(REAL_BW) is None
 
 
@@ -653,7 +697,7 @@ def test_the_cli_bitwarden_signed_passes() -> None:
 
 
 def test_the_dry_run_goes_through_and_its_file_holds_no_value_and_no_address(
-    bw: Path, tmp_path: Path
+    bw: Path, tmp_path: Path, script_may: Any
 ) -> None:
     code, text, (browser,) = run(tmp_path, "--a-secco", "--bw", str(bw))
 
@@ -668,7 +712,9 @@ def test_the_dry_run_goes_through_and_its_file_holds_no_value_and_no_address(
     assert "segreto" not in text, "the query of an address is not written"
 
 
-def test_the_dry_run_hands_no_key_and_no_invented_value_to_argv(bw: Path, tmp_path: Path) -> None:
+def test_the_dry_run_hands_no_key_and_no_invented_value_to_argv(
+    bw: Path, tmp_path: Path, script_may: Any
+) -> None:
     run(tmp_path, "--a-secco", "--bw", str(bw))
     made = calls(bw)
     every_argument = " ".join(word for call in made for word in call["argv"])
@@ -681,7 +727,7 @@ def test_the_dry_run_hands_no_key_and_no_invented_value_to_argv(bw: Path, tmp_pa
 
 
 def test_at_the_end_the_vault_is_locked_the_account_left_and_every_folder_gone(
-    bw: Path, tmp_path: Path
+    bw: Path, tmp_path: Path, script_may: Any
 ) -> None:
     code, text, (browser,) = run(tmp_path, "--a-secco", "--bw", str(bw))
     order = commands(bw)
@@ -695,7 +741,7 @@ def test_at_the_end_the_vault_is_locked_the_account_left_and_every_folder_gone(
 
 
 def test_a_logout_that_does_not_happen_is_a_failure_and_the_file_says_what_to_do(
-    bw: Path, tmp_path: Path
+    bw: Path, tmp_path: Path, script_may: Any
 ) -> None:
     """The negative of the closing: it is verified by asking ``bw``, so a logout the server did
     not take is not written as done."""
@@ -709,7 +755,7 @@ def test_a_logout_that_does_not_happen_is_a_failure_and_the_file_says_what_to_do
 
 
 def test_an_entry_that_cannot_be_deleted_is_a_failure_at_the_entry_and_at_the_end(
-    bw: Path, tmp_path: Path
+    bw: Path, tmp_path: Path, script_may: Any
 ) -> None:
     turn_down(bw, delete="refuse")
     code, text, _ = run(tmp_path, "--a-secco", "--bw", str(bw))
@@ -741,7 +787,9 @@ def test_an_entry_left_by_an_interrupted_run_is_taken_away_by_the_next(
     assert script().none_left(vault) is True
 
 
-def test_a_login_bw_turns_down_is_skipped_and_the_rest_goes_on(bw: Path, tmp_path: Path) -> None:
+def test_a_login_bw_turns_down_is_skipped_and_the_rest_goes_on(
+    bw: Path, tmp_path: Path, script_may: Any
+) -> None:
     """What the world did not give is SALTATO, not FALLITO: a wrong password, a server that does
     not answer, are not a defect of the measure."""
     turn_down(bw, login="refuse")
@@ -759,7 +807,7 @@ def test_a_login_bw_turns_down_is_skipped_and_the_rest_goes_on(bw: Path, tmp_pat
 
 
 def test_a_mistyped_password_is_asked_again_and_an_unlock_given_up_skips_what_needs_it(
-    bw: Path, tmp_path: Path
+    bw: Path, tmp_path: Path, script_may: Any
 ) -> None:
     turn_down(bw, unlock="refuse")
     tommaso = Tommaso("n", "s", "n")
@@ -781,7 +829,7 @@ def test_a_mistyped_password_is_asked_again_and_an_unlock_given_up_skips_what_ne
 
 
 def test_a_new_unlock_is_asked_while_the_first_key_is_alive_and_that_key_is_read_right_after(
-    bw: Path, tmp_path: Path
+    bw: Path, tmp_path: Path, script_may: Any
 ) -> None:
     """A lock before the unlock closes the first key whatever an unlock does, and K2 would read
     its own lock. So the unlock comes first, and the lock is the closing's."""
@@ -803,7 +851,7 @@ def test_a_new_unlock_is_asked_while_the_first_key_is_alive_and_that_key_is_read
 
 
 def test_an_unlock_that_leaves_the_first_key_alive_is_read_as_that_and_the_lock_closes_both(
-    bw: Path, tmp_path: Path
+    bw: Path, tmp_path: Path, script_may: Any
 ) -> None:
     """The negative: a ``bw`` whose new unlock invalidates nothing. With a lock before the unlock
     the file said «locked» of this one too."""
@@ -823,7 +871,9 @@ def test_an_unlock_that_leaves_the_first_key_alive_is_read_as_that_and_the_lock_
     assert "il vault è chiuso, l'account è lasciato" in text
 
 
-def test_a_lock_that_closes_no_key_is_a_failure_of_the_closing(bw: Path, tmp_path: Path) -> None:
+def test_a_lock_that_closes_no_key_is_a_failure_of_the_closing(
+    bw: Path, tmp_path: Path, script_may: Any
+) -> None:
     turn_down(bw, lock="refuse")
     code, text, _ = run(tmp_path, "--a-secco", "--bw", str(bw))
 
@@ -833,7 +883,7 @@ def test_a_lock_that_closes_no_key_is_a_failure_of_the_closing(bw: Path, tmp_pat
 
 
 def test_the_master_password_is_asked_for_twice_and_before_each_tommaso_is_told_what_to_do(
-    bw: Path, tmp_path: Path
+    bw: Path, tmp_path: Path, script_may: Any
 ) -> None:
     """Decisions 44 and 46: a login and one unlock, and before each launch that leaves the terminal
     to ``bw`` a line that says what is meant — nothing on the screen — and the way out."""
@@ -847,7 +897,7 @@ def test_the_master_password_is_asked_for_twice_and_before_each_tommaso_is_told_
     assert text.index("entro venti secondi") < text.index("K1: bw login --raw ha scritto")
 
 
-def test_a_password_asked_again_is_told_again(bw: Path, tmp_path: Path) -> None:
+def test_a_password_asked_again_is_told_again(bw: Path, tmp_path: Path, script_may: Any) -> None:
     turn_down(bw, unlock="refuse")
     code, text, _ = run(tmp_path, "--bw", str(bw), ask=Tommaso("n", "s", "n"), signature=vouched)
 
@@ -855,7 +905,7 @@ def test_a_password_asked_again_is_told_again(bw: Path, tmp_path: Path) -> None:
     assert text.count("entro venti secondi, premi Ctrl-C una volta sola") == 3
 
 
-def test_without_a_bw_the_steps_of_bitwarden_are_skipped(tmp_path: Path) -> None:
+def test_without_a_bw_the_steps_of_bitwarden_are_skipped(tmp_path: Path, script_may: Any) -> None:
     code, text, _ = run(tmp_path, "--a-secco")
 
     assert code == 0
@@ -864,7 +914,7 @@ def test_without_a_bw_the_steps_of_bitwarden_are_skipped(tmp_path: Path) -> None
 
 
 def test_without_chrome_for_testing_the_steps_of_google_are_skipped(
-    bw: Path, tmp_path: Path
+    bw: Path, tmp_path: Path, script_may: Any
 ) -> None:
     code, text, (browser,) = run(tmp_path, "--a-secco", "--bw", str(bw), installed=False)
 
@@ -883,7 +933,7 @@ def interrupt() -> str:
 
 
 def test_an_interrupt_after_the_login_still_locks_logs_out_and_says_it_was_interrupted(
-    bw: Path, tmp_path: Path
+    bw: Path, tmp_path: Path, script_may: Any
 ) -> None:
     """Ctrl-C at the first question after ``bw login``: the vault exists for the closing before
     the login, so it is locked, the account is left, and both are asked of ``bw``."""
@@ -900,7 +950,7 @@ def test_an_interrupt_after_the_login_still_locks_logs_out_and_says_it_was_inter
 
 
 def test_a_ctrl_c_while_bw_unlock_waits_closes_the_vault_the_first_key_held_open(
-    bw: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    bw: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, script_may: Any
 ) -> None:
     """What the line before every interactive ``bw`` promises (decision 46): one Ctrl-C, and the
     script closes by itself. At the unlock the first key is alive, so there is a vault to lock."""
@@ -924,7 +974,7 @@ def test_a_ctrl_c_while_bw_unlock_waits_closes_the_vault_the_first_key_held_open
 
 
 def test_an_interrupt_while_the_entry_is_in_the_vault_does_not_leave_it_there(
-    bw: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    bw: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, script_may: Any
 ) -> None:
     module = script()
     plain = module.carries_a_password
@@ -939,7 +989,7 @@ def test_an_interrupt_while_the_entry_is_in_the_vault_does_not_leave_it_there(
 
 
 def test_a_browser_that_breaks_is_a_step_not_measured_and_the_file_says_which(
-    bw: Path, tmp_path: Path
+    bw: Path, tmp_path: Path, script_may: Any
 ) -> None:
     """Nothing a browser raises ends the measure with a traceback behind a file that says «0
     FALLITO»: the step is SALTATO, with the type of the error and never its message."""
@@ -955,7 +1005,7 @@ def test_a_browser_that_breaks_is_a_step_not_measured_and_the_file_says_which(
 
 
 def test_a_fence_that_did_not_hold_is_a_failure_with_its_sentence_and_stops_google_there(
-    bw: Path, tmp_path: Path
+    bw: Path, tmp_path: Path, script_may: Any
 ) -> None:
     """Decision 45. A browser that broke is the world's and is SALTATO; a launch outside the fence
     is the measure's own duty not kept: FALLITO, with what happened, and no window after it."""
@@ -978,7 +1028,7 @@ def test_a_fence_that_did_not_hold_is_a_failure_with_its_sentence_and_stops_goog
 
 
 def test_a_defect_of_the_measure_is_a_failure_with_its_line_and_the_closing_follows(
-    bw: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    bw: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, script_may: Any
 ) -> None:
     module = script()
 
@@ -1010,7 +1060,7 @@ def test_without_a_terminal_the_real_measure_does_not_start(
 
 
 def test_the_one_thing_asked_of_tommaso_in_words_is_where_the_account_is(
-    bw: Path, tmp_path: Path
+    bw: Path, tmp_path: Path, script_may: Any
 ) -> None:
     tommaso = Tommaso("n", "s", "n", "n", region="eu")
     code, text, _ = run(tmp_path, "--bw", str(bw), ask=tommaso)
@@ -1024,7 +1074,9 @@ def test_the_one_thing_asked_of_tommaso_in_words_is_where_the_account_is(
     ]
 
 
-def test_an_answer_that_is_neither_is_asked_again(bw: Path, tmp_path: Path) -> None:
+def test_an_answer_that_is_neither_is_asked_again(
+    bw: Path, tmp_path: Path, script_may: Any
+) -> None:
     answers = iter(["boh", "COM"])
     asked: list[str] = []
 
@@ -1041,7 +1093,7 @@ def test_an_answer_that_is_neither_is_asked_again(bw: Path, tmp_path: Path) -> N
 
 
 def test_the_window_without_automation_comes_first_on_a_clean_folder_and_the_guided_one_after(
-    bw: Path, tmp_path: Path
+    bw: Path, tmp_path: Path, script_may: Any
 ) -> None:
     """G1 decides the binary, so nothing signs the folder in before it: the plain window first, then
     the launches of Playwright (with the window before without), the adapter's road, the way out —
@@ -1066,7 +1118,7 @@ def test_the_window_without_automation_comes_first_on_a_clean_folder_and_the_gui
 
 
 def test_a_site_that_turns_chrome_for_testing_down_is_tried_in_the_installed_chrome(
-    bw: Path, tmp_path: Path
+    bw: Path, tmp_path: Path, script_may: Any
 ) -> None:
     """G1 of the rule written before the numbers: the same login, in the same conditions, in the
     other binary — a new test folder, the same preferences, the same round."""
@@ -1086,7 +1138,7 @@ def test_a_site_that_turns_chrome_for_testing_down_is_tried_in_the_installed_chr
 
 
 def test_what_the_binary_does_with_nothing_to_stop_it_is_measured_in_a_bare_window(
-    bw: Path, tmp_path: Path
+    bw: Path, tmp_path: Path, script_may: Any
 ) -> None:
     """G5 (decision 20): a folder without ELA's preferences, in a window without the flags that
     switch the browser's own sign-in off — and Tommaso left out of that account too."""
@@ -1105,7 +1157,7 @@ def test_what_the_binary_does_with_nothing_to_stop_it_is_measured_in_a_bare_wind
 
 
 def test_a_login_found_only_with_the_window_reopens_g3_and_is_left_through_the_window(
-    bw: Path, tmp_path: Path
+    bw: Path, tmp_path: Path, script_may: Any
 ) -> None:
     code, text, (browser,) = run(
         tmp_path, "--bw", str(bw), ask=Tommaso("n", "s", "n", "n"), sees=frozenset({True})
@@ -1117,7 +1169,9 @@ def test_a_login_found_only_with_the_window_reopens_g3_and_is_left_through_the_w
     assert "fuori dall'account: la pagina dell'account non si apre più" in text
 
 
-def test_a_way_out_that_cannot_be_seen_is_not_said_to_be_done(bw: Path, tmp_path: Path) -> None:
+def test_a_way_out_that_cannot_be_seen_is_not_said_to_be_done(
+    bw: Path, tmp_path: Path, script_may: Any
+) -> None:
     """No launch of Playwright saw the login: a logout from one would do nothing and «the account
     page does not open» would be true before it. Not verified is not PASSATO."""
     code, text, _ = run(
@@ -1133,7 +1187,9 @@ def test_a_way_out_that_cannot_be_seen_is_not_said_to_be_done(bw: Path, tmp_path
     assert "SALTATO: la cartella non è fuori dall'account" in text
 
 
-def test_a_logout_that_leaves_the_session_alive_is_a_failure(bw: Path, tmp_path: Path) -> None:
+def test_a_logout_that_leaves_the_session_alive_is_a_failure(
+    bw: Path, tmp_path: Path, script_may: Any
+) -> None:
     code, text, _ = run(
         tmp_path, "--bw", str(bw), ask=Tommaso("n", "s", "n", "n"), logout_works=False
     )
@@ -1143,7 +1199,7 @@ def test_a_logout_that_leaves_the_session_alive_is_a_failure(bw: Path, tmp_path:
 
 
 def test_a_browser_that_kept_something_of_a_login_made_by_hand_reopens_the_preferences(
-    bw: Path, tmp_path: Path
+    bw: Path, tmp_path: Path, script_may: Any
 ) -> None:
     """P1: after Tommaso's own login in the window, the counts of what the browser's password
     manager wrote — a row of an offer to save is enough to reopen proposal 3."""
@@ -1172,8 +1228,10 @@ def test_the_counts_of_what_a_browser_saved_are_read_from_its_tables_and_never_a
 
 
 def test_a_folder_somebody_else_holds_is_not_given_a_second_browser(
-    bw: Path, tmp_path: Path
+    bw: Path, tmp_path: Path, script_may: Any
 ) -> None:
+    script_may.launch(*THE_HEAD, why=WHY_THE_HEAD)
+    script_may.launch(*verified(bw), why=WHY_THE_SIGNATURE)
     out = tmp_path / "misura.txt"
     made: list[NoBrowser] = []
 
@@ -1200,7 +1258,7 @@ def test_a_folder_somebody_else_holds_is_not_given_a_second_browser(
 
 
 def test_a_guided_window_tommaso_closed_is_not_measured_and_says_no_address(
-    bw: Path, tmp_path: Path
+    bw: Path, tmp_path: Path, script_may: Any
 ) -> None:
     code, text, _ = run(tmp_path, "--bw", str(bw), ask=Tommaso("n", "s", "s"), breaks="guided")
 
@@ -1293,11 +1351,14 @@ def test_a_folder_that_is_not_the_measure_s_is_never_a_profile(tmp_path: Path) -
 
 
 def test_a_browser_launched_without_the_mock_keychain_is_closed_and_is_a_broken_fence(
-    tmp_path: Path,
+    tmp_path: Path, script_may: Any
 ) -> None:
     """The arguments are read back from the kernel, and here no process holds the folder: the
     context is closed before any page, and what is raised is the fence — not a browser's error."""
     module = script()
+    script_may.launch(
+        "/bin/ps", "-ww", "-A", "-o", "args=", why="the measure reads the arguments from the kernel"
+    )
     chrome = module.Chrome(tmp_path, simulated=True)
     profile = chrome.profile("una", preferences=False)
     closed: list[bool] = []

@@ -7,8 +7,9 @@ that owns the database, the answer back to the thread that asked.
 
 It costs these thirty lines and it buys the thing the milestone is about: every command is
 exercised against the API it will really talk to, so a CLI and an API that disagree fail here
-rather than on a user's machine. And ``tests/conftest.py``'s "no test talks to the network" stays
-true — ``ASGITransport`` opens nothing, and this class is not one of the transports it disables.
+rather than on a user's machine. And nothing here opens a socket — ``ASGITransport`` opens
+nothing, and this class is not one of the transports of ``httpx`` that ``tests/conftest.py``
+makes unusable for every test.
 """
 
 from __future__ import annotations

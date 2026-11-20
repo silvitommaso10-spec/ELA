@@ -258,18 +258,22 @@ def test_the_id_of_the_entry_never_enters_the_file_and_its_plan_is_taken_away(
     assert module.masked(f"--entry {ENTRY_ID}", proof) == f"--entry {module.ENTRY}"
 
 
-THE_RUNNER = pytest.mark.launches_through_a_proof_script(
+THE_RUNNER = (
     "the runner of the proof itself — base.run with its limit, base.started with its group — "
-    "with a real sleep: what is tested is the launch (tests/proof_launches.py)"
+    "with a real sleep: what is tested is the launch (M13.17b, tests/script_fences.py)"
 )
+"""Why the three tests of the runner name the lines they launch through the script."""
+LISTED = ("ps", "-axo", "pid=,command=")
+"""What ``base.processes()`` launches, to see that a closed group took the sleep with it."""
 
 
-@THE_RUNNER
-def test_a_command_past_its_limit_is_closed_and_said() -> None:
+def test_a_command_past_its_limit_is_closed_and_said(script_may: Any) -> None:
     """Decision 84, the negative case: a command that does not return within its limit is closed
     — its group, which is the command and what it started — and ``Overdue`` says it."""
     module = script()
     marker = "31.0817"
+    script_may.run(f"sleep {marker}; true", why=THE_RUNNER)
+    script_may.launch(*LISTED, why=THE_RUNNER)
     began = time.monotonic()
 
     with pytest.raises(module.base.Overdue) as late:
@@ -283,9 +287,9 @@ def test_a_command_past_its_limit_is_closed_and_said() -> None:
     assert not any(f"sleep {marker}" in command for command in listed.values())
 
 
-@THE_RUNNER
-def test_a_command_without_a_limit_is_run_as_before() -> None:
+def test_a_command_without_a_limit_is_run_as_before(script_may: Any) -> None:
     module = script()
+    script_may.run("echo come prima", why=THE_RUNNER)
 
     done = module.base.run("echo come prima")
 
@@ -322,9 +326,8 @@ def test_a_run_past_its_guard_fails_the_step_writes_the_task_and_stops(
     assert "state EXECUTING" in written and "non è tornato in 120 s" in str(stopped.value)
 
 
-@THE_RUNNER
 def test_the_run_of_the_stop_has_one_guard_from_its_launch_and_is_closed_with_its_group(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, script_may: Any
 ) -> None:
     """The negative case of step 14 (found by the re-read of M13.9d, decision 101): a run that
     does not return after the stop is closed at the guard counted **from its launch** — not at a
@@ -332,6 +335,8 @@ def test_the_run_of_the_stop_has_one_guard_from_its_launch_and_is_closed_with_it
     other ``ela task run`` of the proof."""
     module = script()
     marker, guard, arrives = "37.0918", 3.0, 2.0
+    script_may.run(f"sleep {marker}; true", why=THE_RUNNER)
+    script_may.launch(*LISTED, why=THE_RUNNER)
     monkeypatch.setattr(module, "RUN_LIMIT", guard)
     folder = tmp_path / module.FOLDER / "giu"
     folder.mkdir(parents=True)

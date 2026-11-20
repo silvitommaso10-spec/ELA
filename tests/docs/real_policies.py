@@ -31,6 +31,7 @@ from ela.providers.anthropic.models import HAIKU_5_5
 from tests.api.guided import Guided, Script, call, gesture, guided
 from tests.api.test_console_policies import FIELDS, a_console, posted
 from tests.cli.support import Cli, LoopTransport, plain
+from tests.composition import support
 from tests.docs.real_guided import ByGoal
 
 ROOT: Final = Path(__file__).resolve().parents[2]
@@ -280,4 +281,7 @@ async def recorded(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Real:
 def record(tmp_path_factory: pytest.TempPathFactory) -> Real:
     """The answers, from a world that lives only while they are asked."""
     with pytest.MonkeyPatch.context() as monkeypatch:
-        return asyncio.run(recorded(monkeypatch, tmp_path_factory.mktemp("policies")))
+        folder = tmp_path_factory.mktemp("policies")
+        # The declared environment, as a fixture of a function has it (M13.17b, answer 39 (c)).
+        support.enter_the_declared_environment(monkeypatch, folder)
+        return asyncio.run(recorded(monkeypatch, folder))

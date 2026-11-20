@@ -1,9 +1,9 @@
 """What the provider tests build on: a client double, a sleeper, a monotonic clock, answers.
 
-No test in this package opens a socket. The SDK client is replaced by an object with the one
-method the adapter calls — ``messages.create`` — which either returns a prepared ``Message`` or
-raises a prepared SDK exception, in order. ``tests/security/test_no_network.py`` proves that this
-is not merely a habit.
+No test in this package reaches the network: the SDK client is replaced by an object with the
+one method the adapter calls — ``messages.create`` — which either returns a prepared ``Message`` or
+raises a prepared SDK exception, in order. ``tests/security/test_no_network.py`` proves that a
+client that is not a double cannot get out through its HTTP transport either.
 """
 
 from __future__ import annotations

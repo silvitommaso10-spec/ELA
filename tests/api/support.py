@@ -1,8 +1,8 @@
 """Driving the API in a test: a client over the app, and plans to send it.
 
 The transport is ``ASGITransport``: the request reaches the application in this process and no
-socket is opened, which is what keeps ``tests/conftest.py``'s "no test talks to the network"
-true for these tests too.
+socket is opened — it is not one of the transports of ``httpx`` that ``tests/conftest.py`` makes
+unusable for every test, and it needs none of them.
 """
 
 from __future__ import annotations

@@ -1,7 +1,8 @@
 """Starting ELA (ADR 0023 §7, §16): ``python -m ela.api``.
 
 The address is not a command-line argument, so this is where the settings and the socket meet.
-No socket is opened here: what is under test is that ``serve`` hands uvicorn what the settings
+Sockets are bound here — on loopback, by ELA's own ``bound`` and by the tests — and none connects
+anywhere: uvicorn is a double. What is under test is that ``serve`` hands uvicorn what the settings
 say, and that a configuration ELA cannot use is a sentence on stderr rather than a traceback.
 """
 

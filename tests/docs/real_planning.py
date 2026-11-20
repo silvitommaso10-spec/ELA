@@ -25,6 +25,7 @@ import pytest
 
 from tests.api.planning import NO_PLAN, NOTE_PLAN, asked, created, said, with_a_model
 from tests.cli.support import plain
+from tests.composition import support
 from tests.executive.planning import ASK_STEP, plan_of
 
 QUESTION = "Fatti spiegare dal modello, in due frasi, che cos'è un grafo aciclico diretto."
@@ -148,7 +149,10 @@ async def recorded(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Real:
 def record(tmp_path_factory: pytest.TempPathFactory) -> Real:
     """The answers, from a world that lives only while they are asked."""
     with pytest.MonkeyPatch.context() as monkeypatch:
-        return asyncio.run(recorded(monkeypatch, tmp_path_factory.mktemp("real")))
+        folder = tmp_path_factory.mktemp("real")
+        # The declared environment, as a fixture of a function has it (M13.17b, answer 39 (c)).
+        support.enter_the_declared_environment(monkeypatch, folder)
+        return asyncio.run(recorded(monkeypatch, folder))
 
 
 class Recorded:

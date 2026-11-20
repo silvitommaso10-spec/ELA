@@ -36,6 +36,7 @@ from ela.ports import SessionEnd, SessionHost, SessionPlan
 from ela.tasks.engine import child_id
 from tests.api.guided import Guided, Script, call, gesture, guided
 from tests.cli.support import Cli, LoopTransport, plain
+from tests.composition import support
 
 ROOT: Final = Path(__file__).resolve().parents[2]
 EXAMPLES: Final = ROOT / "docs" / "examples"
@@ -316,7 +317,10 @@ async def recorded(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Real:
 def record(tmp_path_factory: pytest.TempPathFactory) -> Real:
     """The answers, from a world that lives only while they are asked."""
     with pytest.MonkeyPatch.context() as monkeypatch:
-        return asyncio.run(recorded(monkeypatch, tmp_path_factory.mktemp("guided")))
+        folder = tmp_path_factory.mktemp("guided")
+        # The declared environment, as a fixture of a function has it (M13.17b, answer 39 (c)).
+        support.enter_the_declared_environment(monkeypatch, folder)
+        return asyncio.run(recorded(monkeypatch, folder))
 
 
 class Recorded:

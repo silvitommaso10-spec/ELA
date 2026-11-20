@@ -33,6 +33,7 @@ FS_SCOPE = "ELA_FS_SCOPE"
 SCOPE = '["ELA"]'
 """The scope of every test that builds an ELA: one folder, ``ELA``, in the form of M13.17."""
 TERMINAL_PROGRAMS = "ELA_TERMINAL_PROGRAMS"
+NODE_STATE = "ELA_NODE_STATE_DIR"
 BROWSER_SITES = "ELA_BROWSER_SITES"
 
 
@@ -49,6 +50,12 @@ def declare(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **extra: str) -> No
     # Beside the temporary database, for the same reason it is beside the real one — and because
     # a test that left the default alone would create ``~/.ela/captures`` on whoever ran it.
     monkeypatch.setenv(CAPTURES, str(tmp_path / "captures"))
+    # The folder of the node's secret (M13.17b, answer 54): its default is ELA's home, like the
+    # three above, and an ELA built in a test resolves it among its places — the real one, before
+    # M13.17b.
+    # ``tests/test_the_environment_of_the_suite.py`` derives every default under the home and wants
+    # each written here.
+    monkeypatch.setenv(NODE_STATE, str(tmp_path / "node"))
     monkeypatch.setenv(API_TOKEN, TOKEN)
     # The folder ``fs.read`` and ``fs.write`` may touch (M13.1 dec. A): both lines or no start-up,
     # and under ``tmp_path`` for the reason the captures are — a test that left them out would be
@@ -104,17 +111,25 @@ async def create_schema(url: str) -> None:
         await engine.dispose()
 
 
-@pytest.fixture(autouse=True)
-def _only_the_declared_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """No ``ELA_`` variable and no ``.env`` but the ones the test asks for.
+def enter_the_declared_environment(monkeypatch: pytest.MonkeyPatch, folder: Path) -> None:
+    """No ``ELA_`` variable and no ``.env`` but the ones the test asks for: the variables taken
+    away, and ``folder`` the folder of work, where a load of the settings looks for its ``.env``.
 
     Both matter: the suite must say the same thing on a machine where ELA is configured for real
-    and on a machine where it is not.
+    and on a machine where it is not. **A function, since M13.17b** (answer 39 (c)): a fixture of a
+    module that builds an ELA enters it with its own ``MonkeyPatch.context()`` — the fixture below
+    is of a function, and pytest sets up the fixtures of a module before it.
     """
     for name in list(os.environ):
         if name.startswith("ELA_"):
             monkeypatch.delenv(name, raising=False)
-    monkeypatch.chdir(tmp_path)
+    monkeypatch.chdir(folder)
+
+
+@pytest.fixture(autouse=True)
+def _only_the_declared_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """The declared environment, for every test of a module that imports this fixture."""
+    enter_the_declared_environment(monkeypatch, tmp_path)
 
 
 @pytest.fixture

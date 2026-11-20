@@ -361,7 +361,8 @@ def _unconfigured_anthropic() -> AnthropicProvider:
 def _anthropic_on_a_double() -> AnthropicProvider:
     """The real adapter on a client double: the contract holds on the answering path too.
 
-    No network: ``tests/conftest.py`` makes the HTTP transports unusable for the whole suite.
+    No network: ``tests/conftest.py`` makes the transports of ``httpx`` and ``httpx2`` unusable for
+    every test and every fixture.
     """
     return AnthropicProvider(
         cast(AsyncAnthropic, FakeAnthropic(answer(), repeat=True)),
