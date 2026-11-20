@@ -528,10 +528,19 @@ def settle(base: Path) -> None:
     STATE.base = base.resolve()
     cleared(os.environ)
     pin_the_browsers(os.environ, Path.home(), sys.platform)
-    home = STATE.base / HOME
+    home = the_run_s_folder(STATE.base, os.environ) / HOME
     home.mkdir(exist_ok=True)
     os.environ["HOME"] = str(home)
     os.environ["USERPROFILE"] = str(home)
+
+
+def the_run_s_folder(base: Path, environment: Mapping[str, str]) -> Path:
+    """The folder of pytest's temporary files of the whole run: for a worker of xdist the parent
+    of its own (``popen-gwN``). **The home is one for the whole run**: a test that reads
+    ``Path.home()`` when its module is collected — the id of a ``parametrize`` — must collect the
+    same tests in every worker, or xdist stops the run (found on 2026-11-20 by
+    ``tests/scripts/test_misura_m13_11.py``)."""
+    return base.parent if environment.get("PYTEST_XDIST_WORKER") else base
 
 
 def work_in_the_test_s_folder() -> None:

@@ -162,12 +162,16 @@ def test_the_home_and_the_folder_of_work_of_a_test_are_the_test_s(
     """Answer 56 (b) and (c): a test that declares nothing works in a folder of pytest's and has a
     home of pytest's — so ELA's home, and every default under it, is not the real one."""
     from ela.domain import ela_home
+    from tests import script_fences
 
     base = tmp_path_factory.getbasetemp().resolve()
+    run = script_fences.the_run_s_folder(base, os.environ)
 
-    assert Path.cwd().resolve().is_relative_to(base)
-    assert Path.home().resolve().is_relative_to(base)
-    assert ela_home().resolve().is_relative_to(base)
+    assert Path.cwd().resolve().is_relative_to(base), "the folder of work is the process's"
+    assert Path.home().resolve() == (run / script_fences.HOME).resolve(), "one for the whole run"
+    assert ela_home().resolve().is_relative_to(run)
+    assert script_fences.the_run_s_folder(base, {"PYTEST_XDIST_WORKER": "gw3"}) == base.parent
+    assert script_fences.the_run_s_folder(base, {}) == base
 
 
 def test_the_browsers_of_playwright_are_looked_for_where_they_are() -> None:

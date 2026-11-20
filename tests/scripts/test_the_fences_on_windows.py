@@ -96,5 +96,5 @@ def test_the_home_and_the_folder_of_work_are_the_test_s_on_windows(
 ) -> None:
     base = tmp_path_factory.getbasetemp().resolve()
 
-    assert Path.home().resolve().is_relative_to(base)
+    assert Path.home().resolve().is_relative_to(script_fences.the_run_s_folder(base, os.environ))
     assert Path.cwd().resolve().is_relative_to(base)
