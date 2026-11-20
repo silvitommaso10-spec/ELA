@@ -262,7 +262,7 @@ THE_RUNNER = (
     "the runner of the proof itself — base.run with its limit, base.started with its group — "
     "with a real sleep: what is tested is the launch (M13.17b, tests/script_fences.py)"
 )
-"""Why the three tests of the runner name the lines they launch through the script."""
+"""Why the tests of the runner name the lines they launch through the script."""
 LISTED = ("ps", "-axo", "pid=,command=")
 """What ``base.processes()`` launches, to see that a closed group took the sleep with it."""
 

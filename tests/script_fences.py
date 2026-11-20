@@ -1,5 +1,5 @@
 """**A test of a script never reaches the real world, and no test reaches the configuration of
-whoever runs the suite** (M13.17b): three fences of one rule, installed once per process by
+whoever runs the suite** (M13.17b): the fences of one rule, installed once per process by
 ``tests/conftest.py`` in ``pytest_configure``, before any fixture of any scope.
 
 **The rule.** A launch of a program, or the opening of a connection, or the resolution of a name,
@@ -210,16 +210,21 @@ def resolved_program(
     search: bool = True,
 ) -> Path | None:
     """The file the system would launch for ``chosen``, or ``None`` when that cannot be said for
-    sure (answer 35 (b)): a bare name looked up in the ``PATH`` of the child's environment, a
-    relative path against the child's folder. **On Windows a bare name is never sure** —
-    ``CreateProcess`` does not look in the ``PATH`` alone."""
+    sure (answer 35 (b)): a bare name looked up in the ``PATH`` of ``env`` — the child's
+    environment, or this process's when ``env`` is ``None`` —, a relative path against the
+    child's folder. **On Windows only an absolute path with its extension is sure**:
+    ``CreateProcess`` does not look in the ``PATH`` alone, resolves a relative path against other
+    folders than the child's, and appends ``.exe`` to a name without one."""
     program = os.fsdecode(chosen)
+    if sys.platform == "win32":
+        sure = os.path.isabs(program) and bool(os.path.splitext(program)[1])
+        return Path(os.path.realpath(program)) if sure else None
     if os.path.isabs(program):
         return Path(os.path.realpath(program))
     if os.sep in program or (os.altsep is not None and os.altsep in program):
         folder = os.fsdecode(cwd) if cwd is not None else os.getcwd()
         return Path(os.path.realpath(os.path.join(folder, program)))
-    if not search or sys.platform == "win32":
+    if not search:
         return None
     environment = os.environ if env is None else env
     found = shutil.which(program, path=environment.get("PATH", os.defpath))
@@ -287,8 +292,8 @@ def _of_os(name: str) -> Callable[[tuple[Any, ...], dict[str, Any]], tuple[Any, 
         search = name == "posix_spawnp"
 
         def spawned(args: tuple[Any, ...], named: dict[str, Any]) -> tuple[Any, ...]:
-            env = args[2] if len(args) > 2 else named.get("env")
-            return list(args[1]), None, resolved_program(args[0], env, None, search=search)
+            # posix_spawnp looks in the PATH of this process, as execvp does: not in ``env``'s
+            return list(args[1]), None, resolved_program(args[0], None, None, search=search)
 
         return spawned
     kind, tail = ("exec", name[4:]) if name.startswith("exec") else ("spawn", name[5:])
@@ -302,6 +307,20 @@ def _of_os(name: str) -> Callable[[tuple[Any, ...], dict[str, Any]], tuple[Any, 
         return list(argv), None, program
 
     return executed
+
+
+def fork_exec_described(args: tuple[Any, ...], named: dict[str, Any]) -> tuple[Any, ...]:
+    """``_posixsubprocess.fork_exec(args, executable_list, close_fds, pass_fds, cwd, env, …)``:
+    the first program of the list, a relative one against the child's folder."""
+    program = resolved_program(args[1][0], None, args[4]) if args[1] else None
+    return list(args[0]), None, program
+
+
+def create_process_described(args: tuple[Any, ...], named: dict[str, Any]) -> tuple[Any, ...]:
+    """``_winapi.CreateProcess(application_name, command_line, …)``: the program only when the
+    application is named by its absolute path — a command line is never read."""
+    program = resolved_program(args[0], None, None, search=False) if args[0] else None
+    return [args[1]], None, program
 
 
 def _guarded_launch(
@@ -351,7 +370,7 @@ def of_this_machine(host: Any) -> bool:
 def ours(sock: socket.socket, address: Any) -> bool:
     """Whether ``address`` is a listener this process bound and still holds: the same address and
     the same port, and nothing more — ``::1`` is not ``127.0.0.1``, and a listener on every
-    interface is not one on an address (M13.17b, «Le risposte, recepite», 35)."""
+    interface is not one on an address (M13.17b, «La proposta», §4)."""
     if sock.family == getattr(socket, "AF_UNIX", None):
         for one in list(STATE.bound):
             try:
@@ -454,9 +473,12 @@ def refuse_the_network(*args: Any, **named: Any) -> Any:
     the stack has its own refusal, every other test the one of ever."""
     script = from_a_script(sys._getframe(1))
     if script is not None:
+        request = args[1] if len(args) > 1 else named.get("request")
+        what = f"{request.method} {request.url}" if hasattr(request, "url") else repr(request)
         raise ConnectionFromAScript(
-            f"{Path(script).name} sent a request with an HTTP transport in a test: replace the "
-            "client with a double."
+            f"{Path(script).name} sent a request with an HTTP transport in a test: {what}. "
+            "Replace the client with a double: no transport of httpx is let through, named or "
+            f"not. The test named: {_named()}."
         )
     raise AssertionError(NO_NETWORK)
 
@@ -528,19 +550,10 @@ def settle(base: Path) -> None:
     STATE.base = base.resolve()
     cleared(os.environ)
     pin_the_browsers(os.environ, Path.home(), sys.platform)
-    home = the_run_s_folder(STATE.base, os.environ) / HOME
+    home = STATE.base / HOME
     home.mkdir(exist_ok=True)
     os.environ["HOME"] = str(home)
     os.environ["USERPROFILE"] = str(home)
-
-
-def the_run_s_folder(base: Path, environment: Mapping[str, str]) -> Path:
-    """The folder of pytest's temporary files of the whole run: for a worker of xdist the parent
-    of its own (``popen-gwN``). **The home is one for the whole run**: a test that reads
-    ``Path.home()`` when its module is collected — the id of a ``parametrize`` — must collect the
-    same tests in every worker, or xdist stops the run (found on 2026-11-20 by
-    ``tests/scripts/test_misura_m13_11.py``)."""
-    return base.parent if environment.get("PYTEST_XDIST_WORKER") else base
 
 
 def work_in_the_test_s_folder() -> None:
@@ -561,7 +574,7 @@ def work_in_the_test_s_folder() -> None:
 
 
 def install(base: Path) -> None:
-    """Once per process, before any fixture of any scope: the three fences."""
+    """Once per process, before any fixture of any scope: the fences."""
     settle(base)
     popen: Any = subprocess.Popen
     if not getattr(popen._execute_child, GUARDED, False):
@@ -576,12 +589,22 @@ def install(base: Path) -> None:
     else:
         if not getattr(_posixsubprocess.fork_exec, GUARDED, False):
             _posixsubprocess.fork_exec = _guarded_launch(
-                _posixsubprocess.fork_exec,
-                lambda args, named: (
-                    list(args[0]),
-                    None,
-                    resolved_program(args[1][0], None, None) if args[1] else None,
-                ),
+                _posixsubprocess.fork_exec, fork_exec_described
+            )
+    try:
+        import _winapi
+    except ImportError:  # not Windows
+        pass
+    else:
+        # The door under Popen on Windows, as fork_exec is on POSIX — multiprocessing knocks there
+        # directly —; and os.startfile, the shell's ``ShellExecute``, never derived.
+        winapi: Any = _winapi
+        if not getattr(winapi.CreateProcess, GUARDED, False):
+            winapi.CreateProcess = _guarded_launch(winapi.CreateProcess, create_process_described)
+        if hasattr(os, "startfile") and not getattr(os.startfile, GUARDED, False):
+            os.startfile = _guarded_launch(  # type: ignore[attr-defined,unused-ignore]
+                os.startfile,  # type: ignore[attr-defined,unused-ignore]
+                lambda args, named: ([os.fsdecode(args[0])], None, None),
             )
     sockets: Any = socket.socket
     for door in ("connect", "connect_ex"):

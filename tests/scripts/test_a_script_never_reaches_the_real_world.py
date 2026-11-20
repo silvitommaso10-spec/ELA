@@ -5,7 +5,8 @@ not by the prefix of its name.
 
 **Nothing here can reach the real world even with the fences broken** — the run of a mutant
 breaks them: a launch finds a fake program first on ``PATH``, in a folder of the test **outside
-pytest's temporary folder** (answer 35: one inside it would be let through as derived); a
+pytest's temporary folder** (answer 35: one inside it would be let through as derived), or is the
+system's ``touch`` on a file of pytest's temporary folder, which writes there and nowhere else; a
 connection finds a listener the test started **in a child process** — another process, as a
 provider and the real ELA are —, which leaves a mark and closes; no name of a real site is
 resolved. What would have happened is read from the mark.
@@ -385,7 +386,7 @@ def test_an_exemption_the_test_never_used_fails_it_and_only_if_it_passed() -> No
 def test_every_launcher_the_repository_names_is_guarded() -> None:
     """The list is ``SPAWNING_CALLS`` of ``tests/architecture/rules.py``: on this system its ``os``
     functions, ``subprocess.Popen._execute_child`` and ``_posixsubprocess.fork_exec``; and the
-    doors of the other two fences."""
+    doors of the other fences."""
     import _posixsubprocess  # type: ignore[import-not-found]
 
     from pydantic_settings.sources.providers.dotenv import DotEnvSettingsSource
@@ -463,35 +464,36 @@ def test_a_fixture_of_a_module_that_walks_a_script_is_under_the_fences(
 # ----------------------------------------------------------------------------------------
 
 
-def _with_socket(port: int) -> None:
-    socket.create_connection(("127.0.0.1", port), timeout=5).close()
+def _with_socket(host: str, port: int) -> None:
+    socket.create_connection((host, port), timeout=5).close()
 
 
-def _with_http_client(port: int) -> None:
+def _with_http_client(host: str, port: int) -> None:
     import http.client
 
-    http.client.HTTPConnection("127.0.0.1", port, timeout=5).request("GET", "/")
+    http.client.HTTPConnection(host, port, timeout=5).request("GET", "/")
 
 
-def _with_urllib(port: int) -> None:
+def _with_urllib(host: str, port: int) -> None:
     import urllib.request
 
-    urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5)  # noqa: S310
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    opener.open(f"http://{host}:{port}/", timeout=5)
 
 
-def _with_httpx(port: int) -> None:
+def _with_httpx(host: str, port: int) -> None:
     import httpx
 
-    httpx.get(f"http://127.0.0.1:{port}/", timeout=5)
+    httpx.get(f"http://{host}:{port}/", timeout=5)
 
 
-def _with_httpx2(port: int) -> None:
+def _with_httpx2(host: str, port: int) -> None:
     import httpx2
 
-    httpx2.get(f"http://127.0.0.1:{port}/", timeout=5)
+    httpx2.get(f"http://{host}:{port}/", timeout=5)
 
 
-CLIENTS: dict[str, Callable[[int], None]] = {
+CLIENTS: dict[str, Callable[[str, int], None]] = {
     "socket": _with_socket,
     "http.client": _with_http_client,
     "urllib.request": _with_urllib,
@@ -516,7 +518,7 @@ def test_every_client_the_repository_names_is_refused_from_a_script(
 
     for name, client in CLIENTS.items():
         mark.unlink(missing_ok=True)
-        refusal = caught(lambda client=client: walk(lambda: client(port)))
+        refusal = caught(lambda client=client: walk(lambda: client("127.0.0.1", port)))
         assert isinstance(refusal, script_fences.ConnectionFromAScript), name
         assert not mark.exists(), name
 
@@ -525,8 +527,8 @@ def test_no_client_of_the_list_asks_the_other_doors_of_the_resolver(
     a_listener_of_another_process: tuple[int, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Answer 37: the fence of the resolution is ``getaddrinfo``; ``gethostbyname`` and its family
-    are not wrapped, because no client of the list passes there — asked of each, with the name of
-    this machine and from the test, where nothing refuses them."""
+    are not wrapped, because no client of the list passes there — asked of each with a **name** of
+    this machine, ``localhost``, and from the test, where nothing refuses them."""
     port, _ = a_listener_of_another_process
     asked: list[str] = []
     for door in ("gethostbyname", "gethostbyname_ex", "gethostbyaddr"):
@@ -534,11 +536,19 @@ def test_no_client_of_the_list_asks_the_other_doors_of_the_resolver(
         monkeypatch.setattr(
             socket, door, lambda *a, door=door, real=real: (asked.append(door), real(*a))[1]
         )
+    resolved: list[Any] = []
+    guarded = socket.getaddrinfo
+    monkeypatch.setattr(
+        socket,
+        "getaddrinfo",
+        lambda host, *a, **k: (resolved.append(host), guarded(host, *a, **k))[1],
+    )
 
     for client in CLIENTS.values():
-        caught(lambda client=client: client(port))
+        caught(lambda client=client: client("localhost", port))
 
     assert asked == []
+    assert "localhost" in resolved, "a name was resolved, at the door of the fence"
 
 
 def test_a_listener_this_process_bound_is_derived_and_its_neighbours_are_not() -> None:
@@ -621,3 +631,141 @@ def test_the_transports_of_httpx_are_unusable_for_a_fixture_of_a_module_too(
 
     assert isinstance(refusal, AssertionError) and script_fences.NO_NETWORK in str(refusal)
     assert not mark.exists()
+
+
+# ----------------------------------------------------------------------------------------
+# The re-read of 25afb1e: what the system really launches, the servers of this process
+# ----------------------------------------------------------------------------------------
+
+
+def a_fake_inside_pytest_s_folder(tmp_path: Path) -> tuple[Path, Path]:
+    """A program of the test's in pytest's temporary folder, and the mark it leaves there — with
+    the shell alone, whatever ``PATH`` the child is given."""
+    mark = tmp_path / "started"
+    fake = tmp_path / "ela-un-finto-del-test"
+    fake.write_text(f"#!/bin/sh\n: > '{mark}'\n", encoding="utf-8")
+    fake.chmod(0o755)
+    return fake, mark
+
+
+def test_posix_spawnp_is_derived_from_the_path_of_this_process_not_of_the_child_s(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``posix_spawnp`` looks for the program as ``execvp`` does, in the ``PATH`` of the process
+    that calls it: the ``PATH`` of the child's environment does not say what starts."""
+    fake, mark = a_fake_inside_pytest_s_folder(tmp_path)
+    walk = a_script(A_SCRIPT)
+
+    refusal = caught(
+        lambda: walk(lambda: os.posix_spawnp(fake.name, [fake.name], {"PATH": str(tmp_path)}))
+    )
+    assert isinstance(refusal, script_fences.LaunchFromAScript), refusal
+    assert not mark.exists()
+
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ.get('PATH', '')}")
+    pid = walk(lambda: os.posix_spawnp(fake.name, [fake.name], {"PATH": "/da-nessuna-parte"}))
+    os.waitpid(pid, 0)
+    assert mark.exists()
+
+
+def test_fork_exec_reads_a_relative_program_against_the_child_s_folder(tmp_path: Path) -> None:
+    """The child's folder is not this process's: the declared environment already works in
+    ``tmp_path``, so the fake lies in a folder below it."""
+    child = tmp_path / "la-cartella-del-figlio"
+    child.mkdir()
+    fake, _ = a_fake_inside_pytest_s_folder(child)
+    relative = os.fsencode(f".{os.sep}{fake.name}")
+    assert Path.cwd().resolve() != child.resolve()
+
+    described = script_fences.fork_exec_described(
+        ([relative], [relative], True, (), os.fsencode(child), None), {}
+    )
+
+    assert described == ([relative], None, Path(os.path.realpath(fake)))
+    assert script_fences.derived(described[2])
+
+
+def test_on_windows_only_an_absolute_path_with_its_extension_is_sure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``CreateProcess`` resolves a relative path against other folders than the child's and
+    appends ``.exe`` to a name without one: answer 35 (b), what is not sure is not derived. Tried
+    here on the rule of the system, with this system's paths."""
+    monkeypatch.setattr(sys, "platform", "win32")
+    fake = tmp_path / "finto.exe"
+
+    assert script_fences.resolved_program(str(tmp_path / "finto"), None, None) is None
+    assert script_fences.resolved_program("finto.exe", None, None) is None
+    assert script_fences.resolved_program(f".{os.sep}finto.exe", None, str(tmp_path)) is None
+    assert script_fences.resolved_program(str(fake), None, None) == Path(os.path.realpath(fake))
+    assert script_fences.create_process_described((None, "finto.exe -x"), {})[2] is None
+    assert script_fences.create_process_described((str(fake), "finto.exe -x"), {}) == (
+        ["finto.exe -x"],
+        None,
+        Path(os.path.realpath(fake)),
+    )
+
+
+def test_a_request_of_httpx_from_a_script_says_what_it_was_sending_and_what_was_named(
+    a_listener_of_another_process: tuple[int, Path], script_may: Any
+) -> None:
+    """Decisions 7 and 36: the refusal says what was about to go out, and what the test named —
+    which a transport of ``httpx`` never lets through."""
+    import httpx
+
+    port, mark = a_listener_of_another_process
+    mark.unlink(missing_ok=True)
+    script_may.connect("127.0.0.1", port, why="named, and still not a way for httpx")
+    url = f"http://127.0.0.1:{port}/una-richiesta-del-test"
+    walk = a_script(A_SCRIPT)
+
+    refusal = caught(lambda: walk(lambda: httpx.get(url, timeout=5)))
+
+    assert isinstance(refusal, script_fences.ConnectionFromAScript), refusal
+    assert f"GET {url}" in str(refusal)
+    assert f"The test named: connect 127.0.0.1:{port}" in str(refusal)
+    assert not mark.exists()
+    walk(lambda: socket.create_connection(("127.0.0.1", port), timeout=5).close())
+
+
+def test_a_server_of_socketserver_and_one_of_asyncio_are_listeners_of_this_process() -> None:
+    """M13.17b, «La proposta», §4: a server binds with ``socket.socket.bind`` — ``socketserver``
+    in its ``server_bind``, asyncio in ``create_server`` —, so a script reaches it as derived."""
+    import http.server
+    import threading
+    import urllib.request
+
+    class Quiet(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802 — the name http.server calls
+            self.send_response(204)
+            self.end_headers()
+
+        def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
+            pass
+
+    walk = a_script(A_SCRIPT)
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Quiet)
+    serving = threading.Thread(target=server.serve_forever, daemon=True)
+    serving.start()
+    try:
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        url = f"http://127.0.0.1:{server.server_address[1]}/"
+        assert walk(lambda: opener.open(url, timeout=5).status) == 204
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    async def through_asyncio() -> None:
+        listening = await asyncio.start_server(
+            lambda reader, writer: writer.close(), "127.0.0.1", 0
+        )
+        port = listening.sockets[0].getsockname()[1]
+        try:
+            await asyncio.to_thread(
+                walk, lambda: socket.create_connection(("127.0.0.1", port), timeout=5).close()
+            )
+        finally:
+            listening.close()
+            await listening.wait_closed()
+
+    asyncio.run(through_asyncio())

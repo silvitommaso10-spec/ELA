@@ -38,6 +38,7 @@ pytestmark = machines.needs(
 
 
 def test_the_fences_are_installed_on_windows() -> None:
+    import _winapi
     from asyncio import proactor_events
 
     from pydantic_settings.sources.providers.dotenv import DotEnvSettingsSource
@@ -51,6 +52,8 @@ def test_the_fences_are_installed_on_windows() -> None:
         socket.getaddrinfo,
         proactor_events.BaseProactorEventLoop.sock_connect,
         DotEnvSettingsSource._read_env_files,
+        _winapi.CreateProcess,  # the door under Popen, and multiprocessing's
+        os.startfile,  # type: ignore[attr-defined,unused-ignore]
         *(getattr(os, name) for name in script_fences.OS_LAUNCHERS),
     ):
         assert getattr(guarded, script_fences.GUARDED, False), guarded
@@ -68,6 +71,21 @@ def test_a_launch_from_a_script_is_refused_on_windows() -> None:
 
 def test_a_bare_name_is_never_derived_on_windows() -> None:
     assert script_fences.resolved_program("python", None, None) is None
+    assert script_fences.resolved_program(sys.executable.removesuffix(".exe"), None, None) is None
+
+
+def test_a_launch_of_multiprocessing_s_door_from_a_script_is_refused_on_windows() -> None:
+    import _winapi
+
+    refusal = caught(
+        lambda: a_script(A_SCRIPT)(
+            lambda: _winapi.CreateProcess(
+                None, f'"{sys.executable}" -c pass', None, None, False, 0, None, None, None
+            )
+        )
+    )
+
+    assert isinstance(refusal, script_fences.LaunchFromAScript), refusal
 
 
 def test_a_connection_of_asyncio_on_the_proactor_is_refused_at_its_own_door(
@@ -96,5 +114,5 @@ def test_the_home_and_the_folder_of_work_are_the_test_s_on_windows(
 ) -> None:
     base = tmp_path_factory.getbasetemp().resolve()
 
-    assert Path.home().resolve().is_relative_to(script_fences.the_run_s_folder(base, os.environ))
+    assert Path.home().resolve().is_relative_to(base)
     assert Path.cwd().resolve().is_relative_to(base)

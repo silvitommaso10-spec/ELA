@@ -13,7 +13,7 @@ fixture of a function, which a fixture of a module or of the session ran before.
 **What is not true, and is said** (answer 34 of M13.17b): a test **without** a script of
 ``scripts/`` on its stack that opens a socket with another client — ``urllib``, ``http.client``, a
 socket — is stopped by nothing here. The fence of the socket is the scripts'
-(``tests/script_fences.py``); the rest is M7.1b, registered.
+(``tests/script_fences.py``); the rest is M7.1b, which M13.17b registers when it closes.
 
 **And the fences of the scripts and of the environment** (M13.17b, ``tests/script_fences.py``): a
 script of ``scripts/`` launches nothing, connects to nothing and resolves no name of the world in a
@@ -81,7 +81,7 @@ def pytest_runtest_makereport(
 @pytest.hookimpl(trylast=True)
 def pytest_configure(config: pytest.Config) -> None:
     """The mark of the one place (``tests/machines.py``), who this process is for the log of the
-    suite (``tests/suite_log.py``), and **the three fences of M13.17b**
+    suite (``tests/suite_log.py``), and **the fences of M13.17b**
     (``tests/script_fences.py``): once per process, before any fixture of any scope is set up.
     Last among the plugins' own ``pytest_configure``: the folder of pytest's temporary files is
     made by its own."""

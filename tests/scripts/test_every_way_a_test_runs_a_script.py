@@ -4,11 +4,15 @@ the generator, and not listed.
 
 The fences recognise a script by the file of a frame, resolved: a file inside ``scripts/``. So what
 a test loads **by a path** — ``spec_from_file_location``, ``SourceFileLoader``, ``run_path`` — must
-resolve inside ``scripts/``; what it loads **by a name** reaches a script only through a folder put
-on ``sys.path``, which must be ``scripts/`` itself — the siblings of a proof, from the test that
-loads it or from the script that puts its own folder there —; and **a copy loaded from another
-folder, or a script launched as a child process**, are where the fences do not reach: each is
-found, and named in :data:`OUT_OF_REACH` with what holds for it. Today none is.
+resolve inside ``scripts/``, and so must the name of the file a test **compiles** code of a script
+with (``exec`` of a ``compile`` whose source is not the test's own constant); what it loads **by a
+name** reaches a script only through a folder put on ``sys.path``, which must be ``scripts/`` itself
+— the siblings of a proof, from the test that loads it or from the script that puts its own folder
+there —; and **a copy loaded from another folder, a script launched as a child process** — named
+in the text of the launch or in the value of an argument the evaluator reads —, **or the code of a
+script written into a file** — an attribute of a module a loader of the tests gives back — are
+where the fences do not reach: each is found, and named in :data:`OUT_OF_REACH` with what holds for
+it.
 
 **A name built while the test runs** — ``import_module`` of the modules of a package of ela's —
 is not read: it is a load of a script only if it says ``scripts`` or the name of one, and then it is
@@ -42,10 +46,21 @@ LAUNCHES: Final = frozenset(
 BY_NAME: Final = frozenset({"import_module", "__import__", "run_module"})
 STEMS: Final = frozenset(path.stem for path in SCRIPTS.glob("*.py"))
 """The names a script would be imported by: the files of the folder, read when the test runs."""
-OUT_OF_REACH: Final[dict[str, str]] = {}
-"""``file:line`` of a copy of a script loaded from another folder, or of a script launched as a
-child, with what holds for it: where the fences do not reach. Empty on 2026-11-20 (the census A of
-M13.17b)."""
+OUT_OF_REACH: Final[dict[str, str]] = {
+    "tests/scripts/test_misura_m13_11_windows.py:FIRST": (
+        "B3's first program — it prints two lines and nothing else — written into the test's "
+        "folder and run by PowerShell, whose launch the test names exactly: a grandchild of the "
+        "test, which no fence sees"
+    ),
+    "tests/scripts/test_misura_m13_11_windows.py:SECOND": (
+        "B3's second program — it writes the bytes it receives into the file of the test's "
+        "folder it is given — written and run as the first"
+    ),
+}
+"""Where the fences do not reach — a copy of a script loaded from another folder, a script
+launched as a child, the code of a script written into a file —, by ``file:attribute`` or
+``file:line``, with what holds for it. On 2026-11-20 (the re-read of 25afb1e) the programs of B3 of
+``scripts/misura_m13_11.py``, which the test of Windows runs through both PowerShells."""
 
 
 class Unreadable(Exception):
@@ -107,7 +122,10 @@ def parents(module: Module) -> dict[ast.AST, ast.AST]:
 class Evaluator:
     """What a path of the tests is, read and never run."""
 
-    def __init__(self, everything: list[Module]) -> None:
+    def __init__(self, everything: list[Module], *, callers: bool = True) -> None:
+        self.callers = callers
+        """Whether a parameter is read at the calls of its function — not for the arguments of a
+        launch, which are many and mostly the test's own programs."""
         self.modules = {module.path: module for module in everything}
         self.owners: dict[Path, dict[ast.AST, ast.AST]] = {}
         self.by_dotted = {
@@ -270,6 +288,8 @@ class Evaluator:
         names = [argument.arg for argument in scope.args.args]
         if name not in names:
             return None
+        if not self.callers:
+            raise Unreadable(f"{module.where}:{scope.lineno}: the parameter {name}")
         index = names.index(name)
         found = self.parametrized(name, scope, module)
         if found is not None:
@@ -367,19 +387,84 @@ class Way:
     loads: frozenset[Value]
 
 
+def loaders(everything: Iterable[Module]) -> frozenset[str]:
+    """The functions of the tests that load a module by a path: what they give back is a script's
+    module, whose attributes are the script's code."""
+    return frozenset(
+        function.name
+        for module in everything
+        for function in ast.walk(module.tree)
+        if isinstance(function, ast.FunctionDef | ast.AsyncFunctionDef)
+        and any(
+            isinstance(call, ast.Call) and called_name(call) in BY_PATH
+            for call in ast.walk(function)
+        )
+    )
+
+
+def a_script_s_module(node: ast.expr, given: frozenset[str], bound: set[str]) -> bool:
+    """Whether ``node`` is the module of a script: a call of a loader, or a name bound to one."""
+    if isinstance(node, ast.Call):
+        return called_name(node) in given
+    return isinstance(node, ast.Name) and node.id in bound
+
+
+def launched(node: ast.Call, evaluator: Evaluator, module: Module, scope: ast.AST | None) -> bool:
+    """Whether a launch names a file of ``scripts/``: in its text, or in the value of one of its
+    arguments the evaluator reads — what it cannot read is a program of the test's."""
+    if "scripts/" in ast.unparse(node):
+        return True
+    arguments: list[ast.expr] = []
+    for argument in node.args:
+        arguments.extend(
+            argument.elts if isinstance(argument, ast.List | ast.Tuple) else [argument]
+        )
+    for argument in arguments:
+        try:
+            values = evaluator.values(argument, module, scope)
+        except Unreadable:
+            continue
+        if any(inside_the_scripts(one) for one in values if not isinstance(one, str | int)):
+            return True
+    return False
+
+
 def ways(everything: list[Module], tests: Iterable[Module]) -> list[Way]:
     """Every way a module of ``tests`` makes the code of a script run: the loads by a path, the
-    folders put on ``sys.path``, and the launches that name a file of ``scripts/``."""
+    code compiled with a file's name, the folders put on ``sys.path``, the launches that name a
+    file of ``scripts/``, and the code of a script written into a file."""
     evaluator = Evaluator(everything)
+    of_a_launch = Evaluator(everything, callers=False)
+    given = loaders(everything)
     found: list[Way] = []
     for module in tests:
         owner = parents(module)
+        bound = {
+            target.id
+            for assign in ast.walk(module.tree)
+            if isinstance(assign, ast.Assign) and a_script_s_module(assign.value, given, set())
+            for target in assign.targets
+            if isinstance(target, ast.Name)
+        }
         for node in ast.walk(module.tree):
             if not isinstance(node, ast.Call):
                 continue
             name = called_name(node)
             scope = enclosing(node, owner)
-            if name in BY_PATH and node.args:
+            if isinstance(node.func, ast.Name) and name == "compile" and len(node.args) >= 2:
+                if isinstance(node.args[0], ast.Constant):
+                    continue  # the test's own code, under a name it chooses
+                values = evaluator.values(node.args[1], module, scope)
+                found.append(Way(f"{module.where}:{node.lineno}", "compilato", frozenset(values)))
+            elif (
+                name in ("write_text", "write_bytes")
+                and node.args
+                and isinstance(node.args[0], ast.Attribute)
+                and a_script_s_module(node.args[0].value, given, bound)
+            ):
+                written = f"{module.where}:{node.args[0].attr}"
+                found.append(Way(written, "scritto", frozenset()))
+            elif name in BY_PATH and node.args:
                 argument = node.args[-1] if name != "run_path" else node.args[0]
                 values = evaluator.values(argument, module, scope)
                 found.append(
@@ -394,7 +479,7 @@ def ways(everything: list[Module], tests: Iterable[Module]) -> list[Way]:
                     names = {word for word in STEMS | {"scripts"} if word in ast.unparse(node)}
                 if {one.split(".")[0] for one in names} & (STEMS | {"scripts"}):
                     found.append(Way(f"{module.where}:{node.lineno}", "per nome", frozenset()))
-            elif name in LAUNCHES and "scripts/" in ast.unparse(node):
+            elif name in LAUNCHES and launched(node, of_a_launch, module, scope):
                 found.append(Way(f"{module.where}:{node.lineno}", "figlio", frozenset()))
         for node in ast.walk(module.tree):
             named = (
@@ -424,6 +509,9 @@ def test_every_way_a_test_runs_a_script_loads_a_file_the_fences_recognise() -> N
         if way.where in OUT_OF_REACH:
             continue
         assert way.how != "figlio", f"{way.where}: a script launched as a child, where no fence is"
+        assert way.how != "scritto", (
+            f"{way.where}: the code of a script written into a file, to run where no fence is"
+        )
         assert way.how != "per nome", (
             f"{way.where}: a script imported by its name — from whatever folder sys.path holds "
             "first: load it by its path in scripts/, as tests/docs/test_prova_eyes.py does"
@@ -434,6 +522,12 @@ def test_every_way_a_test_runs_a_script_loads_a_file_the_fences_recognise() -> N
             "the fences do not recognise it — load it from scripts/, or name it in OUT_OF_REACH"
         )
     assert set(OUT_OF_REACH) <= {way.where for way in found}, "a named way that is not there"
+
+
+OWN_FOLDER: Final = frozenset(
+    {"str(Path(__file__).resolve().parent)", "Path(__file__).resolve().parent"}
+)
+"""How a script writes its own folder: exactly, so that a parent of it is not taken for it."""
 
 
 def test_the_scripts_that_put_a_folder_on_the_path_put_their_own() -> None:
@@ -448,12 +542,22 @@ def test_the_scripts_that_put_a_folder_on_the_path_put_their_own() -> None:
                 and ast.unparse(node.func).startswith("sys.path.")
             ):
                 put = ast.unparse(node.args[-1])
-                assert "Path(__file__).resolve().parent" in put, f"{module.where}: {put}"
+                assert put in OWN_FOLDER, f"{module.where}: {put}"
 
 
 # ----------------------------------------------------------------------------------------
 # The negative cases, on sources of the test's
 # ----------------------------------------------------------------------------------------
+
+
+LOADER = (
+    "import importlib.util\nfrom pathlib import Path\n"
+    "SCRIPT = Path(__file__).resolve().parents[1] / 'scripts' / 'prova_m6_3c.py'\n"
+    "def script():\n"
+    "    return importlib.util.spec_from_file_location('x', SCRIPT)\n"
+    "\n"
+)
+"""A loader of the tests: what it gives back is a script's module (its load is on line 5)."""
 
 
 def synthetic(tmp_path: Path, source: str) -> list[Module]:
@@ -484,8 +588,23 @@ def synthetic(tmp_path: Path, source: str) -> list[Module]:
             "outside",
         ),
         ("import subprocess\nsubprocess.run(['python', 'scripts/prova_m6_3c.py'])\n", "child"),
+        (
+            "import subprocess, sys\nfrom pathlib import Path\n"
+            "SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'\n"
+            "subprocess.run([sys.executable, str(SCRIPTS / 'prova_m6_3c.py')])\n",
+            "child",
+        ),
         ("import prova_m6_3c\n", "by name"),
         ("import importlib\nimportlib.import_module('misura_m14_3')\n", "by name"),
+        ("import runpy\nrunpy.run_module('prova_m6_3c')\n", "by name"),
+        ("import runpy\nrunpy.run_path('/una/copia/prova_m6_3c.py')\n", "outside"),
+        (
+            LOADER + "exec(compile(script().FAKE, str(SCRIPT), 'exec'), {})\n",
+            "inside",
+        ),
+        (LOADER + "exec(compile(script().FAKE, 'altrove', 'exec'), {})\n", "outside"),
+        (LOADER + "exec(compile('pass', 'altrove', 'exec'), {})\n", "nothing"),
+        (LOADER + "measure = script()\nPath('p.py').write_text(measure.FIRST)\n", "written"),
     ],
 )
 def test_a_copy_a_child_and_an_unreadable_path_are_found(
@@ -496,8 +615,14 @@ def test_a_copy_a_child_and_an_unreadable_path_are_found(
         with pytest.raises(Unreadable):
             ways(those, those)
         return
-    (way,) = ways(those, those)
-    if found == "child":
+    if found == "nothing":
+        assert [way.how for way in ways(those, those)] == ["per percorso"], "the loader alone"
+        return
+    (way, *rest) = [way for way in ways(those, those) if way.where.split(":")[-1] != "5"]
+    assert rest == []
+    if found == "written":
+        assert way.how == "scritto" and way.where.endswith(":FIRST")
+    elif found == "child":
         assert way.how == "figlio"
     elif found == "by name":
         assert way.how == "per nome"

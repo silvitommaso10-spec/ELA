@@ -1,5 +1,5 @@
 """**No test reaches the configuration of whoever runs the suite** (M13.17b, answers 39 and 54):
-the third fence of ``tests/script_fences.py``. The configuration reaches the real world by three
+the third fence of ``tests/script_fences.py``. The configuration reaches the real world by its
 roads — the ``.env`` of the folder a load starts from, the ``ELA_`` variables of the process, and
 the defaults under the real home when nothing is declared —, and the suite says the same thing on
 the Mac of whoever uses ELA and on a runner.
@@ -165,13 +165,10 @@ def test_the_home_and_the_folder_of_work_of_a_test_are_the_test_s(
     from tests import script_fences
 
     base = tmp_path_factory.getbasetemp().resolve()
-    run = script_fences.the_run_s_folder(base, os.environ)
 
     assert Path.cwd().resolve().is_relative_to(base), "the folder of work is the process's"
-    assert Path.home().resolve() == (run / script_fences.HOME).resolve(), "one for the whole run"
-    assert ela_home().resolve().is_relative_to(run)
-    assert script_fences.the_run_s_folder(base, {"PYTEST_XDIST_WORKER": "gw3"}) == base.parent
-    assert script_fences.the_run_s_folder(base, {}) == base
+    assert Path.home().resolve() == (base / script_fences.HOME).resolve(), "the process's too"
+    assert ela_home().resolve().is_relative_to(base)
 
 
 def test_the_browsers_of_playwright_are_looked_for_where_they_are() -> None:
