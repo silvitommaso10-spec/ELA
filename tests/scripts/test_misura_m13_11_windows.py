@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import os
 import sys
+import warnings
 from pathlib import Path
 
 from tests import machines
@@ -113,9 +114,18 @@ def test_the_adapters_of_today_answer_what_difference_7_reads(tmp_path: Path) ->
     assert "PLAYWRIGHT_BROWSERS_PATH" not in os.environ
 
 
-def test_the_line_of_the_shape_of_a_key_goes_through_each_powershell_and_is_read(
+class WhatAShellGave(UserWarning):
+    """What a shell of the runner gave in B3, said in the summary of the warnings: the job's ``-ra``
+    does not show what a test that passes printed, and a print of a worker of ``xdist`` does not
+    reach the log (answer 61 (b))."""
+
+
+def test_what_each_powershell_gives_through_the_pipe_is_read(
     script_may: Named, tmp_path: Path
 ) -> None:
+    """**It asserts that the script reads, not what it reads**: on 2026-11-20 this test asserted
+    the line whole in every shell — the measure's answer, not the job's —, and Windows
+    PowerShell 5.1 of the runner gave it with a BOM in front (answers 61 (b) and 62)."""
     measure = script()
     shells = {name: where for name, where in measure.Pc().shells().items() if where is not None}
     assert "powershell.exe" in shells, shells
@@ -133,6 +143,11 @@ def test_the_line_of_the_shape_of_a_key_goes_through_each_powershell_and_is_read
 
     for name, (argv, out) in launches.items():
         ran = measure.Pc().run(argv, env=measure.without_module_path(os.environ), timeout=120.0)
-        piped = measure.read_pipe(out.read_bytes() if out.exists() else None)
+        received = out.read_bytes() if out.exists() else None
+        piped = measure.read_pipe(received)
+        version = measure.first_line(ran.out, 40) or "?"
+        warnings.warn(WhatAShellGave(f"B3 {name} {version}: {piped}"), stacklevel=1)
         assert ran.code == 0, (name, ran.err)
-        assert piped.intact, (name, piped)
+        assert received, (name, "the second program received nothing")
+        assert piped.size == len(received), (name, piped)
+        assert piped.shape in measure.SHAPES, (name, piped)

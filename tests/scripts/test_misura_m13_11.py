@@ -120,6 +120,9 @@ class FakePc:
     left: tuple[tuple[int, str], ...] = ()
     remaining: tuple[tuple[int, str], ...] = ()
     pipe: dict[str, bytes] = field(default_factory=dict)
+    shell_versions: dict[str, str] = field(
+        default_factory=lambda: {"powershell.exe": "5.1.26100.1", "pwsh.exe": "7.4.6"}
+    )
     alive_at_the_end: list[tuple[int, int, str]] = field(default_factory=list)
     bw_there: bool = True
     bw_signature: tuple[str, str] = ("Valid", BITWARDEN)
@@ -293,14 +296,14 @@ class FakePc:
         code, out, err = self.vault["answer"](list(arguments), dict(env), stdin or b"")
         if arguments[:1] in (["login"], ["unlock"]) and code == 0:
             self.keys.append(out)
-        return script().Ran(code, out.strip(), err.strip(), 3)
+        return script().Ran(code, script().what_it_printed(out.encode("utf-8")), err.strip(), 3)
 
     def _pipe(self, name: str, argv: Sequence[str]) -> Any:
         line = base64.b64decode(argv[-1]).decode("utf-16-le")
         out = re.findall(r"'((?:[^']|'')*)'", line)[-1].replace("''", "'")
         if name in self.pipe:
             Path(out).write_bytes(self.pipe[name])
-        return script().Ran(0, "5.1.26100.1" if name == "powershell.exe" else "7.4.6", "", 9)
+        return script().Ran(0, self.shell_versions.get(name, ""), "", 9)
 
     def kill_tree(self, pid: int) -> Any:
         self.killed.append(pid)
@@ -529,6 +532,83 @@ def test_the_facts_of_a_file_are_read_with_their_spaces_given_back() -> None:
     }
 
 
+# What PowerShell prints, read field by field (answer 61 (a)): the fake was more regular than the
+# world. On the runner of 2026-11-20 a file with no signer and no version was the last line printed,
+# its last two fields empty — and two strips took them away, the line's and the whole output's.
+
+
+def test_what_a_program_printed_loses_only_the_ends_of_its_lines() -> None:
+    assert script().what_it_printed(b"\r\nC%3A%5Cx NotSigned  \r\n") == "C%3A%5Cx NotSigned  "
+    assert script().what_it_printed(b"\xff\n") == "\ufffd"
+    assert script().what_it_printed(None) == ""
+
+
+@pytest.mark.parametrize(
+    ("printed", "expected"),
+    [
+        (
+            b"C%3A%5Cx%5Cpython.exe NotSigned  \r\n",
+            {"C:\\x\\python.exe": ("NotSigned", "", "")},
+        ),
+        (
+            b"C%3A%5Ca.dll Valid CN%3DX \r\nC%3A%5Cb.exe Valid CN%3DY 1.0\r\n",
+            {"C:\\a.dll": ("Valid", "CN=X", ""), "C:\\b.exe": ("Valid", "CN=Y", "1.0")},
+        ),
+        (b"C%3A%5Cc.exe NotSigned  2.0\r\n", {"C:\\c.exe": ("NotSigned", "", "2.0")}),
+        (b" Valid CN%3DZ 3.0\r\n", {}),
+    ],
+    ids=["at-the-end-the-runner-s", "at-the-end-not-last", "in-the-middle", "at-the-head"],
+)
+def test_the_facts_of_a_file_keep_an_empty_field_wherever_it_is(
+    printed: bytes, expected: dict[str, tuple[str, str, str]]
+) -> None:
+    """At the head, the path: a line that names no file is no file's."""
+    assert script().facts_from(script().what_it_printed(printed)) == expected
+
+
+@pytest.mark.parametrize(
+    ("printed", "expected"),
+    [
+        (b"4100\r\n77 4 \r\n", {77: (4, "")}),
+        (b"4100\r\n77 4 \r\n78 77 a.exe\r\n", {77: (4, ""), 78: (77, "a.exe")}),
+        (b"4100\r\n77  a.exe\r\n78 77 b.exe\r\n", {78: (77, "b.exe")}),
+        (b"4100\r\n 4 a.exe\r\n78 77 b.exe\r\n", {78: (77, "b.exe")}),
+        (b"\r\n77 4 a.exe\r\n", {}),
+    ],
+    ids=["at-the-end-last", "at-the-end-not-last", "in-the-middle", "at-the-head", "no-own-number"],
+)
+def test_the_list_of_processes_keeps_an_empty_name_and_no_row_without_its_numbers(
+    printed: bytes, expected: dict[int, tuple[int, str]]
+) -> None:
+    """A process with no name is still a process of the tree; a row without its own number or its
+    parent's has no place in it; and without PowerShell's own number there is no table."""
+    assert script().processes_from(script().what_it_printed(printed)) == expected
+
+
+@pytest.mark.parametrize(
+    ("printed", "expected", "on"),
+    [(b"On\r\n", "On", True), (b"\r\n", "", None), (b"", "", None)],
+)
+def test_an_empty_state_of_defender_is_read_as_not_said(
+    printed: bytes, expected: str, on: bool | None
+) -> None:
+    read = script().defender_from(script().what_it_printed(printed))
+    assert read == expected
+    assert script().sac_on(read) is on
+
+
+def test_an_empty_descriptor_is_not_read_as_a_descriptor() -> None:
+    """Read as one, an empty answer is a DACL that is not protected, and A4 (iv) reopens on nothing:
+    not read, it is SALTATO with its reason."""
+    assert (
+        script().sddl_from(script().what_it_printed(PROTECTED_SDDL.encode() + b"\r\n"))
+        == PROTECTED_SDDL
+    )
+    empty = script().sddl_from(script().what_it_printed(b"\r\n"))
+    assert isinstance(empty, script().Failure)
+    assert "vuot" in empty.said
+
+
 @pytest.mark.parametrize(
     ("subject", "organization"),
     [
@@ -551,26 +631,73 @@ def test_the_descendants_of_a_process_are_found_by_parentage_and_only_they() -> 
     assert script().counted([(11, "chrome.exe"), (12, "chrome.exe")]) == "chrome.exe ×2"
 
 
+QUESTION_MARKS = "arriva diversa — i suoi byte: 3f 3f 3f 3f 3f 20 3f 3f 3f"
+"""The line that is not ASCII as Windows PowerShell 5.1 of the runner gave it on 2026-11-20."""
+IN_UTF_8 = "arriva in UTF-8, intatta"
+
+
 @pytest.mark.parametrize(
-    ("received", "intact", "ending"),
+    ("received", "shape", "before", "ending", "other"),
     [
-        (b"KEY\r\n??\r\n", True, "CRLF"),
-        (b"KEY\nNONASCII\n", True, "LF"),
-        (b"\xef\xbb\xbfKEY\r\n", False, "CRLF"),
-        (b"KE", False, "nessuna"),
-        (None, False, "nessuna"),
+        (b"\xef\xbb\xbfKEY\nNONASCII\n", "WITH_BOM", "ef bb bf (un BOM)", "LF", IN_UTF_8),
+        (b"KEY\r\nNONASCII\r\n", "CLEAN", "nessuno", "CRLF", IN_UTF_8),
+        (b"KEY\n????? ???\n", "CLEAN", "nessuno", "LF", QUESTION_MARKS),
+        (
+            b"\xef\xbb\xbfKEY\r\n????? ???\r\n",
+            "WITH_BOM",
+            "ef bb bf (un BOM)",
+            "CRLF",
+            QUESTION_MARKS,
+        ),
+        (b"KEY\nNONASCII\n", "CLEAN", "nessuno", "LF", IN_UTF_8),
+        (b"KEY", "BROKEN", "nessuno", "nessuna", "arriva diversa — i suoi byte: nessuno"),
+        (
+            b"\xef\xbb\xbfKEY \n",
+            "BROKEN",
+            "ef bb bf (un BOM)",
+            "LF",
+            "arriva diversa — i suoi byte: nessuno",
+        ),
+        (
+            b"\xef\xbb\xbf\xef\xbb\xbfKEY\n",
+            "BROKEN",
+            "ef bb bf ef bb bf",
+            "LF",
+            "arriva diversa — i suoi byte: nessuno",
+        ),
+        (b" KEY\n", "BROKEN", "20", "LF", "arriva diversa — i suoi byte: nessuno"),
+        (b"KE\n", "BROKEN", "la riga non c'è", "LF", "arriva diversa — i suoi byte: nessuno"),
+        (None, "BROKEN", "niente", "nessuna", "niente è arrivato"),
+    ],
+    ids=[
+        "a-bom-in-front",
+        "the-end-crlf",
+        "not-ascii-as-question-marks",
+        "the-runner-s-windows-powershell-5-1",
+        "clean",
+        "no-end-of-line",
+        "a-bom-and-something-after",
+        "two-boms",
+        "a-space-in-front",
+        "the-line-cut",
+        "nothing",
     ],
 )
-def test_what_arrives_through_the_pipe_is_read_by_its_bytes(
-    received: bytes | None, intact: bool, ending: str
+def test_what_arrives_through_the_pipe_is_judged_by_its_bytes(
+    received: bytes | None, shape: str, before: str, ending: str, other: str
 ) -> None:
+    """The three of the runner (answer 61 (b)), on every system: a BOM in front, the end CRLF,
+    the line that is not ASCII as question marks; and the three outcomes of answer 62 — the line
+    alone and whole, whole with a BOM in front and nothing else, neither."""
     key = script().KEY_LINE.encode("ascii")
-    other = script().NON_ASCII.encode("utf-8")
-    given = None if received is None else received.replace(b"KEY", key).replace(b"NONASCII", other)
+    other_line = script().NON_ASCII.encode("utf-8")
+    given = (
+        None if received is None else received.replace(b"KEY", key).replace(b"NONASCII", other_line)
+    )
     piped = script().read_pipe(given)
-    assert (piped.intact, piped.ending) == (intact, ending)
-    if given is not None and other in given:
-        assert piped.other == "arriva in UTF-8, intatta"
+    assert piped == script().Piped(
+        len(given or b""), getattr(script(), shape), before, ending, other
+    )
 
 
 def test_the_line_of_the_shape_of_a_key_is_the_shape_of_k1() -> None:
@@ -1088,6 +1215,57 @@ def test_b3_says_a_shell_that_is_not_there_and_reopens_when_no_line_arrives_whol
     assert report.rows["B3 pwsh.exe"] == verdict("SALTATO")
     assert report.rows["B3 powershell.exe"] == verdict("RIAPRE")
     assert report.rows["B3"] == verdict("RIAPRE", True)
+
+
+def with_a_bom() -> bytes:
+    """What Windows PowerShell 5.1 of the runner gave on 2026-11-20: a BOM, the key, CRLF, and the
+    line that is not ASCII as question marks."""
+    return b"\xef\xbb\xbf" + script().KEY_LINE.encode("ascii") + b"\r\n????? ???\r\n"
+
+
+def test_b3_passes_when_one_shell_gives_the_line_alone_and_whole(tmp_path: Path) -> None:
+    key = script().KEY_LINE.encode("ascii")
+    fake = FakePc(pipe={"powershell.exe": with_a_bom(), "pwsh.exe": key + b"\n"})
+    report = measured(tmp_path, fake, "B", "a-secco")
+
+    assert report.rows["B3 powershell.exe"] == verdict("RIAPRE")
+    assert report.rows["B3 pwsh.exe"] == verdict("PASSATO")
+    assert report.rows["B3"] == verdict("PASSATO")
+
+
+def test_b3_reopens_without_stopping_when_the_line_is_whole_only_after_a_bom(
+    tmp_path: Path,
+) -> None:
+    """Answer 62: the road is there if who receives takes the BOM away — part two decides."""
+    fake = FakePc(pipe={"powershell.exe": with_a_bom(), "pwsh.exe": b"AAAA\n"})
+    report = measured(tmp_path, fake, "B", "a-secco")
+
+    assert report.rows["B3 powershell.exe"] == verdict("RIAPRE")
+    assert report.rows["B3 pwsh.exe"] == verdict("RIAPRE")
+    assert report.rows["B3"] == verdict("RIAPRE")
+    assert "ADR 0063 §3" in report.text
+
+
+def test_b3_says_for_each_shell_the_bytes_before_the_line_its_end_and_the_line_not_ascii(
+    tmp_path: Path,
+) -> None:
+    key = script().KEY_LINE.encode("ascii")
+    whole = key + b"\n" + script().NON_ASCII.encode("utf-8") + b"\n"
+    fake = FakePc(
+        pipe={"powershell.exe": with_a_bom(), "pwsh.exe": whole},
+        shell_versions={"powershell.exe": "", "pwsh.exe": "7.4.6"},
+    )
+    report = measured(tmp_path, fake, "B", "a-secco")
+
+    assert (
+        "powershell.exe ? (uscita 0): 104 byte; prima della riga: ef bb bf (un BOM); la riga: "
+        "intera, con un BOM davanti; fine riga CRLF; la riga non ASCII arriva diversa — i suoi "
+        "byte: 3f 3f 3f 3f 3f 20 3f 3f 3f"
+    ) in report.text
+    assert (
+        f"pwsh.exe 7.4.6 (uscita 0): {len(whole)} byte; prima della riga: nessuno; la riga: sola "
+        "e intera; fine riga LF; la riga non ASCII arriva in UTF-8, intatta"
+    ) in report.text
 
 
 def test_b3_launches_each_shell_without_its_profile_and_without_psmodulepath(

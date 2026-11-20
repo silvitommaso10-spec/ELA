@@ -692,16 +692,25 @@ try {
 """The script of ``tests/infrastructure/machine/test_acl_smoke.py``, as it is: the path on stdin."""
 
 
+def what_it_printed(printed: bytes | None) -> str:
+    """What a program printed, as :meth:`Pc.run` keeps it: only the ends of the lines go, at the
+    head and at the bottom. **Never the spaces** (answer 61 (a)): the lines of PowerShell are fields
+    split by one space, and a field that is empty at the end of the last line is a space at the end
+    of the output — on the runner of 2026-11-20 a strip took two of them away."""
+    return (printed or b"").decode("utf-8", "replace").strip("\r\n")
+
+
 def processes_from(said: str) -> dict[int, tuple[int, str]]:
     """What :data:`PROCESSES` printed, by number: the parent and the name — without the
-    PowerShell that listed them."""
+    PowerShell that listed them. Each line is split as it is, with no strip: a process with an
+    empty name keeps its row, and a row without its own number or its parent's has no place."""
     lines = said.splitlines()
     if not lines or not lines[0].strip().isdigit():
         return {}
     itself = int(lines[0])
     table: dict[int, tuple[int, str]] = {}
     for line in lines[1:]:
-        parts = line.strip().split(" ")
+        parts = line.split(" ")
         if len(parts) != 3 or not (parts[0].isdigit() and parts[1].isdigit()):
             continue
         if int(parts[0]) != itself:
@@ -710,13 +719,28 @@ def processes_from(said: str) -> dict[int, tuple[int, str]]:
 
 
 def facts_from(said: str) -> dict[str, tuple[str, str, str]]:
-    """What :data:`FILE_FACTS` printed: by path, the status, the subject and the version."""
+    """What :data:`FILE_FACTS` printed: by path, the status, the subject and the version. Each line
+    is split as it is, with no strip: a file with no signer or no version keeps its empty fields
+    (answer 61 (a)), and a line that names no path is no file's."""
     found: dict[str, tuple[str, str, str]] = {}
     for line in said.splitlines():
-        parts = line.strip().split(" ")
-        if len(parts) == 4:
+        parts = line.split(" ")
+        if len(parts) == 4 and parts[0]:
             found[unquote(parts[0])] = (parts[1], unquote(parts[2]), unquote(parts[3]))
     return found
+
+
+def defender_from(said: str) -> str:
+    """What :data:`DEFENDER_SAC` printed: one field, raw. Empty, it is what :func:`sac_on` reads
+    as not said."""
+    return unquote(said.strip())
+
+
+def sddl_from(said: str) -> str | Failure:
+    """What :data:`READ_SDDL` printed: the descriptor — **an empty line is not one** (answer 61
+    (a)): read as a descriptor it is a DACL that is not protected, and A4 (iv) would reopen on
+    nothing."""
+    return said.strip() or Failure("Get-Acl ha dato una riga vuota")
 
 
 def dacl(descriptor: str) -> tuple[str, list[str]]:
@@ -998,7 +1022,7 @@ class Pc:
             return ran
         if ran.code != 0:
             return Failure(f"uscita {ran.code}: {first_line(ran.err)}")
-        return unquote(ran.out.strip())
+        return defender_from(ran.out)
 
     # PowerShell e i processi -------------------------------------------------------------
 
@@ -1078,7 +1102,7 @@ class Pc:
             raise
         return Ran(
             code=-1 if timed_out else process.returncode,
-            out=(out or b"").decode("utf-8", "replace").strip(),
+            out=what_it_printed(out),
             err=(err or b"").decode("utf-8", "replace").strip(),
             ms=round((time.monotonic() - started) * 1000),
             timed_out=timed_out,
@@ -1384,7 +1408,7 @@ class Pc:
             return ran
         if ran.code != 0:
             return Failure(f"uscita {ran.code}: {first_line(ran.err)}")
-        return ran.out.strip()
+        return sddl_from(ran.out)
 
     def closings(self, kind: str, url: str, folder: Path, *, how: str) -> Closings:
         async def with_the_adapter() -> Closings:
@@ -2638,33 +2662,69 @@ def pipe_argv(shell: str, python: str, first: str, second: str, out: str) -> lis
     ]
 
 
+BOM: Final = b"\xef\xbb\xbf"
+CLEAN: Final = "sola e intera"
+"""B3, answer 62: the 88 characters exact, alone on their line, with its end said (LF or CRLF)."""
+WITH_BOM: Final = "intera, con un BOM davanti"
+"""The 88 characters whole and one after the other, a BOM in front and nothing else, the end of
+the line said: the road is there if who receives takes the BOM away — part two decides."""
+BROKEN: Final = "non intera"
+SHAPES: Final = (CLEAN, WITH_BOM, BROKEN)
+
+
 @dataclass(frozen=True)
 class Piped:
-    """What the second program of B3 received: whether the line of the shape of a key arrived
-    whole, the end of its line, and what became of the line that is not ASCII."""
+    """What the second program of B3 received: how the line of the shape of a key arrived — one of
+    :data:`SHAPES` —, the bytes in front of it, the end of its line, and what became of the line
+    that is not ASCII."""
 
     size: int
-    intact: bool
+    shape: str
+    before: str
     ending: str
     other: str
 
 
+def bytes_shown(some: bytes) -> str:
+    if not some:
+        return "nessuno"
+    return some.hex(" ") + (" (un BOM)" if some == BOM else "")
+
+
 def read_pipe(received: bytes | None) -> Piped:
+    """The bytes the second program received, judged by the three outcomes of answer 62 — written
+    before the PC's numbers, for what the runner of 2026-11-20 showed: a BOM in front."""
     if received is None:
-        return Piped(0, False, "nessuna", "niente è arrivato")
+        return Piped(0, BROKEN, "niente", "nessuna", "niente è arrivato")
     lines = received.split(b"\n")
     head = lines[0]
-    ending = "CRLF" if head.endswith(b"\r") else ("LF" if len(lines) > 1 else "nessuna")
-    bom = head.startswith(b"\xef\xbb\xbf")
-    intact = head.rstrip(b"\r") == KEY_LINE.encode("ascii")
-    second = lines[1].rstrip(b"\r") if len(lines) > 1 else b""
+    if len(lines) == 1:
+        ending, body = "nessuna", head
+    elif head.endswith(b"\r"):
+        ending, body = "CRLF", head[:-1]
+    else:
+        ending, body = "LF", head
+    key = KEY_LINE.encode("ascii")
+    at = body.find(key)
+    if at < 0:
+        shape, before = BROKEN, "la riga non c'è"
+    else:
+        ahead, after = body[:at], body[at + len(key) :]
+        before = bytes_shown(ahead)
+        if ending == "nessuna" or after:
+            shape = BROKEN
+        elif not ahead:
+            shape = CLEAN
+        elif ahead == BOM:
+            shape = WITH_BOM
+        else:
+            shape = BROKEN
+    second = lines[1].removesuffix(b"\r") if len(lines) > 1 else b""
     if second == NON_ASCII.encode("utf-8"):
         other = "arriva in UTF-8, intatta"
     else:
         other = f"arriva diversa — i suoi byte: {second.hex(' ') or 'nessuno'}"
-    if bom:
-        other += "; la prima riga comincia con un BOM"
-    return Piped(len(received), intact, ending, other)
+    return Piped(len(received), shape, before, ending, other)
 
 
 def b3(report: Report, machine: Machine, work: Work) -> None:
@@ -2675,7 +2735,8 @@ def b3(report: Report, machine: Machine, work: Work) -> None:
     report.fact(f"la riga della forma di una chiave: {len(KEY_LINE)} caratteri ASCII, inventata")
     shells = machine.shells()
     present = 0
-    whole = 0
+    clean: list[str] = []
+    bommed: list[str] = []
     for name in ("powershell.exe", "pwsh.exe"):
         row = f"B3 {name}"
         where = shells.get(name)
@@ -2692,17 +2753,28 @@ def b3(report: Report, machine: Machine, work: Work) -> None:
             continue
         piped = read_pipe(out.read_bytes() if out.exists() else None)
         report.fact(
-            f"{name} {first_line(ran.out, 40) or '?'} ({ran.said}): {piped.size} byte; la riga "
-            f"della forma di una chiave arriva intera: {'sì' if piped.intact else 'no'}; fine "
-            f"riga {piped.ending}; la riga non ASCII {piped.other}"
+            f"{name} {first_line(ran.out, 40) or '?'} ({ran.said}): {piped.size} byte; prima della "
+            f"riga: {piped.before}; la riga: {piped.shape}; fine riga {piped.ending}; la riga non "
+            f"ASCII {piped.other}"
         )
-        if piped.intact:
-            whole += 1
-            report.row(row, "PASSATO", f"la riga arriva intera, con la fine {piped.ending}")
+        if piped.shape == CLEAN:
+            clean.append(name)
+            report.row(row, "PASSATO", f"la riga arriva sola e intera, con la fine {piped.ending}")
+        elif piped.shape == WITH_BOM:
+            bommed.append(name)
+            report.row(row, "RIAPRE", f"la riga arriva intera con un BOM davanti ({piped.ending})")
         else:
             report.row(row, "RIAPRE", "la riga non arriva intera in questa shell")
-    if whole:
-        report.row("B3", "PASSATO", f"in {whole} shell su {present} la riga arriva intera")
+    if clean:
+        report.row("B3", "PASSATO", f"la riga arriva sola e intera in {', '.join(clean)}")
+    elif bommed:
+        report.row(
+            "B3",
+            "RIAPRE",
+            f"nessuna shell è pulita; in {', '.join(bommed)} la riga arriva intera con un BOM "
+            "davanti: la strada c'è se chi riceve toglie il BOM — della parte seconda, che cosa "
+            "accetta «vault open» (ADR 0063 §3)",
+        )
     elif present:
         report.row(
             "B3",
