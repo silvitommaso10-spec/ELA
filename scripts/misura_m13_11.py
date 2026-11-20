@@ -35,11 +35,12 @@ quali cominciano secondo la regola recepita.
 
 **Le recinzioni**: nessun sito vero — le pagine le serve lo script su ``127.0.0.1`` —; ogni cartella
 di profilo sotto una cartella temporanea dello script, cancellata alla fine e verificata; **del
-Chrome installato solo il file del programma, ai tre percorsi esatti**, e niente altro sotto
-``%LOCALAPPDATA%\\Google\\Chrome``; **né ``_killing`` né ``_alive`` di ELA girano sul PC**
-(decisione 44): dove una chiusura di ELA passasse il suo limite, l'albero lo toglie lo script con
-``taskkill``, e lo dice. Il codice di ELA lo importa, non lo ricopia: gli argomenti e le opzioni dei
-due adapter, le costanti, la lettura di PowerShell di ``infrastructure/machine/windows.py``.
+Chrome installato solo il file del programma, ai percorsi esatti di ``INSTALLED_CHROME``**, e
+niente altro sotto ``%LOCALAPPDATA%\\Google\\Chrome``; **né ``_killing`` né ``_alive`` di ELA
+girano sul PC** (decisione 44): dove una chiusura di ELA passasse il suo limite, l'albero lo toglie
+lo script con ``taskkill``, e lo dice. Il codice di ELA lo importa, non lo ricopia: gli argomenti e
+le opzioni dei due adapter, le costanti, la lettura di PowerShell di
+``infrastructure/machine/windows.py``.
 
 **I suoi test usano solo finti** (``tests/scripts/test_misura_m13_11.py``): tutto ciò che legge
 Windows passa da un oggetto «macchina» (:class:`Pc`), e un test ne passa uno suo.
@@ -130,7 +131,7 @@ INSTALLED_CHROME: Final = (
     ("ProgramFiles(x86)", "Google", "Chrome", "Application", "chrome.exe"),
     ("LOCALAPPDATA", "Google", "Chrome", "Application", "chrome.exe"),
 )
-"""The only three places the installed Chrome is looked for, each with one «is it a file?»."""
+"""The only places the installed Chrome is looked for, each with one «is it a file?»."""
 CHROME_DATA: Final = ("Google", "Chrome")
 """Under ``%LOCALAPPDATA%``: the installed Chrome's own folder, where ``User Data`` — the profile —
 is. Nothing in it is opened, read or listed but the program, at its exact path."""
@@ -888,6 +889,28 @@ def sha256_of(path: Path) -> str:
     return digest.hexdigest()
 
 
+def head_of(root: Path) -> str:
+    """The commit the clone at ``root`` is at, read from its files — no ``git`` launched, so none
+    the ``PATH`` chose: ``.git/HEAD``, the branch's ref, or ``packed-refs``. ``illeggibile``
+    when one of them is not there or not what it should be."""
+    folder = root / ".git"
+    try:
+        head = (folder / "HEAD").read_text(encoding="ascii").strip()
+        if not head.startswith("ref: "):
+            commit = head
+        else:
+            ref = head.removeprefix("ref: ")
+            loose = folder / ref
+            if loose.is_file():
+                commit = loose.read_text(encoding="ascii").strip()
+            else:
+                packed = (folder / "packed-refs").read_text(encoding="ascii").splitlines()
+                commit = next(line.split()[0] for line in packed if line.split()[1:] == [ref])
+    except (OSError, UnicodeDecodeError, StopIteration, IndexError):
+        return "illeggibile"
+    return commit[:7] if re.fullmatch(r"[0-9a-f]{40}", commit) else "illeggibile"
+
+
 class Pc:
     """The PC: Windows read through ``winreg`` and ``powershell.exe``, programs launched by their
     path, the browsers through Playwright with the options ELA's adapters compose."""
@@ -916,17 +939,7 @@ class Pc:
         )
 
     def commit(self) -> str:
-        try:
-            done = subprocess.run(
-                ["git", "-C", str(ROOT), "rev-parse", "--short", "HEAD"],
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=30,
-            )
-        except (OSError, subprocess.SubprocessError):
-            return "illeggibile"
-        return done.stdout.strip() or "illeggibile"
+        return head_of(ROOT)
 
     def python(self) -> tuple[int, int, int]:
         return (sys.version_info.major, sys.version_info.minor, sys.version_info.micro)
@@ -1476,7 +1489,7 @@ def env_get(environ: Mapping[str, str], name: str) -> str | None:
 
 
 def chrome_places(environ: Mapping[str, str]) -> list[tuple[str, Path | None]]:
-    """The three exact paths of the installed Chrome, built from the environment — ``None`` for
+    """The exact paths of the installed Chrome, built from the environment — ``None`` for
     a variable this PC does not have."""
     places: list[tuple[str, Path | None]] = []
     for variable_name, *rest in INSTALLED_CHROME:
@@ -1902,14 +1915,14 @@ def a3_2(report: Report, machine: Machine, found: Found, work: Work, pages: Page
 def a3_3(report: Report, machine: Machine, found: Found, work: Work, pages: Pages) -> None:
     report.step("A3.3 — il Chrome installato (rivista: decisione 45)")
     if not found.installed:
-        report.fact("A2 non l'ha trovato a nessuno dei tre percorsi: niente da dire")
+        report.fact("A2 non l'ha trovato a nessuno dei suoi percorsi: niente da dire")
         return
     report.fact("la versione e la firma, lette dal file, sono in A2: nessun lancio per leggerle")
-    cft = bool(found.started.get("Chrome for Testing")) and all(
-        found.cft_read.get(window) for window in (False, True)
-    )
-    if cft:
-        report.fact("non lanciato: Chrome for Testing è partito in A3.1 e in A3.2 (c)")
+    if found.cft is None:
+        report.row("A3.3", "SALTATO", "non lanciato: Chrome for Testing non c'è (A2)")
+        return
+    if found.started.get("Chrome for Testing") or any(found.cft_read.values()):
+        report.fact("non lanciato: Chrome for Testing è partito, in A3.1 o in A3.2 (c)")
         return
     chrome = found.installed[0]
     folder = work.profile("a33-chrome-installato")
@@ -1930,8 +1943,8 @@ def a3_3(report: Report, machine: Machine, found: Found, work: Work, pages: Page
         report.row(
             "A3.3",
             "RIAPRE",
-            "Chrome for Testing non parte e il Chrome installato sì: ADR 0063 §4, «mai il "
-            "Chrome installato» — decide il revisore",
+            "Chrome for Testing non parte in A3.1 né legge in A3.2 (c), e il Chrome installato "
+            "parte: ADR 0063 §4, «mai il Chrome installato» — decide il revisore",
             stops=True,
         )
     else:
@@ -2128,7 +2141,8 @@ def refused(arguments: Sequence[str], session: str | None = None) -> str | None:
 
 def child_environment(environ: Mapping[str, str], system: str) -> dict[str, str]:
     """What a child of the vault gets, built from zero: on Windows what a program of the system
-    needs by name (:data:`WINDOWS_KEPT`) and a ``PATH`` of the system; elsewhere the four of M6."""
+    needs by name (:data:`WINDOWS_KEPT`) and a ``PATH`` of the system; elsewhere the variables of
+    M6."""
     if system == "Windows":
         made = {name: value for name, value in environ.items() if name.upper() in WINDOWS_KEPT}
         root = next(

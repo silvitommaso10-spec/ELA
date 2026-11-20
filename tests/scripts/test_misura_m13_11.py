@@ -7,7 +7,7 @@ name of the user, an address, the home, the name of the machine and a SID never 
 the reading back says so —; **the rule** — the outcome a fake builds gives the word of the table,
 and whether it stops the stratum; and the table of the strata —; **the launches of ``bw``** — a
 closed list, never a password or a key in ``argv``, the key only as ``BW_SESSION`` —; **the
-installed Chrome** — only its three exact paths, and nothing under its folder —; **part B without
+installed Chrome** — only its exact paths, and nothing under its folder —; **part B without
 Bitwarden's signature launches no ``bw``**; and **the dry run of both parts** writes a clean file.
 
 **Everything here is a fake** (M13.17b): the PC is :class:`FakePc`, which launches nothing — the
@@ -288,7 +288,8 @@ class FakePc:
 
     def _vault(self, arguments: Sequence[str], env: Mapping[str, str], stdin: bytes | None) -> Any:
         if not self.vault:
-            exec(compile(script().FAKE_VAULT, "vault-finto", "exec"), self.vault)  # noqa: S102
+            # the script's code under the script's name: the fences see it (M13.17b, decision 3)
+            exec(compile(script().FAKE_VAULT, str(SCRIPT), "exec"), self.vault)  # noqa: S102
         code, out, err = self.vault["answer"](list(arguments), dict(env), stdin or b"")
         if arguments[:1] in (["login"], ["unlock"]) and code == 0:
             self.keys.append(out)
@@ -355,6 +356,15 @@ class FakePc:
             (12, "chrome-headless-shell.exe"),
         )
         return script().Orphans(tree, self.left, self.remaining)
+
+
+MODES = ("senza", "finestra")
+HOWS = ("chiuso", "intero")
+"""The labels of the modes of A3.2 (c) and of their environments, as the fake reads them."""
+THE_HOME = "<la casa del test>"
+"""Where an id of a ``parametrize`` would say the home: it is read in the test, not at the
+collection — a home is one for each process of pytest, and the workers of xdist must collect the
+same tests."""
 
 
 def a_filter() -> Any:
@@ -458,7 +468,7 @@ def test_a_line_is_written_through_the_filter_and_the_reading_back_finds_nothing
     [
         (f"proprietario {USER_SID}", "un SID"),
         (f"la macchina {MACHINE}", "il nome della macchina"),
-        (f"la casa {Path.home()}", "la casa del PC"),
+        (f"la casa {THE_HOME}", "la casa del PC"),
         ("C:\\Users\\Qualcuno\\x", "la casa del PC"),
         ("chiave-di-prova-abcdef", "un valore che la misura tiene per sé"),
         (f"{USER}", "un nome utente"),
@@ -470,7 +480,7 @@ def test_what_reached_the_file_by_another_door_is_found_and_the_file_does_not_le
 ) -> None:
     report = script().Report(tmp_path / "f.txt", lambda line: None, a_filter())
     report.secret("chiave-di-prova-abcdef")
-    report._file.write(raw + "\n")
+    report._file.write(raw.replace(THE_HOME, str(Path.home())) + "\n")
 
     script().the_file(report)
     report.close()
@@ -724,7 +734,7 @@ def test_the_installed_chrome_is_launched_on_a_folder_of_the_script_only_when_cf
     tmp_path: Path, installed: str, expected: str
 ) -> None:
     fake = FakePc(installed_chrome=True, launches={"cft": "blocked", "installed": installed})
-    fake.reads.update({"cft-senza-chiuso": "blocked", "cft-senza-intero": "blocked"})
+    fake.reads.update({f"cft-{mode}-{how}": "blocked" for mode in MODES for how in HOWS})
     report = measured(tmp_path, fake, "A")
 
     launched = [call for call in fake.ran if Path(call.argv[0]) == fake.chrome()]
@@ -736,7 +746,38 @@ def test_the_installed_chrome_is_launched_on_a_folder_of_the_script_only_when_cf
     assert "- S2: non comincia" in report.text
 
 
-def test_the_installed_chrome_is_looked_for_at_its_three_exact_paths_and_nothing_under_it(
+@pytest.mark.parametrize(
+    ("launches", "reads"),
+    [
+        ({"cft": "started"}, {f"cft-{mode}-{how}": "fails" for mode in MODES for how in HOWS}),
+        ({"cft": "blocked"}, {"cft-senza-chiuso": "blocked", "cft-senza-intero": "blocked"}),
+    ],
+    ids=["partito in A3.1, non legge in (c)", "bloccato in A3.1, legge in (c) con la finestra"],
+)
+def test_the_installed_chrome_is_not_launched_when_chrome_for_testing_started_anywhere(
+    tmp_path: Path, launches: dict[str, str], reads: dict[str, str]
+) -> None:
+    """Decision 45: the installed Chrome is launched only if Chrome for Testing started neither in
+    A3.1 nor in A3.2 (c) — a page it did not read is not a launch that did not happen."""
+    fake = FakePc(installed_chrome=True, launches={**launches, "installed": "started"})
+    fake.reads.update(reads)
+    report = measured(tmp_path, fake, "A")
+
+    assert all(Path(call.argv[0]) != fake.chrome() for call in fake.ran)
+    assert "A3.3" not in report.rows
+
+
+def test_the_installed_chrome_is_not_launched_when_chrome_for_testing_is_not_there(
+    tmp_path: Path,
+) -> None:
+    fake = FakePc(installed_chrome=True, missing={"chromium-1243"})
+    report = measured(tmp_path, fake, "A")
+
+    assert all(Path(call.argv[0]) != fake.chrome() for call in fake.ran)
+    assert report.rows["A3.3"] == verdict("SALTATO", False)
+
+
+def test_the_installed_chrome_is_looked_for_at_its_exact_paths_and_nothing_under_it(
     tmp_path: Path,
 ) -> None:
     """Three questions «is it a file?», and of its own folder only the program at its path."""
@@ -1168,3 +1209,31 @@ def test_an_interrupt_is_said_and_the_vault_is_closed_all_the_same(tmp_path: Pat
     assert report.code == 1
     assert "INTERROTTA (KeyboardInterrupt)" in report.text
     assert "il vault è chiuso, l'account è lasciato" in report.text
+
+
+@pytest.mark.parametrize("how", ["loose", "packed", "detached", "missing", "not a commit"])
+def test_the_commit_is_read_from_the_clone_s_files_and_no_git_is_launched(
+    tmp_path: Path, how: str
+) -> None:
+    """The re-read of 25afb1e (R15): the file says the commit the PC is at, as step 1 of the guide
+    wants it, without launching a ``git`` the ``PATH`` chose."""
+    commit = "0123456789abcdef0123456789abcdef01234567"  # pragma: allowlist secret — invented
+    git = tmp_path / ".git"
+    (git / "refs" / "heads").mkdir(parents=True)
+    ref = "refs/heads/m13.11-il-browser-sul-pc"
+    (git / "HEAD").write_text(
+        commit + "\n" if how == "detached" else f"ref: {ref}\n", encoding="ascii"
+    )
+    if how == "loose":
+        (git / ref).write_text(commit + "\n", encoding="ascii")
+    elif how == "packed":
+        (git / "packed-refs").write_text(
+            f"# pack-refs with: peeled fully-peeled sorted\n{'f' * 40} refs/heads/main\n"
+            f"{commit} {ref}\n^{'e' * 40}\n",
+            encoding="ascii",
+        )
+    elif how == "not a commit":
+        (git / ref).write_text("non un commit\n", encoding="ascii")
+
+    expected = "illeggibile" if how in ("missing", "not a commit") else commit[:7]
+    assert script().head_of(tmp_path) == expected
