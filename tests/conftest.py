@@ -118,7 +118,10 @@ def pytest_runtest_logreport(report: pytest.TestReport) -> None:
 def pytest_runtest_setup(item: pytest.Item) -> Generator[None, None, None]:
     """**The guard** (M9.5, ``tests/machines.py``): before a test is set up — before the skips are
     read and before its fixtures —, what it needs of the machine decides whether it is skipped,
-    red, or let run. A wrapper, so it comes before every other part of the set-up."""
+    red, or let run. A wrapper, so it comes before every other part of the set-up. And before the
+    guard, the first line of the test in the log of the suite (``tests/suite_log.py``, answer 63
+    (b)): a test that hangs is named by it."""
+    suite_log.begun(item.nodeid)
     machines.guard(item)
     return (yield)
 

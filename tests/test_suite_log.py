@@ -42,14 +42,46 @@ def test_with_the_variable_each_test_is_a_line_and_without_it_nothing_is_written
 ) -> None:
     lines = cases(tmp_path / "log")
     elsewhere = cases(tmp_path / "another", "ELA_SUITE_LOG")
+    ended = [one for one in lines if "outcome" in one]
+    begun = [one for one in lines if "outcome" not in one]
 
-    assert [(one["id"], one["outcome"], one["failed_in"]) for one in lines] == [
+    assert [(one["id"], one["outcome"], one["failed_in"]) for one in ended] == [
         (f"{CASES}::test_passes", "passed", []),
         (f"{CASES}::test_fails", "failed", ["call"]),
     ]
-    assert all(one["worker"] == "main" and isinstance(one["started"], float) for one in lines)
-    assert all(isinstance(one[phase], float) for one in lines for phase in ("setup", "call"))
+    assert all(one["worker"] == "main" and isinstance(one["started"], float) for one in ended)
+    assert all(isinstance(one[phase], float) for one in ended for phase in ("setup", "call"))
+    assert [(one["id"], one["worker"], sorted(one)) for one in begun] == [
+        (f"{CASES}::{name}", "main", ["begun", "id", "worker"])
+        for name in ("test_passes", "test_fails", "test_is_cut_in_flight")
+    ]
     assert elsewhere == [] and not (tmp_path / "another").exists(), "another name turns nothing on"
+
+
+def test_a_test_in_flight_when_the_suite_is_cut_is_the_one_whose_first_line_has_no_second(
+    tmp_path: Path,
+) -> None:
+    """Answer 63 (b): a log that wrote only at the teardown had no line for a test that hung. The
+    first line of each test is written as its set-up begins, before the guard and the fixtures, so
+    the cut one is named — and the lines are in the order they were written, each test's first
+    before its second."""
+    lines = cases(tmp_path / "log")
+    order = [(one["id"].rpartition("::")[2], "outcome" in one) for one in lines]
+
+    assert order == [
+        ("test_passes", False),
+        ("test_passes", True),
+        ("test_fails", False),
+        ("test_fails", True),
+        ("test_is_cut_in_flight", False),
+    ]
+    assert in_flight(lines) == [f"{CASES}::test_is_cut_in_flight"]
+
+
+def in_flight(lines: list[dict[str, object]]) -> list[object]:
+    """The tests whose first line has no second: what a cut suite was running."""
+    ended = {one["id"] for one in lines if "outcome" in one}
+    return [one["id"] for one in lines if "outcome" not in one and one["id"] not in ended]
 
 
 STEP = re.compile(

@@ -9,6 +9,12 @@ below says so.
 **A run that started always finishes** (``CLAUDE.md``, decision 2 of M14.6b, from decision 26 of
 M13.13): ``cancel-in-progress`` is ``false``. Until 2026-11-11 it was ``true``, and on 2026-11-03 a
 push cancelled a run that would have been red — a verification nobody saw.
+
+***Since 2026-11-20*** (answer 63 (c) of the branch ``m13.11-il-browser-sul-pc``): **the step ``make
+check`` has a limit, and the step of the log still always runs.** On the step, not on the job: a
+suite that hangs is cut while the runner is alive, and the next step carries the log away. On that
+day the macOS runner of ``a83da54`` lost communication 53 minutes into ``make check``, and no log
+was left.
 """
 
 from __future__ import annotations
@@ -95,3 +101,58 @@ def test_the_adr_of_m6_3c_writes_the_payment() -> None:
     text = PAYMENT_PATH.read_text(encoding="utf-8")
 
     assert "### 1. Il debito di ADR 0053 §2, saldato" in text
+
+
+STEP = re.compile(
+    r"^(?P<indent> +)- name: (?P<name>[^\n]+)\n(?P<body>(?:(?P=indent)  [^\n]*\n)*)", re.MULTILINE
+)
+"""A step of the workflow: its name, and the lines of its body, indented under it."""
+
+STEP_LIMIT = re.compile(r"^ +timeout-minutes: *(\d+) *$", re.MULTILINE)
+JOB_LIMIT = re.compile(r"^    timeout-minutes:", re.MULTILINE)
+"""A limit of a job, which would cut the step of the log with the suite."""
+ALWAYS = re.compile(r"^ +if: always\(\) *$", re.MULTILINE)
+
+
+def steps(workflow: str) -> dict[str, str]:
+    return {found["name"]: found["body"] for found in STEP.finditer(workflow)}
+
+
+def unguarded(workflow: str) -> list[str]:
+    """What is missing for a suite that hangs to be cut with its log carried away."""
+    named = steps(workflow)
+    limits = STEP_LIMIT.findall(named.get("make check", ""))
+    missing = []
+    if len(limits) != 1 or int(limits[0]) <= 0:
+        missing.append("the step make check has no limit")
+    if JOB_LIMIT.search(workflow):
+        missing.append("a job has a limit")
+    if not ALWAYS.search(named.get("The log of the suite", "")):
+        missing.append("the step of the log does not always run")
+    return missing
+
+
+def test_the_step_make_check_has_a_limit_and_the_step_of_the_log_always_runs() -> None:
+    assert unguarded(CI.read_text(encoding="utf-8")) == []
+
+
+def test_a_suite_that_could_hang_the_runner_or_lose_its_log_is_found() -> None:
+    """The negative cases: no limit; the limit on the job instead of the step; a step of the log
+    that does not always run."""
+    workflow = CI.read_text(encoding="utf-8")
+    limit = STEP_LIMIT.search(steps(workflow)["make check"])
+    assert limit is not None
+    line = limit.group(0) + "\n"
+    without = workflow.replace(line, "", 1)
+    on_the_job = without.replace(
+        "    runs-on: ${{ matrix.os }}\n",
+        "    runs-on: ${{ matrix.os }}\n    timeout-minutes: 65\n",
+    )
+    log_unguarded = workflow.replace(
+        "      - name: The log of the suite\n        if: always()\n",
+        "      - name: The log of the suite\n",
+    )
+
+    assert unguarded(without) == ["the step make check has no limit"]
+    assert unguarded(on_the_job) == ["the step make check has no limit", "a job has a limit"]
+    assert unguarded(log_unguarded) == ["the step of the log does not always run"]

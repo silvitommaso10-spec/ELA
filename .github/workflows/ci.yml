@@ -95,7 +95,14 @@ jobs:
       # The log of the suite (tests/suite_log.py, M9.5, decision 75): which test ran on which worker,
       # when and for how long — what the log of a red did not say on 2026-11-12. Only here: without
       # `SUITE_LOG` the suite writes nothing, and `make check` on a Mac prints what it printed.
+      # **A limit on the step, not on the job** (answer 63 of the branch m13.11-il-browser-sul-pc): a
+      # suite that hangs is cut while the runner is still alive, and the next step, which always
+      # runs, carries the log away. On 2026-11-20 the macOS runner of a83da54 lost communication 53
+      # minutes into this step, and no log was left. The rule, written before the number: twice the
+      # longest healthy step among the runs in the workshop, rounded up to five minutes — macOS of
+      # bab6484 (run 43018768007), 31m39s: 65.
       - name: make check
+        timeout-minutes: 65
         env:
           SUITE_LOG: ${{ runner.temp }}/suite-log
         run: make check

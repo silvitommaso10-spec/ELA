@@ -130,6 +130,12 @@ branch; un branch di sola registrazione comincia con `docs-` e non porta codice.
   acquisito — non è né verde né rosso: si rifà partire una volta, solo lui, e si scrive; se non parte di nuovo ci si
   ferma. Il fatto: nel giro `44325747456`, a `fe776f4`, il job macos non è partito né al primo tentativo né al secondo
   («The job was not acquired by Runner of type hosted even after multiple attempts»), e non c'è stato un terzo.
+  ***Dal 2026-11-20*** (risposta 63 del branch `m13.11-il-browser-sul-pc`): **il passo `make check` dei due job ha un
+  limite di tempo, sul passo e non sul job**, e il passo del log della suite resta `if: always()`: una suite appesa si
+  taglia con il runner ancora vivo, e il log porta via anche il test in volo, che ha la riga del suo set-up e non quella
+  della fine. La regola, prima del numero: il doppio del passo sano più lungo fra i giri dell'officina, arrotondato in su
+  ai cinque minuti. Il 2026-11-20 il runner macOS di `a83da54` ha perso la comunicazione dopo 53 minuti di `make check`, e
+  non ha lasciato nessun log. Lo tiene `tests/docs/test_adr_ci_runner.py`, con il suo caso negativo.
 - **Un test afferma solo ciò di cui ha costruito le precondizioni.** Se gli serve una macchina
   vera, la dichiara con uno `skipif`, che compare nel riepilogo — un `if` dentro il test no
   (ADR 0031 §6). Una precondizione che non si può costruire dichiarando il sistema si costruisce
