@@ -67,6 +67,13 @@ branch; un branch di sola registrazione comincia con `docs-` e non porta codice.
   sulla configurazione vera: importa per nome solo ciò che misura. Il 2026-11-20 una sonda che importava ogni modulo di `ela`
   dalla cartella del repository ha avviato una seconda ELA contro la configurazione vera, e l'ha fermata soltanto la porta
   occupata (`docs/milestones/M13.17b.md`, «L'incidente della sonda dell'ambiente»).
+  ***Precisata il 2026-11-20*** (risposta 58 dello stesso branch): **il perimetro è ciò che una sessione scrive e lancia da
+  sé** — i file di `.git/<branch>-reference/`: sonde, misure, strumenti, i giri dei mutanti — **e ogni giro della suite fatto
+  per misura**; e `scripts/generate_*.py`, quando li lancia una sessione: importano `ela`, e si lanciano chiusi. **Fuori**,
+  ciascuno con la sua ragione: `make check`, `make misura-m13.9` e la misura del costo, perché da M13.17b la suite si recinta
+  da sé — la cartella di lavoro, la casa, il `.env` (`tests/script_fences.py`) —; gli script di `scripts/` che Tommaso lancia
+  seguendo la guida, le prove e le misure, perché li lancia lui, apposta, sulla sua macchina configurata, e più d'uno parla
+  con l'ELA vera per mestiere.
 - Tutto ciò che gira in `make check` ha un test che ne dimostra il fallimento nel caso
   negativo.
 - **`make check` una volta, alla fine della milestone, prima del riepilogo; durante il lavoro solo

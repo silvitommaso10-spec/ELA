@@ -1237,3 +1237,125 @@ def test_the_commit_is_read_from_the_clone_s_files_and_no_git_is_launched(
 
     expected = "illeggibile" if how in ("missing", "not a commit") else commit[:7]
     assert script().head_of(tmp_path) == expected
+
+
+# ----------------------------------------------------------------------------------------
+# Answer 58 (d): the script never loads the configuration — a test, not a re-read
+# ----------------------------------------------------------------------------------------
+
+SOURCE = Path(__file__).resolve().parents[2] / "src"
+STARTS_ELA = frozenset({"Settings", "build", "serve", "main", "load"})
+"""What would start ELA or read its configuration: the settings, ``Settings.load``, and the
+``build``, ``serve`` and ``main`` of ``ela``."""
+
+
+def settings_classes() -> frozenset[str]:
+    """Every class of settings of ``src/ela``, derived from the source as the probe derived it — a
+    class whose bases reach ``BaseSettings`` —, read and never imported."""
+    import ast
+
+    defined: dict[str, set[str]] = {}
+    for path in sorted((SOURCE / "ela").rglob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.ClassDef):
+                defined.setdefault(node.name, set()).update(
+                    base.id if isinstance(base, ast.Name) else getattr(base, "attr", "")
+                    for base in node.bases
+                )
+    found = {"BaseSettings"}
+    grew = True
+    while grew:
+        new = {name for name, bases in defined.items() if bases & found} - found
+        found |= new
+        grew = bool(new)
+    return frozenset(found - {"BaseSettings"})
+
+
+def configuration_named(source: str, settings: frozenset[str]) -> list[str]:
+    """What a source names of ELA's configuration and start: a class of settings, or ``Settings``,
+    anywhere; a module of ``ela`` that is a ``__main__``; ``build``, ``serve``, ``main`` or ``load``
+    imported from ``ela`` or reached through a name imported from it; and a module of ``ela``
+    imported by a name built at run time. The script's own ``main`` is not ``ela``'s."""
+    import ast
+
+    tree = ast.parse(source)
+    of_ela = {"ela"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and (node.module or "").split(".")[0] == "ela":
+            of_ela |= {alias.asname or alias.name for alias in node.names}
+        elif isinstance(node, ast.Import):
+            of_ela |= {
+                alias.asname or alias.name.split(".")[0]
+                for alias in node.names
+                if alias.name.split(".")[0] == "ela"
+            }
+    anywhere = settings | {"Settings"}
+    found: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and (node.module or "").split(".")[0] == "ela":
+            names = {alias.name for alias in node.names}
+            if (node.module or "").endswith("__main__") or names & (anywhere | STARTS_ELA):
+                found.append(f"{node.lineno}: from {node.module} import {sorted(names)}")
+            elif "__main__" in names:
+                found.append(f"{node.lineno}: from {node.module} import __main__")
+        elif isinstance(node, ast.Import):
+            found += [
+                f"{node.lineno}: import {alias.name}"
+                for alias in node.names
+                if alias.name.split(".")[0] == "ela" and alias.name.endswith("__main__")
+            ]
+        elif isinstance(node, ast.Attribute):
+            root = node.value
+            while isinstance(root, ast.Attribute):
+                root = root.value
+            reached = isinstance(root, ast.Name) and root.id in of_ela
+            if node.attr in anywhere or (reached and node.attr in STARTS_ELA):
+                found.append(f"{node.lineno}: {ast.unparse(node)}")
+        elif isinstance(node, ast.Name) and node.id in anywhere:
+            found.append(f"{node.lineno}: {node.id}")
+        elif (
+            isinstance(node, ast.Call)
+            and getattr(node.func, "attr", getattr(node.func, "id", ""))
+            in ("import_module", "__import__")
+            and "ela" in ast.unparse(node)
+        ):
+            found.append(f"{node.lineno}: {ast.unparse(node)}")
+    return found
+
+
+def test_the_script_never_names_the_configuration_nor_what_starts_ela() -> None:
+    """Answer 58 (d): on the PC the script runs from the repository, where there is a ``.env``
+    with the PC's key (decision 17). It imports by name only what it measures."""
+    settings = settings_classes()
+
+    assert {"PersistenceSettings"} <= settings, "the classes of settings are derived"
+    assert configuration_named(SCRIPT.read_text(encoding="utf-8"), settings) == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "from ela.config import Settings\n",
+        "from ela.infrastructure.persistence.settings import PersistenceSettings\n",
+        "from ela.composition.root import build\n",
+        "from ela.api.server import serve\n",
+        "from ela.cli.app import main\n",
+        "import ela.api.__main__\n",
+        "from ela.api import __main__\n",
+        "import ela.composition.root\nela.composition.root.build()\n",
+        "from ela import config\nconfig.Settings.load()\n",
+        "import importlib\nimportlib.import_module('ela.api.__main__')\n",
+    ],
+)
+def test_a_script_that_names_the_configuration_is_found(source: str) -> None:
+    assert configuration_named(source, frozenset({"PersistenceSettings"})) != []
+
+
+def test_what_the_script_imports_of_ela_today_is_not_found() -> None:
+    allowed = (
+        "from ela.composition.root import BROWSER_CLOSE_GRACE_SECONDS\n"
+        "from ela.infrastructure.machine.account import LAUNCH_ARGUMENTS, AccountChrome\n"
+        "def main() -> int:\n    return 0\n"
+    )
+
+    assert configuration_named(allowed, frozenset({"PersistenceSettings"})) == []
