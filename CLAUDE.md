@@ -57,6 +57,16 @@ branch; un branch di sola registrazione comincia con `docs-` e non porta codice.
   sul disco non c'è più —, e il 2026-11-17 è costato un `make check` rosso. Un mutante della stessa lunghezza, rimesso
   nello stesso secondo, aveva lasciato un `.pyc` con lo stesso mtime e la stessa dimensione del sorgente vero
   (`.git/m9.5-reference/make-check-c30a4e3.txt`).
+- **Una sonda, una misura o uno strumento dell'officina che importa `ela` la lancia un lanciatore.** ***Dal 2026-11-20***
+  (decisione 52 del branch `m13.11-il-browser-sul-pc`): un processo figlio, con la cartella di lavoro in una cartella
+  temporanea sua e un ambiente costruito da zero — `PATH`, `HOME` e `USERPROFILE` a una cartella temporanea della sonda, ciò
+  che serve a Python, e nient'altro: nessuna `ELA_`, nessuna chiave —, mai dalla cartella del repository. Prima di importare
+  `ela` la sonda legge e stampa le sue precondizioni — la cartella di lavoro non è il repository e non ha un `.env`; nessuna
+  `ELA_` nell'ambiente; `Path.home()` è la sua cartella — e, se una manca, esce senza importare niente. Non importa mai un
+  modulo `__main__` (`ela.api` e `ela.cli` partono all'import), e non chiama `main`, `serve`, `build` né `Settings.load()`
+  sulla configurazione vera: importa per nome solo ciò che misura. Il 2026-11-20 una sonda che importava ogni modulo di `ela`
+  dalla cartella del repository ha avviato una seconda ELA contro la configurazione vera, e l'ha fermata soltanto la porta
+  occupata (`docs/milestones/M13.17b.md`, «L'incidente della sonda dell'ambiente»).
 - Tutto ciò che gira in `make check` ha un test che ne dimostra il fallimento nel caso
   negativo.
 - **`make check` una volta, alla fine della milestone, prima del riepilogo; durante il lavoro solo
