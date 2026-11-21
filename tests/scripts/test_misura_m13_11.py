@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from functools import cache
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import Any, Final
 
 import pytest
 
@@ -120,6 +120,7 @@ class FakePc:
     left: tuple[tuple[int, str], ...] = ()
     remaining: tuple[tuple[int, str], ...] = ()
     pipe: dict[str, bytes] = field(default_factory=dict)
+    shell_ran: dict[str, Any] = field(default_factory=dict)
     shell_versions: dict[str, str] = field(
         default_factory=lambda: {"powershell.exe": "5.1.26100.1", "pwsh.exe": "7.4.6"}
     )
@@ -299,10 +300,17 @@ class FakePc:
         return script().Ran(code, script().what_it_printed(out.encode("utf-8")), err.strip(), 3)
 
     def _pipe(self, name: str, argv: Sequence[str]) -> Any:
+        """A shell of B3: blocked before it starts, as ``CreateProcess`` raises it; or started, with
+        the file of the second program born only if the test gave its bytes, and the exit and what
+        it said that the test gave (answer 74)."""
+        if self.launches.get(name) == "blocked":
+            raise Blocked()
         line = base64.b64decode(argv[-1]).decode("utf-16-le")
         out = re.findall(r"'((?:[^']|'')*)'", line)[-1].replace("''", "'")
         if name in self.pipe:
             Path(out).write_bytes(self.pipe[name])
+        if name in self.shell_ran:
+            return self.shell_ran[name]
         return script().Ran(0, self.shell_versions.get(name, ""), "", 9)
 
     def kill_tree(self, pid: int) -> Any:
@@ -1244,6 +1252,109 @@ def test_b3_reopens_without_stopping_when_the_line_is_whole_only_after_a_bom(
     assert report.rows["B3 pwsh.exe"] == verdict("RIAPRE")
     assert report.rows["B3"] == verdict("RIAPRE")
     assert "ADR 0063 §3" in report.text
+
+
+# Answer 74: the shell that is there and is not measured — the fourth state, written before the
+# PC's numbers. The three outcomes of answer 62 count only the shells measured: started, with the
+# file of the second program born.
+
+PIPE_BLOCKED: Final = (
+    "Impossibile eseguire il programma 'python.exe': Un criterio di controllo dell'applicazione "
+    "ha bloccato il file"
+)
+"""What a shell says when the policy blocks a program of the pipe: invented here, in the shape of
+the sentence :class:`Blocked` carries."""
+
+
+def test_b3_is_skipped_without_the_road_of_the_key_when_no_shell_starts(tmp_path: Path) -> None:
+    """Answer 74 (a) and (b): with no shell measured «B3» is SALTATO, with the reason shell by
+    shell, and says nothing of the road of the key on the PC — a measure that did not happen
+    cannot draw it. S3 does not start all the same."""
+    fake = FakePc(launches={"powershell.exe": "blocked", "pwsh.exe": "blocked"})
+    report = measured(tmp_path, fake, "B", "a-secco")
+
+    assert report.rows["B3 powershell.exe"] == verdict("SALTATO")
+    assert report.rows["B3 pwsh.exe"] == verdict("SALTATO")
+    assert report.rows["B3"] == verdict("SALTATO")
+    assert "B3 — nessuna shell è misurata — powershell.exe bloccata; pwsh.exe bloccata" in (
+        report.text
+    )
+    assert "la strada della chiave sul PC" not in report.text
+    assert "powershell.exe: non è partito — errore 4551" in report.text
+    assert "- S3: non comincia" in report.text
+
+
+@pytest.mark.parametrize(
+    ("ran", "reason", "said"),
+    [
+        (
+            (1, PIPE_BLOCKED, False),
+            "un programma del tubo bloccato, uscita 1",
+            f"ciò che ha detto: {PIPE_BLOCKED}",
+        ),
+        (
+            (1, "Errore inventato del tubo", False),
+            "il tubo non ha girato, uscita 1",
+            "ciò che ha detto: Errore inventato del tubo",
+        ),
+        (
+            (-1, "", True),
+            "il tubo non ha girato, uscita -1, fermata dallo script al suo tempo",
+            "ciò che ha detto: niente",
+        ),
+    ],
+    ids=["a-program-of-the-pipe-blocked", "another-reason", "stopped-at-its-time"],
+)
+def test_b3_a_shell_that_started_and_whose_pipe_did_not_run_is_not_measured(
+    tmp_path: Path, ran: tuple[int, str, bool], reason: str, said: str
+) -> None:
+    """Answer 74 (c): a shell that started and whose file of the second program was never born is
+    not measured — not «la riga non arriva intera» —, with its exit and what it said; a blocked
+    program is named by the script's own recognizer (74 (d))."""
+    code, err, late = ran
+    fake = FakePc(
+        pwsh=False,
+        pipe={
+            "pwsh.exe": b""
+        },  # pwsh.exe is not there: its bytes only keep the fake's default away
+        shell_ran={"powershell.exe": script().Ran(code, "5.1.26100.1", err, 9, timed_out=late)},
+    )
+    report = measured(tmp_path, fake, "B", "a-secco")
+
+    assert report.rows["B3 powershell.exe"] == verdict("SALTATO")
+    assert f"B3 powershell.exe — non misurata: {reason}" in report.text
+    assert "il file del secondo programma non è nato" in report.text
+    assert said in report.text
+    assert report.rows["B3"] == verdict("SALTATO")
+    assert "la strada della chiave sul PC" not in report.text
+
+
+def test_b3_judges_only_the_shells_measured(tmp_path: Path) -> None:
+    """Answer 74 (a): a shell not measured takes nothing away from the one measured — clean, it
+    passes; dirty, it stops S3, by the three outcomes of answer 62."""
+    key = script().KEY_LINE.encode("ascii")
+    clean = FakePc(launches={"powershell.exe": "blocked"}, pipe={"pwsh.exe": key + b"\n"})
+    dirty = FakePc(launches={"pwsh.exe": "blocked"}, pipe={"powershell.exe": b"AAAA\r\n"})
+
+    (tmp_path / "pulita").mkdir()
+    (tmp_path / "sporca").mkdir()
+    passed = measured(tmp_path / "pulita", clean, "B", "a-secco")
+    stopped = measured(tmp_path / "sporca", dirty, "B", "a-secco")
+
+    assert passed.rows["B3 powershell.exe"] == verdict("SALTATO")
+    assert passed.rows["B3"] == verdict("PASSATO")
+    assert stopped.rows["B3 pwsh.exe"] == verdict("SALTATO")
+    assert stopped.rows["B3"] == verdict("RIAPRE", True)
+
+
+def test_b3_an_empty_file_born_is_a_measure_the_line_did_not_arrive(tmp_path: Path) -> None:
+    """Answer 74 (c): the file of the second program born and empty is a measure, not a shell that
+    did not run."""
+    fake = FakePc(pwsh=False, pipe={"powershell.exe": b""})
+    report = measured(tmp_path, fake, "B", "a-secco")
+
+    assert report.rows["B3 powershell.exe"] == verdict("RIAPRE")
+    assert report.rows["B3"] == verdict("RIAPRE", True)
 
 
 def test_b3_says_for_each_shell_the_bytes_before_the_line_its_end_and_the_line_not_ascii(

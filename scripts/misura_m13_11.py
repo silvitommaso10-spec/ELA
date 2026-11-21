@@ -2734,7 +2734,8 @@ def b3(report: Report, machine: Machine, work: Work) -> None:
     second.write_text(SECOND, encoding="utf-8")
     report.fact(f"la riga della forma di una chiave: {len(KEY_LINE)} caratteri ASCII, inventata")
     shells = machine.shells()
-    present = 0
+    measured = 0
+    unmeasured: list[str] = []
     clean: list[str] = []
     bommed: list[str] = []
     for name in ("powershell.exe", "pwsh.exe"):
@@ -2742,18 +2743,36 @@ def b3(report: Report, machine: Machine, work: Work) -> None:
         where = shells.get(name)
         if where is None:
             report.row(row, "SALTATO", "questa shell non c'è")
+            unmeasured.append(f"{name} non c'è")
             continue
-        present += 1
         out = work.root / f"tubo-{Path(name).stem}.bin"
         argv = pipe_argv(str(where), sys.executable, str(first), str(second), str(out))
         try:
             ran = machine.run(argv, env=without_module_path(machine.environ), timeout=120.0)
         except OSError as error:
-            report.row(row, "SALTATO", f"non parte: {error.strerror or error}")
+            number = getattr(error, "winerror", None) or error.errno
+            launched = Launched(False, error=number, sentence=str(error.strerror or error))
+            report.fact(f"{name}: {said_of(launched)}")
+            why = "bloccata" if launched.blocked else "non parte"
+            report.row(row, "SALTATO", f"non misurata: {why}, con l'errore del sistema com'è")
+            unmeasured.append(f"{name} {why}")
             continue
-        piped = read_pipe(out.read_bytes() if out.exists() else None)
+        version = first_line(ran.out, 40) or "?"
+        if not out.exists():
+            blocked = BLOCKED_SAID.search(f"{ran.err}\n{ran.out}") is not None
+            why = "un programma del tubo bloccato" if blocked else "il tubo non ha girato"
+            late = ", fermata dallo script al suo tempo" if ran.timed_out else ""
+            report.fact(
+                f"{name} {version} ({ran.said}): il file del secondo programma non è nato; ciò che "
+                f"ha detto: {first_line(ran.err, 300) or 'niente'}"
+            )
+            report.row(row, "SALTATO", f"non misurata: {why}, uscita {ran.code}{late}")
+            unmeasured.append(f"{name} {why}")
+            continue
+        measured += 1
+        piped = read_pipe(out.read_bytes())
         report.fact(
-            f"{name} {first_line(ran.out, 40) or '?'} ({ran.said}): {piped.size} byte; prima della "
+            f"{name} {version} ({ran.said}): {piped.size} byte; prima della "
             f"riga: {piped.before}; la riga: {piped.shape}; fine riga {piped.ending}; la riga non "
             f"ASCII {piped.other}"
         )
@@ -2775,15 +2794,19 @@ def b3(report: Report, machine: Machine, work: Work) -> None:
             "davanti: la strada c'è se chi riceve toglie il BOM — della parte seconda, che cosa "
             "accetta «vault open» (ADR 0063 §3)",
         )
-    elif present:
+    elif measured:
         report.row(
             "B3",
             "RIAPRE",
-            "in nessuna shell la riga arriva intera: la strada della chiave sul PC",
+            "in nessuna shell misurata la riga arriva intera: la strada della chiave sul PC",
             stops=True,
         )
     else:
-        report.row("B3", "SALTATO", "nessuna delle due shell c'è")
+        report.row(
+            "B3",
+            "SALTATO",
+            f"nessuna shell è misurata — {'; '.join(unmeasured)}: la misura è da rifare",
+        )
 
 
 def part_b(
