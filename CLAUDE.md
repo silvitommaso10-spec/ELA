@@ -136,6 +136,13 @@ branch; un branch di sola registrazione comincia con `docs-` e non porta codice.
   della fine. La regola, prima del numero: il doppio del passo sano più lungo fra i giri dell'officina, arrotondato in su
   ai cinque minuti. Il 2026-11-20 il runner macOS di `a83da54` ha perso la comunicazione dopo 53 minuti di `make check`, e
   non ha lasciato nessun log. Lo tiene `tests/docs/test_adr_ci_runner.py`, con il suo caso negativo.
+  ***Rivista il 2026-11-21*** (risposta 67 B dello stesso branch): la regola del doppio dava un numero sopra la caduta che
+  doveva tagliare — 65 minuti, e i runner di `a83da54` e di `354bebf` sono caduti a 53m39s e a 56m37s dall'inizio del
+  passo, tutti e due senza log. **La regola, prima del numero: il passo macOS sano più lungo più un quarto, arrotondato in
+  su ai cinque minuti, e almeno dieci minuti sotto la caduta più corta; se le due cose non stanno insieme, ci si ferma.**
+  E prima di `make check` parte **un campionatore della macchina**, `.github/sampler.sh`: ogni 30 secondi scrive carico,
+  memoria e processi per nome nella cartella del log della suite, che il passo del log porta via. È uno strumento, non
+  una difesa — non fa mai diventare rosso il job —, e lo tiene lo stesso test, con i suoi casi negativi.
 - **Un test afferma solo ciò di cui ha costruito le precondizioni.** Se gli serve una macchina
   vera, la dichiara con uno `skipif`, che compare nel riepilogo — un `if` dentro il test no
   (ADR 0031 §6). Una precondizione che non si può costruire dichiarando il sistema si costruisce

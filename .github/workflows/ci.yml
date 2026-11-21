@@ -92,6 +92,17 @@ jobs:
             ~/Library/Caches/ms-playwright
           key: ms-playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-${{ steps.browsers.outputs.set }}
 
+      # The machine's sampler (answer 67 B of the branch m13.11-il-browser-sul-pc): an instrument,
+      # not a defence. Every 30 seconds `.github/sampler.sh` appends to the folder of the suite's log
+      # the time, the load, the memory and the processes by name — what the macOS runner did not say
+      # of itself when it lost communication, twice, on 2026-11-20. It starts before `make check` and
+      # runs in the background through it, with its streams closed, so the step ends at once; the
+      # step of the log carries its file away, and the end of the job stops it. Its failure turns no
+      # job red: `continue-on-error`, and every exit of the script is 0. `make check` is unchanged.
+      - name: The machine's sampler
+        continue-on-error: true
+        run: nohup sh .github/sampler.sh "${{ runner.temp }}/suite-log" > /dev/null 2>&1 < /dev/null &
+
       # The log of the suite (tests/suite_log.py, M9.5, decision 75): which test ran on which worker,
       # when and for how long — what the log of a red did not say on 2026-11-12. Only here: without
       # `SUITE_LOG` the suite writes nothing, and `make check` on a Mac prints what it printed.
@@ -100,9 +111,14 @@ jobs:
       # runs, carries the log away. On 2026-11-20 the macOS runner of a83da54 lost communication 53
       # minutes into this step, and no log was left. The rule, written before the number: twice the
       # longest healthy step among the runs in the workshop, rounded up to five minutes — macOS of
-      # bab6484 (run 43018768007), 31m39s: 65.
+      # bab6484 (run 43018768007), 31m39s: 65. ***Revised on 2026-11-21*** (answer 67 B): that rule
+      # gave a number above the fall it had to cut — the runner of a83da54 fell 53m39s into this
+      # step, that of 354bebf 56m37s into it, both under 65, and neither left a log. The rule,
+      # written before the number: the longest healthy macOS step plus a quarter, rounded up to five
+      # minutes, and at least ten minutes below the shortest fall — 31m39s × 1.25 = 39m34s: 40,
+      # under 53m39s − 10m = 43m39s.
       - name: make check
-        timeout-minutes: 65
+        timeout-minutes: 40
         env:
           SUITE_LOG: ${{ runner.temp }}/suite-log
         run: make check
