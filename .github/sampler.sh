@@ -12,6 +12,12 @@
 # of the log carries it away in the same artifact. It stops by itself after its seconds at most,
 # and the end of the job stops it before. Whatever fails here fails the sample, never the job: no
 # `set -e`, and every exit is 0.
+#
+# On the branch diag-m13.11-osservazione only, which never enters main (decision 82 (d) of the
+# branch m13.11-il-browser-sul-pc): the workflow of the observation calls it every ten seconds,
+# and every sample also writes the free disk — `df -Pk` of the root, of the folder and of the
+# process's temporary folder — and, on macOS, the percentage of memory the kernel gives as
+# available, `kern.memorystatus_level`.
 folder=$1
 every=${2:-30}
 most=${3:-5400}
@@ -40,11 +46,14 @@ while :; do
             printf "memory MB: active %d, wired %d, compressed %d\n", active * mb, wired * mb, compressed * mb
           }'
         echo "swap: $(sysctl -n vm.swapusage)"
+        echo "memorystatus_level: $(sysctl -n kern.memorystatus_level)"
         ;;
       *)
         free -m
         ;;
     esac
+    echo "disk:"
+    df -Pk / "$folder" "${TMPDIR:-/tmp}"
     echo "processes: $(ps -A -o pid= | wc -l | tr -d ' ')"
     ps -A -o rss= -o comm= | awk '
       { rss = $1; $1 = ""; sub(/^ +/, ""); n = split($0, part, "/"); name = part[n]; count[name]++; memory[name] += rss }

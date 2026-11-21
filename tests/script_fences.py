@@ -550,6 +550,11 @@ def settle(base: Path) -> None:
     STATE.base = base.resolve()
     cleared(os.environ)
     pin_the_browsers(os.environ, Path.home(), sys.platform)
+    # The variant «casa ferma» of the observation (decision 82 (i) of the branch
+    # m13.11-il-browser-sul-pc), on the branch diag-m13.11-osservazione only, which never enters
+    # main: the home stays where it is; the folder of work moves as always.
+    if os.environ.get("DIAG_CASA_FERMA") == "1":
+        return
     home = STATE.base / HOME
     home.mkdir(exist_ok=True)
     os.environ["HOME"] = str(home)

@@ -1,0 +1,588 @@
+# The observation of the macOS runner that falls (decision 82 of the branch m13.11-il-browser-sul-pc).
+# It lives on the branch diag-m13.11-osservazione only, which never enters main, and runs only on
+# the branches diag-**. `make check` runs in the background, and every 2 minutes a round copies
+# the folder of the suite's log — the log, the output of `make check`, the sampler's file — and
+# carries it away as an artifact: what the machine knows leaves it before the machine can die with
+# it. The hour of every step stays in the API even when the runner falls: the last step that
+# completed gives the window of the fall. Three variants on macOS: «come-e», f3a25bc as it is;
+# «casa-ferma», the fence of the environment leaves HOME and USERPROFILE where they are; «senza-ast»,
+# tests/scripts/test_every_way_a_test_runs_a_script.py deselected. ci.yml is not touched.
+# Written by .git/m13.11-il-browser-sul-pc-reference/diag/genera_workflow.py.
+name: Diag
+
+on:
+  push:
+    branches: ['diag-**']
+
+concurrency:
+  group: diag-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  observe:
+    name: observe (${{ matrix.os }}, ${{ matrix.variant }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            variant: come-e
+          - os: macos-latest
+            variant: come-e
+          - os: macos-latest
+            variant: casa-ferma
+          - os: macos-latest
+            variant: senza-ast
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install uv (with cache)
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install Python 3.12
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Playwright's version
+        id: playwright
+        run: echo "version=$(uv run python -c 'import importlib.metadata as m; print(m.version("playwright"))')" >> "$GITHUB_OUTPUT"
+
+      - name: Which browsers this runner installs
+        id: browsers
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            echo "set=shell-and-chrome-for-testing" >> "$GITHUB_OUTPUT"
+          else
+            echo "set=shell" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Restore the browser
+        id: browser
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            ~/Library/Caches/ms-playwright
+          key: ms-playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-${{ steps.browsers.outputs.set }}
+
+      - name: Install the browser
+        run: uv run playwright install --only-shell chromium
+
+      - name: Install Chrome for Testing
+        if: runner.os == 'macOS'
+        run: uv run playwright install --no-shell chromium
+
+      - name: Save the browser
+        if: always() && steps.browser.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            ~/Library/Caches/ms-playwright
+          key: ms-playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-${{ steps.browsers.outputs.set }}
+
+      - name: Snapshot zero
+        continue-on-error: true
+        run: sh .github/diag/snapshot-zero.sh "${{ runner.temp }}/suite-log" "${{ matrix.variant }}"
+
+      - name: Snapshot zero, carried away
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-${{ matrix.variant }}-${{ matrix.os }}-00
+          path: ${{ runner.temp }}/suite-log/
+          if-no-files-found: warn
+
+      - name: The machine's sampler
+        continue-on-error: true
+        run: nohup sh .github/sampler.sh "${{ runner.temp }}/suite-log" 10 5400 > /dev/null 2>&1 < /dev/null &
+
+      - name: make check, in the background
+        env:
+          SUITE_LOG: ${{ runner.temp }}/suite-log
+        run: |
+          case "${{ matrix.variant }}" in
+            casa-ferma) export DIAG_CASA_FERMA=1 ;;
+            senza-ast) export PYTEST_ADDOPTS="--deselect tests/scripts/test_every_way_a_test_runs_a_script.py" ;;
+          esac
+          nohup sh -c 'make check > "$SUITE_LOG/make-check.txt" 2>&1; code=$?; echo "$code" > "$SUITE_LOG/make-check-exit.part"; mv "$SUITE_LOG/make-check-exit.part" "$SUITE_LOG/make-check-exit.txt"' > /dev/null 2>&1 < /dev/null &
+          echo "LAUNCHED=1" >> "$GITHUB_ENV"
+
+      - name: Round 01, the wait
+        id: wait01
+        if: always() && env.LAUNCHED == '1' && env.DONE != '1'
+        continue-on-error: true
+        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" 120
+
+      - name: Round 01, the snapshot
+        if: always() && steps.wait01.outputs.went == '1'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-${{ matrix.variant }}-${{ matrix.os }}-01
+          path: ${{ runner.temp }}/snap/
+          if-no-files-found: warn
+
+      - name: Round 02, the wait
+        id: wait02
+        if: always() && env.LAUNCHED == '1' && env.DONE != '1'
+        continue-on-error: true
+        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" 120
+
+      - name: Round 02, the snapshot
+        if: always() && steps.wait02.outputs.went == '1'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-${{ matrix.variant }}-${{ matrix.os }}-02
+          path: ${{ runner.temp }}/snap/
+          if-no-files-found: warn
+
+      - name: Round 03, the wait
+        id: wait03
+        if: always() && env.LAUNCHED == '1' && env.DONE != '1'
+        continue-on-error: true
+        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" 120
+
+      - name: Round 03, the snapshot
+        if: always() && steps.wait03.outputs.went == '1'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-${{ matrix.variant }}-${{ matrix.os }}-03
+          path: ${{ runner.temp }}/snap/
+          if-no-files-found: warn
+
+      - name: Round 04, the wait
+        id: wait04
+        if: always() && env.LAUNCHED == '1' && env.DONE != '1'
+        continue-on-error: true
+        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" 120
+
+      - name: Round 04, the snapshot
+        if: always() && steps.wait04.outputs.went == '1'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-${{ matrix.variant }}-${{ matrix.os }}-04
+          path: ${{ runner.temp }}/snap/
+          if-no-files-found: warn
+
+      - name: Round 05, the wait
+        id: wait05
+        if: always() && env.LAUNCHED == '1' && env.DONE != '1'
+        continue-on-error: true
+        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" 120
+
+      - name: Round 05, the snapshot
+        if: always() && steps.wait05.outputs.went == '1'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-${{ matrix.variant }}-${{ matrix.os }}-05
+          path: ${{ runner.temp }}/snap/
+          if-no-files-found: warn
+
+      - name: Round 06, the wait
+        id: wait06
+        if: always() && env.LAUNCHED == '1' && env.DONE != '1'
+        continue-on-error: true
+        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" 120
+
+      - name: Round 06, the snapshot
+        if: always() && steps.wait06.outputs.went == '1'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-${{ matrix.variant }}-${{ matrix.os }}-06
+          path: ${{ runner.temp }}/snap/
+          if-no-files-found: warn
+
+      - name: Round 07, the wait
+        id: wait07
+        if: always() && env.LAUNCHED == '1' && env.DONE != '1'
+        continue-on-error: true
+        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" 120
+
+      - name: Round 07, the snapshot
+        if: always() && steps.wait07.outputs.went == '1'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-${{ matrix.variant }}-${{ matrix.os }}-07
+          path: ${{ runner.temp }}/snap/
+          if-no-files-found: warn
+
+      - name: Round 08, the wait
+        id: wait08
+        if: always() && env.LAUNCHED == '1' && env.DONE != '1'
+        continue-on-error: true
+        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" 120
+
+      - name: Round 08, the snapshot
+        if: always() && steps.wait08.outputs.went == '1'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-${{ matrix.variant }}-${{ matrix.os }}-08
+          path: ${{ runner.temp }}/snap/
+          if-no-files-found: warn
+
+      - name: Round 09, the wait
+        id: wait09
+        if: always() && env.LAUNCHED == '1' && env.DONE != '1'
+        continue-on-error: true
+        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" 120
+
+      - name: Round 09, the snapshot
+        if: always() && steps.wait09.outputs.went == '1'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-${{ matrix.variant }}-${{ matrix.os }}-09
+          path: ${{ runner.temp }}/snap/
+          if-no-files-found: warn
+
+      - name: Round 10, the wait
+        id: wait10
+        if: always() && env.LAUNCHED == '1' && env.DONE != '1'
+        continue-on-error: true
+        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" 120
+
+      - name: Round 10, the snapshot
+        if: always() && steps.wait10.outputs.went == '1'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-${{ matrix.variant }}-${{ matrix.os }}-10
+          path: ${{ runner.temp }}/snap/
+          if-no-files-found: warn
+
+      - name: Round 11, the wait
+        id: wait11
+        if: always() && env.LAUNCHED == '1' && env.DONE != '1'
+        continue-on-error: true
+        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" 120
+
+      - name: Round 11, the snapshot
+        if: always() && steps.wait11.outputs.went == '1'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-${{ matrix.variant }}-${{ matrix.os }}-11
+          path: ${{ runner.temp }}/snap/
+          if-no-files-found: warn
+
+      - name: Round 12, the wait
+        id: wait12
+        if: always() && env.LAUNCHED == '1' && env.DONE != '1'
+        continue-on-error: true
+        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" 120
+
+      - name: Round 12, the snapshot
+        if: always() && steps.wait12.outputs.went == '1'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-${{ matrix.variant }}-${{ matrix.os }}-12
+          path: ${{ runner.temp }}/snap/
+          if-no-files-found: warn
+
+      - name: Round 13, the wait
+        id: wait13
+        if: always() && env.LAUNCHED == '1' && env.DONE != '1'
+        continue-on-error: true
+        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" 120
+
+      - name: Round 13, the snapshot
+        if: always() && steps.wait13.outputs.went == '1'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-${{ matrix.variant }}-${{ matrix.os }}-13
+          path: ${{ runner.temp }}/snap/
+          if-no-files-found: warn
+
+      - name: Round 14, the wait
+        id: wait14
+        if: always() && env.LAUNCHED == '1' && env.DONE != '1'
+        continue-on-error: true
+        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" 120
+
+      - name: Round 14, the snapshot
+        if: always() && steps.wait14.outputs.went == '1'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-${{ matrix.variant }}-${{ matrix.os }}-14
+          path: ${{ runner.temp }}/snap/
+          if-no-files-found: warn
+
+      - name: Round 15, the wait
+        id: wait15
+        if: always() && env.LAUNCHED == '1' && env.DONE != '1'
+        continue-on-error: true
+        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" 120
+
+      - name: Round 15, the snapshot
+        if: always() && steps.wait15.outputs.went == '1'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-${{ matrix.variant }}-${{ matrix.os }}-15
+          path: ${{ runner.temp }}/snap/
+          if-no-files-found: warn
+
+      - name: Round 16, the wait
+        id: wait16
+        if: always() && env.LAUNCHED == '1' && env.DONE != '1'
+        continue-on-error: true
+        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" 120
+
+      - name: Round 16, the snapshot
+        if: always() && steps.wait16.outputs.went == '1'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-${{ matrix.variant }}-${{ matrix.os }}-16
+          path: ${{ runner.temp }}/snap/
+          if-no-files-found: warn
+
+      - name: Round 17, the wait
+        id: wait17
+        if: always() && env.LAUNCHED == '1' && env.DONE != '1'
+        continue-on-error: true
+        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" 120
+
+      - name: Round 17, the snapshot
+        if: always() && steps.wait17.outputs.went == '1'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-${{ matrix.variant }}-${{ matrix.os }}-17
+          path: ${{ runner.temp }}/snap/
+          if-no-files-found: warn
+
+      - name: Round 18, the wait
+        id: wait18
+        if: always() && env.LAUNCHED == '1' && env.DONE != '1'
+        continue-on-error: true
+        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" 120
+
+      - name: Round 18, the snapshot
+        if: always() && steps.wait18.outputs.went == '1'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-${{ matrix.variant }}-${{ matrix.os }}-18
+          path: ${{ runner.temp }}/snap/
+          if-no-files-found: warn
+
+      - name: Round 19, the wait
+        id: wait19
+        if: always() && env.LAUNCHED == '1' && env.DONE != '1'
+        continue-on-error: true
+        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" 120
+
+      - name: Round 19, the snapshot
+        if: always() && steps.wait19.outputs.went == '1'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-${{ matrix.variant }}-${{ matrix.os }}-19
+          path: ${{ runner.temp }}/snap/
+          if-no-files-found: warn
+
+      - name: Round 20, the wait
+        id: wait20
+        if: always() && env.LAUNCHED == '1' && env.DONE != '1'
+        continue-on-error: true
+        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" 120
+
+      - name: Round 20, the snapshot
+        if: always() && steps.wait20.outputs.went == '1'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-${{ matrix.variant }}-${{ matrix.os }}-20
+          path: ${{ runner.temp }}/snap/
+          if-no-files-found: warn
+
+      - name: Round 21, the wait
+        id: wait21
+        if: always() && env.LAUNCHED == '1' && env.DONE != '1'
+        continue-on-error: true
+        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" 120
+
+      - name: Round 21, the snapshot
+        if: always() && steps.wait21.outputs.went == '1'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-${{ matrix.variant }}-${{ matrix.os }}-21
+          path: ${{ runner.temp }}/snap/
+          if-no-files-found: warn
+
+      - name: Round 22, the wait
+        id: wait22
+        if: always() && env.LAUNCHED == '1' && env.DONE != '1'
+        continue-on-error: true
+        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" 120
+
+      - name: Round 22, the snapshot
+        if: always() && steps.wait22.outputs.went == '1'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-${{ matrix.variant }}-${{ matrix.os }}-22
+          path: ${{ runner.temp }}/snap/
+          if-no-files-found: warn
+
+      - name: Round 23, the wait
+        id: wait23
+        if: always() && env.LAUNCHED == '1' && env.DONE != '1'
+        continue-on-error: true
+        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" 120
+
+      - name: Round 23, the snapshot
+        if: always() && steps.wait23.outputs.went == '1'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-${{ matrix.variant }}-${{ matrix.os }}-23
+          path: ${{ runner.temp }}/snap/
+          if-no-files-found: warn
+
+      - name: Round 24, the wait
+        id: wait24
+        if: always() && env.LAUNCHED == '1' && env.DONE != '1'
+        continue-on-error: true
+        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" 120
+
+      - name: Round 24, the snapshot
+        if: always() && steps.wait24.outputs.went == '1'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-${{ matrix.variant }}-${{ matrix.os }}-24
+          path: ${{ runner.temp }}/snap/
+          if-no-files-found: warn
+
+      - name: Round 25, the wait
+        id: wait25
+        if: always() && env.LAUNCHED == '1' && env.DONE != '1'
+        continue-on-error: true
+        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" 120
+
+      - name: Round 25, the snapshot
+        if: always() && steps.wait25.outputs.went == '1'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-${{ matrix.variant }}-${{ matrix.os }}-25
+          path: ${{ runner.temp }}/snap/
+          if-no-files-found: warn
+
+      - name: Round 26, the wait
+        id: wait26
+        if: always() && env.LAUNCHED == '1' && env.DONE != '1'
+        continue-on-error: true
+        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" 120
+
+      - name: Round 26, the snapshot
+        if: always() && steps.wait26.outputs.went == '1'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-${{ matrix.variant }}-${{ matrix.os }}-26
+          path: ${{ runner.temp }}/snap/
+          if-no-files-found: warn
+
+      - name: Round 27, the wait
+        id: wait27
+        if: always() && env.LAUNCHED == '1' && env.DONE != '1'
+        continue-on-error: true
+        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" 120
+
+      - name: Round 27, the snapshot
+        if: always() && steps.wait27.outputs.went == '1'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-${{ matrix.variant }}-${{ matrix.os }}-27
+          path: ${{ runner.temp }}/snap/
+          if-no-files-found: warn
+
+      - name: Round 28, the wait
+        id: wait28
+        if: always() && env.LAUNCHED == '1' && env.DONE != '1'
+        continue-on-error: true
+        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" 120
+
+      - name: Round 28, the snapshot
+        if: always() && steps.wait28.outputs.went == '1'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-${{ matrix.variant }}-${{ matrix.os }}-28
+          path: ${{ runner.temp }}/snap/
+          if-no-files-found: warn
+
+      - name: Round 29, the wait
+        id: wait29
+        if: always() && env.LAUNCHED == '1' && env.DONE != '1'
+        continue-on-error: true
+        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" 120
+
+      - name: Round 29, the snapshot
+        if: always() && steps.wait29.outputs.went == '1'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-${{ matrix.variant }}-${{ matrix.os }}-29
+          path: ${{ runner.temp }}/snap/
+          if-no-files-found: warn
+
+      - name: Round 30, the wait
+        id: wait30
+        if: always() && env.LAUNCHED == '1' && env.DONE != '1'
+        continue-on-error: true
+        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" 120
+
+      - name: Round 30, the snapshot
+        if: always() && steps.wait30.outputs.went == '1'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-${{ matrix.variant }}-${{ matrix.os }}-30
+          path: ${{ runner.temp }}/snap/
+          if-no-files-found: warn
+
+      - name: make check's verdict
+        if: always()
+        run: |
+          log="${{ runner.temp }}/suite-log"
+          cat "$log/make-check.txt" 2>/dev/null || echo "no output of make check"
+          if [ ! -f "$log/make-check-exit.txt" ]; then
+            echo "make check has not ended within the rounds"
+            exit 1
+          fi
+          exit "$(cat "$log/make-check-exit.txt")"
+
+      - name: The log of the suite
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: suite-log-${{ matrix.variant }}-${{ matrix.os }}
+          path: ${{ runner.temp }}/suite-log/
+          if-no-files-found: warn
