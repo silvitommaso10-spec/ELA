@@ -1,14 +1,17 @@
-# The observation of the macOS runner that falls (decisions 82, 89, 91 and 92 of the branch
-# m13.11-il-browser-sul-pc). It lives on the branch diag-m13.11-osservazione only, which never
-# enters main, and runs only on the branches diag-**. What runs, runs in the background, with its
-# streams closed and without nohup; every round — 30 or 120 seconds, by variant — copies the folder
-# of the suite's log and carries it away as an artifact, and on macOS a black box sends a comment to
-# the issue #2 every 60 seconds: what the machine knows leaves it before the machine can die
-# with it. The hour of every step stays in the API even when the runner falls. The variants:
-# «come-e», `make check` as it is; «solo-infrastruttura», the pytest line of `make check` with
-# tests/infrastructure as its only path and no threshold of coverage (`--cov-fail-under=0`, and no
-# cov-critical); «senza-infrastruttura», `make -k check` with PYTEST_ADDOPTS=--ignore=tests/infrastructure.
-# ci.yml is not touched. Written by .git/m13.11-il-browser-sul-pc-reference/diag/genera_workflow.py.
+# The observation of the macOS runner that falls (decisions 82, 89, 91, 92, 101 and 102 of the
+# branch m13.11-il-browser-sul-pc). It lives on the branch diag-m13.11-osservazione only, which
+# never enters main, and runs only on the branches diag-**. macOS only, eleven jobs, five at a
+# time: the others wait in the queue. Every job runs the whole `make check` in the background, with
+# its streams closed and without nohup; every round of 120 seconds copies the folder of the
+# suite's log and carries it away as an artifact, and a black box sends a comment to the issue
+# #2 every 60 seconds: what the machine knows leaves it before the machine can die with it.
+# The hour of every step stays in the API even when the runner falls.
+# The first step, before the checkout, writes how the machine arrived (decision 101): «warm» with
+# at least one mdworker_shared at that step, «cold» with none. The variants: «controllo», the tree
+# at da241f8 exactly, with the instruments outside it, in the runner's temporary folder;
+# «spotlight-spento», today's code with `sudo -n mdutil -a -i off` right after the first step;
+# «come-e», today's code. ci.yml is not touched. Written by
+# .git/m13.11-il-browser-sul-pc-reference/diag/genera_workflow.py.
 name: Diag
 
 on:
@@ -31,8 +34,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-24.04
-            variant: come-e
+          - os: macos-latest
+            variant: controllo
+            instance: 1
+            every: 120
+          - os: macos-latest
+            variant: spotlight-spento
             instance: 1
             every: 120
           - os: macos-latest
@@ -40,25 +47,83 @@ jobs:
             instance: 1
             every: 120
           - os: macos-latest
-            variant: solo-infrastruttura
-            instance: 1
-            every: 30
-          - os: macos-latest
-            variant: solo-infrastruttura
+            variant: controllo
             instance: 2
-            every: 30
-          - os: macos-latest
-            variant: senza-infrastruttura
-            instance: 1
             every: 120
           - os: macos-latest
-            variant: senza-infrastruttura
+            variant: spotlight-spento
             instance: 2
+            every: 120
+          - os: macos-latest
+            variant: controllo
+            instance: 3
+            every: 120
+          - os: macos-latest
+            variant: spotlight-spento
+            instance: 3
+            every: 120
+          - os: macos-latest
+            variant: come-e
+            instance: 2
+            every: 120
+          - os: macos-latest
+            variant: controllo
+            instance: 4
+            every: 120
+          - os: macos-latest
+            variant: spotlight-spento
+            instance: 4
+            every: 120
+          - os: macos-latest
+            variant: controllo
+            instance: 5
             every: 120
     steps:
+      - name: La macchina com'è arrivata
+        continue-on-error: true
+        run: |
+          mkdir -p "${{ runner.temp }}/suite-log"
+          {
+            echo "=== la macchina com'è arrivata (decisione 101): $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "variant: ${{ matrix.variant }}-${{ matrix.instance }}"
+            echo "kern.boottime: $(sysctl -n kern.boottime)"
+            echo "uptime: $(uptime)"
+            df -k /System/Volumes/Data || echo "df: uscita $?"
+            echo "mdworker_shared: $(pgrep -x mdworker_shared | wc -l | tr -d ' ')"
+            echo "mdutil -a -s:"
+            mdutil -a -s || echo "mdutil -a -s: uscita $?"
+          } 2>&1 | tee "${{ runner.temp }}/suite-log/arrived.txt"
+
+      - name: Spotlight off
+        if: matrix.variant == 'spotlight-spento'
+        continue-on-error: true
+        run: |
+          {
+            echo "=== sudo -n mdutil -a -i off (decisione 102): $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            sudo -n mdutil -a -i off || echo "sudo -n mdutil -a -i off: uscita $?"
+            echo "=== mdutil -a -s, di nuovo: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            mdutil -a -s || echo "mdutil -a -s: uscita $?"
+          } 2>&1 | tee -a "${{ runner.temp }}/suite-log/arrived.txt"
+
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
+      - name: The instruments, outside the tree
+        run: |
+          tools="${{ runner.temp }}/diag-tools"
+          mkdir -p "$tools"
+          cp .github/diag/blackbox.sh .github/diag/round.sh .github/diag/snapshot-zero.sh .github/sampler.sh "$tools"/
+          ls -l "$tools"
+          if [ "${{ matrix.variant }}" = "controllo" ]; then
+            git checkout --quiet --detach da241f86cf4c48d8b6507453440ac17665db2ca7
+            head=$(git rev-parse HEAD)
+            changed=$(git status --porcelain --untracked-files=all)
+            echo "HEAD: $head"
+            echo "git status --porcelain: ${changed:-vuoto}"
+            echo "git status --porcelain --ignored: $(git status --porcelain --ignored | wc -l | tr -d ' ') righe"
+            [ "$head" = "da241f86cf4c48d8b6507453440ac17665db2ca7" ] && [ -z "$changed" ]
+          fi
 
       - name: Install uv (with cache)
         uses: astral-sh/setup-uv@v10.2.0
@@ -112,7 +177,7 @@ jobs:
 
       - name: Snapshot zero
         continue-on-error: true
-        run: sh .github/diag/snapshot-zero.sh "${{ runner.temp }}/suite-log" "${{ matrix.variant }}-${{ matrix.instance }}"
+        run: sh "${{ runner.temp }}/diag-tools/snapshot-zero.sh" "${{ runner.temp }}/suite-log" "${{ matrix.variant }}-${{ matrix.instance }}"
 
       - name: Snapshot zero, carried away
         if: always()
@@ -125,25 +190,21 @@ jobs:
 
       - name: The machine's sampler
         continue-on-error: true
-        run: sh .github/sampler.sh "${{ runner.temp }}/suite-log" 10 5400 > /dev/null 2>&1 < /dev/null &
+        run: sh "${{ runner.temp }}/diag-tools/sampler.sh" "${{ runner.temp }}/suite-log" 10 5400 > /dev/null 2>&1 < /dev/null &
 
       - name: The black box
         if: runner.os == 'macOS'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
-        run: sh .github/diag/blackbox.sh "${{ runner.temp }}/suite-log" "${{ matrix.variant }}-${{ matrix.instance }}" 2 60 5400 > /dev/null 2>&1 < /dev/null &
+        run: sh "${{ runner.temp }}/diag-tools/blackbox.sh" "${{ runner.temp }}/suite-log" "${{ matrix.variant }}-${{ matrix.instance }}" 2 60 5400 > /dev/null 2>&1 < /dev/null &
 
       - name: make check, in the background
         env:
           SUITE_LOG: ${{ runner.temp }}/suite-log
         run: |
-          case "${{ matrix.variant }}" in
-            solo-infrastruttura) set -- uv run pytest tests/infrastructure --cov-fail-under=0 ;;
-            senza-infrastruttura) export PYTEST_ADDOPTS="--ignore=tests/infrastructure"; set -- make -k check ;;
-            *) set -- make check ;;
-          esac
-          echo "$* (PYTEST_ADDOPTS=${PYTEST_ADDOPTS-})" > "$SUITE_LOG/command.txt"
+          set -- make check
+          echo "$* at $(git rev-parse HEAD) (PYTEST_ADDOPTS=${PYTEST_ADDOPTS-})" > "$SUITE_LOG/command.txt"
           sh -c '"$@" > "$SUITE_LOG/make-check.txt" 2>&1; code=$?; echo "$code" > "$SUITE_LOG/make-check-exit.part"; mv "$SUITE_LOG/make-check-exit.part" "$SUITE_LOG/make-check-exit.txt"' sh "$@" > /dev/null 2>&1 < /dev/null &
           echo "LAUNCHED=1" >> "$GITHUB_ENV"
 
@@ -151,7 +212,7 @@ jobs:
         id: wait01
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 01, the snapshot
         if: always() && steps.wait01.outputs.went == '1'
@@ -166,7 +227,7 @@ jobs:
         id: wait02
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 02, the snapshot
         if: always() && steps.wait02.outputs.went == '1'
@@ -181,7 +242,7 @@ jobs:
         id: wait03
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 03, the snapshot
         if: always() && steps.wait03.outputs.went == '1'
@@ -196,7 +257,7 @@ jobs:
         id: wait04
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 04, the snapshot
         if: always() && steps.wait04.outputs.went == '1'
@@ -211,7 +272,7 @@ jobs:
         id: wait05
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 05, the snapshot
         if: always() && steps.wait05.outputs.went == '1'
@@ -226,7 +287,7 @@ jobs:
         id: wait06
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 06, the snapshot
         if: always() && steps.wait06.outputs.went == '1'
@@ -241,7 +302,7 @@ jobs:
         id: wait07
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 07, the snapshot
         if: always() && steps.wait07.outputs.went == '1'
@@ -256,7 +317,7 @@ jobs:
         id: wait08
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 08, the snapshot
         if: always() && steps.wait08.outputs.went == '1'
@@ -271,7 +332,7 @@ jobs:
         id: wait09
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 09, the snapshot
         if: always() && steps.wait09.outputs.went == '1'
@@ -286,7 +347,7 @@ jobs:
         id: wait10
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 10, the snapshot
         if: always() && steps.wait10.outputs.went == '1'
@@ -301,7 +362,7 @@ jobs:
         id: wait11
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 11, the snapshot
         if: always() && steps.wait11.outputs.went == '1'
@@ -316,7 +377,7 @@ jobs:
         id: wait12
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 12, the snapshot
         if: always() && steps.wait12.outputs.went == '1'
@@ -331,7 +392,7 @@ jobs:
         id: wait13
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 13, the snapshot
         if: always() && steps.wait13.outputs.went == '1'
@@ -346,7 +407,7 @@ jobs:
         id: wait14
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 14, the snapshot
         if: always() && steps.wait14.outputs.went == '1'
@@ -361,7 +422,7 @@ jobs:
         id: wait15
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 15, the snapshot
         if: always() && steps.wait15.outputs.went == '1'
@@ -376,7 +437,7 @@ jobs:
         id: wait16
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 16, the snapshot
         if: always() && steps.wait16.outputs.went == '1'
@@ -391,7 +452,7 @@ jobs:
         id: wait17
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 17, the snapshot
         if: always() && steps.wait17.outputs.went == '1'
@@ -406,7 +467,7 @@ jobs:
         id: wait18
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 18, the snapshot
         if: always() && steps.wait18.outputs.went == '1'
@@ -421,7 +482,7 @@ jobs:
         id: wait19
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 19, the snapshot
         if: always() && steps.wait19.outputs.went == '1'
@@ -436,7 +497,7 @@ jobs:
         id: wait20
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 20, the snapshot
         if: always() && steps.wait20.outputs.went == '1'
@@ -451,7 +512,7 @@ jobs:
         id: wait21
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 21, the snapshot
         if: always() && steps.wait21.outputs.went == '1'
@@ -466,7 +527,7 @@ jobs:
         id: wait22
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 22, the snapshot
         if: always() && steps.wait22.outputs.went == '1'
@@ -481,7 +542,7 @@ jobs:
         id: wait23
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 23, the snapshot
         if: always() && steps.wait23.outputs.went == '1'
@@ -496,7 +557,7 @@ jobs:
         id: wait24
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 24, the snapshot
         if: always() && steps.wait24.outputs.went == '1'
@@ -511,7 +572,7 @@ jobs:
         id: wait25
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 25, the snapshot
         if: always() && steps.wait25.outputs.went == '1'
@@ -526,7 +587,7 @@ jobs:
         id: wait26
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 26, the snapshot
         if: always() && steps.wait26.outputs.went == '1'
@@ -541,7 +602,7 @@ jobs:
         id: wait27
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 27, the snapshot
         if: always() && steps.wait27.outputs.went == '1'
@@ -556,7 +617,7 @@ jobs:
         id: wait28
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 28, the snapshot
         if: always() && steps.wait28.outputs.went == '1'
@@ -571,7 +632,7 @@ jobs:
         id: wait29
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 29, the snapshot
         if: always() && steps.wait29.outputs.went == '1'
@@ -586,7 +647,7 @@ jobs:
         id: wait30
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 30, the snapshot
         if: always() && steps.wait30.outputs.went == '1'
@@ -601,7 +662,7 @@ jobs:
         id: wait31
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 31, the snapshot
         if: always() && steps.wait31.outputs.went == '1'
@@ -616,7 +677,7 @@ jobs:
         id: wait32
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 32, the snapshot
         if: always() && steps.wait32.outputs.went == '1'
@@ -631,7 +692,7 @@ jobs:
         id: wait33
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 33, the snapshot
         if: always() && steps.wait33.outputs.went == '1'
@@ -646,7 +707,7 @@ jobs:
         id: wait34
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 34, the snapshot
         if: always() && steps.wait34.outputs.went == '1'
@@ -661,7 +722,7 @@ jobs:
         id: wait35
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 35, the snapshot
         if: always() && steps.wait35.outputs.went == '1'
@@ -676,7 +737,7 @@ jobs:
         id: wait36
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 36, the snapshot
         if: always() && steps.wait36.outputs.went == '1'
@@ -691,7 +752,7 @@ jobs:
         id: wait37
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 37, the snapshot
         if: always() && steps.wait37.outputs.went == '1'
@@ -706,7 +767,7 @@ jobs:
         id: wait38
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 38, the snapshot
         if: always() && steps.wait38.outputs.went == '1'
@@ -721,7 +782,7 @@ jobs:
         id: wait39
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 39, the snapshot
         if: always() && steps.wait39.outputs.went == '1'
@@ -736,7 +797,7 @@ jobs:
         id: wait40
         if: always() && env.LAUNCHED == '1' && env.DONE != '1'
         continue-on-error: true
-        run: sh .github/diag/round.sh "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
+        run: sh "${{ runner.temp }}/diag-tools/round.sh" "${{ runner.temp }}/suite-log" "${{ runner.temp }}/snap" ${{ matrix.every }}
 
       - name: Round 40, the snapshot
         if: always() && steps.wait40.outputs.went == '1'

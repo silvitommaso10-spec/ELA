@@ -17,7 +17,9 @@
 # branch m13.11-il-browser-sul-pc): the workflow of the observation calls it every ten seconds,
 # and every sample also writes the free disk — `df -Pk` of the root, of the folder and of the
 # process's temporary folder — and, on macOS, the percentage of memory the kernel gives as
-# available, `kern.memorystatus_level`.
+# available, `kern.memorystatus_level`. ***Since 2026-11-24*** (decision 101), on macOS, every sample
+# also writes how many mdworker_shared there are, counted on every process with `pgrep -x`: the
+# list by name below keeps the 40 names with the most memory, and a few small ones stay under it.
 folder=$1
 every=${2:-30}
 most=${3:-5400}
@@ -47,6 +49,7 @@ while :; do
           }'
         echo "swap: $(sysctl -n vm.swapusage)"
         echo "memorystatus_level: $(sysctl -n kern.memorystatus_level)"
+        echo "mdworker_shared: $(pgrep -x mdworker_shared | wc -l | tr -d ' ')"
         ;;
       *)
         free -m
