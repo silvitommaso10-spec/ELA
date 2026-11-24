@@ -47,6 +47,7 @@ import inspect
 import ipaddress
 import os
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -78,6 +79,31 @@ OS_LAUNCHERS: Final[tuple[str, ...]] = tuple(
 PLAYWRIGHT_BROWSERS: Final = "PLAYWRIGHT_BROWSERS_PATH"
 WORKING_FOLDER: Final = "cartella-di-lavoro"
 HOME: Final = "casa"
+DIAG_SWITCH: Final = "DIAG_SENZA"
+"""The one switch of the observation (decision 110 of the branch m13.11-il-browser-sul-pc), on the
+branch diag-m13.11-osservazione only, which never enters main, and read here and nowhere else:
+``lanci``, ``rete`` or ``ambiente`` leave one fence out, ``stop`` keeps them all and makes
+``os.kill`` skip ``SIGSTOP`` — to see whether the macOS runner still falls without that piece.
+Unset or empty, nothing changes."""
+
+
+def _without(piece: str) -> bool:
+    """Whether the switch of the observation takes ``piece`` away, read when called."""
+    return os.environ.get(DIAG_SWITCH, "") == piece
+
+
+def _without_a_stop(real: Callable[..., Any]) -> Callable[..., Any]:
+    """``os.kill`` that skips ``SIGSTOP`` and returns: the variant «senza-stop» (decision 110)."""
+
+    @functools.wraps(real)
+    def kill(pid: int, number: int) -> None:
+        if number == getattr(signal, "SIGSTOP", None):
+            return None
+        real(pid, number)
+        return None
+
+    setattr(kill, GUARDED, True)
+    return kill
 
 
 class ReachedOutFromAScript(BaseException):  # noqa: N818 — what happened, not an «Error»
@@ -548,6 +574,9 @@ def settle(base: Path) -> None:
     """The environment of this process, once, at its configuration: no ``ELA_``, the browsers
     where they are, and a home of the test's."""
     STATE.base = base.resolve()
+    # The variant «senza-ambiente» (decision 110): only the base is written.
+    if _without("ambiente"):
+        return
     cleared(os.environ)
     pin_the_browsers(os.environ, Path.home(), sys.platform)
     home = STATE.base / HOME
@@ -563,6 +592,9 @@ def work_in_the_test_s_folder() -> None:
     process that spawns them is. No load of the settings happens at the collection (the count of
     M13.17b, «La conta della risposta 39 (g)»), and one that did would be refused."""
     assert STATE.base is not None, "the fences are installed at the configuration"
+    # The variant «senza-ambiente» (decision 110): the folder of work does not move.
+    if _without("ambiente"):
+        return
     work = STATE.base / WORKING_FOLDER
     work.mkdir(exist_ok=True)
     os.chdir(work)
@@ -574,8 +606,32 @@ def work_in_the_test_s_folder() -> None:
 
 
 def install(base: Path) -> None:
-    """Once per process, before any fixture of any scope: the fences."""
+    """Once per process, before any fixture of any scope: the fences. On the branch
+    diag-m13.11-osservazione the switch :data:`DIAG_SWITCH` may leave one piece out (decision
+    110)."""
     settle(base)
+    if not _without("lanci"):
+        _install_the_launches()
+    if not _without("rete"):
+        _install_the_connections()
+    import httpx
+    import httpx2
+
+    for library in (httpx, httpx2):
+        library.HTTPTransport.handle_request = refuse_the_network  # type: ignore[method-assign]
+        library.AsyncHTTPTransport.handle_async_request = refuse_the_network  # type: ignore[method-assign]
+    if not _without("ambiente"):
+        from pydantic_settings.sources.providers.dotenv import DotEnvSettingsSource
+
+        dotenv: Any = DotEnvSettingsSource
+        if not getattr(dotenv._read_env_files, GUARDED, False):
+            dotenv._read_env_files = _guarded_dotenv(dotenv._read_env_files)
+    if _without("stop") and not getattr(os.kill, GUARDED, False):
+        os.kill = _without_a_stop(os.kill)
+
+
+def _install_the_launches() -> None:
+    """The first fence: every way of starting a program."""
     popen: Any = subprocess.Popen
     if not getattr(popen._execute_child, GUARDED, False):
         popen._execute_child = _popen(popen._execute_child)
@@ -606,6 +662,10 @@ def install(base: Path) -> None:
                 os.startfile,  # type: ignore[attr-defined,unused-ignore]
                 lambda args, named: ([os.fsdecode(args[0])], None, None),
             )
+
+
+def _install_the_connections() -> None:
+    """The second fence: the connections and the resolution of a name."""
     sockets: Any = socket.socket
     for door in ("connect", "connect_ex"):
         if not getattr(getattr(sockets, door), GUARDED, False):
@@ -619,14 +679,3 @@ def install(base: Path) -> None:
     proactor: Any = proactor_events.BaseProactorEventLoop
     if not getattr(proactor.sock_connect, GUARDED, False):
         proactor.sock_connect = _guarded_sock_connect(proactor.sock_connect)
-    import httpx
-    import httpx2
-
-    for library in (httpx, httpx2):
-        library.HTTPTransport.handle_request = refuse_the_network  # type: ignore[method-assign]
-        library.AsyncHTTPTransport.handle_async_request = refuse_the_network  # type: ignore[method-assign]
-    from pydantic_settings.sources.providers.dotenv import DotEnvSettingsSource
-
-    dotenv: Any = DotEnvSettingsSource
-    if not getattr(dotenv._read_env_files, GUARDED, False):
-        dotenv._read_env_files = _guarded_dotenv(dotenv._read_env_files)

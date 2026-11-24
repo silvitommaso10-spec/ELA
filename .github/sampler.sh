@@ -20,6 +20,8 @@
 # available, `kern.memorystatus_level`. ***Since 2026-11-24*** (decision 101), on macOS, every sample
 # also writes how many mdworker_shared there are, counted on every process with `pgrep -x`: the
 # list by name below keeps the 40 names with the most memory, and a few small ones stay under it.
+# ***Since 2026-11-24*** (decision 111 (b)), on macOS, also six counters of sysctl: kern.num_files,
+# kern.maxfiles, kern.maxproc, kern.maxprocperuid, kern.num_tasks, kern.num_threads.
 folder=$1
 every=${2:-30}
 most=${3:-5400}
@@ -50,6 +52,7 @@ while :; do
         echo "swap: $(sysctl -n vm.swapusage)"
         echo "memorystatus_level: $(sysctl -n kern.memorystatus_level)"
         echo "mdworker_shared: $(pgrep -x mdworker_shared | wc -l | tr -d ' ')"
+        echo "sysctl: $(for name in kern.num_files kern.maxfiles kern.maxproc kern.maxprocperuid kern.num_tasks kern.num_threads; do printf '%s=%s ' "$name" "$(sysctl -n "$name" 2>&1)"; done)"
         ;;
       *)
         free -m

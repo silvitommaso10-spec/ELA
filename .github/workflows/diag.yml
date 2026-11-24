@@ -1,17 +1,18 @@
-# The observation of the macOS runner that falls (decisions 82, 89, 91, 92, 101 and 102 of the
-# branch m13.11-il-browser-sul-pc). It lives on the branch diag-m13.11-osservazione only, which
-# never enters main, and runs only on the branches diag-**. macOS only, eleven jobs, five at a
-# time: the others wait in the queue. Every job runs the whole `make check` in the background, with
-# its streams closed and without nohup; every round of 120 seconds copies the folder of the
+# The observation of the macOS runner that falls (decisions 82, 89, 91, 92, 101, 102, 110 and 111
+# of the branch m13.11-il-browser-sul-pc). It lives on the branch diag-m13.11-osservazione only,
+# which never enters main, and runs only on the branches diag-**. macOS only, eleven jobs, five at
+# a time: the others wait in the queue. Every job runs the whole `make check` in the background,
+# with its streams closed and without nohup; every round of 120 seconds copies the folder of the
 # suite's log and carries it away as an artifact, and a black box sends a comment to the issue
-# #2 every 60 seconds: what the machine knows leaves it before the machine can die with it.
-# The hour of every step stays in the API even when the runner falls.
-# The first step, before the checkout, writes how the machine arrived (decision 101): «warm» with
-# at least one mdworker_shared at that step, «cold» with none. The variants: «controllo», the tree
-# at da241f8 exactly, with the instruments outside it, in the runner's temporary folder;
-# «spotlight-spento», today's code with `sudo -n mdutil -a -i off` right after the first step;
-# «come-e», today's code. ci.yml is not touched. Written by
-# .git/m13.11-il-browser-sul-pc-reference/diag/genera_workflow.py.
+# #2 every 60 seconds, and every 15 seconds for the first four minutes of
+# tests/infrastructure: what the machine knows leaves it before the machine can die with it. The
+# hour of every step stays in the API even when the runner falls. The first step, before the
+# checkout, writes how the machine arrived (decision 101). The variants (decision 110): one switch,
+# DIAG_SENZA, read in tests/script_fences.py only, takes one piece of the fences away —
+# «senza-lanci», «senza-rete», «senza-ambiente» —, or keeps them all and makes os.kill skip
+# SIGSTOP — «senza-stop» —; «come-e», today's code as it is; «albero-6a778be», the tree at that
+# commit exactly, before the fences, with the instruments outside it. ci.yml is not touched.
+# Written by .git/m13.11-il-browser-sul-pc-reference/diag/genera_workflow.py.
 name: Diag
 
 on:
@@ -35,49 +36,71 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            variant: controllo
+            variant: senza-lanci
             instance: 1
             every: 120
+            senza: 'lanci'
+            tree: ''
           - os: macos-latest
-            variant: spotlight-spento
+            variant: senza-rete
             instance: 1
             every: 120
+            senza: 'rete'
+            tree: ''
+          - os: macos-latest
+            variant: senza-ambiente
+            instance: 1
+            every: 120
+            senza: 'ambiente'
+            tree: ''
+          - os: macos-latest
+            variant: senza-stop
+            instance: 1
+            every: 120
+            senza: 'stop'
+            tree: ''
           - os: macos-latest
             variant: come-e
             instance: 1
             every: 120
+            senza: ''
+            tree: ''
           - os: macos-latest
-            variant: controllo
+            variant: albero-6a778be
+            instance: 1
+            every: 120
+            senza: ''
+            tree: '6a778bed44fe8403ab9cbd86be0f32ce290707c8'  # pragma: allowlist secret — a commit, not a secret
+          - os: macos-latest
+            variant: senza-lanci
             instance: 2
             every: 120
+            senza: 'lanci'
+            tree: ''
           - os: macos-latest
-            variant: spotlight-spento
+            variant: senza-rete
             instance: 2
             every: 120
+            senza: 'rete'
+            tree: ''
           - os: macos-latest
-            variant: controllo
-            instance: 3
+            variant: senza-ambiente
+            instance: 2
             every: 120
+            senza: 'ambiente'
+            tree: ''
           - os: macos-latest
-            variant: spotlight-spento
-            instance: 3
+            variant: senza-stop
+            instance: 2
             every: 120
+            senza: 'stop'
+            tree: ''
           - os: macos-latest
             variant: come-e
             instance: 2
             every: 120
-          - os: macos-latest
-            variant: controllo
-            instance: 4
-            every: 120
-          - os: macos-latest
-            variant: spotlight-spento
-            instance: 4
-            every: 120
-          - os: macos-latest
-            variant: controllo
-            instance: 5
-            every: 120
+            senza: ''
+            tree: ''
     steps:
       - name: La macchina com'è arrivata
         continue-on-error: true
@@ -94,17 +117,6 @@ jobs:
             mdutil -a -s || echo "mdutil -a -s: uscita $?"
           } 2>&1 | tee "${{ runner.temp }}/suite-log/arrived.txt"
 
-      - name: Spotlight off
-        if: matrix.variant == 'spotlight-spento'
-        continue-on-error: true
-        run: |
-          {
-            echo "=== sudo -n mdutil -a -i off (decisione 102): $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            sudo -n mdutil -a -i off || echo "sudo -n mdutil -a -i off: uscita $?"
-            echo "=== mdutil -a -s, di nuovo: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            mdutil -a -s || echo "mdutil -a -s: uscita $?"
-          } 2>&1 | tee -a "${{ runner.temp }}/suite-log/arrived.txt"
-
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
@@ -115,14 +127,15 @@ jobs:
           mkdir -p "$tools"
           cp .github/diag/blackbox.sh .github/diag/round.sh .github/diag/snapshot-zero.sh .github/sampler.sh "$tools"/
           ls -l "$tools"
-          if [ "${{ matrix.variant }}" = "controllo" ]; then
-            git checkout --quiet --detach da241f86cf4c48d8b6507453440ac17665db2ca7
+          tree="${{ matrix.tree }}"
+          if [ -n "$tree" ]; then
+            git checkout --quiet --detach "$tree"
             head=$(git rev-parse HEAD)
             changed=$(git status --porcelain --untracked-files=all)
             echo "HEAD: $head"
             echo "git status --porcelain: ${changed:-vuoto}"
             echo "git status --porcelain --ignored: $(git status --porcelain --ignored | wc -l | tr -d ' ') righe"
-            [ "$head" = "da241f86cf4c48d8b6507453440ac17665db2ca7" ] && [ -z "$changed" ]
+            [ "$head" = "$tree" ] && [ -z "$changed" ]
           fi
 
       - name: Install uv (with cache)
@@ -197,14 +210,15 @@ jobs:
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
-        run: sh "${{ runner.temp }}/diag-tools/blackbox.sh" "${{ runner.temp }}/suite-log" "${{ matrix.variant }}-${{ matrix.instance }}" 2 60 5400 > /dev/null 2>&1 < /dev/null &
+        run: sh "${{ runner.temp }}/diag-tools/blackbox.sh" "${{ runner.temp }}/suite-log" "${{ matrix.variant }}-${{ matrix.instance }}" 2 60 5400 15 240 > /dev/null 2>&1 < /dev/null &
 
       - name: make check, in the background
         env:
           SUITE_LOG: ${{ runner.temp }}/suite-log
+          DIAG_SENZA: ${{ matrix.senza }}
         run: |
           set -- make check
-          echo "$* at $(git rev-parse HEAD) (PYTEST_ADDOPTS=${PYTEST_ADDOPTS-})" > "$SUITE_LOG/command.txt"
+          echo "$* at $(git rev-parse HEAD) (DIAG_SENZA=${DIAG_SENZA-}, PYTEST_ADDOPTS=${PYTEST_ADDOPTS-})" > "$SUITE_LOG/command.txt"
           sh -c '"$@" > "$SUITE_LOG/make-check.txt" 2>&1; code=$?; echo "$code" > "$SUITE_LOG/make-check-exit.part"; mv "$SUITE_LOG/make-check-exit.part" "$SUITE_LOG/make-check-exit.txt"' sh "$@" > /dev/null 2>&1 < /dev/null &
           echo "LAUNCHED=1" >> "$GITHUB_ENV"
 
