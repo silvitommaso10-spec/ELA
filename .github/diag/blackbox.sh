@@ -15,17 +15,26 @@
 # short comment every <tick> seconds — the time, the tests in flight, the processes in state T,
 # the row of WindowServer, and six counters of sysctl. The comments of every <every> seconds go on
 # through it. The loop wakes at least every <tick> seconds.
+# ***Since 2026-11-24, again*** (decisions 117 and 120 (a)): the dense phase is denser — a comment
+# every <fast tick> seconds for its first <fast> seconds, then every <tick> seconds up to <dense>
+# —, and each short comment also carries the last forty lines of `sudo log show --last 15s` for
+# faults and errors, cut at 4 seconds and the cut said, the processes whose command holds Chrome,
+# chrome or node with their seconds of life, and the count of the processes; of sysctl only
+# kern.num_files, kern.maxfiles and kern.maxproc, since kern.num_tasks and kern.num_threads are
+# ceilings.
 #
-# Usage: sh .github/diag/blackbox.sh <folder> <label> <issue> [every, 60] [most, 5400] [tick, 15]
-#        [dense, 240]
+# Usage: sh .github/diag/blackbox.sh <folder> <label> <issue> [every, 60] [most, 5400]
+#        [fast tick, 5] [fast, 90] [tick, 15] [dense, 240]
 # The token comes from GH_TOKEN and goes to curl in a file, never in its arguments. Every exit is 0.
 folder=$1
 label=$2
 issue=$3
 every=${4:-60}
 most=${5:-5400}
-tick=${6:-15}
-dense=${7:-240}
+fast_tick=${6:-5}
+fast=${7:-90}
+tick=${8:-15}
+dense=${9:-240}
 api=${BLACKBOX_API:-https://api.github.com}
 [ -n "$folder" ] && [ -n "$issue" ] && [ -n "$GH_TOKEN" ] && [ -n "$GITHUB_REPOSITORY" ] || exit 0
 mkdir -p "$folder" 2>/dev/null
@@ -43,7 +52,8 @@ n=0
 short_n=0
 dense_start=
 fence='```'
-SYSCTLS="kern.num_files kern.maxfiles kern.maxproc kern.maxprocperuid kern.num_tasks kern.num_threads"
+SYSCTLS="kern.num_files kern.maxfiles kern.maxproc"
+PREDICATE="messageType == fault OR messageType == error"
 
 # The table of the processes, the newest first: `etime` ([[dd-]hh:]mm:ss) in seconds, sorted, and
 # dropped; the columns are those of decision 92.
@@ -59,6 +69,40 @@ newest_first() {
     for (i = 8; i <= NF; i++) comm = comm " " $i
     printf "%d\t%5d %5d %5d %-4s %-8s %s\n", s, $2, $3, $4, $5, $6, comm
   }' | sort -n -k1,1 | cut -f2-
+}
+
+# `sudo log show --last 15s`, faults and errors, at most 4 seconds: it runs in the background and
+# leaves a mark when it is done; without the mark after 4 seconds it is stopped, and the comment says
+# so. The process sudo runs as root is stopped through sudo.
+log_show() {
+  rm -f "$work/log.txt" "$work/log.done"
+  ( sudo -n log show --last 15s --style compact --predicate "$PREDICATE" > "$work/log.txt" 2>&1
+    echo done > "$work/log.done" ) < /dev/null > /dev/null 2>&1 &
+  waited=0
+  while [ ! -f "$work/log.done" ] && [ "$waited" -lt 40 ]; do
+    sleep 0.1
+    waited=$((waited + 1))
+  done
+  if [ -f "$work/log.done" ]; then
+    log_said="in $((waited / 10)),$((waited % 10)) s"
+  else
+    sudo -n pkill -f 'log show --last 15s' > /dev/null 2>&1
+    log_said="TAGLIATO a 4 s: non era finito"
+  fi
+}
+
+# The processes whose command holds Chrome, chrome or node: pid, ppid, state, seconds of life.
+browsers() {
+  ps -axo etime=,pid=,ppid=,stat=,comm= | awk '{
+    e = $1; d = 0
+    if (index(e, "-")) { split(e, a, "-"); d = a[1]; e = a[2] }
+    k = split(e, p, ":"); s = 0
+    for (i = 1; i <= k; i++) s = s * 60 + p[i]
+    s += d * 86400
+    comm = $5
+    for (i = 6; i <= NF; i++) comm = comm " " $i
+    if (comm ~ /Chrome|chrome|node/) printf "%5d %5d %-4s %6ds %s\n", $2, $3, $4, s, comm
+  }'
 }
 
 post() {
@@ -137,11 +181,21 @@ send_short() {
     echo "$fence"
     ps -axo pid=,stat=,time=,comm= | grep 'WindowServer$' || echo "nessuna"
     echo "$fence"
+    echo "i processi il cui comando contiene Chrome, chrome o node (pid, ppid, stato, secondi di vita, comando):"
+    echo "$fence"
+    browsers
+    echo "$fence"
+    echo "il numero dei processi (ps): $(ps -A -o pid= | wc -l | tr -d ' ')"
     echo "sysctl:"
     echo "$fence"
     for name in $SYSCTLS; do
       echo "$name: $(sysctl -n "$name" 2>&1)"
     done
+    echo "$fence"
+    log_show
+    echo "sudo log show --last 15s --style compact --predicate '$PREDICATE', le ultime quaranta righe ($log_said):"
+    echo "$fence"
+    tail -n 40 "$work/log.txt" 2>/dev/null
     echo "$fence"
   } > "$body" 2>&1
   size=$(wc -c < "$body" | tr -d ' ')
@@ -179,7 +233,11 @@ while :; do
     in_dense=1
     if [ "$(date +%s)" -ge "$next_short" ]; then
       send_short
-      next_short=$(($(date +%s) + tick))
+      step=$tick
+      [ $((next_short - dense_start)) -lt "$fast" ] && step=$fast_tick
+      [ "$next_short" -lt "$dense_start" ] && next_short=$dense_start
+      next_short=$((next_short + step))
+      [ "$next_short" -le "$(date +%s)" ] && next_short=$(date +%s)
     fi
   fi
   now=$(date +%s)

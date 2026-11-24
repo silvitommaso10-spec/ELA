@@ -84,7 +84,9 @@ DIAG_SWITCH: Final = "DIAG_SENZA"
 branch diag-m13.11-osservazione only, which never enters main, and read here and nowhere else:
 ``lanci``, ``rete`` or ``ambiente`` leave one fence out, ``stop`` keeps them all and makes
 ``os.kill`` skip ``SIGSTOP`` — to see whether the macOS runner still falls without that piece.
-Unset or empty, nothing changes."""
+Since decision 119, three pieces of the fence of the network alone: ``connect`` (``connect`` and
+``connect_ex``), ``bind`` (and :attr:`_State.bound` stays empty), ``getaddrinfo``. Unset or
+empty, nothing changes."""
 
 
 def _without(piece: str) -> bool:
@@ -665,14 +667,16 @@ def _install_the_launches() -> None:
 
 
 def _install_the_connections() -> None:
-    """The second fence: the connections and the resolution of a name."""
+    """The second fence: the connections and the resolution of a name; on the branch
+    diag-m13.11-osservazione one piece of it may stay out (decision 119)."""
     sockets: Any = socket.socket
-    for door in ("connect", "connect_ex"):
-        if not getattr(getattr(sockets, door), GUARDED, False):
-            setattr(sockets, door, _guarded_connect(getattr(sockets, door)))
-    if not getattr(sockets.bind, GUARDED, False):
+    if not _without("connect"):
+        for door in ("connect", "connect_ex"):
+            if not getattr(getattr(sockets, door), GUARDED, False):
+                setattr(sockets, door, _guarded_connect(getattr(sockets, door)))
+    if not _without("bind") and not getattr(sockets.bind, GUARDED, False):
         sockets.bind = _guarded_bind(sockets.bind)
-    if not getattr(socket.getaddrinfo, GUARDED, False):
+    if not _without("getaddrinfo") and not getattr(socket.getaddrinfo, GUARDED, False):
         socket.getaddrinfo = _guarded_getaddrinfo(socket.getaddrinfo)  # type: ignore[assignment]
     from asyncio import proactor_events
 

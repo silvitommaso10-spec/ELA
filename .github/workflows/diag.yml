@@ -1,17 +1,18 @@
-# The observation of the macOS runner that falls (decisions 82, 89, 91, 92, 101, 102, 110 and 111
-# of the branch m13.11-il-browser-sul-pc). It lives on the branch diag-m13.11-osservazione only,
+# The observation of the macOS runner that falls (decisions 82, 89, 91, 92, 101, 102, 110, 111, 119
+# and 120 of the branch m13.11-il-browser-sul-pc). It lives on the branch diag-m13.11-osservazione only,
 # which never enters main, and runs only on the branches diag-**. macOS only, eleven jobs, five at
 # a time: the others wait in the queue. Every job runs the whole `make check` in the background,
 # with its streams closed and without nohup; every round of 120 seconds copies the folder of the
 # suite's log and carries it away as an artifact, and a black box sends a comment to the issue
-# #2 every 60 seconds, and every 15 seconds for the first four minutes of
-# tests/infrastructure: what the machine knows leaves it before the machine can die with it. The
-# hour of every step stays in the API even when the runner falls. The first step, before the
-# checkout, writes how the machine arrived (decision 101). The variants (decision 110): one switch,
-# DIAG_SENZA, read in tests/script_fences.py only, takes one piece of the fences away —
-# «senza-lanci», «senza-rete», «senza-ambiente» —, or keeps them all and makes os.kill skip
-# SIGSTOP — «senza-stop» —; «come-e», today's code as it is; «albero-6a778be», the tree at that
-# commit exactly, before the fences, with the instruments outside it. ci.yml is not touched.
+# #2 every 60 seconds, and from the first line of tests/infrastructure every 5 seconds for
+# 90 seconds and every 15 up to four minutes: what the machine knows leaves it before the machine
+# can die with it. The hour of every step stays in the API even when the runner falls. The first
+# step, before the checkout, writes how the machine arrived (decision 101); a LaunchDaemon, written
+# and not loaded, is the witness of a restart (decision 120 (b)). The variants (decision 119): one
+# switch, DIAG_SENZA, read in tests/script_fences.py only, takes one piece of the fence of the
+# network away — all of it, «senza-rete»; connect and connect_ex, «senza-connect»; bind,
+# «senza-bind»; getaddrinfo, «senza-getaddrinfo» —; «come-e», today's code as it is. ci.yml is not
+# touched.
 # Written by .git/m13.11-il-browser-sul-pc-reference/diag/genera_workflow.py.
 name: Diag
 
@@ -36,10 +37,10 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            variant: senza-lanci
+            variant: come-e
             instance: 1
             every: 120
-            senza: 'lanci'
+            senza: ''
             tree: ''
           - os: macos-latest
             variant: senza-rete
@@ -48,34 +49,28 @@ jobs:
             senza: 'rete'
             tree: ''
           - os: macos-latest
-            variant: senza-ambiente
+            variant: senza-connect
             instance: 1
             every: 120
-            senza: 'ambiente'
+            senza: 'connect'
             tree: ''
           - os: macos-latest
-            variant: senza-stop
+            variant: senza-bind
             instance: 1
             every: 120
-            senza: 'stop'
+            senza: 'bind'
+            tree: ''
+          - os: macos-latest
+            variant: senza-getaddrinfo
+            instance: 1
+            every: 120
+            senza: 'getaddrinfo'
             tree: ''
           - os: macos-latest
             variant: come-e
-            instance: 1
-            every: 120
-            senza: ''
-            tree: ''
-          - os: macos-latest
-            variant: albero-6a778be
-            instance: 1
-            every: 120
-            senza: ''
-            tree: '6a778bed44fe8403ab9cbd86be0f32ce290707c8'  # pragma: allowlist secret — a commit, not a secret
-          - os: macos-latest
-            variant: senza-lanci
             instance: 2
             every: 120
-            senza: 'lanci'
+            senza: ''
             tree: ''
           - os: macos-latest
             variant: senza-rete
@@ -84,22 +79,28 @@ jobs:
             senza: 'rete'
             tree: ''
           - os: macos-latest
-            variant: senza-ambiente
+            variant: senza-connect
             instance: 2
             every: 120
-            senza: 'ambiente'
+            senza: 'connect'
             tree: ''
           - os: macos-latest
-            variant: senza-stop
+            variant: senza-bind
             instance: 2
             every: 120
-            senza: 'stop'
+            senza: 'bind'
             tree: ''
           - os: macos-latest
             variant: come-e
-            instance: 2
+            instance: 3
             every: 120
             senza: ''
+            tree: ''
+          - os: macos-latest
+            variant: senza-rete
+            instance: 3
+            every: 120
+            senza: 'rete'
             tree: ''
     steps:
       - name: La macchina com'è arrivata
@@ -125,7 +126,7 @@ jobs:
         run: |
           tools="${{ runner.temp }}/diag-tools"
           mkdir -p "$tools"
-          cp .github/diag/blackbox.sh .github/diag/round.sh .github/diag/snapshot-zero.sh .github/sampler.sh "$tools"/
+          cp .github/diag/blackbox.sh .github/diag/round.sh .github/diag/snapshot-zero.sh .github/diag/riavvio-installa.sh .github/diag/riavvio.sh .github/sampler.sh "$tools"/
           ls -l "$tools"
           tree="${{ matrix.tree }}"
           if [ -n "$tree" ]; then
@@ -137,6 +138,12 @@ jobs:
             echo "git status --porcelain --ignored: $(git status --porcelain --ignored | wc -l | tr -d ' ') righe"
             [ "$head" = "$tree" ] && [ -z "$changed" ]
           fi
+
+      - name: The witness of a restart
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: sh "${{ runner.temp }}/diag-tools/riavvio-installa.sh" "${{ runner.temp }}/diag-tools" "${{ matrix.variant }}-${{ matrix.instance }}" 2 "${{ runner.temp }}/suite-log/machine.txt"
 
       - name: Install uv (with cache)
         uses: astral-sh/setup-uv@v10.2.0
@@ -210,7 +217,7 @@ jobs:
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
-        run: sh "${{ runner.temp }}/diag-tools/blackbox.sh" "${{ runner.temp }}/suite-log" "${{ matrix.variant }}-${{ matrix.instance }}" 2 60 5400 15 240 > /dev/null 2>&1 < /dev/null &
+        run: sh "${{ runner.temp }}/diag-tools/blackbox.sh" "${{ runner.temp }}/suite-log" "${{ matrix.variant }}-${{ matrix.instance }}" 2 60 5400 5 90 15 240 > /dev/null 2>&1 < /dev/null &
 
       - name: make check, in the background
         env:
