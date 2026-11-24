@@ -1,5 +1,5 @@
-# The observation of the macOS runner that falls (decisions 82, 89, 91, 92, 101, 102, 110, 111, 119
-# and 120 of the branch m13.11-il-browser-sul-pc). It lives on the branch diag-m13.11-osservazione only,
+# The observation of the macOS runner that falls (decisions 82, 89, 91, 92, 101, 102, 110, 111, 119,
+# 120, 127, 128 and 132 of the branch m13.11-il-browser-sul-pc). It lives on the branch diag-m13.11-osservazione only,
 # which never enters main, and runs only on the branches diag-**. macOS only, eleven jobs, five at
 # a time: the others wait in the queue. Every job runs the whole `make check` in the background,
 # with its streams closed and without nohup; every round of 120 seconds copies the folder of the
@@ -7,12 +7,13 @@
 # #2 every 60 seconds, and from the first line of tests/infrastructure every 5 seconds for
 # 90 seconds and every 15 up to four minutes: what the machine knows leaves it before the machine
 # can die with it. The hour of every step stays in the API even when the runner falls. The first
-# step, before the checkout, writes how the machine arrived (decision 101); a LaunchDaemon, written
-# and not loaded, is the witness of a restart (decision 120 (b)). The variants (decision 119): one
-# switch, DIAG_SENZA, read in tests/script_fences.py only, takes one piece of the fence of the
-# network away — all of it, «senza-rete»; connect and connect_ex, «senza-connect»; bind,
-# «senza-bind»; getaddrinfo, «senza-getaddrinfo» —; «come-e», today's code as it is. ci.yml is not
-# touched.
+# step, before the checkout, writes how the machine arrived (decision 101); a LaunchDaemon of the
+# system, loaded at once and running as root outside the graphical session, is the witness of the
+# session (decisions 128 and 132). The variants (decision 127): «controllo-con-zavorra», the tree at
+# da241f8 with the ballast of zavorra.py — da241f8 with the counts of the new code —;
+# «nuovo-conti-vecchi», the tip with its new files ignored, its new ids deselected and a fake file
+# of the old ones — the new code with the counts of da241f8 —; «come-e», the tip as it is.
+# ci.yml is not touched.
 # Written by .git/m13.11-il-browser-sul-pc-reference/diag/genera_workflow.py.
 name: Diag
 
@@ -37,71 +38,68 @@ jobs:
       matrix:
         include:
           - os: macos-latest
+            variant: controllo-con-zavorra
+            instance: 1
+            every: 120
+            tree: 'da241f86cf4c48d8b6507453440ac17665db2ca7'  # pragma: allowlist secret — a commit, not a secret
+            ballast: 'controllo'
+            addopts: '--ignore=tests/scripts/test_the_proofs_never_launch_for_real.py'
+          - os: macos-latest
+            variant: nuovo-conti-vecchi
+            instance: 1
+            every: 120
+            tree: ''
+            ballast: 'nuovo'
+            addopts: '--ignore=tests/scripts/test_a_script_never_reaches_the_real_world.py --ignore=tests/scripts/test_every_way_a_test_runs_a_script.py --ignore=tests/scripts/test_misura_m13_11.py --ignore=tests/scripts/test_misura_m13_11_windows.py --ignore=tests/scripts/test_the_fences_on_windows.py --ignore=tests/test_the_environment_of_the_suite.py --deselect=tests/docs/test_adr_ci_runner.py::test_a_sampler_that_is_late_elsewhere_in_the_foreground_or_can_fail_is_found --deselect=tests/docs/test_adr_ci_runner.py::test_a_suite_that_could_hang_the_runner_or_lose_its_log_is_found --deselect=tests/docs/test_adr_ci_runner.py::test_the_sampler_runs_before_make_check_into_the_log_and_cannot_fail --deselect=tests/docs/test_adr_ci_runner.py::test_the_step_make_check_has_a_limit_and_the_step_of_the_log_always_runs --deselect=tests/test_suite_log.py::test_a_test_in_flight_when_the_suite_is_cut_is_the_one_whose_first_line_has_no_second'
+          - os: macos-latest
             variant: come-e
             instance: 1
             every: 120
-            senza: ''
             tree: ''
+            ballast: ''
+            addopts: ''
           - os: macos-latest
-            variant: senza-rete
-            instance: 1
-            every: 120
-            senza: 'rete'
-            tree: ''
-          - os: macos-latest
-            variant: senza-connect
-            instance: 1
-            every: 120
-            senza: 'connect'
-            tree: ''
-          - os: macos-latest
-            variant: senza-bind
-            instance: 1
-            every: 120
-            senza: 'bind'
-            tree: ''
-          - os: macos-latest
-            variant: senza-getaddrinfo
-            instance: 1
-            every: 120
-            senza: 'getaddrinfo'
-            tree: ''
-          - os: macos-latest
-            variant: come-e
+            variant: controllo-con-zavorra
             instance: 2
             every: 120
-            senza: ''
-            tree: ''
+            tree: 'da241f86cf4c48d8b6507453440ac17665db2ca7'  # pragma: allowlist secret — a commit, not a secret
+            ballast: 'controllo'
+            addopts: '--ignore=tests/scripts/test_the_proofs_never_launch_for_real.py'
           - os: macos-latest
-            variant: senza-rete
+            variant: nuovo-conti-vecchi
             instance: 2
             every: 120
-            senza: 'rete'
             tree: ''
+            ballast: 'nuovo'
+            addopts: '--ignore=tests/scripts/test_a_script_never_reaches_the_real_world.py --ignore=tests/scripts/test_every_way_a_test_runs_a_script.py --ignore=tests/scripts/test_misura_m13_11.py --ignore=tests/scripts/test_misura_m13_11_windows.py --ignore=tests/scripts/test_the_fences_on_windows.py --ignore=tests/test_the_environment_of_the_suite.py --deselect=tests/docs/test_adr_ci_runner.py::test_a_sampler_that_is_late_elsewhere_in_the_foreground_or_can_fail_is_found --deselect=tests/docs/test_adr_ci_runner.py::test_a_suite_that_could_hang_the_runner_or_lose_its_log_is_found --deselect=tests/docs/test_adr_ci_runner.py::test_the_sampler_runs_before_make_check_into_the_log_and_cannot_fail --deselect=tests/docs/test_adr_ci_runner.py::test_the_step_make_check_has_a_limit_and_the_step_of_the_log_always_runs --deselect=tests/test_suite_log.py::test_a_test_in_flight_when_the_suite_is_cut_is_the_one_whose_first_line_has_no_second'
           - os: macos-latest
-            variant: senza-connect
-            instance: 2
-            every: 120
-            senza: 'connect'
-            tree: ''
-          - os: macos-latest
-            variant: senza-bind
-            instance: 2
-            every: 120
-            senza: 'bind'
-            tree: ''
-          - os: macos-latest
-            variant: come-e
+            variant: controllo-con-zavorra
             instance: 3
             every: 120
-            senza: ''
-            tree: ''
+            tree: 'da241f86cf4c48d8b6507453440ac17665db2ca7'  # pragma: allowlist secret — a commit, not a secret
+            ballast: 'controllo'
+            addopts: '--ignore=tests/scripts/test_the_proofs_never_launch_for_real.py'
           - os: macos-latest
-            variant: senza-rete
+            variant: come-e
+            instance: 2
+            every: 120
+            tree: ''
+            ballast: ''
+            addopts: ''
+          - os: macos-latest
+            variant: nuovo-conti-vecchi
             instance: 3
             every: 120
-            senza: 'rete'
             tree: ''
+            ballast: 'nuovo'
+            addopts: '--ignore=tests/scripts/test_a_script_never_reaches_the_real_world.py --ignore=tests/scripts/test_every_way_a_test_runs_a_script.py --ignore=tests/scripts/test_misura_m13_11.py --ignore=tests/scripts/test_misura_m13_11_windows.py --ignore=tests/scripts/test_the_fences_on_windows.py --ignore=tests/test_the_environment_of_the_suite.py --deselect=tests/docs/test_adr_ci_runner.py::test_a_sampler_that_is_late_elsewhere_in_the_foreground_or_can_fail_is_found --deselect=tests/docs/test_adr_ci_runner.py::test_a_suite_that_could_hang_the_runner_or_lose_its_log_is_found --deselect=tests/docs/test_adr_ci_runner.py::test_the_sampler_runs_before_make_check_into_the_log_and_cannot_fail --deselect=tests/docs/test_adr_ci_runner.py::test_the_step_make_check_has_a_limit_and_the_step_of_the_log_always_runs --deselect=tests/test_suite_log.py::test_a_test_in_flight_when_the_suite_is_cut_is_the_one_whose_first_line_has_no_second'
+          - os: macos-latest
+            variant: controllo-con-zavorra
+            instance: 4
+            every: 120
+            tree: 'da241f86cf4c48d8b6507453440ac17665db2ca7'  # pragma: allowlist secret — a commit, not a secret
+            ballast: 'controllo'
+            addopts: '--ignore=tests/scripts/test_the_proofs_never_launch_for_real.py'
     steps:
       - name: La macchina com'è arrivata
         continue-on-error: true
@@ -126,7 +124,7 @@ jobs:
         run: |
           tools="${{ runner.temp }}/diag-tools"
           mkdir -p "$tools"
-          cp .github/diag/blackbox.sh .github/diag/round.sh .github/diag/snapshot-zero.sh .github/diag/riavvio-installa.sh .github/diag/riavvio.sh .github/sampler.sh "$tools"/
+          cp .github/diag/blackbox.sh .github/diag/round.sh .github/diag/snapshot-zero.sh .github/diag/testimone-installa.sh .github/diag/testimone.sh .github/diag/zavorra.py .github/sampler.sh "$tools"/
           ls -l "$tools"
           tree="${{ matrix.tree }}"
           if [ -n "$tree" ]; then
@@ -139,11 +137,18 @@ jobs:
             [ "$head" = "$tree" ] && [ -z "$changed" ]
           fi
 
-      - name: The witness of a restart
+      - name: The ballast
+        if: matrix.ballast != ''
+        run: |
+          python3 "${{ runner.temp }}/diag-tools/zavorra.py" "${{ matrix.ballast }}" .
+          echo "git status --porcelain --untracked-files=all:"
+          git status --porcelain --untracked-files=all
+
+      - name: The witness outside the session
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
-        run: sh "${{ runner.temp }}/diag-tools/riavvio-installa.sh" "${{ runner.temp }}/diag-tools" "${{ matrix.variant }}-${{ matrix.instance }}" 2 "${{ runner.temp }}/suite-log/machine.txt"
+        run: sh "${{ runner.temp }}/diag-tools/testimone-installa.sh" "${{ runner.temp }}/diag-tools" "${{ matrix.variant }}-${{ matrix.instance }}" 2 "${{ runner.temp }}/suite-log/make-check-exit.txt"
 
       - name: Install uv (with cache)
         uses: astral-sh/setup-uv@v10.2.0
@@ -222,10 +227,10 @@ jobs:
       - name: make check, in the background
         env:
           SUITE_LOG: ${{ runner.temp }}/suite-log
-          DIAG_SENZA: ${{ matrix.senza }}
+          PYTEST_ADDOPTS: ${{ matrix.addopts }}
         run: |
           set -- make check
-          echo "$* at $(git rev-parse HEAD) (DIAG_SENZA=${DIAG_SENZA-}, PYTEST_ADDOPTS=${PYTEST_ADDOPTS-})" > "$SUITE_LOG/command.txt"
+          echo "$* at $(git rev-parse HEAD) (PYTEST_ADDOPTS=${PYTEST_ADDOPTS-})" > "$SUITE_LOG/command.txt"
           sh -c '"$@" > "$SUITE_LOG/make-check.txt" 2>&1; code=$?; echo "$code" > "$SUITE_LOG/make-check-exit.part"; mv "$SUITE_LOG/make-check-exit.part" "$SUITE_LOG/make-check-exit.txt"' sh "$@" > /dev/null 2>&1 < /dev/null &
           echo "LAUNCHED=1" >> "$GITHUB_ENV"
 
