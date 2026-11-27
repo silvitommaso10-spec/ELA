@@ -14,6 +14,14 @@
 # change, or after <most> seconds. A `log show` stops at 6 seconds, and the comment says so.
 # Every exit is 0.
 #
+# ***Since 2026-11-27*** (decision 138): a report whose name starts with a dot is not counted —
+# the hidden «.python3.12_…» of the preparation was the first change of every job in the run of the
+# 127 —; three keys of the configuration, all optional: start_file, a file whose appearance is a
+# change («lo script comincia»), so that the dense phase starts there; attach, files whose last
+# forty lines go with every comment; dtrace=1, a `dtrace` on proc:::signal-send for the signals 1
+# and 19, run by this script as root, outside the user's session, into dtrace.txt beside it, which
+# is attached too — if SIP refuses it, the file says so.
+#
 # For the proof on the Mac: TESTIMONE_PATH replaces the PATH (the proof's own pgrep, stat, log and
 # curl answer), and TESTIMONE_TICK, _ALIVE, _FAST, _WINDOW and _MOST the seconds (10, 120, 180,
 # 3600, 9000).
@@ -44,8 +52,27 @@ look() {
 
 reports() {
   for folder in "$system_reports" "$user_reports"; do
-    ls -1 "$folder" 2>/dev/null | sed "s|^|$folder/|"
+    ls -1 "$folder" 2>/dev/null | grep -v '^\.' | sed "s|^|$folder/|"
   done | sort
+}
+
+attached() {
+  # The files of the configuration are split on spaces — their paths have none —; the two of
+  # dtrace live in this script's own folder, whose path does («Application Support»), and go apart.
+  for file in $attach; do
+    one "$file"
+  done
+  if [ "${dtrace:-0}" = 1 ]; then
+    one "$dir/dtrace-inizio.txt"
+    one "$dir/dtrace.txt"
+  fi
+}
+
+one() {
+  echo "l'allegato $1, le ultime quaranta righe:"
+  echo "$fence"
+  tail -n 40 "$1" 2>&1
+  echo "$fence"
 }
 
 # `log show` with a predicate, at most 6 seconds: in the background, and stopped if it is not done.
@@ -88,7 +115,8 @@ short() {
     echo "### testimone — $label — $1 — commento $n"
     echo "ora: $(date -u +%Y-%m-%dT%H:%M:%SZ); giro: $run"
     echo "$values; rapporti nuovi dall'inizio: $born"
-  } > "$dir/body"
+    attached
+  } > "$dir/body" 2>&1
   post "$1"
 }
 
@@ -126,14 +154,28 @@ changed() {
     echo "$fence"
     grep -E 'GPU hang|AppleParavirtGPU' "$dir/log.txt" 2>/dev/null | tail -n 40
     echo "$fence"
+    attached
   } > "$dir/body" 2>&1
   post "cambiamento"
 }
 
+if [ "${dtrace:-0}" = 1 ]; then
+  : > "$dir/dtrace.txt"
+  dtrace -q -o "$dir/dtrace.txt" -n 'proc:::signal-send /args[2] == 1 || args[2] == 19/ { printf("%Y %d %s -> %d %s segnale %d\n", walltimestamp, pid, execname, args[1]->pr_pid, stringof(args[1]->pr_fname), args[2]); }' \
+    > "$dir/dtrace.err" 2>&1 < /dev/null &
+  tracer=$!
+  sleep 3
+  if ! kill -0 "$tracer" 2>/dev/null; then
+    { echo "dtrace non è partito:"; cat "$dir/dtrace.err"; } >> "$dir/dtrace.txt"
+  else
+    { echo "dtrace è partito (pid $tracer); ciò che ha detto all'inizio:"; cat "$dir/dtrace.err"; } > "$dir/dtrace-inizio.txt"
+  fi
+fi
 start=$(date +%s)
 n=0
 born=0
 first_change=
+started_seen=
 last_post=0
 reports > "$dir/known.txt"
 look
@@ -171,6 +213,11 @@ while :; do
 "
   [ "$listener" != "$plistener" ] && what="${what}Runner.Listener: $plistener → $listener
 "
+  if [ -n "${start_file:-}" ] && [ -z "$first_change" ] && [ -f "$start_file" ] && [ -z "$started_seen" ]; then
+    started_seen=1
+    what="${what}lo script comincia: $start_file
+"
+  fi
   if [ -n "$fresh" ]; then
     born=$((born + $(printf '%s\n' "$fresh" | wc -l | tr -d ' ')))
     what="${what}rapporti nuovi:
@@ -197,5 +244,6 @@ $fresh
   fi
   sleep "$tick"
 done
+[ -n "${tracer:-}" ] && kill "$tracer" 2>/dev/null
 rm -f "$headers"
 exit 0

@@ -8,12 +8,16 @@
 # effort: whatever fails here fails the witness, never the job; every exit is 0.
 #
 # Usage: sh testimone-installa.sh <tools folder> <label> <issue> <file of make check's exit code>
+#        [start file] [files to attach, one argument] [dtrace, 0 or 1]   (decision 138)
 # DIAG_ROOT, empty on the runner, is a folder put before every system path: the proof on the Mac
 # uses it, with a sudo and a launchctl of its own, so that nothing is written in the Mac's /Library.
 tools=$1
 label=$2
 issue=$3
 exit_file=$4
+start_file=${5:-}
+attach=${6:-}
+trace=${7:-0}
 root=${DIAG_ROOT:-}
 name=com.ela.diag.testimone
 dir="$root/Library/Application Support/ela-diag-testimone"
@@ -34,6 +38,9 @@ printf '%s' "$GH_TOKEN" > "$work/token"
   echo "exit_file='$exit_file'"
   echo "root='$root'"
   echo "runner_home='$HOME'"
+  echo "start_file='$start_file'"
+  echo "attach='$attach'"
+  echo "dtrace='$trace'"
 } > "$work/config"
 cat > "$work/plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
